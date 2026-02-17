@@ -1,0 +1,38 @@
+# ---- Build / CMake ----
+build/
+out/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+Testing/
+CTestTestfile.cmake
+DartConfiguration.tcl
+install_manifest.txt
+compile_commands.json
+
+# Generated (protobuf + configured headers)
+generated/
+**/generated/
+
+# ---- Conan ----
+.conan/
+.conan2/
+build/conan/
+conan.lock
+graph_info.json
+
+# ---- IDE / Editor ----
+.idea/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs / runtime artifacts ----
+*.log
+/tmp/

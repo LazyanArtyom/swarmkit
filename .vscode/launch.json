@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Agent (Linux, GDB)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/linux-debug-conan/swarmkit_agent",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "build-project-debug",
+      "stopAtEntry": false,
+      "externalConsole": false
+    },
+    {
+      "name": "Debug Agent (macOS, LLDB)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/mac-debug-conan/swarmkit_agent",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "lldb",
+      "preLaunchTask": "build-project-debug",
+      "stopAtEntry": false,
+      "externalConsole": false
+    },
+    {
+      "name": "Debug Agent (Windows, MinGW GDB)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\build\\win-debug-conan\\swarmkit_agent.exe",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "preLaunchTask": "build-project-debug",
+      "stopAtEntry": false,
+      "externalConsole": false
+    }
+  ]
+}

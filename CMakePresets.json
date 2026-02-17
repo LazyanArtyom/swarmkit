@@ -1,0 +1,160 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "inherits": "base"
+    },
+    {
+      "name": "mac-base",
+      "hidden": true,
+      "inherits": "base"
+    },
+    {
+      "name": "win-base",
+      "hidden": true,
+      "inherits": "base"
+    },
+    {
+      "name": "linux-debug",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/build/conan/build/Debug/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-Og -g3 -fno-omit-frame-pointer"
+      }
+    },
+    {
+      "name": "mac-debug",
+      "inherits": "mac-base",
+      "toolchainFile": "${sourceDir}/build/conan/build/Debug/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-Og -g3 -fno-omit-frame-pointer"
+      }
+    },
+    {
+      "name": "win-debug",
+      "inherits": "win-base",
+      "toolchainFile": "${sourceDir}/build/conan/build/Debug/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-release",
+      "inherits": "linux-base",
+      "toolchainFile": "${sourceDir}/build/conan/build/Release/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "mac-release",
+      "inherits": "mac-base",
+      "toolchainFile": "${sourceDir}/build/conan/build/Release/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "win-release",
+      "inherits": "win-base",
+      "toolchainFile": "${sourceDir}/build/conan/build/Release/generators/conan_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug",
+      "jobs": 0
+    },
+    {
+      "name": "mac-debug",
+      "configurePreset": "mac-debug",
+      "jobs": 0
+    },
+    {
+      "name": "win-debug",
+      "configurePreset": "win-debug",
+      "jobs": 0
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "jobs": 0
+    },
+    {
+      "name": "mac-release",
+      "configurePreset": "mac-release",
+      "jobs": 0
+    },
+    {
+      "name": "win-release",
+      "configurePreset": "win-release",
+      "jobs": 0
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "mac-debug",
+      "configurePreset": "mac-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "win-debug",
+      "configurePreset": "win-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "mac-release",
+      "configurePreset": "mac-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "win-release",
+      "configurePreset": "win-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

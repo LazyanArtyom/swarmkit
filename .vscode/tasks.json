@@ -1,0 +1,474 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "conan-install-debug",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 --build=missing"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 --build=missing"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "conan install . -of build\\conan -s build_type=Debug -s compiler.cppstd=23 --build=missing"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "conan-install-release",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "conan install . -of build\\conan -s build_type=Release -s compiler.cppstd=23 --build=missing"
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "configure-debug",
+      "type": "shell",
+      "linux": {
+        "command": "cmake --preset linux-debug"
+      },
+      "osx": {
+        "command": "cmake --preset mac-debug"
+      },
+      "windows": {
+        "command": "cmake --preset win-debug"
+      },
+      "dependsOn": [
+        "conan-install-debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "configure-release",
+      "type": "shell",
+      "linux": {
+        "command": "cmake --preset linux-release"
+      },
+      "osx": {
+        "command": "cmake --preset mac-release"
+      },
+      "windows": {
+        "command": "cmake --preset win-release"
+      },
+      "dependsOn": [
+        "conan-install-release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "build-debug",
+      "type": "shell",
+      "linux": {
+        "command": "cmake --build --preset linux-debug"
+      },
+      "osx": {
+        "command": "cmake --build --preset mac-debug"
+      },
+      "windows": {
+        "command": "cmake --build --preset win-debug"
+      },
+      "group": {
+        "kind": "build"
+      },
+      "dependsOn": [
+        "configure-debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "build-release",
+      "type": "shell",
+      "linux": {
+        "command": "cmake --build --preset linux-release"
+      },
+      "osx": {
+        "command": "cmake --build --preset mac-release"
+      },
+      "windows": {
+        "command": "cmake --build --preset win-release"
+      },
+      "group": {
+        "kind": "build"
+      },
+      "dependsOn": [
+        "configure-release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "copy-compile-commands-debug",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "cp build/linux-debug/compile_commands.json ./compile_commands.json && touch compile_commands.json"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "cp build/mac-debug/compile_commands.json ./compile_commands.json && touch compile_commands.json"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "Copy-Item -Force build\\win-debug\\compile_commands.json .\\compile_commands.json; (Get-Item .\\compile_commands.json) | Out-Null"
+        ]
+      },
+      "dependsOn": [
+        "build-debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "copy-compile-commands-release",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "cp build/linux-release/compile_commands.json ./compile_commands.json && touch compile_commands.json"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "cp build/mac-release/compile_commands.json ./compile_commands.json && touch compile_commands.json"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "Copy-Item -Force build\\win-release\\compile_commands.json .\\compile_commands.json; (Get-Item .\\compile_commands.json) | Out-Null"
+        ]
+      },
+      "dependsOn": [
+        "build-release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "build-project-debug",
+      "dependsOn": [
+        "build-debug",
+        "copy-compile-commands-debug"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "build-project-release",
+      "dependsOn": [
+        "build-release",
+        "copy-compile-commands-release"
+      ],
+      "group": {
+        "kind": "build"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-agent-debug",
+      "type": "shell",
+      "linux": {
+        "command": "${workspaceFolder}/build/linux-debug/swarmkit_agent"
+      },
+      "osx": {
+        "command": "${workspaceFolder}/build/mac-debug/swarmkit_agent"
+      },
+      "windows": {
+        "command": "${workspaceFolder}\\build\\win-debug\\swarmkit_agent.exe"
+      },
+      "dependsOn": [
+        "build-project-debug"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-cli-debug",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "${workspaceFolder}/build/linux-debug/swarmkit_cli --addr 127.0.0.1:50061 ping"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "${workspaceFolder}/build/mac-debug/swarmkit_cli --addr 127.0.0.1:50061 ping"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "& \"${workspaceFolder}\\build\\win-debug\\swarmkit_cli.exe\" --addr 127.0.0.1:50061 ping"
+        ]
+      },
+      "dependsOn": [
+        "build-project-debug"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-agent-release",
+      "type": "shell",
+      "linux": {
+        "command": "${workspaceFolder}/build/linux-release/swarmkit_agent"
+      },
+      "osx": {
+        "command": "${workspaceFolder}/build/mac-release/swarmkit_agent"
+      },
+      "windows": {
+        "command": "${workspaceFolder}\\build\\win-release\\swarmkit_agent.exe"
+      },
+      "dependsOn": [
+        "build-project-release"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-cli-release",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "${workspaceFolder}/build/linux-release/swarmkit_cli --addr 127.0.0.1:50061 ping"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "${workspaceFolder}/build/mac-release/swarmkit_cli --addr 127.0.0.1:50061 ping"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "& \"${workspaceFolder}\\build\\win-release\\swarmkit_cli.exe\" --addr 127.0.0.1:50061 ping"
+        ]
+      },
+      "dependsOn": [
+        "build-project-release"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-tests-debug",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "ctest --preset linux-debug --output-on-failure"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "ctest --preset mac-debug --output-on-failure"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "ctest --preset win-debug --output-on-failure"
+        ]
+      },
+      "dependsOn": [
+        "build-project-debug"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-tests-release",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "ctest --preset linux-release --output-on-failure"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "ctest --preset mac-release --output-on-failure"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "ctest --preset win-debug --output-on-failure"
+        ]
+      },
+      "dependsOn": [
+        "build-project-release"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: build debug",
+      "type": "shell",
+      "dependsOn": [
+        "build-project-debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: build release",
+      "type": "shell",
+      "dependsOn": [
+        "build-project-release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: run agent debug",
+      "type": "shell",
+      "dependsOn": [
+        "run-agent-debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: run cli debug",
+      "type": "shell",
+      "dependsOn": [
+        "run-cli-debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: run agent release",
+      "type": "shell",
+      "dependsOn": [
+        "run-agent-release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: run cli release",
+      "type": "shell",
+      "dependsOn": [
+        "run-cli-release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: test debug",
+      "type": "shell",
+      "dependsOn": [
+        "run-tests-debug"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: test release",
+      "type": "shell",
+      "dependsOn": [
+        "run-tests-release"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

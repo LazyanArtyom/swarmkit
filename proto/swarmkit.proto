@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package swarmkit.v1;
+
+// A single per-vehicle agent running on the edge (e.g. Raspberry Pi).
+// - Accepts commands (from CLI or server)
+// - Publishes telemetry
+// - Transfers arbitrary data (images, files, etc.) with resumable chunking
+service AgentService {
+  rpc Ping(PingRequest) returns (PingReply);
+
+  // Send one command to the agent. The agent routes the command to the configured backend
+  // (today: MAVSDK Server; future: other backends).
+  rpc SendCommand(CommandRequest) returns (CommandReply);
+
+  // Subscribe to telemetry stream.
+  rpc StreamTelemetry(TelemetryRequest) returns (stream TelemetryFrame);
+
+  // Bidirectional streaming data transfer.
+  // Client pushes chunks, server replies with acknowledgements (supports resume).
+  rpc Transfer(stream DataChunk) returns (stream DataAck);
+}
+
+message PingRequest {
+  string agent_id = 1;
+}
+
+message PingReply {
+  string agent_id = 1;
+  string version = 2;
+  int64 unix_time_ms = 3;
+}
+
+// --- Commands ---
+
+message CommandContext {
+  string drone_id = 1;
+  int32 priority = 2;
+  int64 deadline_unix_ms = 3;
+  string correlation_id = 4;
+}
+
+message CmdArm {}
+message CmdDisarm {}
+message CmdLand {}
+
+message CmdTakeoff {
+  double alt_m = 1;
+}
+
+message CmdSetRole {
+  string role = 1;
+}
+
+message DataRef {
+  string transfer_id = 1;
+  uint64 size_bytes = 2;
+  string mime_type = 3;
+}
+
+message CmdSendData {
+  DataRef ref = 1;
+  string dst_agent_id = 2;
+}
+
+message Command {
+  oneof kind {
+    CmdArm arm = 1;
+    CmdDisarm disarm = 2;
+    CmdTakeoff takeoff = 3;
+    CmdLand land = 4;
+    CmdSetRole set_role = 5;
+    CmdSendData send_data = 6;
+  }
+}
+
+message CommandRequest {
+  CommandContext ctx = 1;
+  Command cmd = 2;
+}
+
+message CommandReply {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    OK = 1;
+    REJECTED = 2;
+    FAILED = 3;
+  }
+  Status status = 1;
+  string message = 2;
+}
+
+// --- Telemetry ---
+
+message TelemetryRequest {
+  string drone_id = 1;
+  int32 rate_hz = 2; // 0 => default
+}
+
+message TelemetryFrame {
+  string drone_id = 1;
+  int64 unix_time_ms = 2;
+
+  // Minimal baseline fields. Extend freely.
+  double lat_deg = 3;
+  double lon_deg = 4;
+  float rel_alt_m = 5;
+  float battery_percent = 6;
+  string mode = 7;
+}
+
+// --- Resumable streaming data transfer ---
+
+message DataChunk {
+  // A stable identifier for resume/correlation. Client should generate UUID.
+  string transfer_id = 1;
+
+  // Logical routing identifiers. For now, the receiver is the agent you connected to.
+  // Later: agent can forward to other agents.
+  string src_agent_id = 2;
+  string dst_agent_id = 3;
+
+  uint64 offset = 4;
+  bytes data = 5;
+  uint32 crc32 = 6;
+  bool eof = 7;
+
+  // Optional hints.
+  string filename = 8;
+  string mime_type = 9;
+}
+
+message DataAck {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    OK = 1;
+    BAD_CHECKSUM = 2;
+    BAD_OFFSET = 3;
+    FAILED = 4;
+  }
+  string transfer_id = 1;
+  uint64 next_offset = 2;
+  Status status = 3;
+  string message = 4;
+}
