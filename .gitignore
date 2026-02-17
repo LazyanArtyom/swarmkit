@@ -11,6 +11,10 @@ DartConfiguration.tcl
 install_manifest.txt
 compile_commands.json
 
+# clangd / editor caches
+.cache/
+.cache/**
+
 # Generated (protobuf + configured headers)
 generated/
 **/generated/
