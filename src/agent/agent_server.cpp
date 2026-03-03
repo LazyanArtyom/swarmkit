@@ -12,12 +12,12 @@
 #include <thread>
 #include <utility>
 
-#include "swarmkit.grpc.pb.h"
-#include "swarmkit.pb.h"
 #include "swarmkit/core/crc32.h"
 #include "swarmkit/core/drone_backend.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/version.h"
+#include "swarmkit/v1/swarmkit.grpc.pb.h"
+#include "swarmkit/v1/swarmkit.pb.h"
 
 namespace swarmkit::agent {
 namespace {

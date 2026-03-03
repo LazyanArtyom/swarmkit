@@ -10,6 +10,12 @@ CTestTestfile.cmake
 DartConfiguration.tcl
 install_manifest.txt
 compile_commands.json
+dist/
+_CPack_Packages/
+
+
+# Conan generated output (keep the recipe, ignore generated folders)
+build/conan/
 
 # clangd / editor caches
 .cache/

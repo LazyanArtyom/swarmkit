@@ -1,5 +1,3 @@
-# tests/CMakeLists.txt
-
 add_executable(swarmkit_tests
     test_basic.cpp
 )
@@ -10,7 +8,7 @@ target_link_libraries(swarmkit_tests PRIVATE
 )
 
 target_include_directories(swarmkit_tests PRIVATE
-    ${CMAKE_BINARY_DIR}/generated/include
+    ${CMAKE_BINARY_DIR}/generated
 )
 
 swarmkit_set_warnings(swarmkit_tests)

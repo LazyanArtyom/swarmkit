@@ -1,24 +1,46 @@
 from conan import ConanFile
-from conan.tools.cmake import cmake_layout
-
+from conan.tools.cmake import CMake, cmake_layout
+from pathlib import Path
 
 class SwarmkitConan(ConanFile):
     name = "swarmkit"
-    version = "0.2.0"
-    package_type = "application"
+    package_type = "library"
 
     settings = "os", "arch", "compiler", "build_type"
+    options = {"shared": [True, False], "with_tools": [True, False], "with_tests": [True, False]}
+    default_options = {"shared": False, "with_tools": False, "with_tests": False}
 
-    # Keep dependencies minimal & portable.
     requires = (
         "grpc/1.67.1",
         "protobuf/5.27.0",
         "spdlog/1.17.0",
         "yaml-cpp/0.8.0",
+        "zlib/1.3.1",
         "catch2/3.8.0",
     )
 
     generators = ("CMakeToolchain", "CMakeDeps", "VirtualRunEnv")
 
+    def set_version(self):
+        self.version = (Path(self.recipe_folder) / "VERSION").read_text(encoding="utf-8").strip()
+
     def layout(self):
         cmake_layout(self)
+
+    def build(self):
+        cmake = CMake(self)
+        cmake.configure(variables={
+            "SWARMKIT_BUILD_TOOLS": "ON" if self.options.with_tools else "OFF",
+            "SWARMKIT_BUILD_TESTS": "ON" if self.options.with_tests else "OFF",
+            "BUILD_TESTING": "ON" if self.options.with_tests else "OFF",
+        })
+        cmake.build()
+        if self.options.with_tests:
+            cmake.test()
+
+    def package(self):
+        cmake = CMake(self)
+        cmake.install()
+
+    def package_info(self):
+        self.cpp_info.set_property("cmake_file_name", "SwarmKit")

@@ -105,9 +105,6 @@
       "windows": {
         "command": "cmake --build --preset win-debug"
       },
-      "group": {
-        "kind": "build"
-      },
       "dependsOn": [
         "configure-debug"
       ],
@@ -124,9 +121,6 @@
       },
       "windows": {
         "command": "cmake --build --preset win-release"
-      },
-      "group": {
-        "kind": "build"
       },
       "dependsOn": [
         "configure-release"
@@ -204,8 +198,7 @@
         "copy-compile-commands-debug"
       ],
       "group": {
-        "kind": "build",
-        "isDefault": true
+        "kind": "build"
       },
       "problemMatcher": []
     },
@@ -224,13 +217,13 @@
       "label": "run-agent-debug",
       "type": "shell",
       "linux": {
-        "command": "${workspaceFolder}/build/linux-debug/swarmkit_agent"
+        "command": "${workspaceFolder}/build/linux-debug/apps/swarmkit-agent"
       },
       "osx": {
-        "command": "${workspaceFolder}/build/mac-debug/swarmkit_agent"
+        "command": "${workspaceFolder}/build/mac-debug/apps/swarmkit-agent"
       },
       "windows": {
-        "command": "${workspaceFolder}\\build\\win-debug\\swarmkit_agent.exe"
+        "command": "${workspaceFolder}\\build\\win-debug\\apps\\swarmkit-agent.exe"
       },
       "dependsOn": [
         "build-project-debug"
@@ -248,14 +241,14 @@
         "command": "bash",
         "args": [
           "-lc",
-          "${workspaceFolder}/build/linux-debug/swarmkit_cli --addr 127.0.0.1:50061 ping"
+          "${workspaceFolder}/build/linux-debug/apps/swarmkit-cli 127.0.0.1:50061"
         ]
       },
       "osx": {
         "command": "bash",
         "args": [
           "-lc",
-          "${workspaceFolder}/build/mac-debug/swarmkit_cli --addr 127.0.0.1:50061 ping"
+          "${workspaceFolder}/build/mac-debug/apps/swarmkit-cli 127.0.0.1:50061"
         ]
       },
       "windows": {
@@ -265,100 +258,7 @@
           "-ExecutionPolicy",
           "Bypass",
           "-Command",
-          "& \"${workspaceFolder}\\build\\win-debug\\swarmkit_cli.exe\" --addr 127.0.0.1:50061 ping"
-        ]
-      },
-      "dependsOn": [
-        "build-project-debug"
-      ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "run-agent-release",
-      "type": "shell",
-      "linux": {
-        "command": "${workspaceFolder}/build/linux-release/swarmkit_agent"
-      },
-      "osx": {
-        "command": "${workspaceFolder}/build/mac-release/swarmkit_agent"
-      },
-      "windows": {
-        "command": "${workspaceFolder}\\build\\win-release\\swarmkit_agent.exe"
-      },
-      "dependsOn": [
-        "build-project-release"
-      ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "run-cli-release",
-      "type": "shell",
-      "linux": {
-        "command": "bash",
-        "args": [
-          "-lc",
-          "${workspaceFolder}/build/linux-release/swarmkit_cli --addr 127.0.0.1:50061 ping"
-        ]
-      },
-      "osx": {
-        "command": "bash",
-        "args": [
-          "-lc",
-          "${workspaceFolder}/build/mac-release/swarmkit_cli --addr 127.0.0.1:50061 ping"
-        ]
-      },
-      "windows": {
-        "command": "powershell",
-        "args": [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-Command",
-          "& \"${workspaceFolder}\\build\\win-release\\swarmkit_cli.exe\" --addr 127.0.0.1:50061 ping"
-        ]
-      },
-      "dependsOn": [
-        "build-project-release"
-      ],
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "run-tests-debug",
-      "type": "shell",
-      "linux": {
-        "command": "bash",
-        "args": [
-          "-lc",
-          "ctest --preset linux-debug --output-on-failure"
-        ]
-      },
-      "osx": {
-        "command": "bash",
-        "args": [
-          "-lc",
-          "ctest --preset mac-debug --output-on-failure"
-        ]
-      },
-      "windows": {
-        "command": "powershell",
-        "args": [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-Command",
-          "ctest --preset win-debug --output-on-failure"
+          "& \"${workspaceFolder}\\build\\win-debug\\apps\\swarmkit-cli.exe\" 127.0.0.1:50061"
         ]
       },
       "dependsOn": [
@@ -394,7 +294,7 @@
           "-ExecutionPolicy",
           "Bypass",
           "-Command",
-          "ctest --preset win-debug --output-on-failure"
+          "ctest --preset win-release --output-on-failure"
         ]
       },
       "dependsOn": [
@@ -407,23 +307,71 @@
       "problemMatcher": []
     },
     {
-      "label": "kb: build debug",
+      "label": "package-sdk-release",
       "type": "shell",
-      "dependsOn": [
-        "build-project-debug"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "kb: build release",
-      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "chmod +x scripts/package_release.sh && ./scripts/package_release.sh linux-release sdk"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "chmod +x scripts/package_release.sh && ./scripts/package_release.sh mac-release sdk"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          ".\\scripts\\package_release.ps1 -Preset win-release -What sdk"
+        ]
+      },
       "dependsOn": [
         "build-project-release"
       ],
       "problemMatcher": []
     },
     {
-      "label": "kb: run agent debug",
+      "label": "package-tools-release",
+      "type": "shell",
+      "linux": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "chmod +x scripts/package_release.sh && ./scripts/package_release.sh linux-release tools"
+        ]
+      },
+      "osx": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "chmod +x scripts/package_release.sh && ./scripts/package_release.sh mac-release tools"
+        ]
+      },
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          ".\\scripts\\package_release.ps1 -Preset win-release -What tools"
+        ]
+      },
+      "dependsOn": [
+        "build-project-release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "kb: run (F7)",
       "type": "shell",
       "dependsOn": [
         "run-agent-debug"
@@ -431,42 +379,13 @@
       "problemMatcher": []
     },
     {
-      "label": "kb: run cli debug",
+      "label": "kb: release + packages (F8)",
       "type": "shell",
       "dependsOn": [
-        "run-cli-debug"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "kb: run agent release",
-      "type": "shell",
-      "dependsOn": [
-        "run-agent-release"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "kb: run cli release",
-      "type": "shell",
-      "dependsOn": [
-        "run-cli-release"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "kb: test debug",
-      "type": "shell",
-      "dependsOn": [
-        "run-tests-debug"
-      ],
-      "problemMatcher": []
-    },
-    {
-      "label": "kb: test release",
-      "type": "shell",
-      "dependsOn": [
-        "run-tests-release"
+        "build-project-release",
+        "run-tests-release",
+        "package-sdk-release",
+        "package-tools-release"
       ],
       "problemMatcher": []
     }

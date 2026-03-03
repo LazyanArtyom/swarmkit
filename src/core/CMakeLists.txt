@@ -7,7 +7,8 @@ add_library(swarmkit_core STATIC
 
 target_include_directories(swarmkit_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../../generated/include>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>
+    $<INSTALL_INTERFACE:include>
 )
 
 target_link_libraries(swarmkit_core PUBLIC
@@ -16,6 +17,8 @@ target_link_libraries(swarmkit_core PUBLIC
     yaml-cpp::yaml-cpp
     ZLIB::ZLIB
 )
+
+set_target_properties(swarmkit_core PROPERTIES EXPORT_NAME core)
 
 swarmkit_set_warnings(swarmkit_core)
 swarmkit_enable_sanitizers(swarmkit_core)

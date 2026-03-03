@@ -12,7 +12,10 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "SWARMKIT_BUILD_TOOLS": "ON",
+        "SWARMKIT_BUILD_TESTS": "ON",
+        "BUILD_TESTING": "ON"
       }
     },
     {
@@ -79,6 +82,33 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "linux-sdk-release",
+      "inherits": "linux-release",
+      "cacheVariables": {
+        "SWARMKIT_BUILD_TOOLS": "OFF",
+        "SWARMKIT_BUILD_TESTS": "OFF",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "mac-sdk-release",
+      "inherits": "mac-release",
+      "cacheVariables": {
+        "SWARMKIT_BUILD_TOOLS": "OFF",
+        "SWARMKIT_BUILD_TESTS": "OFF",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "win-sdk-release",
+      "inherits": "win-release",
+      "cacheVariables": {
+        "SWARMKIT_BUILD_TOOLS": "OFF",
+        "SWARMKIT_BUILD_TESTS": "OFF",
+        "BUILD_TESTING": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -110,6 +140,21 @@
     {
       "name": "win-release",
       "configurePreset": "win-release",
+      "jobs": 0
+    },
+    {
+      "name": "linux-sdk-release",
+      "configurePreset": "linux-sdk-release",
+      "jobs": 0
+    },
+    {
+      "name": "mac-sdk-release",
+      "configurePreset": "mac-sdk-release",
+      "jobs": 0
+    },
+    {
+      "name": "win-sdk-release",
+      "configurePreset": "win-sdk-release",
       "jobs": 0
     }
   ],
