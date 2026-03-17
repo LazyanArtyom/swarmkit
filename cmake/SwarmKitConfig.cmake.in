@@ -1,4 +1,40 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
+# ---------------------------------------------------------------------------
+# _swarmkit_tp  — root of the bundled full_deploy tree.
+# Conan full_deploy structure:
+#   third_party/full_deploy/host/<name>/<version>/<build_type>/<arch>/
+#
+# This variable is referenced by the bundled CMakeDeps data files in deps/
+# (e.g. deps/fmt-release-armv8-data.cmake) where the original absolute
+# staging path has been replaced with ${_swarmkit_tp} at pack time.
+# ---------------------------------------------------------------------------
+set(_swarmkit_tp "${PACKAGE_PREFIX_DIR}/third_party/full_deploy/host")
+
+# ---------------------------------------------------------------------------
+# deps/ contains all Conan-generated CMakeDeps find files, copied from the
+# build generators folder with absolute staging paths replaced by the cmake
+# variable reference ${_swarmkit_tp} (resolved above).
+#
+# Adding deps/ to CMAKE_PREFIX_PATH lets find_dependency locate *Config.cmake
+# files directly in that directory.
+# Adding deps/ to CMAKE_MODULE_PATH lets it locate Find*.cmake files too.
+# ---------------------------------------------------------------------------
+set(_swarmkit_deps_dir "${CMAKE_CURRENT_LIST_DIR}/deps")
+if(EXISTS "${_swarmkit_deps_dir}")
+    list(PREPEND CMAKE_PREFIX_PATH "${_swarmkit_deps_dir}")
+    list(PREPEND CMAKE_MODULE_PATH "${_swarmkit_deps_dir}")
+endif()
+unset(_swarmkit_deps_dir)
+
+find_dependency(fmt      CONFIG)
+find_dependency(spdlog   CONFIG)
+find_dependency(yaml-cpp CONFIG)
+find_dependency(ZLIB     CONFIG)
+find_dependency(Protobuf CONFIG)
+find_dependency(gRPC     CONFIG)
+
 include("${CMAKE_CURRENT_LIST_DIR}/SwarmKitTargets.cmake")
 check_required_components(SwarmKit)

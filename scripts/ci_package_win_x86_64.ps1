@@ -1,80 +1,122 @@
+# Windows x86_64 CI pipeline: conan install -> build -> test -> sdk + tools zips.
+# Run from the project root.
+#
+#   powershell -ExecutionPolicy Bypass -File scripts\ci_package_win_x86_64.ps1
+
 param(
-  [string]$Preset = "win-release"
+    [string]$Preset = "win-release"
 )
 
-# Windows runner (x86_64)
-# Produces:
-#   dist\swarmkit-<ver>-sdk-win-x86_64.zip
-#   dist\swarmkit-<ver>-tools-win-x86_64.zip
-# Both extract into a top folder with same base name.
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
-$PlatformTag = "win-x86_64"
-$Version = (Get-Content VERSION -Raw).Trim()
-
-$BuildDir = Join-Path "build" $Preset
-$PackagesDir = Join-Path $BuildDir "packages"
-$DistDir = "dist"
+$PlatformTag  = "win-x86_64"
+$Version      = (Get-Content VERSION -Raw).Trim()
+$BuildDir     = "build\$Preset"
+$GenDir       = "build\conan\build\Release\generators"
+$DistDir      = "dist"
 
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-New-Item -ItemType Directory -Force -Path $PackagesDir | Out-Null
 
-# Keep repo root clean from previous cpack runs
-if (Test-Path "_CPack_Packages") { Remove-Item -Recurse -Force "_CPack_Packages" }
+# ---------------------------------------------------------------------------
+# 1) Conan: generate toolchain + cmake find-modules.
+# ---------------------------------------------------------------------------
+conan install . `
+    -of build\conan `
+    -s build_type=Release `
+    -s compiler.cppstd=23 `
+    --build=missing
 
-# 1) Conan deps (Release, C++23)
-conan install . -of build\conan -s build_type=Release -s compiler.cppstd=23 --build=missing
-
+# ---------------------------------------------------------------------------
 # 2) Configure + build + test
+# ---------------------------------------------------------------------------
 cmake --preset $Preset
 cmake --build --preset $Preset
 ctest --preset $Preset --output-on-failure
 
-function Repack-Zip-WithTopDir([string]$InputZip, [string]$TopDirName, [string]$OutputZip) {
-  $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
-  $inDir = Join-Path $tmp "in"
-  $outDir = Join-Path $tmp "out"
-  $topDir = Join-Path $outDir $TopDirName
+# ---------------------------------------------------------------------------
+# Bundle-CmakeDeps <StageRoot>
+#
+# Copies Conan-generated CMakeDeps find files into
+# <StageRoot>\lib\cmake\SwarmKit\deps\ and patches *-data.cmake files so the
+# absolute staging path is replaced with ${_swarmkit_tp}, making the cmake
+# find files relocatable when the SDK zip is unpacked anywhere.
+# ---------------------------------------------------------------------------
+function Bundle-CmakeDeps([string]$StageRoot) {
+    $DestDir = Join-Path $StageRoot "lib\cmake\SwarmKit\deps"
+    $TpAbs   = (Resolve-Path $StageRoot).Path + "\third_party\full_deploy\host"
 
-  New-Item -ItemType Directory -Force -Path $inDir | Out-Null
-  New-Item -ItemType Directory -Force -Path $topDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
-  Expand-Archive -Force -Path $InputZip -DestinationPath $inDir
+    $Count = 0
+    Get-ChildItem "$GenDir\*.cmake" | ForEach-Object {
+        $FName = $_.Name
+        if ($FName -eq "conan_toolchain.cmake" -or $FName -eq "conandeps_legacy.cmake") { return }
 
-  Get-ChildItem -Force $inDir | ForEach-Object {
-    Move-Item -Force $_.FullName $topDir
-  }
-
-  if (Test-Path $OutputZip) { Remove-Item -Force $OutputZip }
-  Compress-Archive -Path $topDir -DestinationPath $OutputZip
-
-  Remove-Item -Recurse -Force $tmp
+        $Dest = Join-Path $DestDir $FName
+        if ($FName -like "*-data.cmake") {
+            (Get-Content $_.FullName -Raw) `
+                -replace [regex]::Escape($TpAbs), '${_swarmkit_tp}' |
+                Set-Content -NoNewline -Path $Dest
+        } else {
+            Copy-Item $_.FullName $Dest
+        }
+        $Count++
+    }
+    Write-Host "  Bundled $Count cmake dep files -> $DestDir"
 }
 
-function Run-Component([string]$Component) {
-  $Base = "swarmkit-$Version-$Component-$PlatformTag"
-  $Out = Join-Path $DistDir "$Base.zip"
+# ---------------------------------------------------------------------------
+# 3) Stage and pack each component
+# ---------------------------------------------------------------------------
+function Package-Component([string]$Component) {
+    $Base      = "swarmkit-$Version-$Component-$PlatformTag"
+    $StageRoot = "$BuildDir\stage\$Base"
+    $Out       = "$DistDir\$Base.zip"
 
-  # Remove only old zip outputs in the build packages dir to avoid stale picks
-  Remove-Item -Force "$PackagesDir\*.zip" -ErrorAction SilentlyContinue
+    if (Test-Path $StageRoot) { Remove-Item -Recurse -Force $StageRoot }
+    New-Item -ItemType Directory -Force -Path $StageRoot | Out-Null
 
-  # Generate component archive into build\<preset>\packages\
-  cpack --config "$BuildDir\CPackConfig.cmake" -G ZIP -D "CPACK_COMPONENTS_ALL=$Component"
+    cmake --install $BuildDir --prefix $StageRoot --component $Component
 
-  $Produced = Get-ChildItem "$PackagesDir\*.zip" -ErrorAction SilentlyContinue |
-              Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if ($null -eq $Produced) {
-    throw "ERROR: cpack produced no .zip in $PackagesDir"
-  }
+    if ($Component -eq "sdk") {
+        conan install . `
+            -of build\conan `
+            -s build_type=Release `
+            -s compiler.cppstd=23 `
+            --build=missing `
+            --deployer=full_deploy `
+            "--deployer-folder=$StageRoot\third_party"
 
-  Repack-Zip-WithTopDir -InputZip $Produced.FullName -TopDirName $Base -OutputZip $Out
-  Write-Host "Created: $Out"
+        $Libs = Get-ChildItem "$StageRoot\lib\swarmkit_*.lib" -ErrorAction SilentlyContinue
+        if ($null -eq $Libs -or $Libs.Count -eq 0) {
+            throw "ERROR: SDK install produced no SwarmKit libs under $StageRoot\lib\"
+        }
+
+        if (-not (Test-Path "$StageRoot\third_party\full_deploy")) {
+            throw "ERROR: full_deploy did not create $StageRoot\third_party\full_deploy\"
+        }
+
+        Bundle-CmakeDeps $StageRoot
+    }
+
+    if (Test-Path $Out) { Remove-Item -Force $Out }
+
+    # Compress-Archive from the stage parent so the zip root is the base folder.
+    Push-Location "$BuildDir\stage"
+    try {
+        Compress-Archive -Path $Base -DestinationPath (Join-Path (Resolve-Path "..\..\..") $Out)
+    } finally {
+        Pop-Location
+    }
+    Write-Host "Created: $Out"
 }
 
-Run-Component "sdk"
-Run-Component "tools"
+Package-Component "sdk"
+Package-Component "tools"
 
-# Remove cpack temp folder in repo root if it appeared
-if (Test-Path "_CPack_Packages") { Remove-Item -Recurse -Force "_CPack_Packages" }
-
-Write-Host "Artifacts:"
-Get-ChildItem $DistDir | Where-Object { $_.Name -like "*$PlatformTag*" } | ForEach-Object { $_.Name }
+Write-Host ""
+Write-Host "Artifacts in ${DistDir}:"
+Get-ChildItem $DistDir |
+    Where-Object { $_.Name -like "*$PlatformTag*" } |
+    ForEach-Object { $_.Name }

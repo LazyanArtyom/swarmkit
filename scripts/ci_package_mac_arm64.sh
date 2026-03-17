@@ -1,82 +1,119 @@
 #!/usr/bin/env bash
+# macOS ARM64 CI pipeline: conan install → build → test → sdk + tools tarballs.
+# Run from the project root.
 set -euo pipefail
-
-# macOS Apple Silicon runner (arm64)
-# Produces:
-#   dist/swarmkit-<ver>-sdk-mac-arm64.tar.gz
-#   dist/swarmkit-<ver>-tools-mac-arm64.tar.gz
-# Both extract into a top folder with same base name.
 
 preset="mac-release"
 platform_tag="mac-arm64"
 
 version="$(tr -d ' \t\r\n' < VERSION)"
 build_dir="build/${preset}"
-packages_dir="${build_dir}/packages"
+generators_dir="build/conan/build/Release/generators"
 dist_dir="dist"
 
 mkdir -p "${dist_dir}"
-mkdir -p "${packages_dir}"
 
-# Keep repo root clean from previous cpack runs
-rm -rf "_CPack_Packages" 2>/dev/null || true
+# ---------------------------------------------------------------------------
+# 1) Conan: generate toolchain + cmake find-modules.
+#    cmake_layout puts generators at build/conan/build/Release/generators/.
+# ---------------------------------------------------------------------------
+conan install . \
+    -of build/conan \
+    -s build_type=Release \
+    -s compiler.cppstd=23 \
+    --build=missing
 
-# 1) Conan deps (Release, C++23)
-conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing
-
+# ---------------------------------------------------------------------------
 # 2) Configure + build + test
+# ---------------------------------------------------------------------------
 cmake --preset "${preset}"
 cmake --build --preset "${preset}"
 ctest --preset "${preset}" --output-on-failure
 
-# Helper: repack tgz to include a single top folder
-repack_tgz_with_topdir() {
-  local input_tgz="$1"
-  local topdir="$2"
-  local output_tgz="$3"
+# ---------------------------------------------------------------------------
+# bundle_cmake_deps <stage_root>
+#
+# Copies Conan-generated CMakeDeps find files into
+# <stage_root>/lib/cmake/SwarmKit/deps/ and patches the *-data.cmake files
+# so the absolute staging path is replaced with ${_swarmkit_tp}, making the
+# cmake find files relocatable when the SDK tarball is unpacked anywhere.
+# SwarmKitConfig.cmake sets _swarmkit_tp from PACKAGE_PREFIX_DIR at configure time.
+# ---------------------------------------------------------------------------
+bundle_cmake_deps() {
+    local stage_root="$1"
+    local dest_dir="${stage_root}/lib/cmake/SwarmKit/deps"
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
+    local tp_abs
+    tp_abs="$(cd "${stage_root}" && pwd)/third_party/full_deploy/host"
 
-  # Trap uses concrete path (no unbound-variable issues with set -u)
-  trap "rm -rf '${tmp_dir}'" RETURN
+    mkdir -p "${dest_dir}"
 
-  mkdir -p "${tmp_dir}/in" "${tmp_dir}/out/${topdir}"
+    for cmake_file in "${generators_dir}"/*.cmake; do
+        local fname
+        fname="$(basename "${cmake_file}")"
 
-  tar -xzf "${input_tgz}" -C "${tmp_dir}/in"
-  shopt -s dotglob nullglob
-  mv "${tmp_dir}/in"/* "${tmp_dir}/out/${topdir}/"
-  tar -czf "${output_tgz}" -C "${tmp_dir}/out" "${topdir}"
+        case "${fname}" in
+            conan_toolchain.cmake|conandeps_legacy.cmake) continue ;;
+        esac
+
+        if [[ "${fname}" == *-data.cmake ]]; then
+            sed "s|${tp_abs}|\${_swarmkit_tp}|g" "${cmake_file}" > "${dest_dir}/${fname}"
+        else
+            cp "${cmake_file}" "${dest_dir}/${fname}"
+        fi
+    done
+
+    local count
+    count="$(ls "${dest_dir}"/*.cmake 2>/dev/null | wc -l | tr -d ' ')"
+    echo "  Bundled ${count} cmake dep files → ${dest_dir}"
 }
 
-run_component() {
-  local component="$1"
-  local base="swarmkit-${version}-${component}-${platform_tag}"
-  local out="${dist_dir}/${base}.tar.gz"
+# ---------------------------------------------------------------------------
+# 3) Stage and pack each CPack component
+# ---------------------------------------------------------------------------
+package_component() {
+    local component="$1"
+    local base="swarmkit-${version}-${component}-${platform_tag}"
+    local stage_root="${build_dir}/stage/${base}"
+    local out="${dist_dir}/${base}.tar.gz"
 
-  # Remove only old tgz outputs in the build packages dir to avoid stale picks
-  rm -f "${packages_dir}/"*.tar.gz 2>/dev/null || true
+    rm -rf "${stage_root}"
+    mkdir -p "${stage_root}"
 
-  # Generate component archive into build/<preset>/packages/
-  cpack --config "${build_dir}/CPackConfig.cmake" -G TGZ -D "CPACK_COMPONENTS_ALL=${component}"
+    cmake --install "${build_dir}" --prefix "${stage_root}" --component "${component}"
 
-  # Find newest archive produced
-  local produced
-  produced="$(ls -1t "${packages_dir}/"*.tar.gz 2>/dev/null | head -n 1 || true)"
-  if [[ -z "${produced}" ]]; then
-    echo "ERROR: cpack produced no .tar.gz in ${packages_dir}"
-    exit 2
-  fi
+    if [[ "${component}" == "sdk" ]]; then
+        # Deploy bundled deps. Reuse -of build/conan (same as build step) so
+        # Conan does not add a new entry to CMakeUserPresets.json (which would
+        # create a duplicate conan-release preset and break cmake).
+        conan install . \
+            -of build/conan \
+            -s build_type=Release \
+            -s compiler.cppstd=23 \
+            --build=missing \
+            --deployer=full_deploy \
+            --deployer-folder "${stage_root}/third_party"
 
-  repack_tgz_with_topdir "${produced}" "${base}" "${out}"
-  echo "Created: ${out}"
+        if ! ls "${stage_root}/lib/"libswarmkit_*.a >/dev/null 2>&1; then
+            echo "ERROR: SDK install produced no SwarmKit libs under ${stage_root}/lib/" >&2
+            exit 2
+        fi
+
+        if [[ ! -d "${stage_root}/third_party/full_deploy" ]]; then
+            echo "ERROR: full_deploy did not create ${stage_root}/third_party/full_deploy/" >&2
+            exit 2
+        fi
+
+        bundle_cmake_deps "${stage_root}"
+    fi
+
+    tar -czf "${out}" -C "${build_dir}/stage" "${base}"
+    echo "Created: ${out}"
 }
 
-run_component sdk
-run_component tools
+package_component sdk
+package_component tools
 
-# Remove cpack temp folder in repo root if it appeared
-rm -rf "_CPack_Packages" 2>/dev/null || true
-
-echo "Artifacts:"
+echo ""
+echo "Artifacts in ${dist_dir}/:"
 ls -1 "${dist_dir}" | grep "${platform_tag}" || true

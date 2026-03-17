@@ -84,6 +84,15 @@ install(TARGETS
     COMPONENT sdk
 )
 
+install(FILES
+    $<TARGET_FILE:swarmkit_core>
+    $<TARGET_FILE:swarmkit_proto>
+    $<TARGET_FILE:swarmkit_client>
+    $<TARGET_FILE:swarmkit_agent_runtime>
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    COMPONENT sdk
+)
+
 # CMake package files
 configure_package_config_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SwarmKitConfig.cmake.in"

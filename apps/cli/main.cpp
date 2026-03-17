@@ -1,5 +1,4 @@
 #include <cstdlib>
-#include <iostream>
 #include <string>
 
 #include "swarmkit/client/client.h"
@@ -12,21 +11,23 @@ int main(int argc, char** argv) {
     swarmkit::core::Logger::Init(cfg);
 
     std::string addr = "127.0.0.1:50061";
-    if (argc >= 2) addr = argv[1];
+    if (argc >= 2) {
+        addr = argv[1];
+    }
 
-    swarmkit::client::ClientConfig cc;
-    cc.address = addr;
-    cc.client_agent_id = "cli";
+    swarmkit::client::ClientConfig config;
+    config.address = addr;
+    config.client_agent_id = "cli";
 
-    swarmkit::client::Client client(cc);
-    const auto res = client.Ping();
+    swarmkit::client::Client client(config);
+    const auto kRes = client.Ping();
 
-    if (!res.ok) {
-        swarmkit::core::Logger::ErrorFmt("Ping failed: {}", res.error_message);
+    if (!kRes.ok) {
+        swarmkit::core::Logger::ErrorFmt("Ping failed: {}", kRes.error_message);
         return EXIT_FAILURE;
     }
 
-    swarmkit::core::Logger::InfoFmt("Ping OK: agent_id={} version={} time_ms={}", res.agent_id,
-                                    res.version, res.unix_time_ms);
+    swarmkit::core::Logger::InfoFmt("Ping OK: agent_id={} version={} time_ms={}", kRes.agent_id,
+                                    kRes.version, kRes.unix_time_ms);
     return EXIT_SUCCESS;
 }
