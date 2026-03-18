@@ -1,12 +1,11 @@
-#ifndef SWARMKIT_CORE_CRC32_H_
-#define SWARMKIT_CORE_CRC32_H_
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
 
 namespace swarmkit::core {
 
+// CRC-32 checksum.  Uses zlib if available, otherwise software fallback.
 std::uint32_t Crc32Bytes(const void* data, std::size_t size) noexcept;
 
 }  // namespace swarmkit::core
-#endif  // SWARMKIT_CORE_CRC32_H_

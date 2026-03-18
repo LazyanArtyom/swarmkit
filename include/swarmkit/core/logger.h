@@ -1,5 +1,4 @@
-#ifndef SWARMKIT_CORE_LOGGER_H_
-#define SWARMKIT_CORE_LOGGER_H_
+#pragma once
 
 #include <fmt/format.h>
 
@@ -95,4 +94,3 @@ class Logger final {
 
 }  // namespace swarmkit::core
 
-#endif  // SWARMKIT_CORE_LOGGER_H_

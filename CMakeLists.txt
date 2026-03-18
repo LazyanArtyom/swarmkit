@@ -22,7 +22,6 @@ option(SWARMKIT_BUILD_TESTS "Build unit tests" ON)
 
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
-find_package(yaml-cpp CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -76,7 +75,7 @@ install(TARGETS
     swarmkit_core
     swarmkit_proto
     swarmkit_client
-    swarmkit_agent_runtime
+    swarmkit_agent
     EXPORT SwarmKitTargets
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
@@ -88,7 +87,7 @@ install(FILES
     $<TARGET_FILE:swarmkit_core>
     $<TARGET_FILE:swarmkit_proto>
     $<TARGET_FILE:swarmkit_client>
-    $<TARGET_FILE:swarmkit_agent_runtime>
+    $<TARGET_FILE:swarmkit_agent>
     DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     COMPONENT sdk
 )
@@ -125,6 +124,3 @@ if (SWARMKIT_BUILD_TOOLS)
           RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
           COMPONENT tools)
 endif()
-
-# ---- Packaging ----
-include("${CMAKE_CURRENT_SOURCE_DIR}/packaging/cpack.cmake")

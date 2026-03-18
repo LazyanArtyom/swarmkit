@@ -2,144 +2,257 @@ syntax = "proto3";
 
 package swarmkit.v1;
 
-// A single per-vehicle agent running on the edge (e.g. Raspberry Pi).
-// - Accepts commands (from CLI or server)
-// - Publishes telemetry
-// - Transfers arbitrary data (images, files, etc.) with resumable chunking
+/**
+ * A single per-vehicle agent running on the edge (e.g. Raspberry Pi).
+ * - Accepts commands subject to priority-based authority arbitration.
+ * - Publishes telemetry.
+ * - Transfers arbitrary data (images, files, etc.) with resumable chunking.
+ */
 service AgentService {
-  rpc Ping(PingRequest) returns (PingReply);
+    rpc Ping(PingRequest) returns (PingReply);
 
-  // Send one command to the agent. The agent routes the command to the configured backend
-  // (today: MAVSDK Server; future: other backends).
-  rpc SendCommand(CommandRequest) returns (CommandReply);
+    /// Send one flight command to the agent.
+    /// The agent routes the command through the CommandArbiter before
+    /// forwarding it to the configured backend.
+    rpc SendCommand(CommandRequest) returns (CommandReply);
 
-  // Subscribe to telemetry stream.
-  rpc StreamTelemetry(TelemetryRequest) returns (stream TelemetryFrame);
+    /// Subscribe to a server-streaming telemetry feed.
+    rpc StreamTelemetry(TelemetryRequest) returns (stream TelemetryFrame);
 
-  // Bidirectional streaming data transfer.
-  // Client pushes chunks, server replies with acknowledgements (supports resume).
-  rpc Transfer(stream DataChunk) returns (stream DataAck);
+    /// Subscribe to command-authority change events for a drone.
+    /// The stream delivers AuthorityEvent messages whenever a client acquires,
+    /// preempts, or releases command authority.  Use this to implement
+    /// pause/resume logic in clients with periodic command loops.
+    rpc WatchAuthority(WatchAuthorityRequest) returns (stream AuthorityEvent);
+
+    /// Bidirectional streaming data transfer.
+    /// Client pushes chunks; server replies with acknowledgements (resumable).
+    rpc Transfer(stream DataChunk) returns (stream DataAck);
 }
 
+// ---------------------------------------------------------------------------
+// Ping
+// ---------------------------------------------------------------------------
+
 message PingRequest {
-  string agent_id = 1;
+    string agent_id = 1;
 }
 
 message PingReply {
-  string agent_id = 1;
-  string version = 2;
-  int64 unix_time_ms = 3;
+    string agent_id    = 1;
+    string version     = 2;
+    int64  unix_time_ms = 3;
 }
 
-// --- Commands ---
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
 
+/**
+ * Standard priority levels for command arbitration.
+ * Values mirror swarmkit::agent::CommandPriority in commands.h.
+ */
+enum CommandPriority {
+    PRIORITY_OPERATOR   =  0;   // Default: CLI and SDK clients.
+    PRIORITY_SUPERVISOR = 10;   // Automated local systems.
+    PRIORITY_OVERRIDE   = 20;   // Deviation-correction / safety override server.
+    PRIORITY_EMERGENCY  = 100;  // Bypasses arbitration; always executes.
+}
+
+/**
+ * Metadata that travels with every command.
+ * The agent's CommandArbiter uses client_id and priority to decide
+ * whether the command is allowed to execute.
+ */
 message CommandContext {
-  string drone_id = 1;
-  int32 priority = 2;
-  int64 deadline_unix_ms = 3;
-  string correlation_id = 4;
+    string drone_id         = 1;  /// Target drone identifier.
+    int32  priority         = 2;  /// CommandPriority value (default: PRIORITY_OPERATOR).
+    int64  deadline_unix_ms = 3;  /// Execution deadline; 0 = no deadline.
+    string correlation_id   = 4;  /// Caller-assigned tracing ID.
+    string client_id        = 5;  /// Originating client identifier (required for arbitration).
 }
+
+// --- Flight commands (fundamental vehicle control) ---
 
 message CmdArm {}
 message CmdDisarm {}
 message CmdLand {}
 
 message CmdTakeoff {
-  double alt_m = 1;
+    double alt_m = 1;  /// Target altitude in metres AGL.
 }
+
+// --- Navigation commands (point-to-point movement) ---
+
+message CmdSetWaypoint {
+    double lat_deg   = 1;  /// Target latitude in decimal degrees.
+    double lon_deg   = 2;  /// Target longitude in decimal degrees.
+    double alt_m     = 3;  /// Target altitude in metres AGL.
+    float  speed_mps = 4;  /// Max travel speed in m/s; 0 = backend default.
+}
+
+message CmdReturnHome {}
+message CmdHoldPosition {}
+
+// --- Swarm commands (multi-agent coordination and choreography) ---
 
 message CmdSetRole {
-  string role = 1;
+    string role = 1;  /// Freeform role label (e.g. "leader", "follower-3").
 }
 
+message CmdSetFormation {
+    string formation_id = 1;  /// Identifier of the formation template.
+    int32  slot_index   = 2;  /// Zero-based position within the formation.
+}
+
+/**
+ * Execute a pre-defined choreography sequence.
+ * sync_unix_ms is the absolute UNIX timestamp (ms) at which all agents
+ * start simultaneously, enabling synchronised swarm animations.
+ * Set to 0 to start immediately.
+ */
+message CmdRunSequence {
+    string sequence_id   = 1;
+    int64  sync_unix_ms  = 2;
+}
+
+// --- Transfer routing (handled via Transfer RPC, not SendCommand) ---
+
 message DataRef {
-  string transfer_id = 1;
-  uint64 size_bytes = 2;
-  string mime_type = 3;
+    string transfer_id = 1;
+    uint64 size_bytes  = 2;
+    string mime_type   = 3;
 }
 
 message CmdSendData {
-  DataRef ref = 1;
-  string dst_agent_id = 2;
+    DataRef ref          = 1;
+    string  dst_agent_id = 2;
 }
 
+/**
+ * Top-level discriminated union mirroring the C++ Command variant.
+ * Grouped by category (flight / nav / swarm) to keep the oneof extensible.
+ */
 message Command {
-  oneof kind {
-    CmdArm arm = 1;
-    CmdDisarm disarm = 2;
-    CmdTakeoff takeoff = 3;
-    CmdLand land = 4;
-    CmdSetRole set_role = 5;
-    CmdSendData send_data = 6;
-  }
+    oneof kind {
+        // Flight
+        CmdArm          arm            = 1;
+        CmdDisarm       disarm         = 2;
+        CmdTakeoff      takeoff        = 3;
+        CmdLand         land           = 4;
+
+        // Navigation
+        CmdSetWaypoint  set_waypoint   = 10;
+        CmdReturnHome   return_home    = 11;
+        CmdHoldPosition hold_position  = 12;
+
+        // Swarm
+        CmdSetRole      set_role       = 20;
+        CmdSetFormation set_formation  = 21;
+        CmdRunSequence  run_sequence   = 22;
+
+        // Transfer routing (use Transfer RPC instead)
+        CmdSendData     send_data      = 30;
+    }
 }
 
 message CommandRequest {
-  CommandContext ctx = 1;
-  Command cmd = 2;
+    CommandContext ctx = 1;
+    Command        cmd = 2;
 }
 
 message CommandReply {
-  enum Status {
-    STATUS_UNSPECIFIED = 0;
-    OK = 1;
-    REJECTED = 2;
-    FAILED = 3;
-  }
-  Status status = 1;
-  string message = 2;
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+        OK       = 1;
+        REJECTED = 2;
+        FAILED   = 3;
+    }
+    Status status  = 1;
+    string message = 2;
 }
 
-// --- Telemetry ---
+// ---------------------------------------------------------------------------
+// Authority arbitration
+// ---------------------------------------------------------------------------
+
+/**
+ * Request to subscribe to authority change events for a drone.
+ * Register before starting a command loop so that preemption events
+ * are not missed.
+ */
+message WatchAuthorityRequest {
+    string drone_id  = 1;  /// Drone to watch.
+    string client_id = 2;  /// Registrant's client identifier.
+    int32  priority  = 3;  /// Registrant's authority priority level.
+}
+
+/**
+ * Delivered to watchers when authority over a drone changes.
+ *
+ * On PREEMPTED: stop sending commands until RESUMED arrives.
+ * On RESUMED:   resume the command loop.
+ * On EXPIRED:   your TTL elapsed; re-acquire by sending a new command.
+ */
+message AuthorityEvent {
+    enum Kind {
+        KIND_UNSPECIFIED = 0;
+        GRANTED   = 1;  /// This client was granted command authority.
+        PREEMPTED = 2;  /// Authority taken by a higher-priority client.
+        RESUMED   = 3;  /// Higher-priority client released; authority restored.
+        EXPIRED   = 4;  /// Authority TTL elapsed; must re-acquire.
+    }
+    Kind   kind             = 1;
+    string drone_id         = 2;
+    string holder_client_id = 3;  /// Who now holds authority.
+    int32  holder_priority  = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry
+// ---------------------------------------------------------------------------
 
 message TelemetryRequest {
-  string drone_id = 1;
-  int32 rate_hz = 2; // 0 => default
+    string drone_id = 1;
+    int32  rate_hz  = 2;  /// 0 => server default.
 }
 
 message TelemetryFrame {
-  string drone_id = 1;
-  int64 unix_time_ms = 2;
-
-  // Minimal baseline fields. Extend freely.
-  double lat_deg = 3;
-  double lon_deg = 4;
-  float rel_alt_m = 5;
-  float battery_percent = 6;
-  string mode = 7;
+    string drone_id        = 1;
+    int64  unix_time_ms    = 2;
+    double lat_deg         = 3;
+    double lon_deg         = 4;
+    float  rel_alt_m       = 5;
+    float  battery_percent = 6;
+    string mode            = 7;
 }
 
-// --- Resumable streaming data transfer ---
+// ---------------------------------------------------------------------------
+// Resumable streaming data transfer
+// ---------------------------------------------------------------------------
 
 message DataChunk {
-  // A stable identifier for resume/correlation. Client should generate UUID.
-  string transfer_id = 1;
-
-  // Logical routing identifiers. For now, the receiver is the agent you connected to.
-  // Later: agent can forward to other agents.
-  string src_agent_id = 2;
-  string dst_agent_id = 3;
-
-  uint64 offset = 4;
-  bytes data = 5;
-  uint32 crc32 = 6;
-  bool eof = 7;
-
-  // Optional hints.
-  string filename = 8;
-  string mime_type = 9;
+    string transfer_id  = 1;  /// Stable UUID for resume/correlation.
+    string src_agent_id = 2;
+    string dst_agent_id = 3;
+    uint64 offset       = 4;
+    bytes  data         = 5;
+    uint32 crc32        = 6;
+    bool   eof          = 7;
+    string filename     = 8;
+    string mime_type    = 9;
 }
 
 message DataAck {
-  enum Status {
-    STATUS_UNSPECIFIED = 0;
-    OK = 1;
-    BAD_CHECKSUM = 2;
-    BAD_OFFSET = 3;
-    FAILED = 4;
-  }
-  string transfer_id = 1;
-  uint64 next_offset = 2;
-  Status status = 3;
-  string message = 4;
+    enum Status {
+        STATUS_UNSPECIFIED = 0;
+        OK            = 1;
+        BAD_CHECKSUM  = 2;
+        BAD_OFFSET    = 3;
+        FAILED        = 4;
+    }
+    string transfer_id = 1;
+    uint64 next_offset = 2;
+    Status status      = 3;
+    string message     = 4;
 }

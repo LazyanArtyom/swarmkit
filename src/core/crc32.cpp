@@ -1,4 +1,4 @@
-#include "swarmkit/core/crc32.h"
+#include "crc32.h"
 
 #include <cstdint>
 

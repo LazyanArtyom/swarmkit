@@ -17,20 +17,20 @@ int main(int argc, char** argv) {
 
     swarmkit::client::ClientConfig config;
     config.address = agent_addr;
-    config.client_agent_id = "test-ping";
+    config.client_id = "test-ping";
 
     swarmkit::client::Client client(config);
-    const auto ping_result = client.Ping();
+    const auto kPingResult = client.Ping();
 
-    if (!ping_result.ok) {
-        std::cerr << "Ping FAILED: " << ping_result.error_message << "\n";
+    if (!kPingResult.ok) {
+        std::cerr << "Ping FAILED: " << kPingResult.error_message << "\n";
         return EXIT_FAILURE;
     }
 
     std::cout << "Ping OK\n"
-              << "  agent_id : " << ping_result.agent_id << "\n"
-              << "  version  : " << ping_result.version << "\n"
-              << "  time_ms  : " << ping_result.unix_time_ms << "\n";
+              << "  agent_id : " << kPingResult.agent_id << "\n"
+              << "  version  : " << kPingResult.version << "\n"
+              << "  time_ms  : " << kPingResult.unix_time_ms << "\n";
 
     return EXIT_SUCCESS;
 }
