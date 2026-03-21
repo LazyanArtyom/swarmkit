@@ -1,5 +1,12 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include <cstdlib>
 #include <string>
+#include <string_view>
 
 #include "swarmkit/agent/server.h"
 #include "swarmkit/agent/sim_backend.h"
@@ -7,23 +14,23 @@
 
 namespace {
 
-constexpr const char* kDefaultBindAddr = "0.0.0.0:50061";
-constexpr const char* kDefaultInboxDir = "/tmp/swarmkit_inbox";
-constexpr const char* kDefaultAgentId = "agent-1";
+constexpr std::string_view kDefaultBindAddr = "0.0.0.0:50061";
+constexpr std::string_view kDefaultInboxDir = "/tmp/swarmkit_inbox";
+constexpr std::string_view kDefaultAgentId = "agent-1";
 
-[[nodiscard]] std::string GetArg(int argc, char** argv, const std::string& key,
-                                 const std::string& default_value) {
+[[nodiscard]] std::string GetArg(int argc, char** argv, std::string_view key,
+                                 std::string_view default_value) {
     for (int idx = 1; idx + 1 < argc; ++idx) {
-        if (std::string(argv[idx]) == key) {
+        if (std::string_view{argv[idx]} == key) {
             return {argv[idx + 1]};
         }
     }
-    return default_value;
+    return std::string{default_value};
 }
 
-[[nodiscard]] bool HasFlag(int argc, char** argv, const std::string& flag) {
+[[nodiscard]] bool HasFlag(int argc, char** argv, std::string_view flag) {
     for (int idx = 1; idx < argc; ++idx) {
-        if (std::string(argv[idx]) == flag) {
+        if (std::string_view{argv[idx]} == flag) {
             return true;
         }
     }
@@ -72,10 +79,10 @@ int main(int argc, char** argv) {
     logger_cfg.sink_type = swarmkit::core::LogSinkType::kStdout;
     logger_cfg.level = swarmkit::core::LogLevel::kInfo;
 
-    const std::string log_file = GetArg(argc, argv, "--log-file", "");
-    if (!log_file.empty()) {
+    const std::string kLogFile = GetArg(argc, argv, "--log-file", "");
+    if (!kLogFile.empty()) {
         logger_cfg.sink_type = swarmkit::core::LogSinkType::kRotatingFile;
-        logger_cfg.log_file_path = log_file;
+        logger_cfg.log_file_path = kLogFile;
     }
 
     logger_cfg.level = ParseLogLevel(GetArg(argc, argv, "--log-level", "info"));

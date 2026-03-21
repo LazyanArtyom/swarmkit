@@ -1,21 +1,33 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #pragma once
 
 #include <fmt/format.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
 
 namespace swarmkit::core {
 
+/// Bytes in one mebibyte (1024 * 1024).
+constexpr std::uint64_t kBytesPerMebibyte = 1024ULL * 1024U;
+/// Default maximum file size for rotating logs (10 MiB).
+constexpr std::uint64_t kDefaultMaxFileSizeBytes = 10U * kBytesPerMebibyte;
+
 /// Destination for log output.
-enum class LogSinkType {
+enum class LogSinkType : std::uint8_t {
     kStdout,
     kRotatingFile,
 };
 
 /// Severity levels ordered from most to least verbose.
-enum class LogLevel {
+enum class LogLevel : std::uint8_t {
     kTrace,
     kDebug,
     kInfo,
@@ -33,12 +45,12 @@ struct LoggerConfig {
     /// File path used when sink_type == kRotatingFile.
     std::string log_file_path{"swarmkit.log"};
     /// Maximum size of a single log file before rotation.
-    std::uint64_t max_file_size_bytes{10U * 1024U * 1024U};
+    std::uint64_t max_file_size_bytes{kDefaultMaxFileSizeBytes};
     /// Number of rotated files to keep.
     std::uint32_t max_files{3U};
 
     /// spdlog pattern string; empty uses the built-in default.
-    std::string pattern{};
+    std::string pattern;
 };
 
 /// Global, thread-safe logger backed by spdlog.

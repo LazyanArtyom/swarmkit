@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #pragma once
 
 #include <cstdint>
@@ -18,7 +24,7 @@ struct CmdSetRole {
 /// @brief Assign the drone a slot in a named geometric formation.
 struct CmdSetFormation {
     std::string formation_id;  ///< Identifier of the formation template.
-    int         slot_index{};  ///< Zero-based position within the formation.
+    int slot_index{};          ///< Zero-based position within the formation.
 };
 
 /**
@@ -33,7 +39,7 @@ struct CmdSetFormation {
  * immediately (they missed the window) and log a warning.
  */
 struct CmdRunSequence {
-    std::string  sequence_id;   ///< Identifier of the choreography sequence.
+    std::string sequence_id;      ///< Identifier of the choreography sequence.
     std::int64_t sync_unix_ms{};  ///< Absolute start time; 0 = start immediately.
 };
 

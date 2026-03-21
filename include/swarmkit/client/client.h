@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #pragma once
 
 #include <cstdint>
@@ -29,16 +35,16 @@ struct ClientConfig {
 
 /// @brief Result of a Ping() call.
 struct PingResult {
-    bool         ok{false};
-    std::string  agent_id;
-    std::string  version;
+    bool ok{false};
+    std::string agent_id;
+    std::string version;
     std::int64_t unix_time_ms{};
-    std::string  error_message;
+    std::string error_message;
 };
 
 /// @brief Result of a SendCommand() call.
 struct CommandResult {
-    bool        ok{false};
+    bool ok{false};
     std::string message;  ///< Error description on failure, empty on success.
 };
 
@@ -64,7 +70,7 @@ struct TelemetrySubscription {
  * must return quickly without blocking.
  */
 /// @{
-using TelemetryHandler      = std::function<void(const swarmkit::core::TelemetryFrame&)>;
+using TelemetryHandler = std::function<void(const swarmkit::core::TelemetryFrame&)>;
 using TelemetryErrorHandler = std::function<void(const std::string&)>;
 /// @}
 
@@ -94,7 +100,7 @@ class Client {
     explicit Client(ClientConfig config);
     ~Client();
 
-    Client(const Client&)            = delete;
+    Client(const Client&) = delete;
     Client& operator=(const Client&) = delete;
 
     /**
@@ -115,8 +121,7 @@ class Client {
      * The agent's CommandArbiter may reject the command if a higher-priority
      * client currently holds authority over the target drone.
      */
-    [[nodiscard]] CommandResult SendCommand(
-        const commands::CommandEnvelope& envelope) const;
+    [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
 
     /**
      * @brief Acquire exclusive command authority for @p drone_id.
@@ -131,7 +136,7 @@ class Client {
      *          higher-priority client already holds authority.
      */
     [[nodiscard]] CommandResult LockAuthority(const std::string& drone_id,
-                                              std::int64_t       ttl_ms = 0) const;
+                                              std::int64_t ttl_ms = 0) const;
 
     /**
      * @brief Explicitly release authority for @p drone_id.
@@ -152,9 +157,8 @@ class Client {
      * Returns immediately; frames arrive via @p on_frame until StopTelemetry()
      * is called or the server closes the connection.
      */
-    void SubscribeTelemetry(TelemetrySubscription   subscription,
-                            TelemetryHandler        on_frame,
-                            TelemetryErrorHandler   on_error = {});
+    void SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
+                            TelemetryErrorHandler on_error = {});
 
     /**
      * @brief Cancel the active telemetry subscription (if any) and block

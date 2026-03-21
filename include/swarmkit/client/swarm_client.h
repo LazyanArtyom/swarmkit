@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #pragma once
 
 #include <cstddef>
@@ -59,7 +65,7 @@ class SwarmClient {
     explicit SwarmClient(ClientConfig default_config = {});
     ~SwarmClient();
 
-    SwarmClient(const SwarmClient&)            = delete;
+    SwarmClient(const SwarmClient&) = delete;
     SwarmClient& operator=(const SwarmClient&) = delete;
 
     /// @name Fleet management
@@ -97,8 +103,7 @@ class SwarmClient {
      * The agent's CommandArbiter may also reject the command if a
      * higher-priority client holds authority over the target drone.
      */
-    [[nodiscard]] CommandResult SendCommand(
-        const commands::CommandEnvelope& envelope) const;
+    [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
 
     /**
      * @brief Send the same command to every registered drone in parallel.
@@ -110,8 +115,7 @@ class SwarmClient {
      * @returns Map of drone_id to CommandResult for each registered drone.
      */
     [[nodiscard]] std::unordered_map<std::string, CommandResult> BroadcastCommand(
-        const commands::Command&        command,
-        const commands::CommandContext& context) const;
+        const commands::Command& command, const commands::CommandContext& context) const;
 
     /// @}
 
@@ -129,7 +133,7 @@ class SwarmClient {
      *          higher-priority client holds authority.
      */
     [[nodiscard]] CommandResult LockDrone(const std::string& drone_id,
-                                          std::int64_t       ttl_ms = 0) const;
+                                          std::int64_t ttl_ms = 0) const;
 
     /// @brief Release command authority for @p drone_id.  No-op if not locked.
     void UnlockDrone(const std::string& drone_id) const;
@@ -140,8 +144,8 @@ class SwarmClient {
      * @param ttl_ms Authority time-to-live in milliseconds.  0 = no expiry.
      * @returns Map of drone_id to CommandResult.
      */
-    [[nodiscard]] std::unordered_map<std::string, CommandResult>
-    LockAll(std::int64_t ttl_ms = 0) const;
+    [[nodiscard]] std::unordered_map<std::string, CommandResult> LockAll(
+        std::int64_t ttl_ms = 0) const;
 
     /// @brief Release authority for all registered drones.
     void UnlockAll() const;
@@ -157,9 +161,8 @@ class SwarmClient {
      * @details Logs a warning and does nothing if the drone is not registered.
      * If a subscription is already active for that drone it is replaced.
      */
-    void SubscribeTelemetry(TelemetrySubscription  subscription,
-                            TelemetryHandler       on_frame,
-                            TelemetryErrorHandler  on_error = {});
+    void SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
+                            TelemetryErrorHandler on_error = {});
 
     /// @brief Stop the telemetry subscription for @p drone_id.  No-op if idle.
     void StopTelemetry(const std::string& drone_id);
@@ -183,9 +186,8 @@ class SwarmClient {
      * @note @p on_frame may be called concurrently from multiple drone
      *       threads.  Ensure the callback is thread-safe.
      */
-    void SubscribeAllTelemetry(int                   rate_hertz,
-                               TelemetryHandler      on_frame,
-                               TelemetryErrorHandler on_error = {});
+    void SubscribeAllTelemetry(int rate_hertz, const TelemetryHandler& on_frame,
+                               const TelemetryErrorHandler& on_error = {});
 
     /// @brief Stop telemetry subscriptions for all registered drones.
     void StopAllTelemetry();

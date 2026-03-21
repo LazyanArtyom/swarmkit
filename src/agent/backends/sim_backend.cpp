@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include "swarmkit/agent/sim_backend.h"
 
 #include <algorithm>
@@ -18,6 +24,7 @@ using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
 namespace {
 
 constexpr int kDefaultRateHz = 5;
+constexpr int kMillisecondsPerSecond = 1000;
 constexpr double kInitialLatDeg = 40.1811;
 constexpr double kInitialLonDeg = 44.5136;
 constexpr float kInitialAltMeters = 10.0F;
@@ -52,7 +59,7 @@ class SimBackend final : public IDroneBackend {
     }
 
     core::Result Execute(const CommandEnvelope& envelope) override {
-        const CommandContext& ctx = envelope.context;
+        const CommandContext& context = envelope.context;
 
         std::visit(
             core::Overloaded{
@@ -60,23 +67,26 @@ class SimBackend final : public IDroneBackend {
                 /// @name Flight commands
                 /// @{
                 [&](const FlightCmd& flight) {
-                    std::visit(
-                        core::Overloaded{
-                            [&](const CmdArm&) {
-                                core::Logger::InfoFmt("SimBackend: ARM  drone={}", ctx.drone_id);
-                            },
-                            [&](const CmdDisarm&) {
-                                core::Logger::InfoFmt("SimBackend: DISARM  drone={}", ctx.drone_id);
-                            },
-                            [&](const CmdTakeoff& takeoff_cmd) {
-                                core::Logger::InfoFmt("SimBackend: TAKEOFF alt_m={}  drone={}",
-                                                      takeoff_cmd.alt_m, ctx.drone_id);
-                            },
-                            [&](const CmdLand&) {
-                                core::Logger::InfoFmt("SimBackend: LAND  drone={}", ctx.drone_id);
-                            },
-                        },
-                        flight);
+                    std::visit(core::Overloaded{
+                                   [&](const CmdArm&) {
+                                       core::Logger::InfoFmt("SimBackend: ARM  drone={}",
+                                                             context.drone_id);
+                                   },
+                                   [&](const CmdDisarm&) {
+                                       core::Logger::InfoFmt("SimBackend: DISARM  drone={}",
+                                                             context.drone_id);
+                                   },
+                                   [&](const CmdTakeoff& takeoff_cmd) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: TAKEOFF alt_m={}  drone={}",
+                                           takeoff_cmd.alt_m, context.drone_id);
+                                   },
+                                   [&](const CmdLand&) {
+                                       core::Logger::InfoFmt("SimBackend: LAND  drone={}",
+                                                             context.drone_id);
+                                   },
+                               },
+                               flight);
                 },
                 /// @}
 
@@ -88,15 +98,15 @@ class SimBackend final : public IDroneBackend {
                                        core::Logger::InfoFmt(
                                            "SimBackend: WAYPOINT lat={} lon={} alt={}m  drone={}",
                                            waypoint_cmd.lat_deg, waypoint_cmd.lon_deg,
-                                           waypoint_cmd.alt_m, ctx.drone_id);
+                                           waypoint_cmd.alt_m, context.drone_id);
                                    },
                                    [&](const CmdReturnHome&) {
                                        core::Logger::InfoFmt("SimBackend: RETURN_HOME  drone={}",
-                                                             ctx.drone_id);
+                                                             context.drone_id);
                                    },
                                    [&](const CmdHoldPosition&) {
                                        core::Logger::InfoFmt("SimBackend: HOLD  drone={}",
-                                                             ctx.drone_id);
+                                                             context.drone_id);
                                    },
                                },
                                nav);
@@ -110,19 +120,19 @@ class SimBackend final : public IDroneBackend {
                                    [&](const CmdSetRole& role_cmd) {
                                        core::Logger::InfoFmt(
                                            "SimBackend: SET_ROLE role={}  drone={}", role_cmd.role,
-                                           ctx.drone_id);
+                                           context.drone_id);
                                    },
                                    [&](const CmdSetFormation& formation_cmd) {
                                        core::Logger::InfoFmt(
                                            "SimBackend: SET_FORMATION id={} slot={}  drone={}",
                                            formation_cmd.formation_id, formation_cmd.slot_index,
-                                           ctx.drone_id);
+                                           context.drone_id);
                                    },
                                    [&](const CmdRunSequence& sequence_cmd) {
                                        core::Logger::InfoFmt(
                                            "SimBackend: RUN_SEQUENCE id={} sync_ms={}  drone={}",
                                            sequence_cmd.sequence_id, sequence_cmd.sync_unix_ms,
-                                           ctx.drone_id);
+                                           context.drone_id);
                                    },
                                },
                                swarm);
@@ -133,14 +143,14 @@ class SimBackend final : public IDroneBackend {
                 /// @{
                 [&](const PayloadCmd&) {
                     core::Logger::WarnFmt("SimBackend: payload commands not implemented  drone={}",
-                                          ctx.drone_id);
+                                          context.drone_id);
                 },
                 /// @}
 
             },
             envelope.command);
 
-        return core::Result::Ok();
+        return core::Result::Success();
     }
 
     core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,
@@ -156,10 +166,10 @@ class SimBackend final : public IDroneBackend {
             telemetry_streams_.emplace(drone_id, stream);
         }
 
-        const int effective_rate = (rate_hertz <= 0) ? kDefaultRateHz : rate_hertz;
+        const int kEffectiveRate = (rate_hertz <= 0) ? kDefaultRateHz : rate_hertz;
 
         stream->worker =
-            std::thread([stream, drone_id, effective_rate, callback = std::move(callback)]() {
+            std::thread([stream, drone_id, kEffectiveRate, callback = std::move(callback)]() {
                 using std::chrono::milliseconds;
                 using std::chrono::steady_clock;
                 using std::chrono::system_clock;
@@ -171,10 +181,11 @@ class SimBackend final : public IDroneBackend {
                 float alt_m = kInitialAltMeters;
                 float battery_pct = kInitialBatteryPct;
 
-                const auto period = milliseconds(1000 / std::max(1, effective_rate));
+                const auto kPeriod =
+                    milliseconds(kMillisecondsPerSecond / std::max(1, kEffectiveRate));
 
                 while (stream->running.load(std::memory_order_relaxed)) {
-                    next_tick += period;
+                    next_tick += kPeriod;
 
                     lat_deg += kGpsDriftDegPerTick;
                     lon_deg += kGpsDriftDegPerTick;
@@ -197,7 +208,7 @@ class SimBackend final : public IDroneBackend {
                 }
             });
 
-        return core::Result::Ok();
+        return core::Result::Success();
     }
 
     core::Result StopTelemetry(const std::string& drone_id) override {
@@ -206,21 +217,21 @@ class SimBackend final : public IDroneBackend {
             std::lock_guard<std::mutex> lock(telemetry_mutex_);
             auto iter = telemetry_streams_.find(drone_id);
             if (iter == telemetry_streams_.end()) {
-                return core::Result::Ok();
+                return core::Result::Success();
             }
             stream = std::move(iter->second);
             telemetry_streams_.erase(iter);
         }
 
         if (!stream) {
-            return core::Result::Ok();
+            return core::Result::Success();
         }
 
         stream->running.store(false, std::memory_order_relaxed);
         if (stream->worker.joinable()) {
             stream->worker.join();
         }
-        return core::Result::Ok();
+        return core::Result::Success();
     }
 
    private:

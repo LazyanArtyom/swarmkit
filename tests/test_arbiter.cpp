@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <memory>
@@ -28,16 +34,16 @@ TEST_CASE("CommandArbiter sends targeted preempt and resume notifications", "[ag
     auto operator_queue = std::make_shared<EventQueue>();
     auto override_queue = std::make_shared<EventQueue>();
 
-    const WatchToken operator_token = arbiter.Watch(
+    const WatchToken kOperatorToken = arbiter.Watch(
         "drone-1", "operator-client", commands::CommandPriority::kOperator, operator_queue);
-    const WatchToken override_token = arbiter.Watch(
+    const WatchToken kOverrideToken = arbiter.Watch(
         "drone-1", "override-client", commands::CommandPriority::kOverride, override_queue);
 
     REQUIRE(arbiter
                 .CheckAndGrant(
                     MakeContext("drone-1", "operator-client", commands::CommandPriority::kOperator),
                     std::chrono::seconds{5})
-                .ok());
+                .IsOk());
 
     AuthorityEvent event;
     REQUIRE(operator_queue->Pop(event, kEventTimeout));
@@ -49,7 +55,7 @@ TEST_CASE("CommandArbiter sends targeted preempt and resume notifications", "[ag
                 .CheckAndGrant(
                     MakeContext("drone-1", "override-client", commands::CommandPriority::kOverride),
                     std::chrono::seconds{5})
-                .ok());
+                .IsOk());
 
     REQUIRE(operator_queue->Pop(event, kEventTimeout));
     CHECK(event.kind == AuthorityEvent::Kind::kPreempted);
@@ -66,8 +72,8 @@ TEST_CASE("CommandArbiter sends targeted preempt and resume notifications", "[ag
     CHECK(event.holder_client_id == "operator-client");
     CHECK_FALSE(override_queue->Pop(event, kNoEventTimeout));
 
-    arbiter.Unwatch(operator_token);
-    arbiter.Unwatch(override_token);
+    arbiter.Unwatch(kOperatorToken);
+    arbiter.Unwatch(kOverrideToken);
     operator_queue->Shutdown();
     override_queue->Shutdown();
 }

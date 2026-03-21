@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include "swarmkit/agent/server.h"
 
 #include <grpcpp/grpcpp.h>
@@ -29,11 +35,13 @@ namespace swarmkit::agent {
 using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
 
 namespace {
+using grpc::Status;
 
 namespace fs = std::filesystem;
 
 constexpr int kDefaultTelemetryRateHz = 5;
 constexpr int kMinTelemetryRateHz = 1;
+constexpr int kMillisecondsPerSecond = 1000;
 
 /// @brief Watcher poll interval while blocking inside WatchAuthority RPC.
 constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
@@ -232,12 +240,12 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
 
         for (const auto& drone_id : drone_ids) {
-            const core::Result stop_result = backend_->StopTelemetry(drone_id);
-            if (!stop_result.ok()) {
+            const core::Result kStopResult = backend_->StopTelemetry(drone_id);
+            if (!kStopResult.IsOk()) {
                 core::Logger::WarnFmt(
                     "AgentServiceImpl: StopTelemetry('{}') failed during "
                     "shutdown: {}",
-                    drone_id, stop_result.message);
+                    drone_id, kStopResult.message);
             }
         }
     }
@@ -267,31 +275,31 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             envelope.context = ToCoreContext(req->ctx());
         }
 
-        const std::string cmd_name = ProtoCommandName(req->cmd());
+        const std::string kCmdName = ProtoCommandName(req->cmd());
 
         std::chrono::milliseconds ttl = kDefaultAuthorityTtl;
-        const auto epoch = std::chrono::system_clock::time_point{};
-        if (envelope.context.deadline != epoch) {
-            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        const auto kEpoch = std::chrono::system_clock::time_point{};
+        if (envelope.context.deadline != kEpoch) {
+            const auto kRemaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                 envelope.context.deadline - std::chrono::system_clock::now());
-            if (remaining.count() > 0) {
-                ttl = remaining;
+            if (kRemaining.count() > 0) {
+                ttl = kRemaining;
             }
         }
 
-        const core::Result arbiter_result = arbiter_.CheckAndGrant(envelope.context, ttl);
-        if (!arbiter_result.ok()) {
+        const core::Result kArbiterResult = arbiter_.CheckAndGrant(envelope.context, ttl);
+        if (!kArbiterResult.IsOk()) {
             core::Logger::WarnFmt(
                 "Agent '{}' [{}]: REJECTED {} from '{}' (priority={}) - {}", config_.agent_id,
-                envelope.context.drone_id, cmd_name, envelope.context.client_id,
-                static_cast<int>(envelope.context.priority), arbiter_result.message);
-            reply->set_status(ToProtoStatus(arbiter_result.code));
-            reply->set_message(arbiter_result.message);
+                envelope.context.drone_id, kCmdName, envelope.context.client_id,
+                static_cast<int>(envelope.context.priority), kArbiterResult.message);
+            reply->set_status(ToProtoStatus(kArbiterResult.code));
+            reply->set_message(kArbiterResult.message);
             return grpc::Status::OK;
         }
 
         core::Logger::InfoFmt("Agent '{}' [{}]: executing {} from '{}' (priority={}) peer={}",
-                              config_.agent_id, envelope.context.drone_id, cmd_name,
+                              config_.agent_id, envelope.context.drone_id, kCmdName,
                               envelope.context.client_id,
                               static_cast<int>(envelope.context.priority), ctx->peer());
 
@@ -304,9 +312,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
         envelope.command = std::move(convert_result.value());
 
-        const core::Result exec_result = backend_->Execute(envelope);
-        reply->set_status(ToProtoStatus(exec_result.code));
-        reply->set_message(exec_result.message);
+        const core::Result kExecResult = backend_->Execute(envelope);
+        reply->set_status(ToProtoStatus(kExecResult.code));
+        reply->set_message(kExecResult.message);
         return grpc::Status::OK;
     }
 
@@ -322,21 +330,21 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status::OK;
         }
 
-        const CommandContext context = ToCoreContext(req->ctx());
-        const auto ttl_duration = std::chrono::milliseconds{req->ttl_ms()};
-        const core::Result result = arbiter_.CheckAndGrant(context, ttl_duration);
+        const CommandContext kContext = ToCoreContext(req->ctx());
+        const auto kTtlDuration = std::chrono::milliseconds{req->ttl_ms()};
+        const core::Result kResult = arbiter_.CheckAndGrant(kContext, kTtlDuration);
 
-        reply->set_ok(result.ok());
-        reply->set_message(result.message);
+        reply->set_ok(kResult.IsOk());
+        reply->set_message(kResult.message);
 
-        if (result.ok()) {
+        if (kResult.IsOk()) {
             core::Logger::InfoFmt("Agent '{}' [{}]: LOCKED by '{}' (priority={}) ttl={}ms",
-                                  config_.agent_id, context.drone_id, context.client_id,
-                                  static_cast<int>(context.priority), req->ttl_ms());
+                                  config_.agent_id, kContext.drone_id, kContext.client_id,
+                                  static_cast<int>(kContext.priority), req->ttl_ms());
         } else {
             core::Logger::WarnFmt("Agent '{}' [{}]: LOCK REJECTED for '{}' (priority={}) - {}",
-                                  config_.agent_id, context.drone_id, context.client_id,
-                                  static_cast<int>(context.priority), result.message);
+                                  config_.agent_id, kContext.drone_id, kContext.client_id,
+                                  static_cast<int>(kContext.priority), kResult.message);
         }
         return grpc::Status::OK;
     }
@@ -360,28 +368,29 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/writer");
         }
 
-        const std::string peer = ctx->peer();
-        const std::string drone_id =
+        const std::string kPeer = ctx->peer();
+        const std::string kDroneId =
             (req != nullptr && !req->drone_id().empty()) ? req->drone_id() : "default";
-        const int requested_rate_hz = (req != nullptr) ? req->rate_hz() : 0;
-        const int effective_rate_hz = NormalizeTelemetryRate(requested_rate_hz);
-        const auto sleep_period = std::chrono::milliseconds(1000 / effective_rate_hz);
+        const int kRequestedRateHz = (req != nullptr) ? req->rate_hz() : 0;
+        const int kEffectiveRateHz = NormalizeTelemetryRate(kRequestedRateHz);
+        const auto kSleepPeriod =
+            std::chrono::milliseconds(kMillisecondsPerSecond / kEffectiveRateHz);
 
         TelemetryLease telemetry_lease;
-        const core::Result acquire_result =
-            AcquireTelemetryLease(drone_id, effective_rate_hz, &telemetry_lease);
-        if (!acquire_result.ok()) {
+        const core::Result kAcquireResult =
+            AcquireTelemetryLease(kDroneId, kEffectiveRateHz, &telemetry_lease);
+        if (!kAcquireResult.IsOk()) {
             core::Logger::ErrorFmt(
                 "Agent '{}': failed to start telemetry for drone '{}' "
                 "peer={} rate={}Hz: {}",
-                config_.agent_id, drone_id, peer, effective_rate_hz, acquire_result.message);
-            return grpc::Status(grpc::StatusCode::UNAVAILABLE, acquire_result.message);
+                config_.agent_id, kDroneId, kPeer, kEffectiveRateHz, kAcquireResult.message);
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE, kAcquireResult.message);
         }
 
         core::Logger::InfoFmt(
             "Agent '{}': telemetry subscriber connected peer={} drone='{}' "
             "rate={}Hz",
-            config_.agent_id, peer, drone_id, effective_rate_hz);
+            config_.agent_id, kPeer, kDroneId, kEffectiveRateHz);
 
         std::uint64_t last_sequence = 0;
 
@@ -414,12 +423,12 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 }
             }
 
-            std::this_thread::sleep_for(sleep_period);
+            std::this_thread::sleep_for(kSleepPeriod);
         }
 
         ReleaseTelemetryLease(telemetry_lease);
         core::Logger::InfoFmt("Agent '{}': telemetry subscriber disconnected peer={} drone='{}'",
-                              config_.agent_id, peer, drone_id);
+                              config_.agent_id, kPeer, kDroneId);
         return grpc::Status::OK;
     }
 
@@ -430,15 +439,15 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/writer");
         }
 
-        const std::string drone_id = req->drone_id();
-        const std::string client_id = req->client_id();
-        const auto priority = static_cast<CommandPriority>(req->priority());
+        const std::string& drone_id = req->drone_id();
+        const std::string& client_id = req->client_id();
+        const auto kPriority = static_cast<CommandPriority>(req->priority());
 
         auto queue = std::make_shared<EventQueue>();
-        const WatchToken token = arbiter_.Watch(drone_id, client_id, priority, queue);
+        const WatchToken kToken = arbiter_.Watch(drone_id, client_id, kPriority, queue);
 
         core::Logger::InfoFmt("WatchAuthority: '{}' watching drone '{}' (priority={})", client_id,
-                              drone_id, static_cast<int>(priority));
+                              drone_id, static_cast<int>(kPriority));
 
         while (!ctx->IsCancelled()) {
             AuthorityEvent event;
@@ -458,7 +467,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
 
         queue->Shutdown();
-        arbiter_.Unwatch(token);
+        arbiter_.Unwatch(kToken);
 
         core::Logger::InfoFmt("WatchAuthority: '{}' disconnected from drone '{}'", client_id,
                               drone_id);
@@ -478,8 +487,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         std::fstream output_file;
         std::uint64_t expected_offset = 0;
 
-        auto SendAck = [&](swarmkit::v1::DataAck::Status ack_status, std::uint64_t next_offset,
-                           std::string message) {
+        auto send_ack = [&](swarmkit::v1::DataAck::Status ack_status, std::uint64_t next_offset,
+                            std::string message) {
             swarmkit::v1::DataAck ack;
             ack.set_transfer_id(transfer_id);
             ack.set_next_offset(next_offset);
@@ -492,7 +501,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             if (transfer_id.empty()) {
                 transfer_id = chunk.transfer_id();
                 if (transfer_id.empty()) {
-                    return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing transfer_id");
+                    return {grpc::StatusCode::INVALID_ARGUMENT, "missing transfer_id"};
                 }
 
                 output_path = fs::path(config_.inbox_dir) / (transfer_id + ".bin");
@@ -505,42 +514,42 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                     output_file.open(output_path, std::ios::in | std::ios::out | std::ios::binary);
                 }
                 if (!output_file.is_open()) {
-                    return grpc::Status(grpc::StatusCode::INTERNAL, "failed to open output file");
+                    return {grpc::StatusCode::INTERNAL, "failed to open output file"};
                 }
 
                 output_file.seekg(0, std::ios::end);
                 expected_offset = static_cast<std::uint64_t>(output_file.tellg());
 
-                SendAck(swarmkit::v1::DataAck::OK, expected_offset,
-                        "ready, resume_offset=" + std::to_string(expected_offset));
+                send_ack(swarmkit::v1::DataAck::OK, expected_offset,
+                         "ready, resume_offset=" + std::to_string(expected_offset));
             }
 
             if (chunk.offset() != expected_offset) {
-                SendAck(swarmkit::v1::DataAck::BAD_OFFSET, expected_offset,
-                        "bad offset, expected=" + std::to_string(expected_offset) +
-                            " got=" + std::to_string(chunk.offset()));
+                send_ack(swarmkit::v1::DataAck::BAD_OFFSET, expected_offset,
+                         "bad offset, expected=" + std::to_string(expected_offset) +
+                             " got=" + std::to_string(chunk.offset()));
                 continue;
             }
 
             const std::string& payload = chunk.data();
-            const std::uint32_t computed_crc =
+            const std::uint32_t kComputedCrc =
                 core::Crc32Bytes(payload.data(), static_cast<std::size_t>(payload.size()));
 
-            if (computed_crc != chunk.crc32()) {
-                SendAck(swarmkit::v1::DataAck::BAD_CHECKSUM, expected_offset,
-                        "bad checksum at offset=" + std::to_string(expected_offset));
+            if (kComputedCrc != chunk.crc32()) {
+                send_ack(swarmkit::v1::DataAck::BAD_CHECKSUM, expected_offset,
+                         "bad checksum at offset=" + std::to_string(expected_offset));
                 continue;
             }
 
             output_file.seekp(static_cast<std::streamoff>(expected_offset), std::ios::beg);
             output_file.write(payload.data(), static_cast<std::streamsize>(payload.size()));
             if (!output_file.good()) {
-                SendAck(swarmkit::v1::DataAck::FAILED, expected_offset, "write failed");
+                send_ack(swarmkit::v1::DataAck::FAILED, expected_offset, "write failed");
                 continue;
             }
 
             expected_offset += static_cast<std::uint64_t>(payload.size());
-            SendAck(swarmkit::v1::DataAck::OK, expected_offset, "ok");
+            send_ack(swarmkit::v1::DataAck::OK, expected_offset, "ok");
 
             if (chunk.eof()) {
                 core::Logger::InfoFmt("Transfer complete: id={} bytes={} path={}", transfer_id,
@@ -549,7 +558,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             }
         }
 
-        return grpc::Status::OK;
+        return {grpc::StatusCode::OK, ""};
     }
 
    private:
@@ -579,8 +588,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return state;
     }
 
-    void PublishTelemetryFrame(const std::shared_ptr<TelemetryState>& state,
-                               const core::TelemetryFrame& frame) const {
+    static void PublishTelemetryFrame(const std::shared_ptr<TelemetryState>& state,
+                                      const core::TelemetryFrame& frame) {
         std::lock_guard<std::mutex> lock(state->data_mutex);
         state->last_frame = frame;
         ++state->sequence;
@@ -593,72 +602,69 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return core::Result::Failed("telemetry lease output is null");
         }
 
-        const int normalized_rate_hz = NormalizeTelemetryRate(requested_rate_hz);
+        const int kNormalizedRateHz = NormalizeTelemetryRate(requested_rate_hz);
         auto state = GetOrCreateTelemetryState(drone_id);
-        const std::uint64_t subscriber_id =
+        const std::uint64_t kSubscriberId =
             next_telemetry_subscriber_id_.fetch_add(1, std::memory_order_relaxed);
 
         std::lock_guard<std::mutex> lock(state->control_mutex);
-        state->subscriber_rates_hz[subscriber_id] = normalized_rate_hz;
+        state->subscriber_rates_hz[kSubscriberId] = kNormalizedRateHz;
 
-        int desired_backend_rate_hz = normalized_rate_hz;
+        int desired_backend_rate_hz = kNormalizedRateHz;
         for (const auto& [entry_id, rate_hz] : state->subscriber_rates_hz) {
             static_cast<void>(entry_id);
             desired_backend_rate_hz = std::max(desired_backend_rate_hz, rate_hz);
         }
 
         if (!state->backend_running) {
-            const core::Result start_result =
-                backend_->StartTelemetry(drone_id, desired_backend_rate_hz,
-                                         [this, state](const core::TelemetryFrame& frame) {
-                                             PublishTelemetryFrame(state, frame);
-                                         });
-            if (!start_result.ok()) {
-                state->subscriber_rates_hz.erase(subscriber_id);
+            const core::Result kStartResult = backend_->StartTelemetry(
+                drone_id, desired_backend_rate_hz, [state](const core::TelemetryFrame& frame) {
+                    PublishTelemetryFrame(state, frame);
+                });
+            if (!kStartResult.IsOk()) {
+                state->subscriber_rates_hz.erase(kSubscriberId);
                 return core::Result::Failed("backend StartTelemetry failed: " +
-                                            start_result.message);
+                                            kStartResult.message);
             }
 
             state->backend_running = true;
             state->backend_rate_hz = desired_backend_rate_hz;
         } else if (desired_backend_rate_hz > state->backend_rate_hz) {
-            const int previous_backend_rate_hz = state->backend_rate_hz;
+            const int kPreviousBackendRateHz = state->backend_rate_hz;
 
-            const core::Result stop_result = backend_->StopTelemetry(drone_id);
-            if (!stop_result.ok()) {
-                state->subscriber_rates_hz.erase(subscriber_id);
+            const core::Result kStopResult = backend_->StopTelemetry(drone_id);
+            if (!kStopResult.IsOk()) {
+                state->subscriber_rates_hz.erase(kSubscriberId);
                 return core::Result::Failed("backend StopTelemetry failed during reconfigure: " +
-                                            stop_result.message);
+                                            kStopResult.message);
             }
 
-            const core::Result start_result =
-                backend_->StartTelemetry(drone_id, desired_backend_rate_hz,
-                                         [this, state](const core::TelemetryFrame& frame) {
-                                             PublishTelemetryFrame(state, frame);
-                                         });
-            if (!start_result.ok()) {
+            const core::Result kStartResult = backend_->StartTelemetry(
+                drone_id, desired_backend_rate_hz, [state](const core::TelemetryFrame& frame) {
+                    PublishTelemetryFrame(state, frame);
+                });
+            if (!kStartResult.IsOk()) {
                 core::Logger::ErrorFmt(
                     "AgentServiceImpl: failed to raise telemetry rate for "
                     "drone '{}' from {}Hz to {}Hz: {}",
-                    drone_id, previous_backend_rate_hz, desired_backend_rate_hz,
-                    start_result.message);
+                    drone_id, kPreviousBackendRateHz, desired_backend_rate_hz,
+                    kStartResult.message);
 
-                const core::Result restore_result =
-                    backend_->StartTelemetry(drone_id, previous_backend_rate_hz,
-                                             [this, state](const core::TelemetryFrame& frame) {
-                                                 PublishTelemetryFrame(state, frame);
-                                             });
-                if (restore_result.ok()) {
+                const core::Result kRestoreResult = backend_->StartTelemetry(
+                    drone_id, kPreviousBackendRateHz, [state](const core::TelemetryFrame& frame) {
+                        PublishTelemetryFrame(state, frame);
+                    });
+                if (kRestoreResult.IsOk()) {
                     state->backend_running = true;
-                    state->backend_rate_hz = previous_backend_rate_hz;
+                    state->backend_rate_hz = kPreviousBackendRateHz;
                 } else {
                     state->backend_running = false;
                     state->backend_rate_hz = 0;
                 }
 
-                state->subscriber_rates_hz.erase(subscriber_id);
+                state->subscriber_rates_hz.erase(kSubscriberId);
                 return core::Result::Failed("backend telemetry reconfigure failed: " +
-                                            start_result.message);
+                                            kStartResult.message);
             }
 
             state->backend_running = true;
@@ -667,8 +673,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         telemetry_lease->state = std::move(state);
         telemetry_lease->drone_id = drone_id;
-        telemetry_lease->subscriber_id = subscriber_id;
-        return core::Result::Ok();
+        telemetry_lease->subscriber_id = kSubscriberId;
+        return core::Result::Success();
     }
 
     void ReleaseTelemetryLease(const TelemetryLease& telemetry_lease) {
@@ -684,11 +690,11 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
             if (telemetry_lease.state->subscriber_rates_hz.empty()) {
                 if (telemetry_lease.state->backend_running) {
-                    const core::Result stop_result =
+                    const core::Result kStopResult =
                         backend_->StopTelemetry(telemetry_lease.drone_id);
-                    if (!stop_result.ok()) {
+                    if (!kStopResult.IsOk()) {
                         core::Logger::WarnFmt("AgentServiceImpl: StopTelemetry('{}') failed: {}",
-                                              telemetry_lease.drone_id, stop_result.message);
+                                              telemetry_lease.drone_id, kStopResult.message);
                     }
                     telemetry_lease.state->backend_running = false;
                     telemetry_lease.state->backend_rate_hz = 0;

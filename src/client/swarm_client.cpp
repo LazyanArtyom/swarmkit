@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include "swarmkit/client/swarm_client.h"
 
 #include <mutex>
@@ -24,8 +30,7 @@ struct SwarmClient::Impl {
     ///
     /// Shared ownership means a concurrent RemoveDrone() cannot destroy a
     /// Client while a broadcast or SubscribeAllTelemetry is still using it.
-    [[nodiscard]] std::vector<std::pair<std::string, std::shared_ptr<Client>>>
-    Snapshot() const {
+    [[nodiscard]] std::vector<std::pair<std::string, std::shared_ptr<Client>>> Snapshot() const {
         std::lock_guard<std::mutex> lock(mutex);
         std::vector<std::pair<std::string, std::shared_ptr<Client>>> out;
         out.reserve(clients.size());
@@ -36,8 +41,7 @@ struct SwarmClient::Impl {
     }
 };
 
-SwarmClient::SwarmClient(ClientConfig default_config)
-    : impl_(std::make_unique<Impl>()) {
+SwarmClient::SwarmClient(ClientConfig default_config) : impl_(std::make_unique<Impl>()) {
     impl_->default_config = std::move(default_config);
 }
 
@@ -45,19 +49,18 @@ SwarmClient::~SwarmClient() {
     StopAllTelemetry();
 }
 
-void SwarmClient::AddDrone(const std::string& drone_id,
-                           const std::string& address) {
+void SwarmClient::AddDrone(const std::string& drone_id, const std::string& address) {
     ClientConfig cfg = impl_->default_config;
-    cfg.address      = address;
-    auto new_client  = std::make_shared<Client>(std::move(cfg));
+    cfg.address = address;
+    auto new_client = std::make_shared<Client>(std::move(cfg));
 
     std::shared_ptr<Client> old_client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(drone_id);
         if (iter != impl_->clients.end()) {
-            old_client    = std::move(iter->second);
-            iter->second  = new_client;
+            old_client = std::move(iter->second);
+            iter->second = new_client;
         } else {
             impl_->clients.emplace(drone_id, new_client);
         }
@@ -92,15 +95,14 @@ std::size_t SwarmClient::DroneCount() const {
     return impl_->clients.size();
 }
 
-CommandResult SwarmClient::SendCommand(
-    const commands::CommandEnvelope& envelope) const {
+CommandResult SwarmClient::SendCommand(const commands::CommandEnvelope& envelope) const {
     std::shared_ptr<Client> client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(envelope.context.drone_id);
         if (iter == impl_->clients.end()) {
-            return {false,
-                    "drone '" + envelope.context.drone_id + "' not registered"};
+            return {.ok = false,
+                    .message = "drone '" + envelope.context.drone_id + "' not registered"};
         }
         client = iter->second;
     }
@@ -108,23 +110,21 @@ CommandResult SwarmClient::SendCommand(
 }
 
 std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
-    const commands::Command&        command,
-    const commands::CommandContext& context) const {
-    const auto snapshot = impl_->Snapshot();
+    const commands::Command& command, const commands::CommandContext& context) const {
+    const auto kSnapshot = impl_->Snapshot();
 
     std::unordered_map<std::string, CommandResult> results;
-    std::mutex                                      results_mutex;
-    std::vector<std::thread>                        threads;
-    threads.reserve(snapshot.size());
+    std::mutex results_mutex;
+    std::vector<std::thread> threads;
+    threads.reserve(kSnapshot.size());
 
-    for (const auto& [entry_id, entry_client] : snapshot) {
+    for (const auto& [entry_id, entry_client] : kSnapshot) {
         threads.emplace_back(
-            [entry_id, entry_client, command, context,
-             &results, &results_mutex]() {
+            [entry_id, entry_client, command, context, &results, &results_mutex]() {
                 commands::CommandEnvelope envelope;
-                envelope.context          = context;
+                envelope.context = context;
                 envelope.context.drone_id = entry_id;
-                envelope.command          = command;
+                envelope.command = command;
 
                 CommandResult result = entry_client->SendCommand(envelope);
 
@@ -140,23 +140,20 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
     return results;
 }
 
-void SwarmClient::SubscribeTelemetry(TelemetrySubscription subscription,
-                                     TelemetryHandler      on_frame,
+void SwarmClient::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
                                      TelemetryErrorHandler on_error) {
     std::shared_ptr<Client> client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(subscription.drone_id);
         if (iter == impl_->clients.end()) {
-            core::Logger::WarnFmt(
-                "SwarmClient::SubscribeTelemetry: drone '{}' not registered",
-                subscription.drone_id);
+            core::Logger::WarnFmt("SwarmClient::SubscribeTelemetry: drone '{}' not registered",
+                                  subscription.drone_id);
             return;
         }
         client = iter->second;
     }
-    client->SubscribeTelemetry(
-        std::move(subscription), std::move(on_frame), std::move(on_error));
+    client->SubscribeTelemetry(std::move(subscription), std::move(on_frame), std::move(on_error));
 }
 
 void SwarmClient::StopTelemetry(const std::string& drone_id) {
@@ -172,11 +169,11 @@ void SwarmClient::StopTelemetry(const std::string& drone_id) {
     client->StopTelemetry();
 }
 
-void SwarmClient::SubscribeAllTelemetry(int                   rate_hertz,
-                                        TelemetryHandler      on_frame,
-                                        TelemetryErrorHandler on_error) {
+void SwarmClient::SubscribeAllTelemetry(int rate_hertz, const TelemetryHandler& on_frame,
+                                        const TelemetryErrorHandler& on_error) {
     for (const auto& [drone_id, client] : impl_->Snapshot()) {
-        client->SubscribeTelemetry({drone_id, rate_hertz}, on_frame, on_error);
+        client->SubscribeTelemetry({.drone_id = drone_id, .rate_hertz = rate_hertz}, on_frame,
+                                   on_error);
     }
 }
 
@@ -186,14 +183,13 @@ void SwarmClient::StopAllTelemetry() {
     }
 }
 
-CommandResult SwarmClient::LockDrone(const std::string& drone_id,
-                                     std::int64_t       ttl_ms) const {
+CommandResult SwarmClient::LockDrone(const std::string& drone_id, std::int64_t ttl_ms) const {
     std::shared_ptr<Client> client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(drone_id);
         if (iter == impl_->clients.end()) {
-            return {false, "drone '" + drone_id + "' not registered"};
+            return {.ok = false, .message = "drone '" + drone_id + "' not registered"};
         }
         client = iter->second;
     }
@@ -213,22 +209,20 @@ void SwarmClient::UnlockDrone(const std::string& drone_id) const {
     client->ReleaseAuthority(drone_id);
 }
 
-std::unordered_map<std::string, CommandResult>
-SwarmClient::LockAll(std::int64_t ttl_ms) const {
-    const auto snapshot = impl_->Snapshot();
+std::unordered_map<std::string, CommandResult> SwarmClient::LockAll(std::int64_t ttl_ms) const {
+    const auto kSnapshot = impl_->Snapshot();
 
     std::unordered_map<std::string, CommandResult> results;
-    std::mutex                                      results_mutex;
-    std::vector<std::thread>                        threads;
-    threads.reserve(snapshot.size());
+    std::mutex results_mutex;
+    std::vector<std::thread> threads;
+    threads.reserve(kSnapshot.size());
 
-    for (const auto& [entry_id, entry_client] : snapshot) {
-        threads.emplace_back(
-            [entry_id, entry_client, ttl_ms, &results, &results_mutex]() {
-                CommandResult result = entry_client->LockAuthority(entry_id, ttl_ms);
-                std::lock_guard<std::mutex> lock(results_mutex);
-                results[entry_id] = std::move(result);
-            });
+    for (const auto& [entry_id, entry_client] : kSnapshot) {
+        threads.emplace_back([entry_id, entry_client, ttl_ms, &results, &results_mutex]() {
+            CommandResult result = entry_client->LockAuthority(entry_id, ttl_ms);
+            std::lock_guard<std::mutex> lock(results_mutex);
+            results[entry_id] = std::move(result);
+        });
     }
 
     for (auto& thread : threads) {

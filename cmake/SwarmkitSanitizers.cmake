@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+#
+# This file is part of SwarmKit.
+# See LICENSE.md in the repository root for full license terms.
+
 function(swarmkit_enable_sanitizers target_name)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
         return()

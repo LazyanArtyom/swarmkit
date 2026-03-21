@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -26,7 +32,7 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
                                          drone_one_frames.fetch_add(1, std::memory_order_relaxed);
                                      }
                                  })
-                .ok());
+                .IsOk());
     REQUIRE(backend
                 ->StartTelemetry("drone-2", 5,
                                  [&drone_two_frames](const core::TelemetryFrame& frame) {
@@ -34,10 +40,10 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
                                          drone_two_frames.fetch_add(1, std::memory_order_relaxed);
                                      }
                                  })
-                .ok());
+                .IsOk());
 
-    const auto deadline = std::chrono::steady_clock::now() + kWaitTimeout;
-    while (std::chrono::steady_clock::now() < deadline &&
+    const auto kDeadline = std::chrono::steady_clock::now() + kWaitTimeout;
+    while (std::chrono::steady_clock::now() < kDeadline &&
            (drone_one_frames.load(std::memory_order_relaxed) < 2 ||
             drone_two_frames.load(std::memory_order_relaxed) < 2)) {
         std::this_thread::sleep_for(kPollInterval);
@@ -49,8 +55,8 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
     CHECK(backend->StartTelemetry("drone-1", 5, [](const core::TelemetryFrame&) {}).code ==
           core::StatusCode::kRejected);
 
-    CHECK(backend->StopTelemetry("drone-1").ok());
-    CHECK(backend->StopTelemetry("drone-2").ok());
+    CHECK(backend->StopTelemetry("drone-1").IsOk());
+    CHECK(backend->StopTelemetry("drone-2").IsOk());
 }
 
 }  // namespace swarmkit::agent

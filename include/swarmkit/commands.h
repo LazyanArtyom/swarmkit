@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #pragma once
 
 /// @file commands.h
@@ -39,10 +45,10 @@ namespace swarmkit::commands {
  * kOverride).
  */
 enum class CommandPriority : std::uint8_t {
-    kOperator   =  0,   ///< Default: CLI operators and SDK users.
-    kSupervisor = 10,   ///< Automated local systems (on-board mission executor).
-    kOverride   = 20,   ///< Remote deviation-correction or safety override server.
-    kEmergency  = 100,  ///< Bypasses arbitration; always executes immediately.
+    kOperator = 0,     ///< Default: CLI operators and SDK users.
+    kSupervisor = 10,  ///< Automated local systems (on-board mission executor).
+    kOverride = 20,    ///< Remote deviation-correction or safety override server.
+    kEmergency = 100,  ///< Bypasses arbitration; always executes immediately.
 };
 
 /// ---------------------------------------------------------------------------
@@ -86,11 +92,11 @@ using Command = std::variant<FlightCmd, NavCmd, SwarmCmd, PayloadCmd>;
 
 /// @brief Routing and scheduling metadata attached to every command.
 struct CommandContext {
-    std::string     drone_id;    ///< Target drone identifier.
-    std::string     client_id;   ///< Originating client identifier (used by CommandArbiter).
+    std::string drone_id;   ///< Target drone identifier.
+    std::string client_id;  ///< Originating client identifier (used by CommandArbiter).
     CommandPriority priority{CommandPriority::kOperator};  ///< Arbitration priority.
     std::chrono::system_clock::time_point deadline;        ///< Execution deadline (zero = none).
-    std::string     correlation_id;  ///< Caller-assigned ID for tracing/deduplication.
+    std::string correlation_id;  ///< Caller-assigned ID for tracing/deduplication.
 };
 
 /// ---------------------------------------------------------------------------
@@ -105,7 +111,7 @@ struct CommandContext {
  */
 struct CommandEnvelope {
     CommandContext context;
-    Command        command;
+    Command command;
 };
 
 }  // namespace swarmkit::commands

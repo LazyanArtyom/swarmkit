@@ -1,6 +1,11 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include "swarmkit/agent/arbiter.h"
 
-#include <algorithm>
 #include <utility>
 
 #include "swarmkit/core/logger.h"
@@ -38,8 +43,9 @@ void EventQueue::Push(AuthorityEvent event) {
 
 bool EventQueue::Pop(AuthorityEvent& out, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex_);
-    const bool ready = cv_.wait_for(lock, timeout, [this] { return !queue_.empty() || shutdown_; });
-    if (!ready || queue_.empty()) {
+    const bool kReady =
+        cv_.wait_for(lock, timeout, [this] { return !queue_.empty() || shutdown_; });
+    if (!kReady || queue_.empty()) {
         return false;
     }
     out = std::move(queue_.front());
@@ -60,7 +66,7 @@ void EventQueue::Shutdown() {
 /// @name CommandArbiter — helpers
 /// @{
 
-void CommandArbiter::NotifyWatchers(std::vector<WatcherEntry> watchers,
+void CommandArbiter::NotifyWatchers(const std::vector<WatcherEntry>& watchers,
                                     const PendingNotification& notification) {
     for (const auto& entry : watchers) {
         if (entry.client_id != notification.target_client_id) {
@@ -81,7 +87,7 @@ void CommandArbiter::NotifyWatchers(std::vector<WatcherEntry> watchers,
     }
 }
 
-void CommandArbiter::NotifyPending(std::vector<WatcherEntry> watchers,
+void CommandArbiter::NotifyPending(const std::vector<WatcherEntry>& watchers,
                                    const std::vector<PendingNotification>& notifications) {
     for (const auto& notification : notifications) {
         NotifyWatchers(watchers, notification);
@@ -120,17 +126,17 @@ void CommandArbiter::ResumeSuspendedHolder(DroneState& state, std::string_view d
 void CommandArbiter::EvictExpiredHolder(DroneState& state, std::string_view drone_id,
                                         std::vector<PendingNotification>* notifications) {
     while (state.holder.has_value() && IsExpired(state.holder->expiry)) {
-        const DroneState::Holder expired_holder = *state.holder;
+        const DroneState::Holder kExpiredHolder = *state.holder;
         core::Logger::WarnFmt("CommandArbiter: authority of '{}' on drone '{}' expired",
-                              expired_holder.client_id, drone_id);
+                              kExpiredHolder.client_id, drone_id);
 
         state.holder.reset();
         notifications->push_back(PendingNotification{
-            .target_client_id = expired_holder.client_id,
+            .target_client_id = kExpiredHolder.client_id,
             .kind = AuthorityEvent::Kind::kExpired,
             .drone_id = std::string(drone_id),
             .holder_client_id = "",
-            .holder_priority = expired_holder.priority,
+            .holder_priority = kExpiredHolder.priority,
         });
 
         ResumeSuspendedHolder(state, drone_id, notifications);
@@ -160,7 +166,7 @@ void CommandArbiter::EvictExpiredHolder(DroneState& state, std::string_view dron
 core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
                                            std::chrono::milliseconds ttl) {
     if (context.priority >= CommandPriority::kEmergency) {
-        return core::Result::Ok();
+        return core::Result::Success();
     }
 
     std::vector<WatcherEntry> watchers_to_notify;
@@ -193,12 +199,12 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
                 "CommandArbiter: '{}' granted authority on drone '{}' (priority={})",
                 context.client_id, context.drone_id, static_cast<int>(context.priority));
         } else if (state.holder->client_id == context.client_id) {
-            const auto zero_point = std::chrono::system_clock::time_point{};
-            if (ttl.count() > 0 && state.holder->expiry != zero_point) {
+            const auto kZeroPoint = std::chrono::system_clock::time_point{};
+            if (ttl.count() > 0 && state.holder->expiry != kZeroPoint) {
                 state.holder->expiry = std::chrono::system_clock::now() + ttl;
             }
         } else if (context.priority > state.holder->priority) {
-            const DroneState::Holder previous_holder = *state.holder;
+            const DroneState::Holder kPreviousHolder = *state.holder;
 
             DroneState::Holder new_holder;
             new_holder.client_id = context.client_id;
@@ -207,11 +213,11 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
                 new_holder.expiry = std::chrono::system_clock::now() + ttl;
             }
 
-            state.suspended_holders.push_back(previous_holder);
+            state.suspended_holders.push_back(kPreviousHolder);
             state.holder = std::move(new_holder);
 
             notifications.push_back(PendingNotification{
-                .target_client_id = previous_holder.client_id,
+                .target_client_id = kPreviousHolder.client_id,
                 .kind = AuthorityEvent::Kind::kPreempted,
                 .drone_id = context.drone_id,
                 .holder_client_id = context.client_id,
@@ -227,8 +233,8 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
 
             core::Logger::InfoFmt(
                 "CommandArbiter: '{}' (priority={}) preempted '{}' (priority={}) on drone '{}'",
-                context.client_id, static_cast<int>(context.priority), previous_holder.client_id,
-                static_cast<int>(previous_holder.priority), context.drone_id);
+                context.client_id, static_cast<int>(context.priority), kPreviousHolder.client_id,
+                static_cast<int>(kPreviousHolder.priority), context.drone_id);
         } else {
             return core::Result::Rejected("command authority held by '" + state.holder->client_id +
                                           "' at priority " +
@@ -238,8 +244,8 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
         watchers_to_notify = state.watchers;
     }
 
-    NotifyPending(std::move(watchers_to_notify), notifications);
-    return core::Result::Ok();
+    NotifyPending(watchers_to_notify, notifications);
+    return core::Result::Success();
 }
 
 /// @}
@@ -268,17 +274,17 @@ void CommandArbiter::Release(const std::string& drone_id, const std::string& cli
             ResumeSuspendedHolder(state, drone_id, &notifications);
             watchers_to_notify = state.watchers;
         } else {
-            const std::size_t removed_count = std::erase_if(
+            const std::size_t kRemovedCount = std::erase_if(
                 state.suspended_holders,
                 [&](const DroneState::Holder& holder) { return holder.client_id == client_id; });
-            if (removed_count == 0U && notifications.empty()) {
+            if (kRemovedCount == 0U && notifications.empty()) {
                 return;
             }
             watchers_to_notify = state.watchers;
         }
     }
 
-    NotifyPending(std::move(watchers_to_notify), notifications);
+    NotifyPending(watchers_to_notify, notifications);
 }
 
 /// @}
@@ -287,11 +293,12 @@ void CommandArbiter::Release(const std::string& drone_id, const std::string& cli
 /// @{
 
 WatchToken CommandArbiter::Watch(const std::string& drone_id, const std::string& client_id,
-                                 CommandPriority priority, std::shared_ptr<EventQueue> queue) {
-    const std::uint64_t watch_id = next_watch_id_.fetch_add(1, std::memory_order_relaxed);
+                                 CommandPriority priority,
+                                 const std::shared_ptr<EventQueue>& queue) {
+    const std::uint64_t kWatchId = next_watch_id_.fetch_add(1, std::memory_order_relaxed);
 
     WatcherEntry entry;
-    entry.watch_id = watch_id;
+    entry.watch_id = kWatchId;
     entry.client_id = client_id;
     entry.priority = priority;
     entry.queue = queue;
@@ -302,9 +309,9 @@ WatchToken CommandArbiter::Watch(const std::string& drone_id, const std::string&
     }
 
     core::Logger::DebugFmt("CommandArbiter: '{}' watching drone '{}' (watch_id={})", client_id,
-                           drone_id, watch_id);
+                           drone_id, kWatchId);
 
-    return WatchToken{watch_id};
+    return WatchToken{kWatchId};
 }
 
 void CommandArbiter::Unwatch(WatchToken token) {

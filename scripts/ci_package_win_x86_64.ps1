@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+#
+# This file is part of SwarmKit.
+# See LICENSE.md in the repository root for full license terms.
+#
 # Windows x86_64 CI pipeline: conan install -> build -> test -> sdk + tools zips.
 # Run from the project root.
 #

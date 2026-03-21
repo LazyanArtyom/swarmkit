@@ -178,7 +178,8 @@ class CommandArbiter {
      * @returns WatchToken that must be passed to Unwatch() on disconnect.
      */
     [[nodiscard]] WatchToken Watch(const std::string& drone_id, const std::string& client_id,
-                                   CommandPriority priority, std::shared_ptr<EventQueue> queue);
+                                   CommandPriority priority,
+                                   const std::shared_ptr<EventQueue>& queue);
 
     /**
      * @brief Unregister a watcher identified by @p token.
@@ -218,20 +219,20 @@ class CommandArbiter {
     };
 
     /// @brief Notify matching watchers without holding the lock.
-    void NotifyWatchers(std::vector<WatcherEntry> watchers,
-                        const PendingNotification& notification);
+    static void NotifyWatchers(const std::vector<WatcherEntry>& watchers,
+                               const PendingNotification& notification);
 
     /// @brief Notify all pending notifications without holding the lock.
-    void NotifyPending(std::vector<WatcherEntry> watchers,
-                       const std::vector<PendingNotification>& notifications);
+    static void NotifyPending(const std::vector<WatcherEntry>& watchers,
+                              const std::vector<PendingNotification>& notifications);
 
     /// @brief Evict expired authority holders and resume suspended holders.
-    void EvictExpiredHolder(DroneState& state, std::string_view drone_id,
-                            std::vector<PendingNotification>* notifications);
+    static void EvictExpiredHolder(DroneState& state, std::string_view drone_id,
+                                   std::vector<PendingNotification>* notifications);
 
     /// @brief Resume the most recently preempted live holder if one exists.
-    void ResumeSuspendedHolder(DroneState& state, std::string_view drone_id,
-                               std::vector<PendingNotification>* notifications);
+    static void ResumeSuspendedHolder(DroneState& state, std::string_view drone_id,
+                                      std::vector<PendingNotification>* notifications);
 
     std::mutex mutex_;
     std::unordered_map<std::string, DroneState> drone_states_;

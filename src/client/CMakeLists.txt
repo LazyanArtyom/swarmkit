@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+#
+# This file is part of SwarmKit.
+# See LICENSE.md in the repository root for full license terms.
+
 add_library(swarmkit_client STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/client.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/swarm_client.cpp

@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include "swarmkit/client/client.h"
 
 #include <grpcpp/grpcpp.h>
@@ -31,8 +37,8 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
     const auto kEpoch = std::chrono::system_clock::time_point{};
     if (envelope.context.deadline != kEpoch) {
         proto_ctx->set_deadline_unix_ms(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      envelope.context.deadline.time_since_epoch())
-                                      .count());
+                                            envelope.context.deadline.time_since_epoch())
+                                            .count());
     }
 
     auto* proto_cmd = req.mutable_cmd();
@@ -61,9 +67,7 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                             proto_wp->set_alt_m(waypoint.alt_m);
                             proto_wp->set_speed_mps(waypoint.speed_mps);
                         },
-                        [&](const commands::CmdReturnHome&) {
-                            proto_cmd->mutable_return_home();
-                        },
+                        [&](const commands::CmdReturnHome&) { proto_cmd->mutable_return_home(); },
                         [&](const commands::CmdHoldPosition&) {
                             proto_cmd->mutable_hold_position();
                         },
@@ -135,11 +139,11 @@ PingResult Client::Ping() const {
     req.set_agent_id(impl_->config.client_id);
 
     swarmkit::v1::PingReply rep;
-    const grpc::Status status = impl_->stub->Ping(&ctx, req, &rep);
+    const grpc::Status kStatus = impl_->stub->Ping(&ctx, req, &rep);
 
-    if (!status.ok()) {
+    if (!kStatus.ok()) {
         out.ok = false;
-        out.error_message = status.error_message();
+        out.error_message = kStatus.error_message();
         return out;
     }
 
@@ -163,11 +167,11 @@ CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) con
     BuildProtoCommand(envelope, req);
 
     swarmkit::v1::CommandReply rep;
-    const grpc::Status status = impl_->stub->SendCommand(&ctx, req, &rep);
+    const grpc::Status kStatus = impl_->stub->SendCommand(&ctx, req, &rep);
 
-    if (!status.ok()) {
+    if (!kStatus.ok()) {
         out.ok = false;
-        out.message = status.error_message();
+        out.message = kStatus.error_message();
         return out;
     }
 
@@ -215,13 +219,13 @@ void Client::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHan
             }
 
             /// Finish() must be called even after a cancelled context.
-            const grpc::Status final_status = reader->Finish();
+            const grpc::Status kFinalStatus = reader->Finish();
 
             /// Surface the error only when the stream ended unexpectedly
             /// (i.e. not as a result of our own StopTelemetry() call).
-            if (!final_status.ok() && impl_->telemetry_active.load(std::memory_order_relaxed)) {
+            if (!kFinalStatus.ok() && impl_->telemetry_active.load(std::memory_order_relaxed)) {
                 if (on_error) {
-                    on_error(final_status.error_message());
+                    on_error(kFinalStatus.error_message());
                 }
             }
 
@@ -265,11 +269,11 @@ CommandResult Client::LockAuthority(const std::string& drone_id, std::int64_t tt
     req.set_ttl_ms(ttl_ms);
 
     swarmkit::v1::LockAuthorityReply rep;
-    const grpc::Status status = impl_->stub->LockAuthority(&ctx, req, &rep);
+    const grpc::Status kStatus = impl_->stub->LockAuthority(&ctx, req, &rep);
 
-    if (!status.ok()) {
+    if (!kStatus.ok()) {
         out.ok = false;
-        out.message = status.error_message();
+        out.message = kStatus.error_message();
         return out;
     }
 

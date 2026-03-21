@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #pragma once
 
 #include <functional>
@@ -36,8 +42,7 @@ class IDroneBackend {
     /// @brief Execute a flight command described by @p envelope.
     /// @returns Ok on acceptance, Rejected if the command is not valid in the
     ///          current state, or Failed on a hard error.
-    [[nodiscard]] virtual swarmkit::core::Result Execute(
-        const CommandEnvelope& envelope) = 0;
+    [[nodiscard]] virtual swarmkit::core::Result Execute(const CommandEnvelope& envelope) = 0;
 
     /// @brief Begin streaming telemetry for @p drone_id at approximately
     ///        @p rate_hertz frames per second.
@@ -45,18 +50,15 @@ class IDroneBackend {
     /// @p callback is invoked from the backend's internal thread for every
     /// frame produced.  Calling StartTelemetry() when a stream is already
     /// running returns Rejected without disturbing the existing stream.
-    [[nodiscard]] virtual swarmkit::core::Result StartTelemetry(
-        const std::string&  drone_id,
-        int                 rate_hertz,
-        TelemetryCallback   callback) = 0;
+    [[nodiscard]] virtual swarmkit::core::Result StartTelemetry(const std::string& drone_id,
+                                                                int rate_hertz,
+                                                                TelemetryCallback callback) = 0;
 
     /// @brief Stop the active telemetry stream for @p drone_id.
     /// @note Safe to call when no stream is running (returns Ok silently).
-    [[nodiscard]] virtual swarmkit::core::Result StopTelemetry(
-        const std::string& drone_id) = 0;
+    [[nodiscard]] virtual swarmkit::core::Result StopTelemetry(const std::string& drone_id) = 0;
 };
 
 using DroneBackendPtr = std::unique_ptr<IDroneBackend>;
 
 }  // namespace swarmkit::agent
-

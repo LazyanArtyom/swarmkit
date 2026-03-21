@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+#
+# This file is part of SwarmKit.
+# See LICENSE.md in the repository root for full license terms.
+#
 # Deploy the packaged SDK tarball to ~/swarmkit-sdk.
 # Clears the target directory and extracts the latest build.
 #

@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -5,6 +11,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include "swarmkit/client/client.h"
@@ -21,20 +28,20 @@ extern "C" void OnSignal(int /*sig*/) {
 }
 
 /// @brief Retrieve a keyed argument from the command line, or return a default.
-[[nodiscard]] std::string GetArg(int argc, char** argv, const std::string& key,
-                                 const std::string& default_value) {
+[[nodiscard]] std::string GetArg(int argc, char** argv, std::string_view key,
+                                 std::string_view default_value) {
     for (int idx = 1; idx + 1 < argc; ++idx) {
-        if (std::string(argv[idx]) == key) {
+        if (std::string_view{argv[idx]} == key) {
             return {argv[idx + 1]};
         }
     }
-    return default_value;
+    return std::string{default_value};
 }
 
 /// @brief Check whether a boolean flag is present on the command line.
-[[nodiscard]] bool HasFlag(int argc, char** argv, const std::string& flag) {
+[[nodiscard]] bool HasFlag(int argc, char** argv, std::string_view flag) {
     for (int idx = 1; idx < argc; ++idx) {
-        if (std::string(argv[idx]) == flag) {
+        if (std::string_view{argv[idx]} == flag) {
             return true;
         }
     }
@@ -85,28 +92,26 @@ void PrintUsage() {
  *   takeoff [--alt M]
  *   waypoint --lat L --lon L --alt M [--speed S]
  */
-int RunCommand(swarmkit::client::Client& client,
-               const std::string&        drone_id,
-               int                       argc,
-               char**                    argv) {
+int RunCommand(swarmkit::client::Client& client, const std::string& drone_id, int argc,
+               char** argv) {
     using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
 
     std::string action;
     for (int idx = 1; idx < argc; ++idx) {
-        const std::string current_arg = argv[idx];
-        if (current_arg == "--drone" || current_arg == "--alt"  || current_arg == "--lat"  ||
-            current_arg == "--lon"   || current_arg == "--speed" || current_arg == "--rate" ||
-            current_arg == "command") {
+        const std::string kCurrentArg = argv[idx];
+        if (kCurrentArg == "--drone" || kCurrentArg == "--alt" || kCurrentArg == "--lat" ||
+            kCurrentArg == "--lon" || kCurrentArg == "--speed" || kCurrentArg == "--rate" ||
+            kCurrentArg == "command") {
             ++idx;
             continue;
         }
-        if (current_arg.starts_with("--")) {
+        if (kCurrentArg.starts_with("--")) {
             continue;
         }
-        if (current_arg == "ping" || current_arg == "telemetry") {
+        if (kCurrentArg == "ping" || kCurrentArg == "telemetry") {
             continue;
         }
-        action = current_arg;
+        action = kCurrentArg;
         break;
     }
 
@@ -128,26 +133,26 @@ int RunCommand(swarmkit::client::Client& client,
     } else if (action == "return-home") {
         maybe_cmd = NavCmd{CmdReturnHome{}};
     } else if (action == "takeoff") {
-        const std::string alt_str = GetArg(argc, argv, "--alt", "10");
+        const std::string kAltStr = GetArg(argc, argv, "--alt", "10");
         try {
             CmdTakeoff takeoff_cmd;
-            takeoff_cmd.alt_m = std::stof(alt_str);
+            takeoff_cmd.alt_m = std::stof(kAltStr);
             maybe_cmd = FlightCmd{takeoff_cmd};
         } catch (const std::exception& exc) {
-            std::cerr << "Invalid --alt value '" << alt_str << "': " << exc.what() << "\n";
+            std::cerr << "Invalid --alt value '" << kAltStr << "': " << exc.what() << "\n";
             return EXIT_FAILURE;
         }
     } else if (action == "waypoint") {
-        const std::string lat_str   = GetArg(argc, argv, "--lat",   "0");
-        const std::string lon_str   = GetArg(argc, argv, "--lon",   "0");
-        const std::string alt_str   = GetArg(argc, argv, "--alt",   "0");
-        const std::string speed_str = GetArg(argc, argv, "--speed", "0");
+        const std::string kLatStr = GetArg(argc, argv, "--lat", "0");
+        const std::string kLonStr = GetArg(argc, argv, "--lon", "0");
+        const std::string kAltStr = GetArg(argc, argv, "--alt", "0");
+        const std::string kSpeedStr = GetArg(argc, argv, "--speed", "0");
         try {
             CmdSetWaypoint waypoint_cmd;
-            waypoint_cmd.lat_deg   = std::stod(lat_str);
-            waypoint_cmd.lon_deg   = std::stod(lon_str);
-            waypoint_cmd.alt_m     = std::stof(alt_str);
-            waypoint_cmd.speed_mps = std::stof(speed_str);
+            waypoint_cmd.lat_deg = std::stod(kLatStr);
+            waypoint_cmd.lon_deg = std::stod(kLonStr);
+            waypoint_cmd.alt_m = std::stof(kAltStr);
+            waypoint_cmd.speed_mps = std::stof(kSpeedStr);
             maybe_cmd = NavCmd{waypoint_cmd};
         } catch (const std::exception& exc) {
             std::cerr << "Invalid numeric argument: " << exc.what() << "\n";
@@ -160,35 +165,34 @@ int RunCommand(swarmkit::client::Client& client,
     }
 
     CommandEnvelope envelope;
-    envelope.context.drone_id  = drone_id;
+    envelope.context.drone_id = drone_id;
     envelope.context.client_id = "swarmkit-cli";
-    envelope.context.priority  = CommandPriority::kSupervisor;
-    envelope.command           = std::move(*maybe_cmd);
+    envelope.context.priority = CommandPriority::kSupervisor;
+    envelope.command = std::move(*maybe_cmd);
 
-    const swarmkit::client::CommandResult result = client.SendCommand(envelope);
-    if (!result.ok) {
-        std::cerr << "Command REJECTED: " << result.message << "\n";
+    const swarmkit::client::CommandResult kResult = client.SendCommand(envelope);
+    if (!kResult.ok) {
+        std::cerr << "Command REJECTED: " << kResult.message << "\n";
         return EXIT_FAILURE;
     }
 
-    std::cout << "Command OK"
-              << (result.message.empty() ? "" : ": " + result.message) << "\n";
+    std::cout << "Command OK" << (kResult.message.empty() ? "" : ": " + kResult.message) << "\n";
     return EXIT_SUCCESS;
 }
 
 /// @brief Send a ping RPC and print the response.
 int RunPing(swarmkit::client::Client& client) {
-    const swarmkit::client::PingResult result = client.Ping();
+    const swarmkit::client::PingResult kResult = client.Ping();
 
-    if (!result.ok) {
-        std::cerr << "Ping FAILED: " << result.error_message << "\n";
+    if (!kResult.ok) {
+        std::cerr << "Ping FAILED: " << kResult.error_message << "\n";
         return EXIT_FAILURE;
     }
 
     std::cout << "Ping OK\n"
-              << "  agent_id  : " << result.agent_id << "\n"
-              << "  version   : " << result.version << "\n"
-              << "  time_ms   : " << result.unix_time_ms << "\n";
+              << "  agent_id  : " << kResult.agent_id << "\n"
+              << "  version   : " << kResult.version << "\n"
+              << "  time_ms   : " << kResult.unix_time_ms << "\n";
     return EXIT_SUCCESS;
 }
 
@@ -206,7 +210,7 @@ int RunTelemetry(swarmkit::client::Client& client, const std::string& drone_id, 
 
     swarmkit::client::TelemetrySubscription subscription;
     subscription.drone_id = drone_id;
-    subscription.rate_hertz  = rate_hz;
+    subscription.rate_hertz = rate_hz;
 
     client.SubscribeTelemetry(
         subscription,
@@ -240,30 +244,30 @@ int main(int argc, char** argv) {
         return EXIT_SUCCESS;
     }
 
-    static constexpr const char* kDefaultAddr = "127.0.0.1:50061";
-    static constexpr const char* kDefaultCommand = "ping";
+    static constexpr std::string_view kDefaultAddr = "127.0.0.1:50061";
+    static constexpr std::string_view kDefaultCommand = "ping";
 
     std::string addr;
     std::string command;
 
-    auto is_subcommand = [](const std::string& str) {
+    auto is_subcommand = [](std::string_view str) {
         return str == "ping" || str == "telemetry" || str == "command";
     };
 
     if (argc >= 3 && std::string(argv[1]).find(':') != std::string::npos) {
-        addr    = argv[1];
+        addr = argv[1];
         command = argv[2];
     } else if (argc >= 2) {
-        const std::string first_arg = argv[1];
-        if (is_subcommand(first_arg)) {
-            addr    = kDefaultAddr;
-            command = first_arg;
+        const std::string kFirstArg = argv[1];
+        if (is_subcommand(kFirstArg)) {
+            addr = kDefaultAddr;
+            command = kFirstArg;
         } else {
-            addr    = first_arg;
+            addr = kFirstArg;
             command = kDefaultCommand;
         }
     } else {
-        addr    = kDefaultAddr;
+        addr = kDefaultAddr;
         command = kDefaultCommand;
     }
 
@@ -283,20 +287,20 @@ int main(int argc, char** argv) {
     }
 
     if (command == "telemetry") {
-        const std::string drone_id = GetArg(argc, argv, "--drone", "default");
-        const std::string rate_str = GetArg(argc, argv, "--rate", "1");
+        const std::string kDroneId = GetArg(argc, argv, "--drone", "default");
+        const std::string kRateStr = GetArg(argc, argv, "--rate", "1");
         try {
-            const int rate_hz = std::stoi(rate_str);
-            return RunTelemetry(client, drone_id, rate_hz);
+            const int kRateHz = std::stoi(kRateStr);
+            return RunTelemetry(client, kDroneId, kRateHz);
         } catch (const std::exception& exc) {
-            std::cerr << "Invalid --rate value '" << rate_str << "': " << exc.what() << "\n";
+            std::cerr << "Invalid --rate value '" << kRateStr << "': " << exc.what() << "\n";
             return EXIT_FAILURE;
         }
     }
 
     if (command == "command") {
-        const std::string drone_id = GetArg(argc, argv, "--drone", "default");
-        return RunCommand(client, drone_id, argc, argv);
+        const std::string kDroneId = GetArg(argc, argv, "--drone", "default");
+        return RunCommand(client, kDroneId, argc, argv);
     }
 
     std::cerr << "Unknown command: " << command << "\n\n";

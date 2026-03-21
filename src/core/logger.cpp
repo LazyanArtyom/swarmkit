@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
 #include "swarmkit/core/logger.h"
 
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -6,13 +12,13 @@
 
 #include <mutex>
 #include <string>
-#include <utility>
+#include <string_view>
 
 namespace swarmkit::core {
 namespace {
 
-constexpr const char* kDefaultLoggerName = "swarmkit";
-constexpr const char* kDefaultPattern = "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v";
+constexpr std::string_view kDefaultLoggerName = "swarmkit";
+constexpr std::string_view kDefaultPattern = "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v";
 
 struct LoggerState {
     std::mutex mutex;
@@ -51,15 +57,16 @@ std::shared_ptr<spdlog::logger> CreateLoggerUnlocked(const LoggerConfig& config)
 
     if (config.sink_type == LogSinkType::kRotatingFile) {
         created_logger =
-            spdlog::rotating_logger_mt(kDefaultLoggerName, config.log_file_path,
+            spdlog::rotating_logger_mt(std::string{kDefaultLoggerName}, config.log_file_path,
                                        static_cast<std::size_t>(config.max_file_size_bytes),
                                        static_cast<std::size_t>(config.max_files));
     } else {
-        created_logger = spdlog::stdout_color_mt(kDefaultLoggerName);
+        created_logger = spdlog::stdout_color_mt(std::string{kDefaultLoggerName});
     }
 
-    const std::string pattern = config.pattern.empty() ? kDefaultPattern : config.pattern;
-    created_logger->set_pattern(pattern);
+    const std::string kPattern =
+        config.pattern.empty() ? std::string{kDefaultPattern} : config.pattern;
+    created_logger->set_pattern(kPattern);
     created_logger->set_level(ToSpdLevel(config.level));
     created_logger->flush_on(spdlog::level::info);
 
@@ -77,9 +84,9 @@ void Logger::Init(const LoggerConfig& config) {
 
     if (state.initialized) {
         state.logger->set_level(ToSpdLevel(state.config.level));
-        const std::string active_pattern =
-            state.config.pattern.empty() ? kDefaultPattern : state.config.pattern;
-        state.logger->set_pattern(active_pattern);
+        const std::string kActivePattern =
+            state.config.pattern.empty() ? std::string{kDefaultPattern} : state.config.pattern;
+        state.logger->set_pattern(kActivePattern);
         return;
     }
 
@@ -143,26 +150,26 @@ void Logger::Log(LogLevel level, fmt::string_view format, fmt::format_args argum
         return;
     }
 
-    const std::string message = fmt::vformat(format, arguments);
+    const std::string kMessage = fmt::vformat(format, arguments);
 
     switch (level) {
         case LogLevel::kTrace:
-            logger_copy->trace(message);
+            logger_copy->trace(kMessage);
             break;
         case LogLevel::kDebug:
-            logger_copy->debug(message);
+            logger_copy->debug(kMessage);
             break;
         case LogLevel::kInfo:
-            logger_copy->info(message);
+            logger_copy->info(kMessage);
             break;
         case LogLevel::kWarn:
-            logger_copy->warn(message);
+            logger_copy->warn(kMessage);
             break;
         case LogLevel::kError:
-            logger_copy->error(message);
+            logger_copy->error(kMessage);
             break;
         case LogLevel::kCritical:
-            logger_copy->critical(message);
+            logger_copy->critical(kMessage);
             break;
         case LogLevel::kOff:
             break;

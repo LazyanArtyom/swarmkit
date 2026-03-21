@@ -1,3 +1,9 @@
+# Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+#
+# This file is part of SwarmKit.
+# See LICENSE.md in the repository root for full license terms.
+
 from conan import ConanFile
 from conan.tools.cmake import CMake, cmake_layout
 from pathlib import Path
