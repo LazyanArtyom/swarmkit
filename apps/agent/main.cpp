@@ -11,16 +11,17 @@ constexpr const char* kDefaultBindAddr = "0.0.0.0:50061";
 constexpr const char* kDefaultInboxDir = "/tmp/swarmkit_inbox";
 constexpr const char* kDefaultAgentId = "agent-1";
 
-std::string GetArg(int argc, char** argv, const std::string& key, const std::string& def) {
+[[nodiscard]] std::string GetArg(int argc, char** argv, const std::string& key,
+                                 const std::string& default_value) {
     for (int idx = 1; idx + 1 < argc; ++idx) {
         if (std::string(argv[idx]) == key) {
             return {argv[idx + 1]};
         }
     }
-    return def;
+    return default_value;
 }
 
-bool HasFlag(int argc, char** argv, const std::string& flag) {
+[[nodiscard]] bool HasFlag(int argc, char** argv, const std::string& flag) {
     for (int idx = 1; idx < argc; ++idx) {
         if (std::string(argv[idx]) == flag) {
             return true;
@@ -29,7 +30,7 @@ bool HasFlag(int argc, char** argv, const std::string& flag) {
     return false;
 }
 
-swarmkit::core::LogLevel ParseLogLevel(const std::string& value) {
+[[nodiscard]] swarmkit::core::LogLevel ParseLogLevel(const std::string& value) {
     if (value == "trace") {
         return swarmkit::core::LogLevel::kTrace;
     }
@@ -71,10 +72,10 @@ int main(int argc, char** argv) {
     logger_cfg.sink_type = swarmkit::core::LogSinkType::kStdout;
     logger_cfg.level = swarmkit::core::LogLevel::kInfo;
 
-    const std::string kLogFile = GetArg(argc, argv, "--log-file", "");
-    if (!kLogFile.empty()) {
+    const std::string log_file = GetArg(argc, argv, "--log-file", "");
+    if (!log_file.empty()) {
         logger_cfg.sink_type = swarmkit::core::LogSinkType::kRotatingFile;
-        logger_cfg.log_file_path = kLogFile;
+        logger_cfg.log_file_path = log_file;
     }
 
     logger_cfg.level = ParseLogLevel(GetArg(argc, argv, "--log-level", "info"));

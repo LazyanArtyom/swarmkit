@@ -127,6 +127,19 @@
             "problemMatcher": []
         },
         // ----------------------------------------------------------------
+        // Deploy SDK — extract tarball to ~/swarmkit-sdk
+        // ----------------------------------------------------------------
+        {
+            "label": "deploy-sdk",
+            "type": "shell",
+            "osx":     { "command": "bash", "args": ["-lc", "chmod +x scripts/deploy_sdk_mac.sh && ./scripts/deploy_sdk_mac.sh"] },
+            "linux":   { "command": "bash", "args": ["-lc", "echo 'deploy_sdk_mac.sh is macOS only; skipping.'"] },
+            "windows": { "command": "powershell", "args": ["-NoProfile", "-Command", "Write-Host 'deploy_sdk_mac.sh is macOS only; skipping.'"] },
+            "dependsOn": ["package-release"],
+            "presentation": { "reveal": "always", "panel": "shared" },
+            "problemMatcher": []
+        },
+        // ----------------------------------------------------------------
         // Run targets
         // ----------------------------------------------------------------
         {
@@ -191,7 +204,7 @@
         },
         {
             "label": "kb: deploy installer",
-            "dependsOn": ["package-release"],
+            "dependsOn": ["deploy-sdk"],
             "problemMatcher": []
         }
     ]

@@ -1,16 +1,29 @@
 #include "swarmkit/agent/arbiter.h"
 
 #include <algorithm>
-#include <chrono>
 #include <utility>
 
 #include "swarmkit/core/logger.h"
 
 namespace swarmkit::agent {
 
-// ---------------------------------------------------------------------------
-// EventQueue
-// ---------------------------------------------------------------------------
+using swarmkit::commands::CommandContext;
+using swarmkit::commands::CommandPriority;
+
+namespace {
+
+[[nodiscard]] bool HasExpiry(const std::chrono::system_clock::time_point& expiry) {
+    return expiry != std::chrono::system_clock::time_point{};
+}
+
+[[nodiscard]] bool IsExpired(const std::chrono::system_clock::time_point& expiry) {
+    return HasExpiry(expiry) && std::chrono::system_clock::now() >= expiry;
+}
+
+}  // namespace
+
+/// @name EventQueue
+/// @{
 
 void EventQueue::Push(AuthorityEvent event) {
     {
@@ -25,10 +38,8 @@ void EventQueue::Push(AuthorityEvent event) {
 
 bool EventQueue::Pop(AuthorityEvent& out, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex_);
-    const bool kReady = cv_.wait_for(lock, timeout, [this] {
-        return !queue_.empty() || shutdown_;
-    });
-    if (!kReady || queue_.empty()) {
+    const bool ready = cv_.wait_for(lock, timeout, [this] { return !queue_.empty() || shutdown_; });
+    if (!ready || queue_.empty()) {
         return false;
     }
     out = std::move(queue_.front());
@@ -44,171 +55,201 @@ void EventQueue::Shutdown() {
     cv_.notify_all();
 }
 
-// ---------------------------------------------------------------------------
-// CommandArbiter — helpers
-// ---------------------------------------------------------------------------
+/// @}
 
-void CommandArbiter::EvictExpiredHolder(DroneState&        state,
-                                        const std::string& drone_id) {
-    if (!state.holder.has_value()) {
-        return;
-    }
-    const auto& expiry = state.holder->expiry;
-    const bool  kHasExpiry =
-        expiry != std::chrono::system_clock::time_point{};
-    if (kHasExpiry && std::chrono::system_clock::now() >= expiry) {
-        core::Logger::WarnFmt(
-            "CommandArbiter: authority of '{}' on drone '{}' expired",
-            state.holder->client_id, drone_id);
-
-        const auto kExpiredClient   = state.holder->client_id;
-        const auto kExpiredPriority = state.holder->priority;
-        const auto kWatchers        = state.watchers;
-        state.holder.reset();
-
-        // Notify outside lock — release lock before calling NotifyWatchers.
-        // (EvictExpiredHolder is always called while the lock is held by the
-        //  caller, so we copy the watcher list and notify after returning.)
-        // We store watchers in a local and the caller will notify.
-        // This helper just mutates state; see CheckAndGrant / Release for the
-        // notification path after acquiring watchers.
-        (void)kExpiredClient;
-        (void)kExpiredPriority;
-        (void)kWatchers;
-    }
-}
+/// @name CommandArbiter — helpers
+/// @{
 
 void CommandArbiter::NotifyWatchers(std::vector<WatcherEntry> watchers,
-                                    const std::string&         drone_id,
-                                    AuthorityEvent::Kind        kind,
-                                    const std::string&          holder_client_id,
-                                    CommandPriority             holder_priority) {
+                                    const PendingNotification& notification) {
     for (const auto& entry : watchers) {
+        if (entry.client_id != notification.target_client_id) {
+            continue;
+        }
+
         auto queue = entry.queue.lock();
         if (!queue) {
-            continue;  // Queue destroyed; watcher already disconnected.
+            continue;
         }
+
         AuthorityEvent event;
-        event.kind              = kind;
-        event.drone_id          = drone_id;
-        event.holder_client_id  = holder_client_id;
-        event.holder_priority   = holder_priority;
+        event.kind = notification.kind;
+        event.drone_id = notification.drone_id;
+        event.holder_client_id = notification.holder_client_id;
+        event.holder_priority = notification.holder_priority;
         queue->Push(std::move(event));
     }
 }
 
-// ---------------------------------------------------------------------------
-// CommandArbiter — CheckAndGrant
-// ---------------------------------------------------------------------------
+void CommandArbiter::NotifyPending(std::vector<WatcherEntry> watchers,
+                                   const std::vector<PendingNotification>& notifications) {
+    for (const auto& notification : notifications) {
+        NotifyWatchers(watchers, notification);
+    }
+}
 
-core::Result CommandArbiter::CheckAndGrant(const CommandContext&     context,
+void CommandArbiter::ResumeSuspendedHolder(DroneState& state, std::string_view drone_id,
+                                           std::vector<PendingNotification>* notifications) {
+    while (!state.suspended_holders.empty()) {
+        DroneState::Holder resumed_holder = std::move(state.suspended_holders.back());
+        state.suspended_holders.pop_back();
+
+        if (IsExpired(resumed_holder.expiry)) {
+            notifications->push_back(PendingNotification{
+                .target_client_id = resumed_holder.client_id,
+                .kind = AuthorityEvent::Kind::kExpired,
+                .drone_id = std::string(drone_id),
+                .holder_client_id = "",
+                .holder_priority = resumed_holder.priority,
+            });
+            continue;
+        }
+
+        state.holder = resumed_holder;
+        notifications->push_back(PendingNotification{
+            .target_client_id = resumed_holder.client_id,
+            .kind = AuthorityEvent::Kind::kResumed,
+            .drone_id = std::string(drone_id),
+            .holder_client_id = resumed_holder.client_id,
+            .holder_priority = resumed_holder.priority,
+        });
+        return;
+    }
+}
+
+void CommandArbiter::EvictExpiredHolder(DroneState& state, std::string_view drone_id,
+                                        std::vector<PendingNotification>* notifications) {
+    while (state.holder.has_value() && IsExpired(state.holder->expiry)) {
+        const DroneState::Holder expired_holder = *state.holder;
+        core::Logger::WarnFmt("CommandArbiter: authority of '{}' on drone '{}' expired",
+                              expired_holder.client_id, drone_id);
+
+        state.holder.reset();
+        notifications->push_back(PendingNotification{
+            .target_client_id = expired_holder.client_id,
+            .kind = AuthorityEvent::Kind::kExpired,
+            .drone_id = std::string(drone_id),
+            .holder_client_id = "",
+            .holder_priority = expired_holder.priority,
+        });
+
+        ResumeSuspendedHolder(state, drone_id, notifications);
+    }
+
+    std::erase_if(state.suspended_holders, [&](const DroneState::Holder& holder) {
+        if (!IsExpired(holder.expiry)) {
+            return false;
+        }
+
+        notifications->push_back(PendingNotification{
+            .target_client_id = holder.client_id,
+            .kind = AuthorityEvent::Kind::kExpired,
+            .drone_id = std::string(drone_id),
+            .holder_client_id = "",
+            .holder_priority = holder.priority,
+        });
+        return true;
+    });
+}
+
+/// @}
+
+/// @name CommandArbiter — CheckAndGrant
+/// @{
+
+core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
                                            std::chrono::milliseconds ttl) {
-    // Emergency commands bypass the arbiter entirely.
     if (context.priority >= CommandPriority::kEmergency) {
         return core::Result::Ok();
     }
 
     std::vector<WatcherEntry> watchers_to_notify;
-    AuthorityEvent::Kind      notify_kind{};
-    bool                      should_notify = false;
+    std::vector<PendingNotification> notifications;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto& state = drone_states_[context.drone_id];
 
-        // Evict expired holder before evaluating.
-        if (state.holder.has_value()) {
-            const auto& expiry = state.holder->expiry;
-            const bool  kHasExpiry =
-                expiry != std::chrono::system_clock::time_point{};
-            if (kHasExpiry && std::chrono::system_clock::now() >= expiry) {
-                core::Logger::WarnFmt(
-                    "CommandArbiter: authority of '{}' on drone '{}' expired",
-                    state.holder->client_id, context.drone_id);
-                state.holder.reset();
-                // Notify kExpired outside the lock below.
-                watchers_to_notify = state.watchers;
-                notify_kind        = AuthorityEvent::Kind::kExpired;
-                should_notify      = true;
-            }
-        }
+        EvictExpiredHolder(state, context.drone_id, &notifications);
 
         if (!state.holder.has_value()) {
-            // No current holder — grant authority.
             DroneState::Holder new_holder;
             new_holder.client_id = context.client_id;
-            new_holder.priority  = context.priority;
+            new_holder.priority = context.priority;
             if (ttl.count() > 0) {
-                new_holder.expiry =
-                    std::chrono::system_clock::now() + ttl;
+                new_holder.expiry = std::chrono::system_clock::now() + ttl;
             }
             state.holder = std::move(new_holder);
 
-            if (!should_notify) {
-                watchers_to_notify = state.watchers;
-                notify_kind        = AuthorityEvent::Kind::kGranted;
-                should_notify      = true;
-            }
+            notifications.push_back(PendingNotification{
+                .target_client_id = context.client_id,
+                .kind = AuthorityEvent::Kind::kGranted,
+                .drone_id = context.drone_id,
+                .holder_client_id = context.client_id,
+                .holder_priority = context.priority,
+            });
 
             core::Logger::DebugFmt(
                 "CommandArbiter: '{}' granted authority on drone '{}' (priority={})",
-                context.client_id, context.drone_id,
-                static_cast<int>(context.priority));
+                context.client_id, context.drone_id, static_cast<int>(context.priority));
         } else if (state.holder->client_id == context.client_id) {
-            // Same client — refresh TTL if requested.
-            if (ttl.count() > 0) {
-                state.holder->expiry =
-                    std::chrono::system_clock::now() + ttl;
+            const auto zero_point = std::chrono::system_clock::time_point{};
+            if (ttl.count() > 0 && state.holder->expiry != zero_point) {
+                state.holder->expiry = std::chrono::system_clock::now() + ttl;
             }
         } else if (context.priority > state.holder->priority) {
-            // Higher priority — preempt the current holder.
-            const std::string kPrevClient   = state.holder->client_id;
-            const CommandPriority kPrevPrio = state.holder->priority;
+            const DroneState::Holder previous_holder = *state.holder;
 
             DroneState::Holder new_holder;
             new_holder.client_id = context.client_id;
-            new_holder.priority  = context.priority;
+            new_holder.priority = context.priority;
             if (ttl.count() > 0) {
-                new_holder.expiry =
-                    std::chrono::system_clock::now() + ttl;
+                new_holder.expiry = std::chrono::system_clock::now() + ttl;
             }
+
+            state.suspended_holders.push_back(previous_holder);
             state.holder = std::move(new_holder);
 
+            notifications.push_back(PendingNotification{
+                .target_client_id = previous_holder.client_id,
+                .kind = AuthorityEvent::Kind::kPreempted,
+                .drone_id = context.drone_id,
+                .holder_client_id = context.client_id,
+                .holder_priority = context.priority,
+            });
+            notifications.push_back(PendingNotification{
+                .target_client_id = context.client_id,
+                .kind = AuthorityEvent::Kind::kGranted,
+                .drone_id = context.drone_id,
+                .holder_client_id = context.client_id,
+                .holder_priority = context.priority,
+            });
+
             core::Logger::InfoFmt(
-                "CommandArbiter: '{}' (priority={}) preempted '{}' (priority={}) "
-                "on drone '{}'",
-                context.client_id, static_cast<int>(context.priority),
-                kPrevClient, static_cast<int>(kPrevPrio),
-                context.drone_id);
-
-            watchers_to_notify = state.watchers;
-            notify_kind        = AuthorityEvent::Kind::kPreempted;
-            should_notify      = true;
+                "CommandArbiter: '{}' (priority={}) preempted '{}' (priority={}) on drone '{}'",
+                context.client_id, static_cast<int>(context.priority), previous_holder.client_id,
+                static_cast<int>(previous_holder.priority), context.drone_id);
         } else {
-            // Lower or equal priority from a different client — reject.
-            return core::Result::Rejected(
-                "command authority held by '" + state.holder->client_id +
-                "' at priority " +
-                std::to_string(static_cast<int>(state.holder->priority)));
+            return core::Result::Rejected("command authority held by '" + state.holder->client_id +
+                                          "' at priority " +
+                                          std::to_string(static_cast<int>(state.holder->priority)));
         }
-    }  // lock released
 
-    if (should_notify) {
-        NotifyWatchers(std::move(watchers_to_notify), context.drone_id,
-                       notify_kind, context.client_id, context.priority);
+        watchers_to_notify = state.watchers;
     }
 
+    NotifyPending(std::move(watchers_to_notify), notifications);
     return core::Result::Ok();
 }
 
-// ---------------------------------------------------------------------------
-// CommandArbiter — Release
-// ---------------------------------------------------------------------------
+/// @}
 
-void CommandArbiter::Release(const std::string& drone_id,
-                             const std::string& client_id) {
+/// @name CommandArbiter — Release
+/// @{
+
+void CommandArbiter::Release(const std::string& drone_id, const std::string& client_id) {
     std::vector<WatcherEntry> watchers_to_notify;
-    bool                      should_notify = false;
+    std::vector<PendingNotification> notifications;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -216,68 +257,64 @@ void CommandArbiter::Release(const std::string& drone_id,
         if (iter == drone_states_.end()) {
             return;
         }
+
         auto& state = iter->second;
-        if (!state.holder.has_value() ||
-            state.holder->client_id != client_id) {
-            return;
+        EvictExpiredHolder(state, drone_id, &notifications);
+
+        if (state.holder.has_value() && state.holder->client_id == client_id) {
+            core::Logger::InfoFmt("CommandArbiter: '{}' released authority on drone '{}'",
+                                  client_id, drone_id);
+            state.holder.reset();
+            ResumeSuspendedHolder(state, drone_id, &notifications);
+            watchers_to_notify = state.watchers;
+        } else {
+            const std::size_t removed_count = std::erase_if(
+                state.suspended_holders,
+                [&](const DroneState::Holder& holder) { return holder.client_id == client_id; });
+            if (removed_count == 0U && notifications.empty()) {
+                return;
+            }
+            watchers_to_notify = state.watchers;
         }
-
-        core::Logger::InfoFmt(
-            "CommandArbiter: '{}' released authority on drone '{}'",
-            client_id, drone_id);
-
-        state.holder.reset();
-        watchers_to_notify = state.watchers;
-        should_notify      = true;
     }
 
-    if (should_notify) {
-        NotifyWatchers(std::move(watchers_to_notify), drone_id,
-                       AuthorityEvent::Kind::kResumed, /*holder=*/"",
-                       CommandPriority::kOperator);
-    }
+    NotifyPending(std::move(watchers_to_notify), notifications);
 }
 
-// ---------------------------------------------------------------------------
-// CommandArbiter — Watch / Unwatch
-// ---------------------------------------------------------------------------
+/// @}
 
-WatchToken CommandArbiter::Watch(const std::string&          drone_id,
-                                 const std::string&          client_id,
-                                 CommandPriority             priority,
-                                 std::shared_ptr<EventQueue> queue) {
-    const std::uint64_t kWatchId =
-        next_watch_id_.fetch_add(1, std::memory_order_relaxed);
+/// @name CommandArbiter — Watch / Unwatch
+/// @{
+
+WatchToken CommandArbiter::Watch(const std::string& drone_id, const std::string& client_id,
+                                 CommandPriority priority, std::shared_ptr<EventQueue> queue) {
+    const std::uint64_t watch_id = next_watch_id_.fetch_add(1, std::memory_order_relaxed);
 
     WatcherEntry entry;
-    entry.watch_id  = kWatchId;
+    entry.watch_id = watch_id;
     entry.client_id = client_id;
-    entry.priority  = priority;
-    entry.queue     = queue;
+    entry.priority = priority;
+    entry.queue = queue;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
         drone_states_[drone_id].watchers.push_back(std::move(entry));
     }
 
-    core::Logger::DebugFmt(
-        "CommandArbiter: '{}' watching drone '{}' (watch_id={})",
-        client_id, drone_id, kWatchId);
+    core::Logger::DebugFmt("CommandArbiter: '{}' watching drone '{}' (watch_id={})", client_id,
+                           drone_id, watch_id);
 
-    return WatchToken{kWatchId};
+    return WatchToken{watch_id};
 }
 
 void CommandArbiter::Unwatch(WatchToken token) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto& [drone_id, state] : drone_states_) {
-        auto& watchers = state.watchers;
-        watchers.erase(
-            std::remove_if(watchers.begin(), watchers.end(),
-                           [&](const WatcherEntry& entry) {
-                               return entry.watch_id == token.watch_id;
-                           }),
-            watchers.end());
+        std::erase_if(state.watchers,
+                      [&](const WatcherEntry& entry) { return entry.watch_id == token.watch_id; });
     }
 }
+
+/// @}
 
 }  // namespace swarmkit::agent

@@ -3,10 +3,14 @@
 
 namespace swarmkit::core {
 
+/// Major version component.
 inline constexpr int kVersionMajor = ${PROJECT_VERSION_MAJOR};
+/// Minor version component.
 inline constexpr int kVersionMinor = ${PROJECT_VERSION_MINOR};
+/// Patch version component.
 inline constexpr int kVersionPatch = ${PROJECT_VERSION_PATCH};
 
+/// Full version as a string literal (e.g. "0.1.0").
 inline constexpr const char* kSwarmkitVersionString = "${PROJECT_VERSION}";
 
 }  // namespace swarmkit::core

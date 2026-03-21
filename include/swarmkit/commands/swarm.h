@@ -4,11 +4,11 @@
 #include <string>
 #include <variant>
 
-namespace swarmkit::agent {
+namespace swarmkit::commands {
 
-// ---------------------------------------------------------------------------
-// Swarm commands — multi-agent coordination and choreography.
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Swarm commands -- multi-agent coordination and choreography.
+/// ---------------------------------------------------------------------------
 
 /// @brief Assign a logical role label to the drone within a swarm.
 struct CmdSetRole {
@@ -45,4 +45,4 @@ struct CmdRunSequence {
  */
 using SwarmCmd = std::variant<CmdSetRole, CmdSetFormation, CmdRunSequence>;
 
-}  // namespace swarmkit::agent
+}  // namespace swarmkit::commands

@@ -2,15 +2,20 @@
 
 #include <variant>
 
-namespace swarmkit::agent {
+namespace swarmkit::commands {
 
-// ---------------------------------------------------------------------------
-// Flight commands — fundamental vehicle control.
-// These map to direct flight-controller actions (arm, disarm, takeoff, land).
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Flight commands -- fundamental vehicle control.
+/// These map to direct flight-controller actions (arm, disarm, takeoff, land).
+/// ---------------------------------------------------------------------------
 
+/// @brief Arm the vehicle's motors.
 struct CmdArm {};
+
+/// @brief Disarm the vehicle's motors.
 struct CmdDisarm {};
+
+/// @brief Land the vehicle at the current position.
 struct CmdLand {};
 
 /// @brief Climb to the given altitude above the launch point.
@@ -26,4 +31,5 @@ struct CmdTakeoff {
  */
 using FlightCmd = std::variant<CmdArm, CmdDisarm, CmdTakeoff, CmdLand>;
 
-}  // namespace swarmkit::agent
+}  // namespace swarmkit::commands
+

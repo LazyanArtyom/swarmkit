@@ -9,8 +9,8 @@ target_include_directories(swarmkit_core PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# crc32.h is an internal header used by the agent server.
-target_include_directories(swarmkit_core PUBLIC
+# crc32.h is an internal header used only within the repository.
+target_include_directories(swarmkit_core PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 

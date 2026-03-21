@@ -25,6 +25,15 @@ service AgentService {
     /// pause/resume logic in clients with periodic command loops.
     rpc WatchAuthority(WatchAuthorityRequest) returns (stream AuthorityEvent);
 
+    /// Acquire exclusive command authority for a drone.
+    /// A lower-priority client is rejected immediately.
+    /// ttl_ms=0 means no expiry — caller MUST call ReleaseAuthority() when done.
+    rpc LockAuthority(LockAuthorityRequest) returns (LockAuthorityReply);
+
+    /// Explicitly release command authority held by this client.
+    /// No-op if the client does not currently hold authority.
+    rpc ReleaseAuthority(ReleaseAuthorityRequest) returns (ReleaseAuthorityReply);
+
     /// Bidirectional streaming data transfer.
     /// Client pushes chunks; server replies with acknowledgements (resumable).
     rpc Transfer(stream DataChunk) returns (stream DataAck);
@@ -189,6 +198,7 @@ message WatchAuthorityRequest {
 
 /**
  * Delivered to watchers when authority over a drone changes.
+ * Events are targeted to the watching client they affect.
  *
  * On PREEMPTED: stop sending commands until RESUMED arrives.
  * On RESUMED:   resume the command loop.
@@ -207,6 +217,29 @@ message AuthorityEvent {
     string holder_client_id = 3;  /// Who now holds authority.
     int32  holder_priority  = 4;
 }
+
+/**
+ * Request to acquire exclusive command authority for a drone.
+ * Use priority equal to or higher than the current holder's to preempt.
+ * ttl_ms = 0  →  no automatic expiry; caller must call ReleaseAuthority.
+ * ttl_ms > 0  →  authority expires after ttl_ms milliseconds.
+ */
+message LockAuthorityRequest {
+    CommandContext ctx    = 1;  // drone_id, client_id, priority required.
+    int64          ttl_ms = 2;  // 0 = no expiry.
+}
+
+message LockAuthorityReply {
+    bool   ok      = 1;
+    string message = 2;
+}
+
+message ReleaseAuthorityRequest {
+    string drone_id  = 1;
+    string client_id = 2;
+}
+
+message ReleaseAuthorityReply {}
 
 // ---------------------------------------------------------------------------
 // Telemetry

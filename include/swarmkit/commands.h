@@ -22,11 +22,11 @@
 #include "swarmkit/commands/payload.h"
 #include "swarmkit/commands/swarm.h"
 
-namespace swarmkit::agent {
+namespace swarmkit::commands {
 
-// ---------------------------------------------------------------------------
-// CommandPriority
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// CommandPriority
+/// ---------------------------------------------------------------------------
 
 /**
  * @brief Standard priority levels for command arbitration.
@@ -45,9 +45,9 @@ enum class CommandPriority : std::uint8_t {
     kEmergency  = 100,  ///< Bypasses arbitration; always executes immediately.
 };
 
-// ---------------------------------------------------------------------------
-// Command — top-level variant of all command categories.
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Command -- top-level variant of all command categories.
+/// ---------------------------------------------------------------------------
 
 /**
  * @brief Top-level discriminated union of all command categories.
@@ -80,9 +80,9 @@ enum class CommandPriority : std::uint8_t {
  */
 using Command = std::variant<FlightCmd, NavCmd, SwarmCmd, PayloadCmd>;
 
-// ---------------------------------------------------------------------------
-// CommandContext
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// CommandContext
+/// ---------------------------------------------------------------------------
 
 /// @brief Routing and scheduling metadata attached to every command.
 struct CommandContext {
@@ -93,9 +93,9 @@ struct CommandContext {
     std::string     correlation_id;  ///< Caller-assigned ID for tracing/deduplication.
 };
 
-// ---------------------------------------------------------------------------
-// CommandEnvelope
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// CommandEnvelope
+/// ---------------------------------------------------------------------------
 
 /**
  * @brief Single dispatch unit passed to IDroneBackend::Execute().
@@ -108,4 +108,4 @@ struct CommandEnvelope {
     Command        command;
 };
 
-}  // namespace swarmkit::agent
+}  // namespace swarmkit::commands

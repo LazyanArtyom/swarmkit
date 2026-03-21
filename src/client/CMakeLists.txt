@@ -1,5 +1,6 @@
 add_library(swarmkit_client STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/client.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/swarm_client.cpp
 )
 
 target_include_directories(swarmkit_client PUBLIC

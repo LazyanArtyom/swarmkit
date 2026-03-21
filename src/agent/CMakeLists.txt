@@ -10,6 +10,10 @@ target_include_directories(swarmkit_agent PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
+target_include_directories(swarmkit_agent PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core
+)
+
 target_link_libraries(swarmkit_agent PUBLIC
     swarmkit_core
     swarmkit_proto

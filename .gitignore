@@ -47,5 +47,7 @@ Thumbs.db
 *.log
 /tmp/
 
+# ---- CLAUDE/CODEX folders or files ----
 .claude/
 CLAUDE.md
+memory/

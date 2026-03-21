@@ -76,11 +76,10 @@ void Logger::Init(const LoggerConfig& config) {
     state.config = config;
 
     if (state.initialized) {
-        // Reconfigure existing logger.
         state.logger->set_level(ToSpdLevel(state.config.level));
-        const std::string pattern =
+        const std::string active_pattern =
             state.config.pattern.empty() ? kDefaultPattern : state.config.pattern;
-        state.logger->set_pattern(pattern);
+        state.logger->set_pattern(active_pattern);
         return;
     }
 
@@ -100,6 +99,19 @@ void Logger::Shutdown() {
     state.initialized = false;
 
     spdlog::shutdown();
+}
+
+bool Logger::IsEnabled(LogLevel level) {
+    EnsureInitialized();
+
+    LoggerState& state = GetState();
+    std::lock_guard<std::mutex> lock(state.mutex);
+
+    if (!state.logger) {
+        return false;
+    }
+
+    return state.logger->should_log(ToSpdLevel(level));
 }
 
 void Logger::EnsureInitialized() {

@@ -1,14 +1,12 @@
 add_executable(swarmkit_tests
+    test_arbiter.cpp
     test_basic.cpp
+    test_sim_backend.cpp
 )
 
 target_link_libraries(swarmkit_tests PRIVATE
-    swarmkit_core
+    swarmkit_agent
     Catch2::Catch2WithMain
-)
-
-target_include_directories(swarmkit_tests PRIVATE
-    ${CMAKE_BINARY_DIR}/generated
 )
 
 swarmkit_set_warnings(swarmkit_tests)

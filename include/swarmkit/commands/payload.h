@@ -2,12 +2,12 @@
 
 #include <variant>
 
-namespace swarmkit::agent {
+namespace swarmkit::commands {
 
-// ---------------------------------------------------------------------------
-// Payload commands — cameras, gimbals, sensors, and other onboard hardware.
-// Populated as hardware integrations are added.
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Payload commands -- cameras, gimbals, sensors, and other onboard hardware.
+/// Populated as hardware integrations are added.
+/// ---------------------------------------------------------------------------
 
 /// @brief Placeholder — no payload commands defined yet.
 /// @internal Remove this and replace with real payload command structs.
@@ -21,4 +21,4 @@ struct CmdPayloadReserved {};
  */
 using PayloadCmd = std::variant<CmdPayloadReserved>;
 
-}  // namespace swarmkit::agent
+}  // namespace swarmkit::commands

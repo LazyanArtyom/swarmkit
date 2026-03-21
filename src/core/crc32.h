@@ -5,7 +5,7 @@
 
 namespace swarmkit::core {
 
-// CRC-32 checksum.  Uses zlib if available, otherwise software fallback.
-std::uint32_t Crc32Bytes(const void* data, std::size_t size) noexcept;
+/// Compute CRC-32 over a byte buffer.  Uses zlib if available, otherwise a software fallback.
+[[nodiscard]] std::uint32_t Crc32Bytes(const void* data, std::size_t size) noexcept;
 
 }  // namespace swarmkit::core

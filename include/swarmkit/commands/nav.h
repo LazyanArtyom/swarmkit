@@ -2,11 +2,11 @@
 
 #include <variant>
 
-namespace swarmkit::agent {
+namespace swarmkit::commands {
 
-// ---------------------------------------------------------------------------
-// Navigation commands — point-to-point movement and position holding.
-// ---------------------------------------------------------------------------
+/// ---------------------------------------------------------------------------
+/// Navigation commands -- point-to-point movement and position holding.
+/// ---------------------------------------------------------------------------
 
 /// @brief Fly to an absolute geographic position.
 struct CmdSetWaypoint {
@@ -30,4 +30,4 @@ struct CmdHoldPosition {};
  */
 using NavCmd = std::variant<CmdSetWaypoint, CmdReturnHome, CmdHoldPosition>;
 
-}  // namespace swarmkit::agent
+}  // namespace swarmkit::commands

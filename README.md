@@ -3,7 +3,7 @@
 Multi-agent UAV swarm control and telemetry platform.
 
 - **Agent** (`swarmkit-agent`) — gRPC daemon that runs on a Raspberry Pi alongside the vehicle. Accepts commands, streams telemetry, transfers files (chunked, CRC32-verified, resumable), and routes to a pluggable backend.
-- **CLI** (`swarmkit-cli`) — developer tool to ping the agent and subscribe to live telemetry.
+- **CLI** (`swarmkit-cli`) — developer tool to ping the agent, subscribe to live telemetry, and send commands.
 - **SDK** — static libraries + public headers for embedding SwarmKit into other projects (no Conan required in the consumer).
 
 MAVSDK is not vendored. Install and run `mavsdk_server` separately on the target device; the agent will connect to it over TCP at runtime.
@@ -113,6 +113,11 @@ Default bind address: `0.0.0.0:50061`.
 
 # Custom address + drone + rate
 ./build/mac-debug/apps/swarmkit-cli 192.168.1.10:50061 telemetry --drone uav-1 --rate 2
+
+# Send commands
+./build/mac-debug/apps/swarmkit-cli command --drone uav-1 arm
+./build/mac-debug/apps/swarmkit-cli command --drone uav-1 takeoff --alt 20
+./build/mac-debug/apps/swarmkit-cli 192.168.1.10:50061 command --drone uav-1 waypoint --lat 40.18 --lon 44.51 --alt 50
 ```
 
 ---
@@ -221,8 +226,10 @@ SDK layout:
 <sdk-root>/
 ├── include/swarmkit/          # public headers
 │   ├── core/                  # Logger, Result, TelemetryFrame, version
-│   ├── agent/                 # IDroneBackend, commands, server, SimBackend
-│   └── client/                # Client, ClientConfig, PingResult, TelemetrySubscription
+│   ├── agent/                 # IDroneBackend, CommandArbiter, server, SimBackend
+│   ├── client/                # Client, SwarmClient, subscriptions, command results
+│   ├── commands/              # flight/nav/swarm/payload command categories
+│   └── commands.h             # aggregate Command, CommandContext, CommandEnvelope
 ├── lib/
 │   ├── libswarmkit_core.a     # (.lib on Windows)
 │   ├── libswarmkit_agent.a
@@ -238,45 +245,55 @@ SDK layout:
 
 ---
 
-## Build the test client against the SDK
+## Build the integration test tools against the SDK
 
-`apps/test_client/` is a minimal standalone project that links against the installed SDK **without Conan**.
+`apps/test_tools/` is a standalone project that links against the installed SDK **without Conan**.
+It produces three binaries for end-to-end swarm testing:
+
+| Binary | Purpose |
+|--------|---------|
+| `swarmkit-test-agents` | Spawns 3 `swarmkit-agent` processes (drone-1…3 on ports 50061–50063) and muxes their output. macOS / Linux only. |
+| `swarmkit-test-client` | Connects 3 low-priority (`kOperator`) clients to the agents and sends a rotating command cycle. Demonstrates preemption. |
+| `swarmkit-test-server` | Connects a single `SwarmClient` at `kOverride` priority, subscribes to telemetry from all agents, writes frames to a CSV file, and accepts interactive commands from stdin. |
 
 ```bash
 # macOS / Linux
-cmake -B apps/test_client/build \
+cmake -B apps/test_tools/build \
       -DCMAKE_PREFIX_PATH=~/swarmkit-sdk \
       -DCMAKE_BUILD_TYPE=Release \
-      -S apps/test_client
-cmake --build apps/test_client/build
+      -GNinja \
+      -S apps/test_tools
+cmake --build apps/test_tools/build
 ```
 
 ```powershell
 # Windows — adjust the path to match your actual sdk-root folder
-cmake -B apps\test_client\build `
+cmake -B apps\test_tools\build `
       -DCMAKE_PREFIX_PATH="C:\swarmkit-sdk\swarmkit-<version>-sdk-win-x86_64" `
       -DCMAKE_BUILD_TYPE=Release `
-      -S apps\test_client
-cmake --build apps\test_client\build --config Release
+      -GNinja `
+      -S apps\test_tools
+cmake --build apps\test_tools\build
 ```
 
-Run (agent must already be running):
+**Typical workflow (4 terminals):**
 
 ```bash
-# macOS / Linux
-./apps/test_client/build/swarmkit-test-ping
-./apps/test_client/build/swarmkit-test-ping 192.168.1.10:50061
+# Terminal 1 — start all 3 agents (uses swarmkit-agent from PATH)
+./apps/test_tools/build/swarmkit-test-agents
 
-# Windows
-.\apps\test_client\build\Release\swarmkit-test-ping.exe
-```
+# Terminal 2 — low-priority operator clients (will be preempted)
+./apps/test_tools/build/swarmkit-test-client
 
-Expected output:
+# Terminal 3 — high-priority server: telemetry CSV + interactive commands
+./apps/test_tools/build/swarmkit-test-server
+# stdin: drone-1 arm
+# stdin: all takeoff 30
+# stdin: drone-2 waypoint 40.18 44.51 50
+# stdin: drone-1 lock
+# stdin: drone-1 unlock
 
-```
-SwarmKit test client — connecting to 127.0.0.1:50061
-Ping OK
-  agent_id : agent-1
-  version  : 0.1.0
-  time_ms  : 1741234567890
+# Terminal 4 — CLI at Supervisor priority (overrides test-client, below test-server)
+./build/mac-release/apps/swarmkit-cli 127.0.0.1:50061 command --drone drone-1 arm
+./build/mac-release/apps/swarmkit-cli 127.0.0.1:50061 command --drone drone-1 takeoff --alt 20
 ```
