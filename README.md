@@ -2,7 +2,7 @@
 
 Multi-agent UAV swarm control and telemetry platform.
 
-- **Agent** (`swarmkit-agent`) — gRPC daemon that runs on a Raspberry Pi alongside the vehicle. Accepts commands, streams telemetry, transfers files (chunked, CRC32-verified, resumable), and routes to a pluggable backend.
+- **Agent** (`swarmkit-agent`) — gRPC daemon that runs on a Raspberry Pi alongside the vehicle. Accepts commands, streams telemetry, and routes to a pluggable backend.
 - **CLI** (`swarmkit-cli`) — developer tool to ping the agent, subscribe to live telemetry, and send commands.
 - **SDK** — static libraries + public headers for embedding SwarmKit into other projects (no Conan required in the consumer).
 
@@ -125,13 +125,13 @@ Default bind address: `0.0.0.0:50061`.
 ## Tests
 
 ```bash
-# macOS
+#macOS
 ctest --preset mac-release --output-on-failure
 
-# Linux
+#Linux
 ctest --preset linux-release --output-on-failure
 
-# Windows
+#Windows
 ctest --preset win-release --output-on-failure
 ```
 
@@ -205,19 +205,19 @@ They depend only on system libraries and run on any machine of the same OS and a
 Extract the SDK to a location of your choice, e.g. `~/swarmkit-sdk`:
 
 ```bash
-# macOS
+#macOS
 tar xzf swarmkit-<version>-sdk-mac-arm64.tar.gz \
     -C ~/swarmkit-sdk --strip-components=1
 
-# Linux
+#Linux
 tar xzf swarmkit-<version>-sdk-linux-x86_64.tar.gz \
     -C ~/swarmkit-sdk --strip-components=1
 ```
 
 ```powershell
-# Windows — the top-level folder inside the zip becomes the SDK root
+#Windows — the top - level folder inside the zip becomes the SDK root
 Expand-Archive swarmkit-<version>-sdk-win-x86_64.zip -DestinationPath C:\swarmkit-sdk
-# SDK root: C:\swarmkit-sdk\swarmkit-<version>-sdk-win-x86_64\
+#SDK root : C :\swarmkit - sdk\swarmkit - < version> - sdk - win - x86_64\
 ```
 
 SDK layout:
@@ -257,7 +257,7 @@ It produces three binaries for end-to-end swarm testing:
 | `swarmkit-test-server` | Connects a single `SwarmClient` at `kOverride` priority, subscribes to telemetry from all agents, writes frames to a CSV file, and accepts interactive commands from stdin. |
 
 ```bash
-# macOS / Linux
+#macOS / Linux
 cmake -B apps/test_tools/build \
       -DCMAKE_PREFIX_PATH=~/swarmkit-sdk \
       -DCMAKE_BUILD_TYPE=Release \
@@ -267,7 +267,7 @@ cmake --build apps/test_tools/build
 ```
 
 ```powershell
-# Windows — adjust the path to match your actual sdk-root folder
+#Windows — adjust the path to match your actual sdk - root folder
 cmake -B apps\test_tools\build `
       -DCMAKE_PREFIX_PATH="C:\swarmkit-sdk\swarmkit-<version>-sdk-win-x86_64" `
       -DCMAKE_BUILD_TYPE=Release `
@@ -279,21 +279,21 @@ cmake --build apps\test_tools\build
 **Typical workflow (4 terminals):**
 
 ```bash
-# Terminal 1 — start all 3 agents (uses swarmkit-agent from PATH)
+#Terminal 1 — start all 3 agents(uses swarmkit - agent from PATH)
 ./apps/test_tools/build/swarmkit-test-agents
 
-# Terminal 2 — low-priority operator clients (will be preempted)
+#Terminal 2 — low - priority operator clients(will be preempted)
 ./apps/test_tools/build/swarmkit-test-client
 
-# Terminal 3 — high-priority server: telemetry CSV + interactive commands
+#Terminal 3 — high - priority server : telemetry CSV + interactive commands
 ./apps/test_tools/build/swarmkit-test-server
-# stdin: drone-1 arm
-# stdin: all takeoff 30
-# stdin: drone-2 waypoint 40.18 44.51 50
-# stdin: drone-1 lock
-# stdin: drone-1 unlock
+#stdin : drone - 1 arm
+#stdin : all takeoff 30
+#stdin : drone - 2 waypoint 40.18 44.51 50
+#stdin : drone - 1 lock
+#stdin : drone - 1 unlock
 
-# Terminal 4 — CLI at Supervisor priority (overrides test-client, below test-server)
+#Terminal 4 — CLI at Supervisor priority(overrides test - client, below test - server)
 ./build/mac-release/apps/swarmkit-cli 127.0.0.1:50061 command --drone drone-1 arm
 ./build/mac-release/apps/swarmkit-cli 127.0.0.1:50061 command --drone drone-1 takeoff --alt 20
 ```

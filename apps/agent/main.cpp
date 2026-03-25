@@ -15,7 +15,6 @@
 namespace {
 
 constexpr std::string_view kDefaultBindAddr = "0.0.0.0:50061";
-constexpr std::string_view kDefaultInboxDir = "/tmp/swarmkit_inbox";
 constexpr std::string_view kDefaultAgentId = "agent-1";
 
 [[nodiscard]] std::string GetArg(int argc, char** argv, std::string_view key,
@@ -66,7 +65,6 @@ void PrintUsage() {
         "Options:\n"
         "  --id      AGENT_ID    Agent identifier (default: agent-1)\n"
         "  --bind    HOST:PORT   Bind address    (default: 0.0.0.0:50061)\n"
-        "  --inbox   DIR         Inbox directory (default: /tmp/swarmkit_inbox)\n"
         "  --log-file  PATH      Log to rotating file instead of stdout\n"
         "  --log-level LEVEL     trace|debug|info|warn|error|critical|off\n"
         "  --help                Print this message\n");
@@ -96,7 +94,6 @@ int main(int argc, char** argv) {
     swarmkit::agent::AgentConfig agent_cfg;
     agent_cfg.agent_id = GetArg(argc, argv, "--id", kDefaultAgentId);
     agent_cfg.bind_addr = GetArg(argc, argv, "--bind", kDefaultBindAddr);
-    agent_cfg.inbox_dir = GetArg(argc, argv, "--inbox", kDefaultInboxDir);
 
     return swarmkit::agent::RunAgentServer(agent_cfg, swarmkit::agent::MakeSimBackend());
 }

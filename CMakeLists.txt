@@ -30,7 +30,6 @@ find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
-find_package(ZLIB REQUIRED)
 
 # ---- Canonical generated root (shared by version + proto) ----
 set(SWARMKIT_GEN_ROOT "${CMAKE_CURRENT_BINARY_DIR}/generated")

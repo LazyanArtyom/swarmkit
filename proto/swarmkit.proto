@@ -12,7 +12,6 @@ package swarmkit.v1;
  * A single per-vehicle agent running on the edge (e.g. Raspberry Pi).
  * - Accepts commands subject to priority-based authority arbitration.
  * - Publishes telemetry.
- * - Transfers arbitrary data (images, files, etc.) with resumable chunking.
  */
 service AgentService {
     rpc Ping(PingRequest) returns (PingReply);
@@ -39,10 +38,6 @@ service AgentService {
     /// Explicitly release command authority held by this client.
     /// No-op if the client does not currently hold authority.
     rpc ReleaseAuthority(ReleaseAuthorityRequest) returns (ReleaseAuthorityReply);
-
-    /// Bidirectional streaming data transfer.
-    /// Client pushes chunks; server replies with acknowledgements (resumable).
-    rpc Transfer(stream DataChunk) returns (stream DataAck);
 }
 
 // ---------------------------------------------------------------------------
@@ -54,9 +49,9 @@ message PingRequest {
 }
 
 message PingReply {
-    string agent_id    = 1;
-    string version     = 2;
-    int64  unix_time_ms = 3;
+    string agent_id = 1;
+    string version = 2;
+    int64 unix_time_ms = 3;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,10 +63,10 @@ message PingReply {
  * Values mirror swarmkit::agent::CommandPriority in commands.h.
  */
 enum CommandPriority {
-    PRIORITY_OPERATOR   =  0;   // Default: CLI and SDK clients.
-    PRIORITY_SUPERVISOR = 10;   // Automated local systems.
-    PRIORITY_OVERRIDE   = 20;   // Deviation-correction / safety override server.
-    PRIORITY_EMERGENCY  = 100;  // Bypasses arbitration; always executes.
+    PRIORITY_OPERATOR = 0;     // Default: CLI and SDK clients.
+    PRIORITY_SUPERVISOR = 10;  // Automated local systems.
+    PRIORITY_OVERRIDE = 20;    // Deviation-correction / safety override server.
+    PRIORITY_EMERGENCY = 100;  // Bypasses arbitration; always executes.
 }
 
 /**
@@ -80,11 +75,11 @@ enum CommandPriority {
  * whether the command is allowed to execute.
  */
 message CommandContext {
-    string drone_id         = 1;  /// Target drone identifier.
-    int32  priority         = 2;  /// CommandPriority value (default: PRIORITY_OPERATOR).
-    int64  deadline_unix_ms = 3;  /// Execution deadline; 0 = no deadline.
-    string correlation_id   = 4;  /// Caller-assigned tracing ID.
-    string client_id        = 5;  /// Originating client identifier (required for arbitration).
+    string drone_id = 1;         /// Target drone identifier.
+    int32 priority = 2;          /// CommandPriority value (default: PRIORITY_OPERATOR).
+    int64 deadline_unix_ms = 3;  /// Execution deadline; 0 = no deadline.
+    string correlation_id = 4;   /// Caller-assigned tracing ID.
+    string client_id = 5;        /// Originating client identifier (required for arbitration).
 }
 
 // --- Flight commands (fundamental vehicle control) ---
@@ -100,10 +95,10 @@ message CmdTakeoff {
 // --- Navigation commands (point-to-point movement) ---
 
 message CmdSetWaypoint {
-    double lat_deg   = 1;  /// Target latitude in decimal degrees.
-    double lon_deg   = 2;  /// Target longitude in decimal degrees.
-    double alt_m     = 3;  /// Target altitude in metres AGL.
-    float  speed_mps = 4;  /// Max travel speed in m/s; 0 = backend default.
+    double lat_deg = 1;   /// Target latitude in decimal degrees.
+    double lon_deg = 2;   /// Target longitude in decimal degrees.
+    double alt_m = 3;     /// Target altitude in metres AGL.
+    float speed_mps = 4;  /// Max travel speed in m/s; 0 = backend default.
 }
 
 message CmdReturnHome {}
@@ -117,7 +112,7 @@ message CmdSetRole {
 
 message CmdSetFormation {
     string formation_id = 1;  /// Identifier of the formation template.
-    int32  slot_index   = 2;  /// Zero-based position within the formation.
+    int32 slot_index = 2;     /// Zero-based position within the formation.
 }
 
 /**
@@ -127,21 +122,8 @@ message CmdSetFormation {
  * Set to 0 to start immediately.
  */
 message CmdRunSequence {
-    string sequence_id   = 1;
-    int64  sync_unix_ms  = 2;
-}
-
-// --- Transfer routing (handled via Transfer RPC, not SendCommand) ---
-
-message DataRef {
-    string transfer_id = 1;
-    uint64 size_bytes  = 2;
-    string mime_type   = 3;
-}
-
-message CmdSendData {
-    DataRef ref          = 1;
-    string  dst_agent_id = 2;
+    string sequence_id = 1;
+    int64 sync_unix_ms = 2;
 }
 
 /**
@@ -149,41 +131,41 @@ message CmdSendData {
  * Grouped by category (flight / nav / swarm) to keep the oneof extensible.
  */
 message Command {
+    reserved 30;
+    reserved "send_data";
+
     oneof kind {
         // Flight
-        CmdArm          arm            = 1;
-        CmdDisarm       disarm         = 2;
-        CmdTakeoff      takeoff        = 3;
-        CmdLand         land           = 4;
+        CmdArm arm = 1;
+        CmdDisarm disarm = 2;
+        CmdTakeoff takeoff = 3;
+        CmdLand land = 4;
 
         // Navigation
-        CmdSetWaypoint  set_waypoint   = 10;
-        CmdReturnHome   return_home    = 11;
-        CmdHoldPosition hold_position  = 12;
+        CmdSetWaypoint set_waypoint = 10;
+        CmdReturnHome return_home = 11;
+        CmdHoldPosition hold_position = 12;
 
         // Swarm
-        CmdSetRole      set_role       = 20;
-        CmdSetFormation set_formation  = 21;
-        CmdRunSequence  run_sequence   = 22;
-
-        // Transfer routing (use Transfer RPC instead)
-        CmdSendData     send_data      = 30;
+        CmdSetRole set_role = 20;
+        CmdSetFormation set_formation = 21;
+        CmdRunSequence run_sequence = 22;
     }
 }
 
 message CommandRequest {
     CommandContext ctx = 1;
-    Command        cmd = 2;
+    Command cmd = 2;
 }
 
 message CommandReply {
     enum Status {
         STATUS_UNSPECIFIED = 0;
-        OK       = 1;
+        OK = 1;
         REJECTED = 2;
-        FAILED   = 3;
+        FAILED = 3;
     }
-    Status status  = 1;
+    Status status = 1;
     string message = 2;
 }
 
@@ -197,9 +179,9 @@ message CommandReply {
  * are not missed.
  */
 message WatchAuthorityRequest {
-    string drone_id  = 1;  /// Drone to watch.
+    string drone_id = 1;   /// Drone to watch.
     string client_id = 2;  /// Registrant's client identifier.
-    int32  priority  = 3;  /// Registrant's authority priority level.
+    int32 priority = 3;    /// Registrant's authority priority level.
 }
 
 /**
@@ -213,15 +195,15 @@ message WatchAuthorityRequest {
 message AuthorityEvent {
     enum Kind {
         KIND_UNSPECIFIED = 0;
-        GRANTED   = 1;  /// This client was granted command authority.
+        GRANTED = 1;    /// This client was granted command authority.
         PREEMPTED = 2;  /// Authority taken by a higher-priority client.
-        RESUMED   = 3;  /// Higher-priority client released; authority restored.
-        EXPIRED   = 4;  /// Authority TTL elapsed; must re-acquire.
+        RESUMED = 3;    /// Higher-priority client released; authority restored.
+        EXPIRED = 4;    /// Authority TTL elapsed; must re-acquire.
     }
-    Kind   kind             = 1;
-    string drone_id         = 2;
+    Kind kind = 1;
+    string drone_id = 2;
     string holder_client_id = 3;  /// Who now holds authority.
-    int32  holder_priority  = 4;
+    int32 holder_priority = 4;
 }
 
 /**
@@ -231,17 +213,17 @@ message AuthorityEvent {
  * ttl_ms > 0  →  authority expires after ttl_ms milliseconds.
  */
 message LockAuthorityRequest {
-    CommandContext ctx    = 1;  // drone_id, client_id, priority required.
-    int64          ttl_ms = 2;  // 0 = no expiry.
+    CommandContext ctx = 1;  // drone_id, client_id, priority required.
+    int64 ttl_ms = 2;        // 0 = no expiry.
 }
 
 message LockAuthorityReply {
-    bool   ok      = 1;
+    bool ok = 1;
     string message = 2;
 }
 
 message ReleaseAuthorityRequest {
-    string drone_id  = 1;
+    string drone_id = 1;
     string client_id = 2;
 }
 
@@ -253,45 +235,15 @@ message ReleaseAuthorityReply {}
 
 message TelemetryRequest {
     string drone_id = 1;
-    int32  rate_hz  = 2;  /// 0 => server default.
+    int32 rate_hz = 2;  /// 0 => server default.
 }
 
 message TelemetryFrame {
-    string drone_id        = 1;
-    int64  unix_time_ms    = 2;
-    double lat_deg         = 3;
-    double lon_deg         = 4;
-    float  rel_alt_m       = 5;
-    float  battery_percent = 6;
-    string mode            = 7;
-}
-
-// ---------------------------------------------------------------------------
-// Resumable streaming data transfer
-// ---------------------------------------------------------------------------
-
-message DataChunk {
-    string transfer_id  = 1;  /// Stable UUID for resume/correlation.
-    string src_agent_id = 2;
-    string dst_agent_id = 3;
-    uint64 offset       = 4;
-    bytes  data         = 5;
-    uint32 crc32        = 6;
-    bool   eof          = 7;
-    string filename     = 8;
-    string mime_type    = 9;
-}
-
-message DataAck {
-    enum Status {
-        STATUS_UNSPECIFIED = 0;
-        OK            = 1;
-        BAD_CHECKSUM  = 2;
-        BAD_OFFSET    = 3;
-        FAILED        = 4;
-    }
-    string transfer_id = 1;
-    uint64 next_offset = 2;
-    Status status      = 3;
-    string message     = 4;
+    string drone_id = 1;
+    int64 unix_time_ms = 2;
+    double lat_deg = 3;
+    double lon_deg = 4;
+    float rel_alt_m = 5;
+    float battery_percent = 6;
+    string mode = 7;
 }

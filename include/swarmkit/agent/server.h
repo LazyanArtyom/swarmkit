@@ -16,9 +16,8 @@ namespace swarmkit::agent {
 /// AgentConfig -- startup parameters for the gRPC agent server.
 /// ---------------------------------------------------------------------------
 struct AgentConfig {
-    std::string agent_id{"agent-1"};               ///< Unique identifier for this agent.
-    std::string bind_addr{"0.0.0.0:50061"};        ///< gRPC listen address.
-    std::string inbox_dir{"/tmp/swarmkit_inbox"};  ///< Directory for file uploads.
+    std::string agent_id{"agent-1"};         ///< Unique identifier for this agent.
+    std::string bind_addr{"0.0.0.0:50061"};  ///< gRPC listen address.
 };
 
 /// @brief Start the agent gRPC server.

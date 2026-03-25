@@ -4,9 +4,11 @@
 # This file is part of SwarmKit.
 # See LICENSE.md in the repository root for full license terms.
 
+from pathlib import Path
+
 from conan import ConanFile
 from conan.tools.cmake import CMake, cmake_layout
-from pathlib import Path
+
 
 class SwarmkitConan(ConanFile):
     name = "swarmkit"
@@ -20,7 +22,6 @@ class SwarmkitConan(ConanFile):
         "grpc/1.67.1",
         "protobuf/5.27.0",
         "spdlog/1.17.0",
-        "zlib/1.3.1",
         "catch2/3.8.0",
     )
 
@@ -34,11 +35,13 @@ class SwarmkitConan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure(variables={
-            "SWARMKIT_BUILD_TOOLS": "ON" if self.options.with_tools else "OFF",
-            "SWARMKIT_BUILD_TESTS": "ON" if self.options.with_tests else "OFF",
-            "BUILD_TESTING": "ON" if self.options.with_tests else "OFF",
-        })
+        cmake.configure(
+            variables={
+                "SWARMKIT_BUILD_TOOLS": "ON" if self.options.with_tools else "OFF",
+                "SWARMKIT_BUILD_TESTS": "ON" if self.options.with_tests else "OFF",
+                "BUILD_TESTING": "ON" if self.options.with_tests else "OFF",
+            }
+        )
         cmake.build()
         if self.options.with_tests:
             cmake.test()

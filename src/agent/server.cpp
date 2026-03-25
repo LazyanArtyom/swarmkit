@@ -13,8 +13,6 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -23,7 +21,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include "crc32.h"
 #include "swarmkit/agent/arbiter.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/version.h"
@@ -36,8 +33,6 @@ using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
 
 namespace {
 using grpc::Status;
-
-namespace fs = std::filesystem;
 
 constexpr int kDefaultTelemetryRateHz = 5;
 constexpr int kMinTelemetryRateHz = 1;
@@ -195,10 +190,6 @@ constexpr auto kDefaultAuthorityTtl = std::chrono::seconds{5};
             return SwarmCmd{std::move(sequence)};
         }
 
-        case swarmkit::v1::Command::kSendData:
-            return std::unexpected(
-                core::Result::Rejected("send_data is not a flight command; use the Transfer RPC"));
-
         default:
             return std::unexpected(core::Result::Rejected("unknown command kind"));
     }
@@ -219,14 +210,7 @@ constexpr auto kDefaultAuthorityTtl = std::chrono::seconds{5};
 class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
    public:
     AgentServiceImpl(AgentConfig config, DroneBackendPtr backend)
-        : config_(std::move(config)), backend_(std::move(backend)) {
-        try {
-            fs::create_directories(config_.inbox_dir);
-        } catch (const fs::filesystem_error& err) {
-            core::Logger::WarnFmt("AgentServiceImpl: failed to create inbox_dir '{}': {}",
-                                  config_.inbox_dir, err.what());
-        }
-    }
+        : config_(std::move(config)), backend_(std::move(backend)) {}
 
     ~AgentServiceImpl() override {
         std::vector<std::string> drone_ids;
@@ -472,93 +456,6 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         core::Logger::InfoFmt("WatchAuthority: '{}' disconnected from drone '{}'", client_id,
                               drone_id);
         return grpc::Status::OK;
-    }
-
-    grpc::Status Transfer(
-        grpc::ServerContext* ctx,
-        grpc::ServerReaderWriter<swarmkit::v1::DataAck, swarmkit::v1::DataChunk>* stream) override {
-        if (ctx == nullptr || stream == nullptr) {
-            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/stream");
-        }
-
-        swarmkit::v1::DataChunk chunk;
-        std::string transfer_id;
-        fs::path output_path;
-        std::fstream output_file;
-        std::uint64_t expected_offset = 0;
-
-        auto send_ack = [&](swarmkit::v1::DataAck::Status ack_status, std::uint64_t next_offset,
-                            std::string message) {
-            swarmkit::v1::DataAck ack;
-            ack.set_transfer_id(transfer_id);
-            ack.set_next_offset(next_offset);
-            ack.set_status(ack_status);
-            ack.set_message(std::move(message));
-            static_cast<void>(stream->Write(ack));
-        };
-
-        while (!ctx->IsCancelled() && stream->Read(&chunk)) {
-            if (transfer_id.empty()) {
-                transfer_id = chunk.transfer_id();
-                if (transfer_id.empty()) {
-                    return {grpc::StatusCode::INVALID_ARGUMENT, "missing transfer_id"};
-                }
-
-                output_path = fs::path(config_.inbox_dir) / (transfer_id + ".bin");
-                fs::create_directories(output_path.parent_path());
-
-                output_file.open(output_path, std::ios::in | std::ios::out | std::ios::binary);
-                if (!output_file.is_open()) {
-                    std::ofstream create(output_path, std::ios::binary);
-                    create.close();
-                    output_file.open(output_path, std::ios::in | std::ios::out | std::ios::binary);
-                }
-                if (!output_file.is_open()) {
-                    return {grpc::StatusCode::INTERNAL, "failed to open output file"};
-                }
-
-                output_file.seekg(0, std::ios::end);
-                expected_offset = static_cast<std::uint64_t>(output_file.tellg());
-
-                send_ack(swarmkit::v1::DataAck::OK, expected_offset,
-                         "ready, resume_offset=" + std::to_string(expected_offset));
-            }
-
-            if (chunk.offset() != expected_offset) {
-                send_ack(swarmkit::v1::DataAck::BAD_OFFSET, expected_offset,
-                         "bad offset, expected=" + std::to_string(expected_offset) +
-                             " got=" + std::to_string(chunk.offset()));
-                continue;
-            }
-
-            const std::string& payload = chunk.data();
-            const std::uint32_t kComputedCrc =
-                core::Crc32Bytes(payload.data(), static_cast<std::size_t>(payload.size()));
-
-            if (kComputedCrc != chunk.crc32()) {
-                send_ack(swarmkit::v1::DataAck::BAD_CHECKSUM, expected_offset,
-                         "bad checksum at offset=" + std::to_string(expected_offset));
-                continue;
-            }
-
-            output_file.seekp(static_cast<std::streamoff>(expected_offset), std::ios::beg);
-            output_file.write(payload.data(), static_cast<std::streamsize>(payload.size()));
-            if (!output_file.good()) {
-                send_ack(swarmkit::v1::DataAck::FAILED, expected_offset, "write failed");
-                continue;
-            }
-
-            expected_offset += static_cast<std::uint64_t>(payload.size());
-            send_ack(swarmkit::v1::DataAck::OK, expected_offset, "ok");
-
-            if (chunk.eof()) {
-                core::Logger::InfoFmt("Transfer complete: id={} bytes={} path={}", transfer_id,
-                                      expected_offset, output_path.string());
-                break;
-            }
-        }
-
-        return {grpc::StatusCode::OK, ""};
     }
 
    private:
