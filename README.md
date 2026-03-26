@@ -140,6 +140,7 @@ ctest --preset win-release --output-on-failure
 ## Package (CI / release)
 
 Each script runs the full pipeline: Conan install → CMake configure → build → test → produce tarballs/zips in `dist/`.
+Package filenames use the current project version from the root `VERSION` file.
 
 ### macOS ARM64
 
@@ -217,7 +218,7 @@ tar xzf swarmkit-<version>-sdk-linux-x86_64.tar.gz \
 ```powershell
 #Windows — the top - level folder inside the zip becomes the SDK root
 Expand-Archive swarmkit-<version>-sdk-win-x86_64.zip -DestinationPath C:\swarmkit-sdk
-#SDK root : C :\swarmkit - sdk\swarmkit - < version> - sdk - win - x86_64\
+#SDK root: the extracted top-level folder inside C:\swarmkit-sdk
 ```
 
 SDK layout:
@@ -258,18 +259,14 @@ It produces three binaries for end-to-end swarm testing:
 
 ```bash
 #macOS / Linux
-cmake -B apps/test_tools/build \
-      -DCMAKE_PREFIX_PATH=~/swarmkit-sdk \
-      -DCMAKE_BUILD_TYPE=Release \
-      -GNinja \
-      -S apps/test_tools
+cmake -B apps/test_tools/build -DCMAKE_PREFIX_PATH=~/swarmkit-sdk -DCMAKE_BUILD_TYPE=Release -S apps/test_tools
 cmake --build apps/test_tools/build
 ```
 
 ```powershell
-#Windows — adjust the path to match your actual sdk - root folder
+#Windows — adjust the path to match your actual SDK root folder
 cmake -B apps\test_tools\build `
-      -DCMAKE_PREFIX_PATH="C:\swarmkit-sdk\swarmkit-<version>-sdk-win-x86_64" `
+      -DCMAKE_PREFIX_PATH="C:\path\to\swarmkit-sdk" `
       -DCMAKE_BUILD_TYPE=Release `
       -GNinja `
       -S apps\test_tools

@@ -7,16 +7,62 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 
+#include "swarmkit/agent/arbiter.h"
 #include "swarmkit/commands.h"
+#include "swarmkit/core/result.h"
 #include "swarmkit/core/telemetry.h"
 
 namespace swarmkit::client {
 
-static constexpr int kDefaultDeadlineMs = 5000;
+class Client;
+
+inline constexpr int kDefaultDeadlineMs = 5000;
+inline constexpr int kDefaultRetryMaxAttempts = 3;
+inline constexpr int kDefaultRetryInitialBackoffMs = 200;
+inline constexpr int kDefaultRetryMaxBackoffMs = 2000;
+inline constexpr bool kDefaultStreamReconnectEnabled = true;
+inline constexpr int kDefaultStreamReconnectInitialBackoffMs = 500;
+inline constexpr int kDefaultStreamReconnectMaxBackoffMs = 5000;
+inline constexpr int kUnlimitedStreamReconnectAttempts = 0;
+inline constexpr int kDefaultTelemetryRateHertz = 1;
+
+enum class RpcStatusCode : std::uint8_t {
+    kOk,
+    kInvalidArgument,
+    kRejected,
+    kUnavailable,
+    kDeadlineExceeded,
+    kCancelled,
+    kInternal,
+    kUnknown,
+};
+
+struct RpcError {
+    RpcStatusCode code{RpcStatusCode::kOk};
+    std::string user_message;
+    std::string debug_message;
+    std::string correlation_id;
+    int attempt_count{0};
+};
+
+struct RetryPolicy {
+    int max_attempts{kDefaultRetryMaxAttempts};
+    int initial_backoff_ms{kDefaultRetryInitialBackoffMs};
+    int max_backoff_ms{kDefaultRetryMaxBackoffMs};
+};
+
+struct StreamReconnectPolicy {
+    bool enabled{kDefaultStreamReconnectEnabled};
+    int initial_backoff_ms{kDefaultStreamReconnectInitialBackoffMs};
+    int max_backoff_ms{kDefaultStreamReconnectMaxBackoffMs};
+    int max_attempts{kUnlimitedStreamReconnectAttempts};  // 0 = unlimited.
+};
 
 /// @brief Connection parameters for the gRPC client.
 struct ClientConfig {
@@ -31,7 +77,22 @@ struct ClientConfig {
 
     /// Default command authority priority for LockAuthority calls.
     commands::CommandPriority priority{commands::CommandPriority::kOperator};
+
+    /// Retry policy for unary RPCs on transient transport failures.
+    RetryPolicy retry_policy{};
+
+    /// Auto-reconnect policy for telemetry and authority watch streams.
+    StreamReconnectPolicy stream_reconnect_policy{};
+
+    [[nodiscard]] core::Result Validate() const;
+    void ApplyEnvironment(std::string_view prefix = "SWARMKIT_CLIENT_");
 };
+
+/// @brief Load client configuration from a YAML file.
+///
+/// Supports either a root-level client map or a `client:` section.
+[[nodiscard]] std::expected<ClientConfig, core::Result> LoadClientConfigFromFile(
+    const std::string& path);
 
 /// @brief Result of a Ping() call.
 struct PingResult {
@@ -40,12 +101,49 @@ struct PingResult {
     std::string version;
     std::int64_t unix_time_ms{};
     std::string error_message;
+    std::string correlation_id;
+    RpcError error;
 };
 
 /// @brief Result of a SendCommand() call.
 struct CommandResult {
     bool ok{false};
     std::string message;  ///< Error description on failure, empty on success.
+    std::string correlation_id;
+    RpcError error;
+};
+
+struct HealthStatus {
+    bool ok{false};
+    bool ready{false};
+    std::string agent_id;
+    std::string version;
+    std::int64_t unix_time_ms{};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+};
+
+struct RuntimeStats {
+    bool ok{false};
+    std::string agent_id;
+    std::int64_t unix_time_ms{};
+    std::string correlation_id;
+    std::uint64_t ping_requests_total{0};
+    std::uint64_t health_requests_total{0};
+    std::uint64_t runtime_stats_requests_total{0};
+    std::uint64_t command_requests_total{0};
+    std::uint64_t command_rejected_total{0};
+    std::uint64_t command_failed_total{0};
+    std::uint64_t lock_requests_total{0};
+    std::uint64_t watch_requests_total{0};
+    std::uint64_t current_authority_watchers{0};
+    std::uint64_t total_telemetry_subscriptions{0};
+    std::uint64_t current_telemetry_streams{0};
+    std::uint64_t telemetry_frames_sent_total{0};
+    std::uint64_t backend_failures_total{0};
+    bool ready{false};
+    RpcError error;
 };
 
 /**
@@ -60,7 +158,20 @@ struct TelemetrySubscription {
     std::string drone_id{"default"};
 
     /// Requested frame rate in Hz.  The agent may clamp the value.
-    int rate_hertz{1};
+    int rate_hertz{kDefaultTelemetryRateHertz};
+};
+
+struct AuthoritySubscription {
+    std::string drone_id{"default"};
+    commands::CommandPriority priority{commands::CommandPriority::kOperator};
+};
+
+struct AuthorityEventInfo {
+    agent::AuthorityEvent::Kind kind{agent::AuthorityEvent::Kind::kGranted};
+    std::string drone_id;
+    std::string holder_client_id;
+    commands::CommandPriority holder_priority{commands::CommandPriority::kOperator};
+    std::string correlation_id;
 };
 
 /**
@@ -72,7 +183,42 @@ struct TelemetrySubscription {
 /// @{
 using TelemetryHandler = std::function<void(const swarmkit::core::TelemetryFrame&)>;
 using TelemetryErrorHandler = std::function<void(const std::string&)>;
+using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
 /// @}
+
+/**
+ * @brief RAII authority lease for a single drone.
+ *
+ * @details Created via Client::AcquireAuthoritySession(). Releasing the object
+ * automatically calls ReleaseAuthority() if the lease is still active.
+ */
+class AuthoritySession {
+   public:
+    AuthoritySession() = default;
+    ~AuthoritySession();
+
+    AuthoritySession(const AuthoritySession&) = delete;
+    AuthoritySession& operator=(const AuthoritySession&) = delete;
+    AuthoritySession(AuthoritySession&& other) noexcept;
+    AuthoritySession& operator=(AuthoritySession&& other) noexcept;
+
+    [[nodiscard]] bool IsActive() const {
+        return client_ != nullptr;
+    }
+    [[nodiscard]] const std::string& DroneId() const {
+        return drone_id_;
+    }
+    void Reset();
+
+   private:
+    friend class Client;
+
+    AuthoritySession(const Client* client, std::string drone_id)
+        : client_(client), drone_id_(std::move(drone_id)) {}
+
+    const Client* client_{nullptr};
+    std::string drone_id_;
+};
 
 /**
  * @brief gRPC client for the SwarmKit agent.
@@ -91,9 +237,11 @@ using TelemetryErrorHandler = std::function<void(const std::string&)>;
  * @endcode
  *
  * @par Thread safety
- *   Ping() is fully thread-safe.
- *   SubscribeTelemetry() and StopTelemetry() must not be called concurrently
- *   with each other.
+ *   Unary RPCs such as Ping(), SendCommand(), GetHealth(), and GetRuntimeStats()
+ *   are thread-safe.
+ *   Stream lifecycle pairs SubscribeTelemetry()/StopTelemetry() and
+ *   WatchAuthority()/StopAuthorityWatch() must not be called concurrently with
+ *   themselves, but may be used concurrently with unary RPCs.
  */
 class Client {
    public:
@@ -110,6 +258,12 @@ class Client {
      * @returns A PingResult describing the agent's identity and timestamp.
      */
     [[nodiscard]] PingResult Ping() const;
+
+    /// @brief Read current agent health/readiness state.
+    [[nodiscard]] HealthStatus GetHealth() const;
+
+    /// @brief Read current agent runtime counters for observability.
+    [[nodiscard]] RuntimeStats GetRuntimeStats() const;
 
     /**
      * @brief Send a single command to the agent.
@@ -137,6 +291,15 @@ class Client {
      */
     [[nodiscard]] CommandResult LockAuthority(const std::string& drone_id,
                                               std::int64_t ttl_ms = 0) const;
+
+    /**
+     * @brief Acquire authority and return an RAII session that releases it.
+     *
+     * @returns An AuthoritySession on success, or the lock failure result on
+     *          rejection/transport failure.
+     */
+    [[nodiscard]] std::expected<AuthoritySession, CommandResult> AcquireAuthoritySession(
+        const std::string& drone_id, std::int64_t ttl_ms = 0) const;
 
     /**
      * @brief Explicitly release authority for @p drone_id.
@@ -167,6 +330,18 @@ class Client {
      * @details Safe to call when idle.
      */
     void StopTelemetry();
+
+    /**
+     * @brief Start a background authority-watch stream for a single drone.
+     *
+     * @details If a watch is already active it is stopped first. Events may be
+     * auto-reconnected according to ClientConfig::stream_reconnect_policy.
+     */
+    void WatchAuthority(AuthoritySubscription subscription, AuthorityEventHandler on_event,
+                        TelemetryErrorHandler on_error = {});
+
+    /// @brief Cancel the active authority watch stream (if any).
+    void StopAuthorityWatch();
 
    private:
     struct Impl;

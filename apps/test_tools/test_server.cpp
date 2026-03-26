@@ -64,6 +64,58 @@ extern "C" void OnSignal(int /*sig*/) {
     close(STDIN_FILENO);
 }
 
+[[nodiscard]] std::string GetArg(int argc, char** argv, std::string_view key,
+                                 std::string_view default_value) {
+    for (int idx = 1; idx + 1 < argc; ++idx) {
+        if (std::string_view{argv[idx]} == key) {
+            return {argv[idx + 1]};
+        }
+    }
+    return std::string{default_value};
+}
+
+[[nodiscard]] sc::SwarmAddressPreference ParseAddressPreference(std::string_view value) {
+    if (value == "local") {
+        return sc::SwarmAddressPreference::kPreferLocal;
+    }
+    return sc::SwarmAddressPreference::kPrimary;
+}
+
+[[nodiscard]] std::optional<cor::LogLevel> TryParseLogLevel(std::string_view value) {
+    if (value == "trace") {
+        return cor::LogLevel::kTrace;
+    }
+    if (value == "debug") {
+        return cor::LogLevel::kDebug;
+    }
+    if (value == "info") {
+        return cor::LogLevel::kInfo;
+    }
+    if (value == "warn") {
+        return cor::LogLevel::kWarn;
+    }
+    if (value == "error") {
+        return cor::LogLevel::kError;
+    }
+    if (value == "critical") {
+        return cor::LogLevel::kCritical;
+    }
+    if (value == "off") {
+        return cor::LogLevel::kOff;
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::optional<cor::LogSinkType> TryParseLogSink(std::string_view value) {
+    if (value == "stdout" || value == "console") {
+        return cor::LogSinkType::kStdout;
+    }
+    if (value == "file") {
+        return cor::LogSinkType::kRotatingFile;
+    }
+    return std::nullopt;
+}
+
 const std::vector<std::pair<std::string, std::string>> kDrones = {
     {"drone-1", "127.0.0.1:50061"},
     {"drone-2", "127.0.0.1:50062"},
@@ -252,22 +304,79 @@ void ProcessLine(sc::SwarmClient& swarm, const std::string& line) {
 
 }  // namespace
 
-int main(int /*argc*/, char** argv) {
+int main(int argc, char** argv) {
     cor::LoggerConfig log_cfg;
     log_cfg.sink_type = cor::LogSinkType::kStdout;
     log_cfg.level = cor::LogLevel::kInfo;
+
+    const std::string kLogSink = GetArg(argc, argv, "--log-sink", "");
+    if (!kLogSink.empty()) {
+        const auto kParsedSink = TryParseLogSink(kLogSink);
+        if (!kParsedSink) {
+            std::cerr << "Invalid --log-sink value: " << kLogSink << "\n";
+            return EXIT_FAILURE;
+        }
+        log_cfg.sink_type = *kParsedSink;
+    }
+
+    const std::string kLogFile = GetArg(argc, argv, "--log-file", "");
+    if (!kLogFile.empty()) {
+        log_cfg.log_file_path = kLogFile;
+        if (kLogSink.empty()) {
+            log_cfg.sink_type = cor::LogSinkType::kRotatingFile;
+        }
+    }
+
+    const auto kParsedLevel = TryParseLogLevel(GetArg(argc, argv, "--log-level", "info"));
+    if (!kParsedLevel) {
+        std::cerr << "Invalid --log-level value\n";
+        return EXIT_FAILURE;
+    }
+    log_cfg.level = *kParsedLevel;
+
+    if (log_cfg.sink_type == cor::LogSinkType::kRotatingFile && log_cfg.log_file_path.empty()) {
+        std::cerr << "Invalid logger configuration: log file path is required for file sink\n";
+        return EXIT_FAILURE;
+    }
+
     cor::Logger::Init(log_cfg);
 
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
 
     sc::ClientConfig default_cfg;
+    std::vector<std::pair<std::string, std::string>> drone_endpoints = kDrones;
+
+    const std::string kSwarmConfigPath = GetArg(argc, argv, "--swarm-config", "");
+    if (!kSwarmConfigPath.empty()) {
+        const auto kSwarmConfig = sc::LoadSwarmConfigFromFile(kSwarmConfigPath);
+        if (!kSwarmConfig.has_value()) {
+            cor::Logger::ErrorFmt("Failed to load swarm config '{}': {}", kSwarmConfigPath,
+                                  kSwarmConfig.error().message);
+            return EXIT_FAILURE;
+        }
+
+        default_cfg = kSwarmConfig->default_client_config;
+        drone_endpoints.clear();
+        drone_endpoints.reserve(kSwarmConfig->drones.size());
+
+        const auto kAddressPreference =
+            ParseAddressPreference(GetArg(argc, argv, "--address-mode", "primary"));
+        for (const auto& drone : kSwarmConfig->drones) {
+            const bool kUseLocal =
+                kAddressPreference == sc::SwarmAddressPreference::kPreferLocal &&
+                !drone.local_address.empty();
+            drone_endpoints.emplace_back(drone.drone_id,
+                                         kUseLocal ? drone.local_address : drone.address);
+        }
+    }
+
     default_cfg.client_id = "test-server";
     default_cfg.deadline_ms = kDeadlineMs;
     default_cfg.priority = cmd::CommandPriority::kOverride;
 
     sc::SwarmClient swarm(default_cfg);
-    for (const auto& [drone_id, addr] : kDrones) {
+    for (const auto& [drone_id, addr] : drone_endpoints) {
         swarm.AddDrone(drone_id, addr);
     }
 
@@ -286,7 +395,7 @@ int main(int /*argc*/, char** argv) {
 
     std::cout << "SwarmKit Test Server -- kOverride priority (20)\n"
               << "Telemetry log: " << kTelemetryPath << "\n"
-              << "Drones: drone-1 (50061)  drone-2 (50062)  drone-3 (50063)\n\n"
+              << "Configured drones: " << drone_endpoints.size() << "\n\n"
               << "Commands: <drone-id> lock              (acquire exclusive authority)\n"
               << "          <drone-id> unlock            (release authority)\n"
               << "          <drone-id> arm|disarm|land|hold|return-home\n"

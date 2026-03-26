@@ -1,2 +1,6 @@
-name: "default_agent"
-telemetry_rate_hz: 5
+agent:
+  agent_id: "agent-1"
+  bind_addr: "0.0.0.0:50061"
+  default_authority_ttl_ms: 5000
+  default_telemetry_rate_hz: 5
+  min_telemetry_rate_hz: 1

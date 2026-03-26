@@ -10,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -95,6 +96,43 @@ std::size_t SwarmClient::DroneCount() const {
     return impl_->clients.size();
 }
 
+core::Result SwarmClient::ApplyConfig(const SwarmConfig& config,
+                                      SwarmAddressPreference address_preference) {
+    if (const core::Result kValidation = config.Validate(); !kValidation.IsOk()) {
+        return kValidation;
+    }
+
+    std::unordered_map<std::string, std::shared_ptr<Client>> old_clients;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->default_config = config.default_client_config;
+        old_clients.swap(impl_->clients);
+
+        for (const auto& drone : config.drones) {
+            ClientConfig client_config = impl_->default_config;
+            const bool kUseLocalAddress =
+                address_preference == SwarmAddressPreference::kPreferLocal &&
+                !drone.local_address.empty();
+            client_config.address = kUseLocalAddress ? drone.local_address : drone.address;
+            impl_->clients.emplace(drone.drone_id, std::make_shared<Client>(std::move(client_config)));
+        }
+    }
+
+    for (auto& [drone_id, client] : old_clients) {
+        static_cast<void>(drone_id);
+        client->StopTelemetry();
+    }
+
+    for (const auto& drone : config.drones) {
+        const bool kUseLocalAddress =
+            address_preference == SwarmAddressPreference::kPreferLocal &&
+            !drone.local_address.empty();
+        core::Logger::InfoFmt("SwarmClient: configured drone '{}' at {}", drone.drone_id,
+                              kUseLocalAddress ? drone.local_address : drone.address);
+    }
+    return core::Result::Success();
+}
+
 CommandResult SwarmClient::SendCommand(const commands::CommandEnvelope& envelope) const {
     std::shared_ptr<Client> client;
     {
@@ -107,6 +145,39 @@ CommandResult SwarmClient::SendCommand(const commands::CommandEnvelope& envelope
         client = iter->second;
     }
     return client->SendCommand(envelope);
+}
+
+HealthStatus SwarmClient::GetHealth(const std::string& drone_id) const {
+    std::shared_ptr<Client> client;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        auto iter = impl_->clients.find(drone_id);
+        if (iter == impl_->clients.end()) {
+            HealthStatus out;
+            out.message = "drone '" + drone_id + "' not registered";
+            out.error.code = RpcStatusCode::kInvalidArgument;
+            out.error.user_message = out.message;
+            return out;
+        }
+        client = iter->second;
+    }
+    return client->GetHealth();
+}
+
+RuntimeStats SwarmClient::GetRuntimeStats(const std::string& drone_id) const {
+    std::shared_ptr<Client> client;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        auto iter = impl_->clients.find(drone_id);
+        if (iter == impl_->clients.end()) {
+            RuntimeStats out;
+            out.error.code = RpcStatusCode::kInvalidArgument;
+            out.error.user_message = "drone '" + drone_id + "' not registered";
+            return out;
+        }
+        client = iter->second;
+    }
+    return client->GetRuntimeStats();
 }
 
 std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(

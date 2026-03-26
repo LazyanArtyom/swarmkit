@@ -10,8 +10,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <string>
+#include <string_view>
 #include <utility>
+
+#include "swarmkit/core/result.h"
 
 namespace swarmkit::core {
 
@@ -24,6 +28,7 @@ constexpr std::uint64_t kDefaultMaxFileSizeBytes = 10U * kBytesPerMebibyte;
 enum class LogSinkType : std::uint8_t {
     kStdout,
     kRotatingFile,
+    kStdoutAndRotatingFile,
 };
 
 /// Severity levels ordered from most to least verbose.
@@ -41,6 +46,7 @@ enum class LogLevel : std::uint8_t {
 struct LoggerConfig {
     LogSinkType sink_type{LogSinkType::kStdout};
     LogLevel level{LogLevel::kInfo};
+    LogLevel flush_level{LogLevel::kInfo};
 
     /// File path used when sink_type == kRotatingFile.
     std::string log_file_path{"swarmkit.log"};
@@ -52,6 +58,12 @@ struct LoggerConfig {
     /// spdlog pattern string; empty uses the built-in default.
     std::string pattern;
 };
+
+[[nodiscard]] std::expected<LogLevel, core::Result> ParseLogLevel(std::string_view value);
+[[nodiscard]] std::expected<LogSinkType, core::Result> ParseLogSinkType(std::string_view value);
+[[nodiscard]] std::string_view ToString(LogLevel level);
+[[nodiscard]] std::string_view ToString(LogSinkType sink_type);
+[[nodiscard]] core::Result ValidateLoggerConfig(const LoggerConfig& config);
 
 /// Global, thread-safe logger backed by spdlog.
 class Logger final {
@@ -65,6 +77,9 @@ class Logger final {
 
     /// Flush and tear down the global logger.
     static void Shutdown();
+
+    /// Flush the active logger sinks.
+    static void Flush();
 
     /// Returns true if a message at the given level would be emitted.
     [[nodiscard]] static bool IsEnabled(LogLevel level);

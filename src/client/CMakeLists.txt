@@ -6,6 +6,7 @@
 
 add_library(swarmkit_client STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/client.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/config_io.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/swarm_client.cpp
 )
 
@@ -15,9 +16,14 @@ target_include_directories(swarmkit_client PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
+target_include_directories(swarmkit_client PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../core
+)
+
 target_link_libraries(swarmkit_client PUBLIC
   swarmkit_core
   swarmkit_proto
+  yaml-cpp::yaml-cpp
 )
 
 set_target_properties(swarmkit_client PROPERTIES EXPORT_NAME client)

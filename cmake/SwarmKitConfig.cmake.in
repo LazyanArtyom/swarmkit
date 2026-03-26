@@ -37,6 +37,7 @@ unset(_swarmkit_deps_dir)
 
 find_dependency(fmt      CONFIG)
 find_dependency(spdlog   CONFIG)
+find_dependency(yaml-cpp CONFIG)
 find_dependency(ZLIB     CONFIG)
 find_dependency(Protobuf CONFIG)
 find_dependency(gRPC     CONFIG)

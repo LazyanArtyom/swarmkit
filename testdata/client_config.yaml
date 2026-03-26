@@ -1,0 +1,14 @@
+client:
+  address: "127.0.0.1:50061"
+  client_id: "swarmkit-cli"
+  deadline_ms: 5000
+  priority: "supervisor"
+  retry:
+    max_attempts: 3
+    initial_backoff_ms: 200
+    max_backoff_ms: 2000
+  stream_reconnect:
+    enabled: true
+    initial_backoff_ms: 500
+    max_backoff_ms: 5000
+    max_attempts: 0

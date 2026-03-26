@@ -8,14 +8,45 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "swarmkit/client/client.h"
 #include "swarmkit/commands.h"
+#include "swarmkit/core/result.h"
 
 namespace swarmkit::client {
+
+enum class SwarmAddressPreference : std::uint8_t {
+    kPrimary,
+    kPreferLocal,
+};
+
+struct SwarmDroneConfig {
+    std::string drone_id;
+    std::string address;
+    std::string local_address;
+
+    [[nodiscard]] core::Result Validate() const;
+};
+
+struct SwarmConfig {
+    ClientConfig default_client_config{};
+    std::vector<SwarmDroneConfig> drones;
+
+    [[nodiscard]] core::Result Validate() const;
+};
+
+/// @brief Load a swarm topology/configuration from a YAML file.
+///
+/// Expected shape:
+/// - optional `client:` section for default per-agent ClientConfig values
+/// - `swarm.drones:` or root-level `drones:` sequence for agent endpoints
+[[nodiscard]] std::expected<SwarmConfig, core::Result> LoadSwarmConfigFromFile(
+    const std::string& path);
 
 /**
  * @brief Multi-agent client for swarm drone control.
@@ -25,6 +56,7 @@ namespace swarmkit::client {
  *   - Broadcast: BroadcastCommand fans out to all drones in parallel.
  *   - Telemetry: per-drone or all-drones subscription; all frames carry
  *                a drone_id field so the caller can distinguish sources.
+ *   - Health/stats: each drone connection exposes unary observability probes.
  *
  * All public methods are thread-safe.
  *
@@ -90,6 +122,17 @@ class SwarmClient {
     /// @brief Return the number of currently registered drones.
     [[nodiscard]] std::size_t DroneCount() const;
 
+    /**
+     * @brief Replace the current drone registry with entries from a config.
+     *
+     * @param config Parsed swarm topology and default per-client settings.
+     * @param address_preference Chooses whether local_address should override
+     *                           address when present.
+     */
+    core::Result ApplyConfig(const SwarmConfig& config,
+                             SwarmAddressPreference address_preference =
+                                 SwarmAddressPreference::kPrimary);
+
     /// @}
 
     /// @name Commands
@@ -104,6 +147,12 @@ class SwarmClient {
      * higher-priority client holds authority over the target drone.
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
+
+    /// @brief Query agent health/readiness for one registered drone.
+    [[nodiscard]] HealthStatus GetHealth(const std::string& drone_id) const;
+
+    /// @brief Query runtime counters for one registered drone.
+    [[nodiscard]] RuntimeStats GetRuntimeStats(const std::string& drone_id) const;
 
     /**
      * @brief Send the same command to every registered drone in parallel.

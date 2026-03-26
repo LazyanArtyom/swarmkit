@@ -7,11 +7,13 @@
 add_executable(swarmkit_tests
     test_arbiter.cpp
     test_basic.cpp
+    test_config.cpp
     test_sim_backend.cpp
 )
 
 target_link_libraries(swarmkit_tests PRIVATE
     swarmkit_agent
+    swarmkit_client
     Catch2::Catch2WithMain
 )
 

@@ -22,6 +22,7 @@ class SwarmkitConan(ConanFile):
         "grpc/1.67.1",
         "protobuf/5.27.0",
         "spdlog/1.17.0",
+        "yaml-cpp/0.8.0",
         "catch2/3.8.0",
     )
 

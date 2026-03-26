@@ -4,10 +4,10 @@
 // This file is part of SwarmKit.
 // See LICENSE.md in the repository root for full license terms.
 
-#include <cstdlib>
+#pragma once
 
-#include "app.h"
+namespace swarmkit::apps::agent {
 
-int main(int argc, char** argv) {
-    return swarmkit::apps::cli::RunCliApp(argc, argv);
-}
+[[nodiscard]] int RunAgentApp(int argc, char** argv);
+
+}  // namespace swarmkit::apps::agent

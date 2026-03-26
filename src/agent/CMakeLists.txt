@@ -23,6 +23,7 @@ target_include_directories(swarmkit_agent PRIVATE
 target_link_libraries(swarmkit_agent PUBLIC
     swarmkit_core
     swarmkit_proto
+    yaml-cpp::yaml-cpp
 )
 
 set_target_properties(swarmkit_agent PROPERTIES EXPORT_NAME agent)
