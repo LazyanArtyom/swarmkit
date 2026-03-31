@@ -10,11 +10,8 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
-#include <exception>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -24,6 +21,7 @@
 #include <thread>
 #include <utility>
 
+#include "env_utils.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/overloaded.h"
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
@@ -32,6 +30,13 @@
 namespace swarmkit::client {
 
 using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
+using core::internal::GetEnvValue;
+using core::internal::IsValidPriority;
+using core::internal::LooksLikeAddress;
+using core::internal::MakeCorrelationId;
+using core::internal::ParseBoolValue;
+using core::internal::ParseIntValue;
+using core::internal::ParsePriorityValue;
 
 namespace {
 
@@ -49,115 +54,6 @@ constexpr std::string_view kClientEnvStreamReconnectMaxBackoffMs =
     "STREAM_RECONNECT_MAX_BACKOFF_MS";
 constexpr std::string_view kClientEnvStreamReconnectMaxAttempts = "STREAM_RECONNECT_MAX_ATTEMPTS";
 constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
-constexpr std::uint64_t kInitialCorrelationSequence = 1;
-
-class CorrelationIdGenerator {
-   public:
-    [[nodiscard]] std::string Next(std::string_view prefix) {
-        const std::uint64_t kSequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
-        const auto kNow = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch());
-        return std::string(prefix) + "-" + std::to_string(kNow.count()) + "-" +
-               std::to_string(kSequence);
-    }
-
-   private:
-    std::atomic<std::uint64_t> next_sequence_{kInitialCorrelationSequence};
-};
-
-[[nodiscard]] CorrelationIdGenerator& GetCorrelationIdGenerator() {
-    static CorrelationIdGenerator generator;
-    return generator;
-}
-
-[[nodiscard]] std::string MakeCorrelationId(std::string_view prefix) {
-    return GetCorrelationIdGenerator().Next(prefix);
-}
-
-[[nodiscard]] std::string Trim(std::string_view value) {
-    std::size_t start = 0;
-    while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start])) != 0) {
-        ++start;
-    }
-
-    std::size_t end = value.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0) {
-        --end;
-    }
-
-    return std::string(value.substr(start, end - start));
-}
-
-[[nodiscard]] std::optional<std::string> GetEnvValue(std::string_view key) {
-    const char* value = std::getenv(std::string(key).c_str());
-    if (value == nullptr) {
-        return std::nullopt;
-    }
-    return std::string(value);
-}
-
-[[nodiscard]] std::expected<int, core::Result> ParseIntValue(std::string_view value,
-                                                             std::string_view field_name) {
-    try {
-        return std::stoi(std::string(value));
-    } catch (const std::exception&) {
-        return std::unexpected(
-            core::Result::Rejected("invalid integer for '" + std::string(field_name) + "'"));
-    }
-}
-
-[[nodiscard]] std::expected<bool, core::Result> ParseBoolValue(std::string_view value,
-                                                               std::string_view field_name) {
-    const std::string kNormalized = Trim(value);
-    if (kNormalized == "1" || kNormalized == "true" || kNormalized == "TRUE" ||
-        kNormalized == "yes" || kNormalized == "on") {
-        return true;
-    }
-    if (kNormalized == "0" || kNormalized == "false" || kNormalized == "FALSE" ||
-        kNormalized == "no" || kNormalized == "off") {
-        return false;
-    }
-    return std::unexpected(
-        core::Result::Rejected("invalid boolean for '" + std::string(field_name) + "'"));
-}
-
-[[nodiscard]] std::expected<CommandPriority, core::Result> ParsePriorityValue(
-    std::string_view value, std::string_view field_name) {
-    const std::string kNormalized = Trim(value);
-    if (kNormalized == "operator" || kNormalized == "OPERATOR") {
-        return CommandPriority::kOperator;
-    }
-    if (kNormalized == "supervisor" || kNormalized == "SUPERVISOR") {
-        return CommandPriority::kSupervisor;
-    }
-    if (kNormalized == "override" || kNormalized == "OVERRIDE") {
-        return CommandPriority::kOverride;
-    }
-    if (kNormalized == "emergency" || kNormalized == "EMERGENCY") {
-        return CommandPriority::kEmergency;
-    }
-
-    const auto kParsed = ParseIntValue(kNormalized, field_name);
-    if (!kParsed.has_value()) {
-        return std::unexpected(kParsed.error());
-    }
-    return static_cast<CommandPriority>(*kParsed);
-}
-
-[[nodiscard]] bool LooksLikeAddress(std::string_view address) {
-    return !address.empty() && address.find(':') != std::string_view::npos;
-}
-
-[[nodiscard]] bool IsValidPriority(CommandPriority priority) {
-    switch (priority) {
-        case CommandPriority::kOperator:
-        case CommandPriority::kSupervisor:
-        case CommandPriority::kOverride:
-        case CommandPriority::kEmergency:
-            return true;
-    }
-    return false;
-}
 
 [[nodiscard]] RpcStatusCode ToRpcStatusCode(const grpc::Status& status) {
     if (status.ok()) {

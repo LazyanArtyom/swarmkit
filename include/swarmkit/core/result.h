@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace swarmkit::core {
 
@@ -17,6 +18,19 @@ enum class StatusCode : std::uint8_t {
     kRejected,
     kFailed,
 };
+
+/// @brief Human-readable name for a StatusCode.
+[[nodiscard]] constexpr std::string_view ToString(StatusCode code) noexcept {
+    switch (code) {
+        case StatusCode::kOk:
+            return "ok";
+        case StatusCode::kRejected:
+            return "rejected";
+        case StatusCode::kFailed:
+            return "failed";
+    }
+    return "unknown";
+}
 
 /// Lightweight operation result carrying a status code and optional message.
 struct Result {
@@ -46,6 +60,15 @@ struct Result {
     /// Boolean conversion -- equivalent to IsOk().
     explicit operator bool() const noexcept {
         return IsOk();
+    }
+
+    /// @brief Human-readable representation: "status_code: message" or just "ok".
+    [[nodiscard]] std::string ToString() const {
+        if (IsOk()) {
+            return message.empty() ? std::string(core::ToString(code))
+                                   : std::string(core::ToString(code)) + ": " + message;
+        }
+        return std::string(core::ToString(code)) + ": " + message;
     }
 };
 

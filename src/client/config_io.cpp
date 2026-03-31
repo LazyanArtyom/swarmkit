@@ -7,7 +7,6 @@
 #include "swarmkit/client/swarm_client.h"
 
 #include <expected>
-#include <exception>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,45 +14,12 @@
 #include <unordered_set>
 
 #include "config_yaml.h"
+#include "env_utils.h"
 
 namespace swarmkit::client {
 namespace {
-
-[[nodiscard]] std::expected<int, core::Result> ParseIntValue(std::string_view value,
-                                                             std::string_view field_name) {
-    try {
-        return std::stoi(std::string(value));
-    } catch (const std::exception&) {
-        return std::unexpected(
-            core::Result::Rejected("invalid integer for '" + std::string(field_name) + "'"));
-    }
-}
-
-[[nodiscard]] bool LooksLikeAddress(std::string_view address) {
-    return !address.empty() && address.find(':') != std::string_view::npos;
-}
-
-[[nodiscard]] std::expected<commands::CommandPriority, core::Result> ParsePriorityValue(
-    std::string_view value, std::string_view field_name) {
-    if (value == "operator" || value == "OPERATOR") {
-        return commands::CommandPriority::kOperator;
-    }
-    if (value == "supervisor" || value == "SUPERVISOR") {
-        return commands::CommandPriority::kSupervisor;
-    }
-    if (value == "override" || value == "OVERRIDE") {
-        return commands::CommandPriority::kOverride;
-    }
-    if (value == "emergency" || value == "EMERGENCY") {
-        return commands::CommandPriority::kEmergency;
-    }
-
-    const auto kParsed = ParseIntValue(value, field_name);
-    if (!kParsed.has_value()) {
-        return std::unexpected(kParsed.error());
-    }
-    return static_cast<commands::CommandPriority>(*kParsed);
-}
+using core::internal::LooksLikeAddress;
+using core::internal::ParsePriorityValue;
 
 template <typename T, typename ApplyFn>
 [[nodiscard]] core::Result ApplyOptionalScalar(const YAML::Node& node, std::string_view key,

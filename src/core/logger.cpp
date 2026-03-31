@@ -291,41 +291,32 @@ void Logger::Shutdown() {
     }
 }
 
-void Logger::Flush() {
-    EnsureInitialized();
-
+/// @brief Ensure the global backend is initialised, then return a shared copy.
+///
+/// Taking a shared_ptr copy under the lock ensures the backend stays alive
+/// even if another thread calls SetBackend() or Shutdown() concurrently.
+[[nodiscard]] static std::shared_ptr<ILogBackend> AcquireBackend() {
     LoggerState& state = GetState();
-    std::shared_ptr<ILogBackend> backend;
-    {
-        std::lock_guard<std::mutex> lock(state.mutex);
-        backend = state.backend;
+    std::lock_guard<std::mutex> lock(state.mutex);
+    if (!state.backend) {
+        state.backend = Logger::CreateDefaultBackend(LoggerConfig{});
     }
-    if (backend) {
+    return state.backend;
+}
+
+void Logger::Flush() {
+    if (auto backend = AcquireBackend()) {
         backend->Flush();
     }
 }
 
 bool Logger::IsEnabled(LogLevel level) {
-    EnsureInitialized();
-
-    LoggerState& state = GetState();
-    std::shared_ptr<ILogBackend> backend;
-    {
-        std::lock_guard<std::mutex> lock(state.mutex);
-        backend = state.backend;
-    }
+    auto backend = AcquireBackend();
     return backend && backend->IsEnabled(level);
 }
 
 void Logger::EnsureInitialized() {
-    LoggerState& state = GetState();
-    std::lock_guard<std::mutex> lock(state.mutex);
-
-    if (state.backend) {
-        return;
-    }
-
-    state.backend = CreateDefaultBackend(LoggerConfig{});
+    static_cast<void>(AcquireBackend());
 }
 
 void Logger::Log(LogLevel level, fmt::string_view format, fmt::format_args arguments) {
@@ -333,16 +324,7 @@ void Logger::Log(LogLevel level, fmt::string_view format, fmt::format_args argum
         return;
     }
 
-    EnsureInitialized();
-
-    LoggerState& state = GetState();
-    std::shared_ptr<ILogBackend> backend;
-
-    {
-        std::lock_guard<std::mutex> lock(state.mutex);
-        backend = state.backend;
-    }
-
+    auto backend = AcquireBackend();
     if (!backend) {
         return;
     }
@@ -351,23 +333,35 @@ void Logger::Log(LogLevel level, fmt::string_view format, fmt::format_args argum
     backend->Log(level, kMessage);
 }
 
-void Logger::Trace(const std::string& message) {
-    Log(LogLevel::kTrace, "{}", fmt::make_format_args(message));
+/// @brief Dispatch a plain string_view message to the backend at the given level.
+static void LogPlain(LogLevel level, std::string_view message) {
+    if (level == LogLevel::kOff) {
+        return;
+    }
+
+    auto backend = AcquireBackend();
+    if (backend) {
+        backend->Log(level, message);
+    }
 }
-void Logger::Debug(const std::string& message) {
-    Log(LogLevel::kDebug, "{}", fmt::make_format_args(message));
+
+void Logger::Trace(std::string_view message) {
+    LogPlain(LogLevel::kTrace, message);
 }
-void Logger::Info(const std::string& message) {
-    Log(LogLevel::kInfo, "{}", fmt::make_format_args(message));
+void Logger::Debug(std::string_view message) {
+    LogPlain(LogLevel::kDebug, message);
 }
-void Logger::Warn(const std::string& message) {
-    Log(LogLevel::kWarn, "{}", fmt::make_format_args(message));
+void Logger::Info(std::string_view message) {
+    LogPlain(LogLevel::kInfo, message);
 }
-void Logger::Error(const std::string& message) {
-    Log(LogLevel::kError, "{}", fmt::make_format_args(message));
+void Logger::Warn(std::string_view message) {
+    LogPlain(LogLevel::kWarn, message);
 }
-void Logger::Critical(const std::string& message) {
-    Log(LogLevel::kCritical, "{}", fmt::make_format_args(message));
+void Logger::Error(std::string_view message) {
+    LogPlain(LogLevel::kError, message);
+}
+void Logger::Critical(std::string_view message) {
+    LogPlain(LogLevel::kCritical, message);
 }
 
 }  // namespace swarmkit::core

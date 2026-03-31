@@ -17,6 +17,7 @@
 #include <thread>
 #include <vector>
 
+#include "common/arg_utils.h"
 #include "swarmkit/client/client.h"
 #include "swarmkit/commands.h"
 #include "swarmkit/core/logger.h"
@@ -75,25 +76,6 @@ struct CliInvocation {
     std::string command;
     bool has_explicit_address{false};
 };
-
-[[nodiscard]] std::string GetArg(int argc, char** argv, std::string_view key,
-                                 std::string_view default_value) {
-    for (int idx = 1; idx + 1 < argc; ++idx) {
-        if (std::string_view{argv[idx]} == key) {
-            return {argv[idx + 1]};
-        }
-    }
-    return std::string{default_value};
-}
-
-[[nodiscard]] bool HasFlag(int argc, char** argv, std::string_view flag) {
-    for (int idx = 1; idx < argc; ++idx) {
-        if (std::string_view{argv[idx]} == flag) {
-            return true;
-        }
-    }
-    return false;
-}
 
 [[nodiscard]] bool IsSubcommand(std::string_view value) {
     return value == "ping" || value == "health" || value == "stats" || value == "telemetry" ||
@@ -170,10 +152,10 @@ void PrintUsage() {
 }
 
 [[nodiscard]] std::optional<std::string> FindCommandAction(int argc, char** argv) {
-    for (int idx = 1; idx < argc; ++idx) {
-        const std::string_view kCurrentArg = argv[idx];
+    for (int index = 1; index < argc; ++index) {
+        const std::string_view kCurrentArg = argv[index];
         if (IsOptionWithValue(kCurrentArg)) {
-            ++idx;
+            ++index;
             continue;
         }
         if (kCurrentArg.starts_with("--") || IsSubcommand(kCurrentArg)) {
@@ -185,7 +167,8 @@ void PrintUsage() {
 }
 
 [[nodiscard]] std::expected<Command, std::string> BuildTakeoffCommand(int argc, char** argv) {
-    const auto kAltitude = ParseFloatArg(GetArg(argc, argv, "--alt", kDefaultTakeoffAlt), "--alt");
+    const auto kAltitude =
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--alt", kDefaultTakeoffAlt), "--alt");
     if (!kAltitude.has_value()) {
         return std::unexpected(kAltitude.error());
     }
@@ -197,25 +180,28 @@ void PrintUsage() {
 
 [[nodiscard]] std::expected<Command, std::string> BuildWaypointCommand(int argc, char** argv) {
     const auto kLatitude =
-        ParseDoubleArg(GetArg(argc, argv, "--lat", kDefaultWaypointCoord), "--lat");
+        ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat", kDefaultWaypointCoord),
+                       "--lat");
     if (!kLatitude.has_value()) {
         return std::unexpected(kLatitude.error());
     }
 
     const auto kLongitude =
-        ParseDoubleArg(GetArg(argc, argv, "--lon", kDefaultWaypointCoord), "--lon");
+        ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon", kDefaultWaypointCoord),
+                       "--lon");
     if (!kLongitude.has_value()) {
         return std::unexpected(kLongitude.error());
     }
 
     const auto kAltitude =
-        ParseFloatArg(GetArg(argc, argv, "--alt", kDefaultWaypointCoord), "--alt");
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--alt", kDefaultWaypointCoord), "--alt");
     if (!kAltitude.has_value()) {
         return std::unexpected(kAltitude.error());
     }
 
     const auto kSpeed =
-        ParseFloatArg(GetArg(argc, argv, "--speed", kDefaultWaypointSpeed), "--speed");
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--speed", kDefaultWaypointSpeed),
+                      "--speed");
     if (!kSpeed.has_value()) {
         return std::unexpected(kSpeed.error());
     }
@@ -302,7 +288,7 @@ void PrintUsage() {
     log_cfg.sink_type = swarmkit::core::LogSinkType::kStdout;
     log_cfg.level = swarmkit::core::LogLevel::kWarn;
 
-    const std::string kLogSink = GetArg(argc, argv, "--log-sink", "");
+    const std::string kLogSink = common::GetOptionValue(argc, argv, "--log-sink");
     if (!kLogSink.empty()) {
         const auto kParsedSink = swarmkit::core::ParseLogSinkType(kLogSink);
         if (!kParsedSink.has_value()) {
@@ -312,7 +298,7 @@ void PrintUsage() {
         log_cfg.sink_type = *kParsedSink;
     }
 
-    const std::string kLogFile = GetArg(argc, argv, "--log-file", "");
+    const std::string kLogFile = common::GetOptionValue(argc, argv, "--log-file");
     if (!kLogFile.empty()) {
         log_cfg.log_file_path = kLogFile;
         if (kLogSink.empty()) {
@@ -320,8 +306,8 @@ void PrintUsage() {
         }
     }
 
-    const auto kParsedLevel =
-        swarmkit::core::ParseLogLevel(GetArg(argc, argv, "--log-level", kDefaultCliLogLevel));
+    const auto kParsedLevel = swarmkit::core::ParseLogLevel(
+        common::GetOptionValue(argc, argv, "--log-level", kDefaultCliLogLevel));
     if (!kParsedLevel.has_value()) {
         std::cerr << "Invalid --log-level value: " << kParsedLevel.error().message << "\n";
         return std::unexpected(EXIT_FAILURE);
@@ -340,7 +326,7 @@ void PrintUsage() {
 [[nodiscard]] std::expected<ClientConfig, int> BuildCliClientConfig(const CliInvocation& invocation,
                                                                     int argc, char** argv) {
     ClientConfig client_cfg;
-    const std::string kConfigPath = GetArg(argc, argv, "--config", "");
+    const std::string kConfigPath = common::GetOptionValue(argc, argv, "--config");
     if (!kConfigPath.empty()) {
         const auto kLoaded = swarmkit::client::LoadClientConfigFromFile(kConfigPath);
         if (!kLoaded.has_value()) {
@@ -461,10 +447,11 @@ int RunStats(Client& client) {
 
 [[nodiscard]] std::expected<int, std::string> ParseTelemetryRate(int argc, char** argv) {
     try {
-        return std::stoi(GetArg(argc, argv, "--rate", kDefaultTelemetryRate));
+        return std::stoi(common::GetOptionValue(argc, argv, "--rate", kDefaultTelemetryRate));
     } catch (const std::exception& exc) {
         return std::unexpected("Invalid --rate value '" +
-                               GetArg(argc, argv, "--rate", kDefaultTelemetryRate) +
+                               common::GetOptionValue(argc, argv, "--rate",
+                                                      kDefaultTelemetryRate) +
                                "': " + exc.what());
     }
 }
@@ -522,10 +509,12 @@ int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz) {
             std::cerr << kRateHz.error() << "\n";
             return EXIT_FAILURE;
         }
-        return RunTelemetry(client, GetArg(argc, argv, "--drone", kDefaultDroneId), *kRateHz);
+        return RunTelemetry(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
+                            *kRateHz);
     }
     if (invocation.command == "command") {
-        return RunCommand(client, GetArg(argc, argv, "--drone", kDefaultDroneId), argc, argv);
+        return RunCommand(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
+                          argc, argv);
     }
 
     std::cerr << "Unknown command: " << invocation.command << "\n\n";
@@ -536,7 +525,7 @@ int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz) {
 }  // namespace
 
 int RunCliApp(int argc, char** argv) {
-    if (HasFlag(argc, argv, "--help") || HasFlag(argc, argv, "-h")) {
+    if (common::HasFlag(argc, argv, "--help") || common::HasFlag(argc, argv, "-h")) {
         PrintUsage();
         return EXIT_SUCCESS;
     }

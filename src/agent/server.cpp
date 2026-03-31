@@ -5,43 +5,43 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include "swarmkit/agent/server.h"
-#include "server_test_support.h"
 
 #include <grpcpp/grpcpp.h>
 
 #include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
 #include <expected>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
-#include "swarmkit/agent/arbiter.h"
 #include "config_yaml.h"
+#include "env_utils.h"
+#include "runtime_counters.h"
+#include "server_test_support.h"
+#include "swarmkit/agent/arbiter.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/version.h"
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
 #include "swarmkit/v1/swarmkit.pb.h"
+#include "telemetry_manager.h"
 
 namespace swarmkit::agent {
 
 using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
+using core::internal::GetEnvValue;
+using core::internal::IsValidPriority;
+using core::internal::LooksLikeAddress;
+using core::internal::MakeCorrelationId;
+using core::internal::ParseIntValue;
 
 namespace {
 using grpc::Status;
 
-constexpr int kDefaultTelemetryRateHz = 5;
-constexpr int kMinTelemetryRateHz = 1;
 constexpr int kMillisecondsPerSecond = 1000;
 constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
 constexpr std::string_view kAgentEnvId = "AGENT_ID";
@@ -49,29 +49,13 @@ constexpr std::string_view kAgentEnvBindAddr = "BIND_ADDR";
 constexpr std::string_view kAgentEnvDefaultAuthorityTtlMs = "DEFAULT_AUTHORITY_TTL_MS";
 constexpr std::string_view kAgentEnvDefaultTelemetryRateHz = "DEFAULT_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvMinTelemetryRateHz = "MIN_TELEMETRY_RATE_HZ";
-constexpr std::uint64_t kInitialCorrelationSequence = 1;
-
-[[nodiscard]] std::int64_t NowUnixMs();
-
-class CorrelationIdGenerator {
-   public:
-    [[nodiscard]] std::string Next(std::string_view prefix) {
-        const std::uint64_t kSequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
-        return std::string(prefix) + "-" + std::to_string(NowUnixMs()) + "-" +
-               std::to_string(kSequence);
-    }
-
-   private:
-    std::atomic<std::uint64_t> next_sequence_{kInitialCorrelationSequence};
-};
 
 /// @brief Watcher poll interval while blocking inside WatchAuthority RPC.
 constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
 
-/// @name Helpers
+/// @name Time helpers
 /// @{
 
-/// @brief Returns the current Unix time in milliseconds.
 [[nodiscard]] std::int64_t NowUnixMs() {
     using std::chrono::duration_cast;
     using std::chrono::milliseconds;
@@ -79,98 +63,10 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-[[nodiscard]] CorrelationIdGenerator& GetCorrelationIdGenerator() {
-    static CorrelationIdGenerator generator;
-    return generator;
-}
+/// @}
 
-[[nodiscard]] std::string MakeCorrelationId(std::string_view prefix) {
-    return GetCorrelationIdGenerator().Next(prefix);
-}
-
-[[nodiscard]] std::optional<std::string> GetEnvValue(std::string_view key) {
-    const char* value = std::getenv(std::string(key).c_str());
-    if (value == nullptr) {
-        return std::nullopt;
-    }
-    return std::string(value);
-}
-
-[[nodiscard]] std::expected<int, core::Result> ParseIntValue(std::string_view value,
-                                                             std::string_view field_name) {
-    try {
-        return std::stoi(std::string(value));
-    } catch (const std::exception&) {
-        return std::unexpected(
-            core::Result::Rejected("invalid integer for '" + std::string(field_name) + "'"));
-    }
-}
-
-[[nodiscard]] bool LooksLikeAddress(std::string_view address) {
-    return !address.empty() && address.find(':') != std::string_view::npos;
-}
-
-[[nodiscard]] bool IsSupportedPriority(CommandPriority priority) {
-    switch (priority) {
-        case CommandPriority::kOperator:
-        case CommandPriority::kSupervisor:
-        case CommandPriority::kOverride:
-        case CommandPriority::kEmergency:
-            return true;
-    }
-    return false;
-}
-
-/// @brief Clamp telemetry rate to a valid positive value.
-[[nodiscard]] int NormalizeTelemetryRate(int requested_rate_hz) {
-    if (requested_rate_hz <= 0) {
-        return kDefaultTelemetryRateHz;
-    }
-    return std::max(kMinTelemetryRateHz, requested_rate_hz);
-}
-
-[[nodiscard]] swarmkit::v1::ErrorCode ToProtoErrorCode(core::StatusCode code) {
-    using ProtoCode = swarmkit::v1::ErrorCode;
-    switch (code) {
-        case core::StatusCode::kOk:
-            return ProtoCode::ERROR_CODE_NONE;
-        case core::StatusCode::kRejected:
-            return ProtoCode::ERROR_CODE_REJECTED;
-        case core::StatusCode::kFailed:
-            return ProtoCode::ERROR_CODE_INTERNAL;
-    }
-    return ProtoCode::ERROR_CODE_INTERNAL;
-}
-
-/// @brief Map a core::StatusCode to the protobuf CommandReply::Status enum.
-[[nodiscard]] swarmkit::v1::CommandReply::Status ToProtoStatus(core::StatusCode code) {
-    using Status = swarmkit::v1::CommandReply::Status;
-    switch (code) {
-        case core::StatusCode::kOk:
-            return Status::CommandReply_Status_OK;
-        case core::StatusCode::kRejected:
-            return Status::CommandReply_Status_REJECTED;
-        case core::StatusCode::kFailed:
-            return Status::CommandReply_Status_FAILED;
-    }
-    return Status::CommandReply_Status_STATUS_UNSPECIFIED;
-}
-
-/// @brief Convert a proto CommandContext to the C++ CommandContext struct.
-[[nodiscard]] CommandContext ToCoreContext(const swarmkit::v1::CommandContext& proto) {
-    CommandContext context;
-    context.drone_id = proto.drone_id();
-    context.client_id = proto.client_id();
-    context.priority = static_cast<CommandPriority>(proto.priority());
-    context.correlation_id = proto.correlation_id();
-
-    if (proto.deadline_unix_ms() > 0) {
-        context.deadline = std::chrono::system_clock::time_point{
-            std::chrono::milliseconds{proto.deadline_unix_ms()}};
-    }
-
-    return context;
-}
+/// @name Correlation ID resolution
+/// @{
 
 [[nodiscard]] std::string ResolveCorrelationId(grpc::ServerContext* ctx,
                                                std::string_view request_correlation_id,
@@ -188,6 +84,11 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
     return MakeCorrelationId(fallback_prefix);
 }
 
+/// @}
+
+/// @name Validation helpers
+/// @{
+
 [[nodiscard]] core::Result ValidateCommandContext(const CommandContext& context) {
     if (context.drone_id.empty()) {
         return core::Result::Rejected("ctx.drone_id must not be empty");
@@ -195,7 +96,7 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
     if (context.client_id.empty()) {
         return core::Result::Rejected("ctx.client_id must not be empty");
     }
-    if (!IsSupportedPriority(context.priority)) {
+    if (!IsValidPriority(context.priority)) {
         return core::Result::Rejected("ctx.priority is not a supported CommandPriority");
     }
     const auto kEpoch = std::chrono::system_clock::time_point{};
@@ -222,7 +123,52 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
     return core::Result::Success();
 }
 
-/// @brief Return a short human-readable name for a proto Command oneof.
+/// @}
+
+/// @name Proto conversion helpers
+/// @{
+
+[[nodiscard]] swarmkit::v1::ErrorCode ToProtoErrorCode(core::StatusCode code) {
+    using ProtoCode = swarmkit::v1::ErrorCode;
+    switch (code) {
+        case core::StatusCode::kOk:
+            return ProtoCode::ERROR_CODE_NONE;
+        case core::StatusCode::kRejected:
+            return ProtoCode::ERROR_CODE_REJECTED;
+        case core::StatusCode::kFailed:
+            return ProtoCode::ERROR_CODE_INTERNAL;
+    }
+    return ProtoCode::ERROR_CODE_INTERNAL;
+}
+
+[[nodiscard]] swarmkit::v1::CommandReply::Status ToProtoStatus(core::StatusCode code) {
+    using ReplyStatus = swarmkit::v1::CommandReply::Status;
+    switch (code) {
+        case core::StatusCode::kOk:
+            return ReplyStatus::CommandReply_Status_OK;
+        case core::StatusCode::kRejected:
+            return ReplyStatus::CommandReply_Status_REJECTED;
+        case core::StatusCode::kFailed:
+            return ReplyStatus::CommandReply_Status_FAILED;
+    }
+    return ReplyStatus::CommandReply_Status_STATUS_UNSPECIFIED;
+}
+
+[[nodiscard]] CommandContext ToCoreContext(const swarmkit::v1::CommandContext& proto) {
+    CommandContext context;
+    context.drone_id = proto.drone_id();
+    context.client_id = proto.client_id();
+    context.priority = static_cast<CommandPriority>(proto.priority());
+    context.correlation_id = proto.correlation_id();
+
+    if (proto.deadline_unix_ms() > 0) {
+        context.deadline = std::chrono::system_clock::time_point{
+            std::chrono::milliseconds{proto.deadline_unix_ms()}};
+    }
+
+    return context;
+}
+
 [[nodiscard]] std::string ProtoCommandName(const swarmkit::v1::Command& proto) {
     switch (proto.kind_case()) {
         case swarmkit::v1::Command::kArm:
@@ -252,7 +198,6 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
     }
 }
 
-/// @brief Convert a C++ AuthorityEvent::Kind to the proto enum.
 [[nodiscard]] swarmkit::v1::AuthorityEvent::Kind ToProtoEventKind(AuthorityEvent::Kind kind) {
     using ProtoKind = swarmkit::v1::AuthorityEvent::Kind;
     switch (kind) {
@@ -268,15 +213,6 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
     return ProtoKind::AuthorityEvent_Kind_KIND_UNSPECIFIED;
 }
 
-/**
- * @brief Convert a proto Command oneof into the nested C++ Command variant.
- *
- * Proto field numbers are grouped by category to match the C++ variant
- * structure (FlightCmd / NavCmd / SwarmCmd / PayloadCmd).
- *
- * @returns The converted Command on success, or a core::Result error for
- *          unimplemented or unknown kinds.
- */
 [[nodiscard]] std::expected<Command, core::Result> ConvertProtoCommand(
     const swarmkit::v1::Command& proto) {
     switch (proto.kind_case()) {
@@ -330,36 +266,18 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
 /**
  * @brief Implements the AgentService gRPC service.
  *
- * Owns the drone backend, per-drone telemetry caches, and the CommandArbiter.
- * All RPC handlers are called from gRPC's thread pool; shared state is
- * protected by dedicated mutexes.
+ * Delegates telemetry management to TelemetryManager and runtime
+ * counting to RuntimeCounters, keeping RPC handlers focused.
  */
 class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
    public:
     AgentServiceImpl(AgentConfig config, DroneBackendPtr backend)
-        : config_(std::move(config)), backend_(std::move(backend)) {}
+        : config_(std::move(config)),
+          backend_(std::move(backend)),
+          telemetry_(backend_.get(), config_.default_telemetry_rate_hz,
+                     config_.min_telemetry_rate_hz) {}
 
-    ~AgentServiceImpl() override {
-        std::vector<std::string> drone_ids;
-        {
-            std::lock_guard<std::mutex> lock(telemetry_states_mutex_);
-            drone_ids.reserve(telemetry_states_.size());
-            for (const auto& [drone_id, state] : telemetry_states_) {
-                static_cast<void>(state);
-                drone_ids.push_back(drone_id);
-            }
-        }
-
-        for (const auto& drone_id : drone_ids) {
-            const core::Result kStopResult = backend_->StopTelemetry(drone_id);
-            if (!kStopResult.IsOk()) {
-                core::Logger::WarnFmt(
-                    "AgentServiceImpl: StopTelemetry('{}') failed during "
-                    "shutdown: {}",
-                    drone_id, kStopResult.message);
-            }
-        }
-    }
+    // -- Unary RPCs -----------------------------------------------------------
 
     grpc::Status Ping(grpc::ServerContext* ctx, const swarmkit::v1::PingRequest* /*req*/,
                       swarmkit::v1::PingReply* reply) override {
@@ -367,7 +285,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
         }
 
-        counters_.ping_requests_total.fetch_add(1, std::memory_order_relaxed);
+        counters_.IncrementPingRequests();
         const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "ping");
 
         reply->set_agent_id(config_.agent_id);
@@ -383,14 +301,16 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
         }
 
-        counters_.health_requests_total.fetch_add(1, std::memory_order_relaxed);
+        counters_.IncrementHealthRequests();
         const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "health");
+        const bool kIsReady = ready_.load(std::memory_order_relaxed);
+
         reply->set_ok(true);
-        reply->set_ready(ready_.load(std::memory_order_relaxed));
+        reply->set_ready(kIsReady);
         reply->set_agent_id(config_.agent_id);
         reply->set_version(core::kSwarmkitVersionString);
         reply->set_unix_time_ms(NowUnixMs());
-        reply->set_message(ready_.load(std::memory_order_relaxed) ? "ready" : "not ready");
+        reply->set_message(kIsReady ? "ready" : "not ready");
         reply->set_correlation_id(kCorrelationId);
         return grpc::Status::OK;
     }
@@ -402,41 +322,37 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
         }
 
-        counters_.runtime_stats_requests_total.fetch_add(1, std::memory_order_relaxed);
+        counters_.IncrementRuntimeStatsRequests();
+
+        // Sync telemetry counters from the manager into the atomic counters.
+        counters_.SetTelemetryCounters(telemetry_.TotalSubscriptionCount(),
+                                       telemetry_.ActiveStreamCount(), telemetry_.FramesSentTotal(),
+                                       telemetry_.BackendFailureCount());
+
+        const internal::CounterSnapshot kSnap = counters_.Snapshot();
         const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "stats");
 
         reply->set_agent_id(config_.agent_id);
         reply->set_unix_time_ms(NowUnixMs());
         reply->set_correlation_id(kCorrelationId);
-        reply->set_ping_requests_total(
-            counters_.ping_requests_total.load(std::memory_order_relaxed));
-        reply->set_health_requests_total(
-            counters_.health_requests_total.load(std::memory_order_relaxed));
-        reply->set_runtime_stats_requests_total(
-            counters_.runtime_stats_requests_total.load(std::memory_order_relaxed));
-        reply->set_command_requests_total(
-            counters_.command_requests_total.load(std::memory_order_relaxed));
-        reply->set_command_rejected_total(
-            counters_.command_rejected_total.load(std::memory_order_relaxed));
-        reply->set_command_failed_total(
-            counters_.command_failed_total.load(std::memory_order_relaxed));
-        reply->set_lock_requests_total(
-            counters_.lock_requests_total.load(std::memory_order_relaxed));
-        reply->set_watch_requests_total(
-            counters_.watch_requests_total.load(std::memory_order_relaxed));
-        reply->set_current_authority_watchers(
-            counters_.current_authority_watchers.load(std::memory_order_relaxed));
-        reply->set_total_telemetry_subscriptions(
-            counters_.total_telemetry_subscriptions.load(std::memory_order_relaxed));
-        reply->set_current_telemetry_streams(
-            counters_.current_telemetry_streams.load(std::memory_order_relaxed));
-        reply->set_telemetry_frames_sent_total(
-            counters_.telemetry_frames_sent_total.load(std::memory_order_relaxed));
-        reply->set_backend_failures_total(
-            counters_.backend_failures_total.load(std::memory_order_relaxed));
+        reply->set_ping_requests_total(kSnap.ping_requests_total);
+        reply->set_health_requests_total(kSnap.health_requests_total);
+        reply->set_runtime_stats_requests_total(kSnap.runtime_stats_requests_total);
+        reply->set_command_requests_total(kSnap.command_requests_total);
+        reply->set_command_rejected_total(kSnap.command_rejected_total);
+        reply->set_command_failed_total(kSnap.command_failed_total);
+        reply->set_lock_requests_total(kSnap.lock_requests_total);
+        reply->set_watch_requests_total(kSnap.watch_requests_total);
+        reply->set_current_authority_watchers(kSnap.current_authority_watchers);
+        reply->set_total_telemetry_subscriptions(kSnap.total_telemetry_subscriptions);
+        reply->set_current_telemetry_streams(kSnap.current_telemetry_streams);
+        reply->set_telemetry_frames_sent_total(kSnap.telemetry_frames_sent_total);
+        reply->set_backend_failures_total(kSnap.backend_failures_total);
         reply->set_ready(ready_.load(std::memory_order_relaxed));
         return grpc::Status::OK;
     }
+
+    // -- Command RPC ----------------------------------------------------------
 
     grpc::Status SendCommand(grpc::ServerContext* ctx, const swarmkit::v1::CommandRequest* req,
                              swarmkit::v1::CommandReply* reply) override {
@@ -444,7 +360,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
         }
 
-        counters_.command_requests_total.fetch_add(1, std::memory_order_relaxed);
+        counters_.IncrementCommandRequests();
 
         if (!req->has_cmd()) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing cmd field");
@@ -465,7 +381,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 reply->set_correlation_id(envelope.context.correlation_id);
                 reply->set_error_code(swarmkit::v1::ERROR_CODE_DEADLINE_EXCEEDED);
                 reply->set_debug_message(kValidation.message);
-                counters_.command_failed_total.fetch_add(1, std::memory_order_relaxed);
+                counters_.IncrementCommandFailed();
                 return grpc::Status::OK;
             }
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, kValidation.message);
@@ -473,7 +389,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         const std::string kCmdName = ProtoCommandName(req->cmd());
 
-        std::chrono::milliseconds ttl = std::chrono::milliseconds{config_.default_authority_ttl_ms};
+        std::chrono::milliseconds ttl{config_.default_authority_ttl_ms};
         const auto kEpoch = std::chrono::system_clock::time_point{};
         if (envelope.context.deadline != kEpoch) {
             const auto kRemaining = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -485,7 +401,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         const core::Result kArbiterResult = arbiter_.CheckAndGrant(envelope.context, ttl);
         if (!kArbiterResult.IsOk()) {
-            counters_.command_rejected_total.fetch_add(1, std::memory_order_relaxed);
+            counters_.IncrementCommandRejected();
             core::Logger::WarnFmt(
                 "rpc=SendCommand corr={} agent={} drone={} client={} priority={} peer={} "
                 "result=rejected reason={}",
@@ -509,7 +425,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         auto convert_result = ConvertProtoCommand(req->cmd());
         if (!convert_result.has_value()) {
             const auto& error = convert_result.error();
-            counters_.command_failed_total.fetch_add(1, std::memory_order_relaxed);
+            counters_.IncrementCommandFailed();
             reply->set_status(swarmkit::v1::CommandReply::FAILED);
             reply->set_message("invalid command payload");
             reply->set_correlation_id(envelope.context.correlation_id);
@@ -526,8 +442,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_status(swarmkit::v1::CommandReply::OK);
             reply->set_message(kExecResult.message);
         } else {
-            counters_.command_failed_total.fetch_add(1, std::memory_order_relaxed);
-            counters_.backend_failures_total.fetch_add(1, std::memory_order_relaxed);
+            counters_.IncrementCommandFailed();
+            counters_.IncrementBackendFailures();
             core::Logger::ErrorFmt(
                 "rpc=SendCommand corr={} agent={} drone={} client={} result=backend_failure "
                 "detail={}",
@@ -541,6 +457,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
+    // -- Authority RPCs -------------------------------------------------------
+
     grpc::Status LockAuthority(grpc::ServerContext* ctx,
                                const swarmkit::v1::LockAuthorityRequest* req,
                                swarmkit::v1::LockAuthorityReply* reply) override {
@@ -551,28 +469,31 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing ctx field");
         }
 
-        counters_.lock_requests_total.fetch_add(1, std::memory_order_relaxed);
+        counters_.IncrementLockRequests();
 
-        CommandContext kContext = ToCoreContext(req->ctx());
-        kContext.correlation_id = ResolveCorrelationId(ctx, kContext.correlation_id, "lock");
+        CommandContext lock_context = ToCoreContext(req->ctx());
+        lock_context.correlation_id =
+            ResolveCorrelationId(ctx, lock_context.correlation_id, "lock");
         const auto kTtlDuration = std::chrono::milliseconds{req->ttl_ms()};
-        if (const core::Result kValidation = ValidateLockRequest(kContext, req->ttl_ms());
+
+        if (const core::Result kValidation = ValidateLockRequest(lock_context, req->ttl_ms());
             !kValidation.IsOk()) {
             if (kValidation.code == core::StatusCode::kFailed) {
                 reply->set_ok(false);
                 reply->set_message("command deadline already expired");
-                reply->set_correlation_id(kContext.correlation_id);
+                reply->set_correlation_id(lock_context.correlation_id);
                 reply->set_error_code(swarmkit::v1::ERROR_CODE_DEADLINE_EXCEEDED);
                 reply->set_debug_message(kValidation.message);
                 return grpc::Status::OK;
             }
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, kValidation.message);
         }
-        const core::Result kResult = arbiter_.CheckAndGrant(kContext, kTtlDuration);
+
+        const core::Result kResult = arbiter_.CheckAndGrant(lock_context, kTtlDuration);
 
         reply->set_ok(kResult.IsOk());
         reply->set_message(kResult.message);
-        reply->set_correlation_id(kContext.correlation_id);
+        reply->set_correlation_id(lock_context.correlation_id);
         reply->set_error_code(ToProtoErrorCode(kResult.code));
         reply->set_debug_message(kResult.message);
 
@@ -580,14 +501,15 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             core::Logger::InfoFmt(
                 "rpc=LockAuthority corr={} agent={} drone={} client={} priority={} ttl_ms={} "
                 "result=granted",
-                kContext.correlation_id, config_.agent_id, kContext.drone_id, kContext.client_id,
-                static_cast<int>(kContext.priority), req->ttl_ms());
+                lock_context.correlation_id, config_.agent_id, lock_context.drone_id,
+                lock_context.client_id, static_cast<int>(lock_context.priority), req->ttl_ms());
         } else {
             core::Logger::WarnFmt(
                 "rpc=LockAuthority corr={} agent={} drone={} client={} priority={} ttl_ms={} "
                 "result=rejected reason={}",
-                kContext.correlation_id, config_.agent_id, kContext.drone_id, kContext.client_id,
-                static_cast<int>(kContext.priority), req->ttl_ms(), kResult.message);
+                lock_context.correlation_id, config_.agent_id, lock_context.drone_id,
+                lock_context.client_id, static_cast<int>(lock_context.priority), req->ttl_ms(),
+                kResult.message);
         }
         return grpc::Status::OK;
     }
@@ -610,6 +532,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
+    // -- Streaming RPCs -------------------------------------------------------
+
     grpc::Status StreamTelemetry(
         grpc::ServerContext* ctx, const swarmkit::v1::TelemetryRequest* req,
         grpc::ServerWriter<swarmkit::v1::TelemetryFrame>* writer) override {
@@ -631,11 +555,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         const auto kSleepPeriod =
             std::chrono::milliseconds(kMillisecondsPerSecond / kEffectiveRateHz);
 
-        TelemetryLease telemetry_lease;
+        internal::TelemetryLease lease;
         const core::Result kAcquireResult =
-            AcquireTelemetryLease(kDroneId, kEffectiveRateHz, &telemetry_lease);
+            telemetry_.AcquireLease(kDroneId, kEffectiveRateHz, &lease);
         if (!kAcquireResult.IsOk()) {
-            counters_.backend_failures_total.fetch_add(1, std::memory_order_relaxed);
             core::Logger::ErrorFmt(
                 "rpc=StreamTelemetry corr={} agent={} drone={} peer={} rate_hz={} "
                 "result=acquire_failed detail={}",
@@ -644,8 +567,6 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, kAcquireResult.message);
         }
 
-        counters_.current_telemetry_streams.fetch_add(1, std::memory_order_relaxed);
-        counters_.total_telemetry_subscriptions.fetch_add(1, std::memory_order_relaxed);
         core::Logger::InfoFmt(
             "rpc=StreamTelemetry corr={} agent={} drone={} peer={} rate_hz={} result=connected",
             kStreamId, config_.agent_id, kDroneId, kPeer, kEffectiveRateHz);
@@ -653,41 +574,28 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         std::uint64_t last_sequence = 0;
 
         while (!ctx->IsCancelled()) {
-            std::optional<core::TelemetryFrame> maybe_frame;
-
-            {
-                std::lock_guard<std::mutex> lock(telemetry_lease.state->data_mutex);
-                if (telemetry_lease.state->last_frame.has_value() &&
-                    telemetry_lease.state->sequence != last_sequence) {
-                    maybe_frame = telemetry_lease.state->last_frame;
-                    last_sequence = telemetry_lease.state->sequence;
-                }
-            }
-
-            if (maybe_frame.has_value()) {
-                const auto& src = *maybe_frame;
-
+            core::TelemetryFrame frame;
+            if (internal::TelemetryManager::ReadFrame(lease, &last_sequence, &frame)) {
                 swarmkit::v1::TelemetryFrame out;
-                out.set_drone_id(src.drone_id);
-                out.set_unix_time_ms(src.unix_time_ms);
-                out.set_lat_deg(src.lat_deg);
-                out.set_lon_deg(src.lon_deg);
-                out.set_rel_alt_m(src.rel_alt_m);
-                out.set_battery_percent(src.battery_percent);
-                out.set_mode(src.mode);
+                out.set_drone_id(frame.drone_id);
+                out.set_unix_time_ms(frame.unix_time_ms);
+                out.set_lat_deg(frame.lat_deg);
+                out.set_lon_deg(frame.lon_deg);
+                out.set_rel_alt_m(frame.rel_alt_m);
+                out.set_battery_percent(frame.battery_percent);
+                out.set_mode(frame.mode);
                 out.set_stream_id(kStreamId);
 
                 if (!writer->Write(out)) {
                     break;
                 }
-                counters_.telemetry_frames_sent_total.fetch_add(1, std::memory_order_relaxed);
+                telemetry_.IncrementFramesSent();
             }
 
             std::this_thread::sleep_for(kSleepPeriod);
         }
 
-        ReleaseTelemetryLease(telemetry_lease);
-        counters_.current_telemetry_streams.fetch_sub(1, std::memory_order_relaxed);
+        telemetry_.ReleaseLease(lease);
         core::Logger::InfoFmt(
             "rpc=StreamTelemetry corr={} agent={} drone={} peer={} result=disconnected", kStreamId,
             config_.agent_id, kDroneId, kPeer);
@@ -705,13 +613,13 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         const std::string& client_id = req->client_id();
         const auto kPriority = static_cast<CommandPriority>(req->priority());
         const std::string kStreamId = ResolveCorrelationId(ctx, "", "watch");
-        if (drone_id.empty() || client_id.empty() || !IsSupportedPriority(kPriority)) {
+        if (drone_id.empty() || client_id.empty() || !IsValidPriority(kPriority)) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
                                 "invalid watch authority request");
         }
 
-        counters_.watch_requests_total.fetch_add(1, std::memory_order_relaxed);
-        counters_.current_authority_watchers.fetch_add(1, std::memory_order_relaxed);
+        counters_.IncrementWatchRequests();
+        counters_.IncrementAuthorityWatchers();
         auto queue = std::make_shared<EventQueue>();
         const WatchToken kToken = arbiter_.Watch(drone_id, client_id, kPriority, queue);
 
@@ -739,7 +647,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         queue->Shutdown();
         arbiter_.Unwatch(kToken);
-        counters_.current_authority_watchers.fetch_sub(1, std::memory_order_relaxed);
+        counters_.DecrementAuthorityWatchers();
 
         core::Logger::InfoFmt(
             "rpc=WatchAuthority corr={} agent={} drone={} client={} result=disconnected", kStreamId,
@@ -748,199 +656,21 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
     }
 
    private:
-    struct RuntimeCounters {
-        std::atomic<std::uint64_t> ping_requests_total{0};
-        std::atomic<std::uint64_t> health_requests_total{0};
-        std::atomic<std::uint64_t> runtime_stats_requests_total{0};
-        std::atomic<std::uint64_t> command_requests_total{0};
-        std::atomic<std::uint64_t> command_rejected_total{0};
-        std::atomic<std::uint64_t> command_failed_total{0};
-        std::atomic<std::uint64_t> lock_requests_total{0};
-        std::atomic<std::uint64_t> watch_requests_total{0};
-        std::atomic<std::uint64_t> current_authority_watchers{0};
-        std::atomic<std::uint64_t> total_telemetry_subscriptions{0};
-        std::atomic<std::uint64_t> current_telemetry_streams{0};
-        std::atomic<std::uint64_t> telemetry_frames_sent_total{0};
-        std::atomic<std::uint64_t> backend_failures_total{0};
-    };
-
-    struct TelemetryState {
-        std::mutex control_mutex;
-        std::mutex data_mutex;
-        std::optional<core::TelemetryFrame> last_frame;
-        std::uint64_t sequence{0};
-        std::unordered_map<std::uint64_t, int> subscriber_rates_hz;
-        bool backend_running{false};
-        int backend_rate_hz{0};
-    };
-
-    struct TelemetryLease {
-        std::shared_ptr<TelemetryState> state;
-        std::string drone_id;
-        std::uint64_t subscriber_id{0};
-    };
-
-    [[nodiscard]] std::shared_ptr<TelemetryState> GetOrCreateTelemetryState(
-        const std::string& drone_id) {
-        std::lock_guard<std::mutex> lock(telemetry_states_mutex_);
-        auto& state = telemetry_states_[drone_id];
-        if (!state) {
-            state = std::make_shared<TelemetryState>();
-        }
-        return state;
-    }
-
-    static void PublishTelemetryFrame(const std::shared_ptr<TelemetryState>& state,
-                                      const core::TelemetryFrame& frame) {
-        std::lock_guard<std::mutex> lock(state->data_mutex);
-        state->last_frame = frame;
-        ++state->sequence;
-    }
-
-    [[nodiscard]] core::Result AcquireTelemetryLease(const std::string& drone_id,
-                                                     int requested_rate_hz,
-                                                     TelemetryLease* telemetry_lease) {
-        if (telemetry_lease == nullptr) {
-            return core::Result::Failed("telemetry lease output is null");
-        }
-
-        const int kNormalizedRateHz = NormalizeTelemetryRate(requested_rate_hz);
-        const int kFloorRateHz = std::max(1, config_.min_telemetry_rate_hz);
-        const int kDefaultRateHz = std::max(kFloorRateHz, config_.default_telemetry_rate_hz);
-        auto state = GetOrCreateTelemetryState(drone_id);
-        const std::uint64_t kSubscriberId =
-            next_telemetry_subscriber_id_.fetch_add(1, std::memory_order_relaxed);
-
-        std::lock_guard<std::mutex> lock(state->control_mutex);
-        state->subscriber_rates_hz[kSubscriberId] =
-            std::max(kFloorRateHz, requested_rate_hz <= 0 ? kDefaultRateHz : kNormalizedRateHz);
-
-        int desired_backend_rate_hz = state->subscriber_rates_hz[kSubscriberId];
-        for (const auto& [entry_id, rate_hz] : state->subscriber_rates_hz) {
-            static_cast<void>(entry_id);
-            desired_backend_rate_hz = std::max(desired_backend_rate_hz, rate_hz);
-        }
-
-        if (!state->backend_running) {
-            const core::Result kStartResult = backend_->StartTelemetry(
-                drone_id, desired_backend_rate_hz, [state](const core::TelemetryFrame& frame) {
-                    PublishTelemetryFrame(state, frame);
-                });
-            if (!kStartResult.IsOk()) {
-                counters_.backend_failures_total.fetch_add(1, std::memory_order_relaxed);
-                state->subscriber_rates_hz.erase(kSubscriberId);
-                return core::Result::Failed("backend StartTelemetry failed: " +
-                                            kStartResult.message);
-            }
-
-            state->backend_running = true;
-            state->backend_rate_hz = desired_backend_rate_hz;
-        } else if (desired_backend_rate_hz > state->backend_rate_hz) {
-            const int kPreviousBackendRateHz = state->backend_rate_hz;
-
-            const core::Result kStopResult = backend_->StopTelemetry(drone_id);
-            if (!kStopResult.IsOk()) {
-                counters_.backend_failures_total.fetch_add(1, std::memory_order_relaxed);
-                state->subscriber_rates_hz.erase(kSubscriberId);
-                return core::Result::Failed("backend StopTelemetry failed during reconfigure: " +
-                                            kStopResult.message);
-            }
-
-            const core::Result kStartResult = backend_->StartTelemetry(
-                drone_id, desired_backend_rate_hz, [state](const core::TelemetryFrame& frame) {
-                    PublishTelemetryFrame(state, frame);
-                });
-            if (!kStartResult.IsOk()) {
-                counters_.backend_failures_total.fetch_add(1, std::memory_order_relaxed);
-                core::Logger::ErrorFmt(
-                    "AgentServiceImpl: failed to raise telemetry rate for "
-                    "drone '{}' from {}Hz to {}Hz: {}",
-                    drone_id, kPreviousBackendRateHz, desired_backend_rate_hz,
-                    kStartResult.message);
-
-                const core::Result kRestoreResult = backend_->StartTelemetry(
-                    drone_id, kPreviousBackendRateHz, [state](const core::TelemetryFrame& frame) {
-                        PublishTelemetryFrame(state, frame);
-                    });
-                if (kRestoreResult.IsOk()) {
-                    state->backend_running = true;
-                    state->backend_rate_hz = kPreviousBackendRateHz;
-                } else {
-                    state->backend_running = false;
-                    state->backend_rate_hz = 0;
-                }
-
-                state->subscriber_rates_hz.erase(kSubscriberId);
-                return core::Result::Failed("backend telemetry reconfigure failed: " +
-                                            kStartResult.message);
-            }
-
-            state->backend_running = true;
-            state->backend_rate_hz = desired_backend_rate_hz;
-        }
-
-        telemetry_lease->state = std::move(state);
-        telemetry_lease->drone_id = drone_id;
-        telemetry_lease->subscriber_id = kSubscriberId;
-        return core::Result::Success();
-    }
-
-    void ReleaseTelemetryLease(const TelemetryLease& telemetry_lease) {
-        if (!telemetry_lease.state) {
-            return;
-        }
-
-        bool should_erase_state = false;
-
-        {
-            std::lock_guard<std::mutex> lock(telemetry_lease.state->control_mutex);
-            telemetry_lease.state->subscriber_rates_hz.erase(telemetry_lease.subscriber_id);
-
-            if (telemetry_lease.state->subscriber_rates_hz.empty()) {
-                if (telemetry_lease.state->backend_running) {
-                    const core::Result kStopResult =
-                        backend_->StopTelemetry(telemetry_lease.drone_id);
-                    if (!kStopResult.IsOk()) {
-                        counters_.backend_failures_total.fetch_add(1, std::memory_order_relaxed);
-                        core::Logger::WarnFmt("AgentServiceImpl: StopTelemetry('{}') failed: {}",
-                                              telemetry_lease.drone_id, kStopResult.message);
-                    }
-                    telemetry_lease.state->backend_running = false;
-                    telemetry_lease.state->backend_rate_hz = 0;
-                }
-
-                should_erase_state = true;
-            }
-        }
-
-        if (should_erase_state) {
-            {
-                std::lock_guard<std::mutex> data_lock(telemetry_lease.state->data_mutex);
-                telemetry_lease.state->last_frame.reset();
-                telemetry_lease.state->sequence = 0;
-            }
-
-            std::lock_guard<std::mutex> map_lock(telemetry_states_mutex_);
-            auto iter = telemetry_states_.find(telemetry_lease.drone_id);
-            if (iter != telemetry_states_.end() && iter->second == telemetry_lease.state) {
-                telemetry_states_.erase(iter);
-            }
-        }
-    }
-
     AgentConfig config_;
     DroneBackendPtr backend_;
     CommandArbiter arbiter_;
+    internal::TelemetryManager telemetry_;
+    internal::RuntimeCounters counters_;
     std::atomic<bool> ready_{true};
-    RuntimeCounters counters_{};
-    std::mutex telemetry_states_mutex_;
-    std::unordered_map<std::string, std::shared_ptr<TelemetryState>> telemetry_states_;
-    std::atomic<std::uint64_t> next_telemetry_subscriber_id_{1};
 };
 
 /// @}
 
 }  // namespace
+
+// ---------------------------------------------------------------------------
+// AgentConfig
+// ---------------------------------------------------------------------------
 
 core::Result AgentConfig::Validate() const {
     if (agent_id.empty()) {
@@ -965,30 +695,14 @@ core::Result AgentConfig::Validate() const {
 }
 
 void AgentConfig::ApplyEnvironment(std::string_view prefix) {
-    const auto ApplyIntEnv = [&](std::string_view suffix, int* out) {
-        const auto kValue = GetEnvValue(std::string(prefix) + std::string(suffix));
-        if (!kValue.has_value()) {
-            return;
-        }
-        const auto kParsed = ParseIntValue(*kValue, suffix);
-        if (kParsed.has_value()) {
-            *out = *kParsed;
-        }
-    };
+    using core::internal::ApplyIntEnv;
+    using core::internal::ApplyStringEnv;
 
-    const auto kAgentId = GetEnvValue(std::string(prefix) + std::string(kAgentEnvId));
-    if (kAgentId.has_value()) {
-        agent_id = *kAgentId;
-    }
-
-    const auto kBindAddr = GetEnvValue(std::string(prefix) + std::string(kAgentEnvBindAddr));
-    if (kBindAddr.has_value()) {
-        bind_addr = *kBindAddr;
-    }
-
-    ApplyIntEnv(kAgentEnvDefaultAuthorityTtlMs, &default_authority_ttl_ms);
-    ApplyIntEnv(kAgentEnvDefaultTelemetryRateHz, &default_telemetry_rate_hz);
-    ApplyIntEnv(kAgentEnvMinTelemetryRateHz, &min_telemetry_rate_hz);
+    ApplyStringEnv(prefix, kAgentEnvId, &agent_id);
+    ApplyStringEnv(prefix, kAgentEnvBindAddr, &bind_addr);
+    ApplyIntEnv(prefix, kAgentEnvDefaultAuthorityTtlMs, &default_authority_ttl_ms);
+    ApplyIntEnv(prefix, kAgentEnvDefaultTelemetryRateHz, &default_telemetry_rate_hz);
+    ApplyIntEnv(prefix, kAgentEnvMinTelemetryRateHz, &min_telemetry_rate_hz);
 }
 
 std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::string& path) {
@@ -1017,16 +731,14 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         config.bind_addr = **kValue;
     }
 
-    if (const auto kValue =
-            core::yaml::ReadOptionalScalar<int>(root, "default_authority_ttl_ms");
+    if (const auto kValue = core::yaml::ReadOptionalScalar<int>(root, "default_authority_ttl_ms");
         !kValue.has_value()) {
         return std::unexpected(kValue.error());
     } else if (kValue->has_value()) {
         config.default_authority_ttl_ms = **kValue;
     }
 
-    if (const auto kValue =
-            core::yaml::ReadOptionalScalar<int>(root, "default_telemetry_rate_hz");
+    if (const auto kValue = core::yaml::ReadOptionalScalar<int>(root, "default_telemetry_rate_hz");
         !kValue.has_value()) {
         return std::unexpected(kValue.error());
     } else if (kValue->has_value()) {
@@ -1045,6 +757,10 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
     }
     return config;
 }
+
+// ---------------------------------------------------------------------------
+// RunAgentServer
+// ---------------------------------------------------------------------------
 
 int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend) {
     if (!backend) {

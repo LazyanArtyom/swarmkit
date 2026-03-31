@@ -53,7 +53,7 @@ struct SwarmConfig {
  *
  * @details Manages a dynamic fleet of per-drone Client connections and provides:
  *   - Routing:   SendCommand routes by envelope.context.drone_id.
- *   - Broadcast: BroadcastCommand fans out to all drones in parallel.
+ *   - Broadcast: BroadcastCommand fans out to all drones with bounded parallelism.
  *   - Telemetry: per-drone or all-drones subscription; all frames carry
  *                a drone_id field so the caller can distinguish sources.
  *   - Health/stats: each drone connection exposes unary observability probes.
@@ -155,11 +155,11 @@ class SwarmClient {
     [[nodiscard]] RuntimeStats GetRuntimeStats(const std::string& drone_id) const;
 
     /**
-     * @brief Send the same command to every registered drone in parallel.
+     * @brief Send the same command to every registered drone with bounded parallelism.
      *
      * @details @c context.drone_id is overwritten per-drone before dispatch.
-     * All RPCs execute concurrently; the call blocks until every drone
-     * has responded or timed out.
+     * RPCs execute concurrently using a bounded worker set; the call blocks
+     * until every drone has responded or timed out.
      *
      * @returns Map of drone_id to CommandResult for each registered drone.
      */
@@ -188,7 +188,7 @@ class SwarmClient {
     void UnlockDrone(const std::string& drone_id) const;
 
     /**
-     * @brief Acquire authority for every registered drone in parallel.
+     * @brief Acquire authority for every registered drone with bounded parallelism.
      *
      * @param ttl_ms Authority time-to-live in milliseconds.  0 = no expiry.
      * @returns Map of drone_id to CommandResult.

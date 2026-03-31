@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 
+#include "common/arg_utils.h"
 #include "swarmkit/agent/server.h"
 #include "swarmkit/agent/sim_backend.h"
 #include "swarmkit/core/logger.h"
@@ -21,25 +22,6 @@ namespace {
 constexpr std::string_view kDefaultBindAddr = "0.0.0.0:50061";
 constexpr std::string_view kDefaultAgentId = "agent-1";
 constexpr std::string_view kDefaultLogLevel = "info";
-
-[[nodiscard]] std::string GetArg(int argc, char** argv, std::string_view key,
-                                 std::string_view default_value) {
-    for (int idx = 1; idx + 1 < argc; ++idx) {
-        if (std::string_view{argv[idx]} == key) {
-            return {argv[idx + 1]};
-        }
-    }
-    return std::string{default_value};
-}
-
-[[nodiscard]] bool HasFlag(int argc, char** argv, std::string_view flag) {
-    for (int idx = 1; idx < argc; ++idx) {
-        if (std::string_view{argv[idx]} == flag) {
-            return true;
-        }
-    }
-    return false;
-}
 
 void PrintUsage() {
     std::cout << "Usage: swarmkit-agent [OPTIONS]\n"
@@ -62,7 +44,7 @@ void PrintUsage() {
     logger_cfg.level = swarmkit::core::LogLevel::kInfo;
     logger_cfg.flush_level = swarmkit::core::LogLevel::kInfo;
 
-    const std::string kLogSink = GetArg(argc, argv, "--log-sink", "");
+    const std::string kLogSink = common::GetOptionValue(argc, argv, "--log-sink");
     if (!kLogSink.empty()) {
         const auto kParsedSink = swarmkit::core::ParseLogSinkType(kLogSink);
         if (!kParsedSink.has_value()) {
@@ -72,7 +54,7 @@ void PrintUsage() {
         logger_cfg.sink_type = *kParsedSink;
     }
 
-    const std::string kLogFile = GetArg(argc, argv, "--log-file", "");
+    const std::string kLogFile = common::GetOptionValue(argc, argv, "--log-file");
     if (!kLogFile.empty()) {
         logger_cfg.log_file_path = kLogFile;
         if (kLogSink.empty()) {
@@ -80,8 +62,8 @@ void PrintUsage() {
         }
     }
 
-    const auto kParsedLevel =
-        swarmkit::core::ParseLogLevel(GetArg(argc, argv, "--log-level", kDefaultLogLevel));
+    const auto kParsedLevel = swarmkit::core::ParseLogLevel(
+        common::GetOptionValue(argc, argv, "--log-level", kDefaultLogLevel));
     if (!kParsedLevel.has_value()) {
         std::cerr << "Invalid --log-level value: " << kParsedLevel.error().message << "\n";
         return std::unexpected(EXIT_FAILURE);
@@ -99,7 +81,7 @@ void PrintUsage() {
 [[nodiscard]] std::expected<swarmkit::agent::AgentConfig, int> BuildAgentConfig(int argc,
                                                                                 char** argv) {
     swarmkit::agent::AgentConfig agent_cfg;
-    const std::string kConfigPath = GetArg(argc, argv, "--config", "");
+    const std::string kConfigPath = common::GetOptionValue(argc, argv, "--config");
     if (!kConfigPath.empty()) {
         const auto kLoaded = swarmkit::agent::LoadAgentConfigFromFile(kConfigPath);
         if (!kLoaded.has_value()) {
@@ -112,12 +94,12 @@ void PrintUsage() {
 
     agent_cfg.ApplyEnvironment();
 
-    const std::string kAgentId = GetArg(argc, argv, "--id", "");
+    const std::string kAgentId = common::GetOptionValue(argc, argv, "--id");
     if (!kAgentId.empty()) {
         agent_cfg.agent_id = kAgentId;
     }
 
-    const std::string kBindAddr = GetArg(argc, argv, "--bind", "");
+    const std::string kBindAddr = common::GetOptionValue(argc, argv, "--bind");
     if (!kBindAddr.empty()) {
         agent_cfg.bind_addr = kBindAddr;
     }
@@ -140,7 +122,7 @@ void PrintUsage() {
 }  // namespace
 
 int RunAgentApp(int argc, char** argv) {
-    if (HasFlag(argc, argv, "--help")) {
+    if (common::HasFlag(argc, argv, "--help")) {
         PrintUsage();
         return EXIT_SUCCESS;
     }
