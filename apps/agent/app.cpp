@@ -30,6 +30,9 @@ void PrintUsage() {
                  "  --id        AGENT_ID      Agent identifier (default: agent-1)\n"
                  "  --bind      HOST:PORT     Bind address    (default: 0.0.0.0:50061)\n"
                  "  --config    PATH          Load agent config from YAML file\n"
+                 "  --ca-cert   PATH          mTLS CA certificate path\n"
+                 "  --server-cert PATH        mTLS server certificate path\n"
+                 "  --server-key PATH         mTLS server private key path\n"
                  "  --log-sink  stdout|file|both\n"
                  "                             Logger sink type (default: stdout)\n"
                  "  --log-file  PATH          Rotating log file path when file logging is used\n"
@@ -102,6 +105,18 @@ void PrintUsage() {
     const std::string kBindAddr = common::GetOptionValue(argc, argv, "--bind");
     if (!kBindAddr.empty()) {
         agent_cfg.bind_addr = kBindAddr;
+    }
+    if (const std::string kRootCaCert = common::GetOptionValue(argc, argv, "--ca-cert");
+        !kRootCaCert.empty()) {
+        agent_cfg.security.root_ca_cert_path = kRootCaCert;
+    }
+    if (const std::string kServerCert = common::GetOptionValue(argc, argv, "--server-cert");
+        !kServerCert.empty()) {
+        agent_cfg.security.cert_chain_path = kServerCert;
+    }
+    if (const std::string kServerKey = common::GetOptionValue(argc, argv, "--server-key");
+        !kServerKey.empty()) {
+        agent_cfg.security.private_key_path = kServerKey;
     }
 
     if (agent_cfg.agent_id.empty()) {

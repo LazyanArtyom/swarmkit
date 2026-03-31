@@ -78,14 +78,15 @@ cmake --build --preset win-release
 
 ## Run
 
+SwarmKit now uses mTLS for client/agent communication. The repo includes development-only
+certificates under `testdata/certs/` for local testing.
+
 **Terminal 1 — start the agent:**
 
 ```bash
-# macOS / Linux (debug build)
-./build/mac-debug/apps/swarmkit-agent
-
-# Agent options
+# macOS / Linux (debug build, using repo test certs)
 ./build/mac-debug/apps/swarmkit-agent \
+    --config testdata/agent_config.yaml \
     --id agent-1 \
     --bind 0.0.0.0:50061 \
     --log-level info
@@ -93,7 +94,7 @@ cmake --build --preset win-release
 
 ```powershell
 # Windows
-.\build\win-debug\apps\swarmkit-agent.exe --id agent-1
+.\build\win-debug\apps\swarmkit-agent.exe --config testdata\agent_config.yaml --id agent-1
 ```
 
 Default bind address: `0.0.0.0:50061`.
@@ -102,22 +103,22 @@ Default bind address: `0.0.0.0:50061`.
 
 ```bash
 # Ping
-./build/mac-debug/apps/swarmkit-cli ping
-./build/mac-debug/apps/swarmkit-cli 192.168.1.10:50061 ping
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml ping
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml 192.168.1.10:50061 ping
 
 # Subscribe to telemetry (default drone, 1 Hz) — Ctrl+C to stop
-./build/mac-debug/apps/swarmkit-cli telemetry
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml telemetry
 
 # Custom drone and rate
-./build/mac-debug/apps/swarmkit-cli telemetry --drone uav-1 --rate 5
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml telemetry --drone uav-1 --rate 5
 
 # Custom address + drone + rate
-./build/mac-debug/apps/swarmkit-cli 192.168.1.10:50061 telemetry --drone uav-1 --rate 2
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml 192.168.1.10:50061 telemetry --drone uav-1 --rate 2
 
 # Send commands
-./build/mac-debug/apps/swarmkit-cli command --drone uav-1 arm
-./build/mac-debug/apps/swarmkit-cli command --drone uav-1 takeoff --alt 20
-./build/mac-debug/apps/swarmkit-cli 192.168.1.10:50061 command --drone uav-1 waypoint --lat 40.18 --lon 44.51 --alt 50
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml command --drone uav-1 arm
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml command --drone uav-1 takeoff --alt 20
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml 192.168.1.10:50061 command --drone uav-1 waypoint --lat 40.18 --lon 44.51 --alt 50
 ```
 
 ---
@@ -273,17 +274,22 @@ cmake -B apps\test_tools\build `
 cmake --build apps\test_tools\build
 ```
 
-**Typical workflow (4 terminals):**
+**Typical local workflow (4 terminals):**
 
 ```bash
-#Terminal 1 — start all 3 agents(uses swarmkit - agent from PATH)
-./apps/test_tools/build/swarmkit-test-agents
+#Terminal 1 — start all 3 agents (uses swarmkit-agent from PATH or explicit path)
+./apps/test_tools/build/swarmkit-test-agents ./build/mac-release/apps/swarmkit-agent
+#wait for "SwarmKit Test Agents ready" before starting the next terminals
 
 #Terminal 2 — low - priority operator clients(will be preempted)
-./apps/test_tools/build/swarmkit-test-client
+./apps/test_tools/build/swarmkit-test-client \
+  --swarm-config testdata/swarm_config.yaml \
+  --address-mode local
 
 #Terminal 3 — high - priority server : telemetry CSV + interactive commands
-./apps/test_tools/build/swarmkit-test-server
+./apps/test_tools/build/swarmkit-test-server \
+  --swarm-config testdata/swarm_config.yaml \
+  --address-mode local
 #stdin : drone - 1 arm
 #stdin : all takeoff 30
 #stdin : drone - 2 waypoint 40.18 44.51 50
@@ -291,6 +297,11 @@ cmake --build apps\test_tools\build
 #stdin : drone - 1 unlock
 
 #Terminal 4 — CLI at Supervisor priority(overrides test - client, below test - server)
-./build/mac-release/apps/swarmkit-cli 127.0.0.1:50061 command --drone drone-1 arm
-./build/mac-release/apps/swarmkit-cli 127.0.0.1:50061 command --drone drone-1 takeoff --alt 20
+./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml 127.0.0.1:50061 command --drone drone-1 arm
+./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml 127.0.0.1:50061 command --drone drone-1 takeoff --alt 20
 ```
+
+`testdata/swarm_config.yaml` contains both remote swarm addresses and localhost
+development addresses. For local testing on one machine, use `--address-mode local`
+so the tools connect to `127.0.0.1:50061..50063` instead of the example
+`192.168.10.x` addresses.

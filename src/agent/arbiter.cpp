@@ -27,6 +27,19 @@ namespace {
 
 }  // namespace
 
+CommandArbiter::CommandArbiter() : expiry_thread_([this] { RunExpiryLoop(); }) {}
+
+CommandArbiter::~CommandArbiter() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        shutdown_ = true;
+    }
+    expiry_cv_.notify_all();
+    if (expiry_thread_.joinable()) {
+        expiry_thread_.join();
+    }
+}
+
 /// @name EventQueue
 /// @{
 
@@ -158,6 +171,69 @@ void CommandArbiter::EvictExpiredHolder(DroneState& state, std::string_view dron
     });
 }
 
+[[nodiscard]] std::optional<std::chrono::system_clock::time_point>
+CommandArbiter::ComputeNextExpiryLocked() const {
+    std::optional<std::chrono::system_clock::time_point> next_expiry;
+
+    for (const auto& [drone_id, state] : drone_states_) {
+        static_cast<void>(drone_id);
+        if (state.holder.has_value() && HasExpiry(state.holder->expiry) &&
+            (!next_expiry.has_value() || state.holder->expiry < *next_expiry)) {
+            next_expiry = state.holder->expiry;
+        }
+
+        for (const auto& holder : state.suspended_holders) {
+            if (!HasExpiry(holder.expiry)) {
+                continue;
+            }
+            if (!next_expiry.has_value() || holder.expiry < *next_expiry) {
+                next_expiry = holder.expiry;
+            }
+        }
+    }
+
+    return next_expiry;
+}
+
+void CommandArbiter::RequestExpiryWakeupLocked() {
+    expiry_cv_.notify_all();
+}
+
+void CommandArbiter::RunExpiryLoop() {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    while (!shutdown_) {
+        const auto kNextExpiry = ComputeNextExpiryLocked();
+        if (!kNextExpiry.has_value()) {
+            expiry_cv_.wait(lock, [this] { return shutdown_ || ComputeNextExpiryLocked().has_value(); });
+        } else {
+            expiry_cv_.wait_until(lock, *kNextExpiry, [this, &kNextExpiry] {
+                return shutdown_ || ComputeNextExpiryLocked() != kNextExpiry;
+            });
+        }
+
+        if (shutdown_) {
+            return;
+        }
+
+        std::vector<std::pair<std::vector<WatcherEntry>, std::vector<PendingNotification>>> pending_batches;
+
+        for (auto& [drone_id, state] : drone_states_) {
+            std::vector<PendingNotification> notifications;
+            EvictExpiredHolder(state, drone_id, &notifications);
+            if (!notifications.empty()) {
+                pending_batches.emplace_back(state.watchers, std::move(notifications));
+            }
+        }
+
+        lock.unlock();
+        for (const auto& [watchers, notifications] : pending_batches) {
+            NotifyPending(watchers, notifications);
+        }
+        lock.lock();
+    }
+}
+
 /// @}
 
 /// @name CommandArbiter — CheckAndGrant
@@ -242,6 +318,7 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
         }
 
         watchers_to_notify = state.watchers;
+        RequestExpiryWakeupLocked();
     }
 
     NotifyPending(watchers_to_notify, notifications);
@@ -282,6 +359,8 @@ void CommandArbiter::Release(const std::string& drone_id, const std::string& cli
             }
             watchers_to_notify = state.watchers;
         }
+
+        RequestExpiryWakeupLocked();
     }
 
     NotifyPending(watchers_to_notify, notifications);
@@ -306,6 +385,7 @@ WatchToken CommandArbiter::Watch(const std::string& drone_id, const std::string&
     {
         std::lock_guard<std::mutex> lock(mutex_);
         drone_states_[drone_id].watchers.push_back(std::move(entry));
+        RequestExpiryWakeupLocked();
     }
 
     core::Logger::DebugFmt("CommandArbiter: '{}' watching drone '{}' (watch_id={})", client_id,
@@ -320,6 +400,7 @@ void CommandArbiter::Unwatch(WatchToken token) {
         std::erase_if(state.watchers,
                       [&](const WatcherEntry& entry) { return entry.watch_id == token.watch_id; });
     }
+    RequestExpiryWakeupLocked();
 }
 
 /// @}

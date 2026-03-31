@@ -4,15 +4,14 @@
 // This file is part of SwarmKit.
 // See LICENSE.md in the repository root for full license terms.
 
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
+#include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <string>
 #include <unordered_set>
 
-#include "test_support.h"
 #include "swarmkit/client/swarm_client.h"
+#include "test_support.h"
 
 namespace swarmkit::client {
 namespace {
@@ -20,8 +19,7 @@ namespace {
 constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
 
 [[nodiscard]] ClientConfig MakeDefaultClientConfig() {
-    ClientConfig config;
-    config.client_id = "swarm-test-client";
+    ClientConfig config = testsupport::MakeMtlsClientConfig("");
     config.retry_policy.max_attempts = 2;
     config.retry_policy.initial_backoff_ms = 10;
     config.retry_policy.max_backoff_ms = 20;
@@ -59,10 +57,9 @@ TEST_CASE("SwarmClient broadcasts commands and reports unknown drones", "[swarm]
     swarm.AddDrone("drone-2", drone_two.address());
 
     commands::CommandContext context;
-    context.client_id = "swarm-test-client";
+    context.client_id = "test-client";
     context.priority = commands::CommandPriority::kSupervisor;
-    const auto kResults =
-        swarm.BroadcastCommand(commands::FlightCmd{commands::CmdArm{}}, context);
+    const auto kResults = swarm.BroadcastCommand(commands::FlightCmd{commands::CmdArm{}}, context);
 
     REQUIRE(kResults.size() == 2);
     CHECK(kResults.at("drone-1").ok);
@@ -72,7 +69,7 @@ TEST_CASE("SwarmClient broadcasts commands and reports unknown drones", "[swarm]
 
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = "missing";
-    envelope.context.client_id = "swarm-test-client";
+    envelope.context.client_id = "test-client";
     envelope.command = commands::FlightCmd{commands::CmdArm{}};
     const CommandResult kMissing = swarm.SendCommand(envelope);
     CHECK_FALSE(kMissing.ok);
@@ -105,11 +102,10 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
 
     std::mutex mutex;
     std::unordered_set<std::string> seen_drones;
-    swarm.SubscribeAllTelemetry(
-        5, [&](const core::TelemetryFrame& frame) {
-            std::lock_guard<std::mutex> lock(mutex);
-            seen_drones.insert(frame.drone_id);
-        });
+    swarm.SubscribeAllTelemetry(5, [&](const core::TelemetryFrame& frame) {
+        std::lock_guard<std::mutex> lock(mutex);
+        seen_drones.insert(frame.drone_id);
+    });
 
     REQUIRE(testsupport::WaitUntil(
         [&] {

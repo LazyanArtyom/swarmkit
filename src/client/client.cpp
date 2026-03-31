@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "env_utils.h"
+#include "security_utils.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/overloaded.h"
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
@@ -53,6 +54,10 @@ constexpr std::string_view kClientEnvStreamReconnectInitialBackoffMs =
 constexpr std::string_view kClientEnvStreamReconnectMaxBackoffMs =
     "STREAM_RECONNECT_MAX_BACKOFF_MS";
 constexpr std::string_view kClientEnvStreamReconnectMaxAttempts = "STREAM_RECONNECT_MAX_ATTEMPTS";
+constexpr std::string_view kClientEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
+constexpr std::string_view kClientEnvClientCertChainPath = "CLIENT_CERT_CHAIN_PATH";
+constexpr std::string_view kClientEnvClientPrivateKeyPath = "CLIENT_PRIVATE_KEY_PATH";
+constexpr std::string_view kClientEnvServerAuthorityOverride = "SERVER_AUTHORITY_OVERRIDE";
 constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
 
 [[nodiscard]] RpcStatusCode ToRpcStatusCode(const grpc::Status& status) {
@@ -76,6 +81,29 @@ constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
         default:
             return RpcStatusCode::kUnknown;
     }
+}
+
+[[nodiscard]] std::shared_ptr<grpc::ChannelCredentials> MakeChannelCredentials(
+    const ClientSecurityConfig& security) {
+    grpc::SslCredentialsOptions options;
+    static_cast<void>(
+        core::internal::ReadTextFile(security.root_ca_cert_path, &options.pem_root_certs));
+    static_cast<void>(
+        core::internal::ReadTextFile(security.private_key_path, &options.pem_private_key));
+    static_cast<void>(
+        core::internal::ReadTextFile(security.cert_chain_path, &options.pem_cert_chain));
+    return grpc::SslCredentials(options);
+}
+
+[[nodiscard]] std::shared_ptr<grpc::Channel> MakeChannel(const ClientConfig& config) {
+    const auto kCredentials = MakeChannelCredentials(config.security);
+    if (config.security.server_authority_override.empty()) {
+        return grpc::CreateChannel(config.address, kCredentials);
+    }
+
+    grpc::ChannelArguments arguments;
+    arguments.SetSslTargetNameOverride(config.security.server_authority_override);
+    return grpc::CreateCustomChannel(config.address, kCredentials, arguments);
 }
 
 [[nodiscard]] RpcStatusCode ToRpcStatusCode(swarmkit::v1::ErrorCode code) {
@@ -287,7 +315,7 @@ struct Client::Impl {
 
     explicit Impl(ClientConfig cfg)
         : config(std::move(cfg)),
-          channel(grpc::CreateChannel(config.address, grpc::InsecureChannelCredentials())),
+          channel(MakeChannel(config)),
           stub(swarmkit::v1::AgentService::NewStub(channel)) {}
 };
 
@@ -313,7 +341,7 @@ struct ClientRuntime {
 }
 
 [[nodiscard]] grpc::ClientContext* InstallStreamContext(StreamState& stream_state,
-                                                       std::string_view correlation_id) {
+                                                        std::string_view correlation_id) {
     auto context = std::make_unique<grpc::ClientContext>();
     context->AddMetadata(std::string(kCorrelationMetadataKey), std::string(correlation_id));
     grpc::ClientContext* context_ptr = context.get();
@@ -329,8 +357,7 @@ void ResetStreamContext(StreamState& stream_state) {
 }
 
 void CancelAndJoinStream(StreamState& stream_state) {
-    if (!stream_state.active.load(std::memory_order_relaxed) &&
-        !stream_state.worker.joinable()) {
+    if (!stream_state.active.load(std::memory_order_relaxed) && !stream_state.worker.joinable()) {
         return;
     }
 
@@ -374,15 +401,29 @@ void MaybeReportStreamFailure(const TelemetryErrorHandler& on_error, const grpc:
     }
 }
 
+[[nodiscard]] bool ShouldLogStreamFailureAttempt(int attempt_number) {
+    if (attempt_number <= 1) {
+        return true;
+    }
+
+    constexpr int kStreamFailureLogInterval = 10;
+    return attempt_number % kStreamFailureLogInterval == 0;
+}
+
 void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
-                      std::string_view correlation_id, const grpc::Status& status) {
+                      std::string_view correlation_id, const grpc::Status& status,
+                      int attempt_number) {
     if (status.ok()) {
         return;
     }
+    if (!ShouldLogStreamFailureAttempt(attempt_number)) {
+        return;
+    }
 
-    core::Logger::WarnFmt("Client {} stream failed: drone={} corr={} status={} message={}",
-                          stream_name, drone_id, correlation_id,
-                          static_cast<int>(status.error_code()), status.error_message());
+    core::Logger::WarnFmt(
+        "Client {} stream failed: drone={} corr={} attempt={} status={} message={}", stream_name,
+        drone_id, correlation_id, attempt_number, static_cast<int>(status.error_code()),
+        status.error_message());
 }
 
 [[nodiscard]] core::TelemetryFrame ToCoreTelemetryFrame(
@@ -409,10 +450,11 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     };
 }
 
-[[nodiscard]] grpc::Status RunTelemetryStreamAttempt(
-    ClientRuntime runtime, StreamState& telemetry_stream,
-    const TelemetrySubscription& subscription, const TelemetryHandler& on_frame,
-    std::string_view stream_id) {
+[[nodiscard]] grpc::Status RunTelemetryStreamAttempt(ClientRuntime runtime,
+                                                     StreamState& telemetry_stream,
+                                                     const TelemetrySubscription& subscription,
+                                                     const TelemetryHandler& on_frame,
+                                                     std::string_view stream_id) {
     grpc::ClientContext* context = InstallStreamContext(telemetry_stream, stream_id);
 
     swarmkit::v1::TelemetryRequest request;
@@ -436,10 +478,11 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     return kFinalStatus;
 }
 
-[[nodiscard]] grpc::Status RunAuthorityStreamAttempt(
-    ClientRuntime runtime, StreamState& authority_stream,
-    const AuthoritySubscription& subscription, const AuthorityEventHandler& on_event,
-    std::string_view stream_id) {
+[[nodiscard]] grpc::Status RunAuthorityStreamAttempt(ClientRuntime runtime,
+                                                     StreamState& authority_stream,
+                                                     const AuthoritySubscription& subscription,
+                                                     const AuthorityEventHandler& on_event,
+                                                     std::string_view stream_id) {
     grpc::ClientContext* context = InstallStreamContext(authority_stream, stream_id);
 
     swarmkit::v1::WatchAuthorityRequest request;
@@ -465,8 +508,7 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
 }
 
 void RunTelemetryLoop(ClientRuntime runtime, StreamState& telemetry_stream,
-                      const TelemetrySubscription& subscription,
-                      const TelemetryHandler& on_frame,
+                      const TelemetrySubscription& subscription, const TelemetryHandler& on_frame,
                       const TelemetryErrorHandler& on_error) {
     StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
 
@@ -480,7 +522,8 @@ void RunTelemetryLoop(ClientRuntime runtime, StreamState& telemetry_stream,
             break;
         }
 
-        LogStreamFailure("telemetry", subscription.drone_id, kStreamId, kFinalStatus);
+        LogStreamFailure("telemetry", subscription.drone_id, kStreamId, kFinalStatus,
+                         retry_state.attempt_number);
         if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
                                kFinalStatus)) {
             MaybeReportStreamFailure(on_error, kFinalStatus);
@@ -503,14 +546,14 @@ void RunAuthorityLoop(ClientRuntime runtime, StreamState& authority_stream,
         ++retry_state.attempt_number;
         const std::string kStreamId = MakeCorrelationId("authority");
         const grpc::Status kFinalStatus =
-            RunAuthorityStreamAttempt(runtime, authority_stream, subscription, on_event,
-                                      kStreamId);
+            RunAuthorityStreamAttempt(runtime, authority_stream, subscription, on_event, kStreamId);
 
         if (IsStopRequested(authority_stream)) {
             break;
         }
 
-        LogStreamFailure("authority watch", subscription.drone_id, kStreamId, kFinalStatus);
+        LogStreamFailure("authority watch", subscription.drone_id, kStreamId, kFinalStatus,
+                         retry_state.attempt_number);
         if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
                                kFinalStatus)) {
             MaybeReportStreamFailure(on_error, kFinalStatus);
@@ -521,6 +564,21 @@ void RunAuthorityLoop(ClientRuntime runtime, StreamState& authority_stream,
     }
 
     authority_stream.active.store(false, std::memory_order_relaxed);
+}
+
+core::Result ClientSecurityConfig::Validate() const {
+    if (!core::internal::FileExists(root_ca_cert_path)) {
+        return core::Result::Rejected("security.root_ca_cert_path must point to an existing file");
+    }
+    if (!core::internal::FileExists(cert_chain_path)) {
+        return core::Result::Rejected(
+            "security.cert_chain_path must point to an existing file for mTLS");
+    }
+    if (!core::internal::FileExists(private_key_path)) {
+        return core::Result::Rejected(
+            "security.private_key_path must point to an existing file for mTLS");
+    }
+    return core::Result::Success();
 }
 
 core::Result ClientConfig::Validate() const {
@@ -558,7 +616,7 @@ core::Result ClientConfig::Validate() const {
     if (stream_reconnect_policy.max_attempts < 0) {
         return core::Result::Rejected("stream_reconnect_policy.max_attempts must be >= 0");
     }
-    return core::Result::Success();
+    return security.Validate();
 }
 
 void ClientConfig::ApplyEnvironment(std::string_view prefix) {
@@ -611,6 +669,27 @@ void ClientConfig::ApplyEnvironment(std::string_view prefix) {
                  &stream_reconnect_policy.initial_backoff_ms);
     kApplyIntEnv(kClientEnvStreamReconnectMaxBackoffMs, &stream_reconnect_policy.max_backoff_ms);
     kApplyIntEnv(kClientEnvStreamReconnectMaxAttempts, &stream_reconnect_policy.max_attempts);
+
+    if (const auto kValue =
+            GetEnvValue(std::string(prefix) + std::string(kClientEnvRootCaCertPath));
+        kValue.has_value()) {
+        security.root_ca_cert_path = *kValue;
+    }
+    if (const auto kValue =
+            GetEnvValue(std::string(prefix) + std::string(kClientEnvClientCertChainPath));
+        kValue.has_value()) {
+        security.cert_chain_path = *kValue;
+    }
+    if (const auto kValue =
+            GetEnvValue(std::string(prefix) + std::string(kClientEnvClientPrivateKeyPath));
+        kValue.has_value()) {
+        security.private_key_path = *kValue;
+    }
+    if (const auto kValue =
+            GetEnvValue(std::string(prefix) + std::string(kClientEnvServerAuthorityOverride));
+        kValue.has_value()) {
+        security.server_authority_override = *kValue;
+    }
 }
 
 Client::Client(ClientConfig config) : impl_(std::make_unique<Impl>(std::move(config))) {}

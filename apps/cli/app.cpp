@@ -85,7 +85,8 @@ struct CliInvocation {
 [[nodiscard]] bool IsOptionWithValue(std::string_view value) {
     return value == "--config" || value == "--drone" || value == "--rate" || value == "--alt" ||
            value == "--lat" || value == "--lon" || value == "--speed" || value == "--log-sink" ||
-           value == "--log-file" || value == "--log-level";
+           value == "--log-file" || value == "--log-level" || value == "--ca-cert" ||
+           value == "--client-cert" || value == "--client-key" || value == "--server-name";
 }
 
 void PrintUsage() {
@@ -103,6 +104,10 @@ void PrintUsage() {
                  "\n"
                  "Global options:\n"
                  "  --config PATH          Load client config from YAML file\n"
+                 "  --ca-cert PATH         mTLS CA certificate path\n"
+                 "  --client-cert PATH     mTLS client certificate path\n"
+                 "  --client-key PATH      mTLS client private key path\n"
+                 "  --server-name NAME     TLS server name / authority override\n"
                  "  --log-sink TYPE        stdout|file|both for SDK/runtime logs\n"
                  "  --log-file PATH        Rotating log file path when file logging is used\n"
                  "  --log-level LEVEL      trace|debug|info|warn|error|critical|off\n"
@@ -180,15 +185,13 @@ void PrintUsage() {
 
 [[nodiscard]] std::expected<Command, std::string> BuildWaypointCommand(int argc, char** argv) {
     const auto kLatitude =
-        ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat", kDefaultWaypointCoord),
-                       "--lat");
+        ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat", kDefaultWaypointCoord), "--lat");
     if (!kLatitude.has_value()) {
         return std::unexpected(kLatitude.error());
     }
 
     const auto kLongitude =
-        ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon", kDefaultWaypointCoord),
-                       "--lon");
+        ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon", kDefaultWaypointCoord), "--lon");
     if (!kLongitude.has_value()) {
         return std::unexpected(kLongitude.error());
     }
@@ -199,9 +202,8 @@ void PrintUsage() {
         return std::unexpected(kAltitude.error());
     }
 
-    const auto kSpeed =
-        ParseFloatArg(common::GetOptionValue(argc, argv, "--speed", kDefaultWaypointSpeed),
-                      "--speed");
+    const auto kSpeed = ParseFloatArg(
+        common::GetOptionValue(argc, argv, "--speed", kDefaultWaypointSpeed), "--speed");
     if (!kSpeed.has_value()) {
         return std::unexpected(kSpeed.error());
     }
@@ -339,6 +341,22 @@ void PrintUsage() {
 
     client_cfg.ApplyEnvironment();
     client_cfg.client_id = std::string(kCliClientId);
+    if (const std::string kRootCaCert = common::GetOptionValue(argc, argv, "--ca-cert");
+        !kRootCaCert.empty()) {
+        client_cfg.security.root_ca_cert_path = kRootCaCert;
+    }
+    if (const std::string kClientCert = common::GetOptionValue(argc, argv, "--client-cert");
+        !kClientCert.empty()) {
+        client_cfg.security.cert_chain_path = kClientCert;
+    }
+    if (const std::string kClientKey = common::GetOptionValue(argc, argv, "--client-key");
+        !kClientKey.empty()) {
+        client_cfg.security.private_key_path = kClientKey;
+    }
+    if (const std::string kServerName = common::GetOptionValue(argc, argv, "--server-name");
+        !kServerName.empty()) {
+        client_cfg.security.server_authority_override = kServerName;
+    }
     if (invocation.has_explicit_address) {
         client_cfg.address = invocation.address;
     } else if (client_cfg.address.empty()) {
@@ -450,8 +468,7 @@ int RunStats(Client& client) {
         return std::stoi(common::GetOptionValue(argc, argv, "--rate", kDefaultTelemetryRate));
     } catch (const std::exception& exc) {
         return std::unexpected("Invalid --rate value '" +
-                               common::GetOptionValue(argc, argv, "--rate",
-                                                      kDefaultTelemetryRate) +
+                               common::GetOptionValue(argc, argv, "--rate", kDefaultTelemetryRate) +
                                "': " + exc.what());
     }
 }

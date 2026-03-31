@@ -9,15 +9,23 @@
 #include <expected>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "swarmkit/agent/backend.h"
 #include "swarmkit/core/result.h"
-
 namespace swarmkit::agent {
 
 inline constexpr int kDefaultAuthorityTtlMs = 5000;
 inline constexpr int kDefaultTelemetryRateHz = 5;
 inline constexpr int kMinimumTelemetryRateHz = 1;
+struct AgentSecurityConfig {
+    std::string root_ca_cert_path;
+    std::string cert_chain_path;
+    std::string private_key_path;
+    std::vector<std::string> allowed_client_ids;
+
+    [[nodiscard]] core::Result Validate() const;
+};
 
 /// ---------------------------------------------------------------------------
 /// AgentConfig -- startup parameters for the gRPC agent server.
@@ -28,6 +36,7 @@ struct AgentConfig {
     int default_authority_ttl_ms{kDefaultAuthorityTtlMs};
     int default_telemetry_rate_hz{kDefaultTelemetryRateHz};
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};
+    AgentSecurityConfig security{};
 
     [[nodiscard]] core::Result Validate() const;
     void ApplyEnvironment(std::string_view prefix = "SWARMKIT_AGENT_");

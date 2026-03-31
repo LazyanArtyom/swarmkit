@@ -31,7 +31,6 @@ inline constexpr int kDefaultStreamReconnectInitialBackoffMs = 500;
 inline constexpr int kDefaultStreamReconnectMaxBackoffMs = 5000;
 inline constexpr int kUnlimitedStreamReconnectAttempts = 0;
 inline constexpr int kDefaultTelemetryRateHertz = 1;
-
 enum class RpcStatusCode : std::uint8_t {
     kOk,
     kInvalidArgument,
@@ -64,6 +63,15 @@ struct StreamReconnectPolicy {
     int max_attempts{kUnlimitedStreamReconnectAttempts};  // 0 = unlimited.
 };
 
+struct ClientSecurityConfig {
+    std::string root_ca_cert_path;
+    std::string cert_chain_path;
+    std::string private_key_path;
+    std::string server_authority_override;
+
+    [[nodiscard]] core::Result Validate() const;
+};
+
 /// @brief Connection parameters for the gRPC client.
 struct ClientConfig {
     /// Agent address in "host:port" format.
@@ -83,6 +91,9 @@ struct ClientConfig {
 
     /// Auto-reconnect policy for telemetry and authority watch streams.
     StreamReconnectPolicy stream_reconnect_policy{};
+
+    /// Transport security parameters.
+    ClientSecurityConfig security{};
 
     [[nodiscard]] core::Result Validate() const;
     void ApplyEnvironment(std::string_view prefix = "SWARMKIT_CLIENT_");
@@ -227,6 +238,9 @@ class AuthoritySession {
  * @code
  *   ClientConfig cfg;
  *   cfg.address = "192.168.1.100:50061";
+ *   cfg.security.root_ca_cert_path = "/etc/swarmkit/ca.pem";
+ *   cfg.security.cert_chain_path = "/etc/swarmkit/clients/gcs.pem";
+ *   cfg.security.private_key_path = "/etc/swarmkit/clients/gcs.key";
  *   Client client(cfg);
  *
  *   auto result = client.Ping();

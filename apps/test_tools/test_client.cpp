@@ -39,6 +39,10 @@ constexpr auto kRetryDelay = std::chrono::seconds{3};
 constexpr auto kCommandDelay = std::chrono::seconds{2};
 constexpr auto kPollInterval = std::chrono::milliseconds{100};
 constexpr auto kStartupDelay = std::chrono::seconds{2};
+constexpr std::string_view kDefaultCaCertPath = "testdata/certs/ca.pem";
+constexpr std::string_view kDefaultClientCertPath = "testdata/certs/test-client.pem";
+constexpr std::string_view kDefaultClientKeyPath = "testdata/certs/test-client.key";
+constexpr std::string_view kDefaultServerName = "localhost";
 
 std::atomic<bool> g_running{true};
 
@@ -96,6 +100,15 @@ struct DroneSpec {
     std::string agent_addr;
 };
 
+[[nodiscard]] sc::ClientSecurityConfig BuildSecurityConfig(int argc, char** argv) {
+    sc::ClientSecurityConfig security;
+    security.root_ca_cert_path = GetArg(argc, argv, "--ca-cert", kDefaultCaCertPath);
+    security.cert_chain_path = GetArg(argc, argv, "--client-cert", kDefaultClientCertPath);
+    security.private_key_path = GetArg(argc, argv, "--client-key", kDefaultClientKeyPath);
+    security.server_authority_override = GetArg(argc, argv, "--server-name", kDefaultServerName);
+    return security;
+}
+
 const std::vector<DroneSpec> kDrones = {
     {.drone_id = "drone-1", .agent_addr = "127.0.0.1:50061"},
     {.drone_id = "drone-2", .agent_addr = "127.0.0.1:50062"},
@@ -128,12 +141,10 @@ const std::vector<DroneSpec> kDrones = {
     std::vector<DroneSpec> drone_specs;
     drone_specs.reserve(kSwarmConfig->drones.size());
     for (const auto& drone : kSwarmConfig->drones) {
-        const bool kUseLocal =
-            kAddressPreference == sc::SwarmAddressPreference::kPreferLocal &&
-            !drone.local_address.empty();
-        drone_specs.push_back(
-            {.drone_id = drone.drone_id,
-             .agent_addr = kUseLocal ? drone.local_address : drone.address});
+        const bool kUseLocal = kAddressPreference == sc::SwarmAddressPreference::kPreferLocal &&
+                               !drone.local_address.empty();
+        drone_specs.push_back({.drone_id = drone.drone_id,
+                               .agent_addr = kUseLocal ? drone.local_address : drone.address});
     }
     return drone_specs;
 }
@@ -155,7 +166,7 @@ const std::vector<DroneSpec> kDrones = {
 }
 
 /// @brief Run an infinite command cycle for a single drone.
-void RunCommandLoop(const DroneSpec& spec) {
+void RunCommandLoop(const DroneSpec& spec, const sc::ClientSecurityConfig& security) {
     if (!SleepWhileRunning(kStartupDelay)) {
         return;
     }
@@ -164,6 +175,7 @@ void RunCommandLoop(const DroneSpec& spec) {
     cfg.address = spec.agent_addr;
     cfg.client_id = "test-client";
     cfg.deadline_ms = kDeadlineMs;
+    cfg.security = security;
 
     sc::Client client(cfg);
 
@@ -271,6 +283,7 @@ int main(int argc, char** argv) {
         "Press Ctrl+C to stop.");
 
     const std::vector<DroneSpec> kDroneSpecs = LoadDroneSpecs(argc, argv);
+    const sc::ClientSecurityConfig kSecurityConfig = BuildSecurityConfig(argc, argv);
     if (kDroneSpecs.empty()) {
         return EXIT_FAILURE;
     }
@@ -279,7 +292,7 @@ int main(int argc, char** argv) {
     threads.reserve(kDroneSpecs.size());
 
     for (const auto& drone : kDroneSpecs) {
-        threads.emplace_back(RunCommandLoop, drone);
+        threads.emplace_back(RunCommandLoop, drone, kSecurityConfig);
     }
 
     for (auto& thread : threads) {

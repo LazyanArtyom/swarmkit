@@ -23,9 +23,12 @@ std::shared_ptr<TelemetryState> TelemetryManager::GetOrCreateState(const std::st
 
 void TelemetryManager::PublishFrame(const std::shared_ptr<TelemetryState>& state,
                                     const core::TelemetryFrame& frame) {
-    std::lock_guard<std::mutex> lock(state->data_mutex);
-    state->last_frame = frame;
-    ++state->sequence;
+    {
+        std::lock_guard<std::mutex> lock(state->data_mutex);
+        state->last_frame = frame;
+        ++state->sequence;
+    }
+    state->data_cv.notify_all();
 }
 
 int TelemetryManager::NormalizeRate(int requested_rate_hz) const {
@@ -153,9 +156,11 @@ void TelemetryManager::ReleaseLease(const TelemetryLease& lease) {
     if (should_erase_state) {
         {
             std::lock_guard<std::mutex> data_lock(lease.state->data_mutex);
+            lease.state->shutting_down = true;
             lease.state->last_frame.reset();
             lease.state->sequence = 0;
         }
+        lease.state->data_cv.notify_all();
 
         std::lock_guard<std::mutex> map_lock(states_mutex_);
         auto iter = states_.find(lease.drone_id);
@@ -180,13 +185,38 @@ bool TelemetryManager::ReadFrame(const TelemetryLease& lease, std::uint64_t* las
     return false;
 }
 
+bool TelemetryManager::WaitForFrame(const TelemetryLease& lease, std::uint64_t* last_sequence,
+                                    core::TelemetryFrame* out_frame,
+                                    std::chrono::milliseconds timeout) {
+    if (!lease.state || last_sequence == nullptr || out_frame == nullptr) {
+        return false;
+    }
+
+    std::unique_lock<std::mutex> lock(lease.state->data_mutex);
+    const bool kReady = lease.state->data_cv.wait_for(lock, timeout, [&] {
+        return lease.state->shutting_down ||
+               (lease.state->last_frame.has_value() && lease.state->sequence != *last_sequence);
+    });
+    if (!kReady || lease.state->shutting_down) {
+        return false;
+    }
+
+    *out_frame = *lease.state->last_frame;
+    *last_sequence = lease.state->sequence;
+    return true;
+}
+
 void TelemetryManager::ShutdownAll() {
     std::vector<std::string> drone_ids;
     {
         std::lock_guard<std::mutex> lock(states_mutex_);
         drone_ids.reserve(states_.size());
         for (const auto& [drone_id, state] : states_) {
-            static_cast<void>(state);
+            {
+                std::lock_guard<std::mutex> data_lock(state->data_mutex);
+                state->shutting_down = true;
+            }
+            state->data_cv.notify_all();
             drone_ids.push_back(drone_id);
         }
     }

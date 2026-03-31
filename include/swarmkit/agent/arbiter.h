@@ -10,6 +10,7 @@
 #include <queue>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -128,7 +129,11 @@ class EventQueue {
  */
 class CommandArbiter {
    public:
-    CommandArbiter() = default;
+    CommandArbiter();
+    ~CommandArbiter();
+
+    CommandArbiter(const CommandArbiter&) = delete;
+    CommandArbiter& operator=(const CommandArbiter&) = delete;
 
     /**
      * @brief Check whether a command from @p context may execute and grant
@@ -234,7 +239,15 @@ class CommandArbiter {
     static void ResumeSuspendedHolder(DroneState& state, std::string_view drone_id,
                                       std::vector<PendingNotification>* notifications);
 
+    [[nodiscard]] std::optional<std::chrono::system_clock::time_point> ComputeNextExpiryLocked()
+        const;
+    void RequestExpiryWakeupLocked();
+    void RunExpiryLoop();
+
     std::mutex mutex_;
+    std::condition_variable expiry_cv_;
+    bool shutdown_{false};
+    std::thread expiry_thread_;
     std::unordered_map<std::string, DroneState> drone_states_;
     std::atomic<std::uint64_t> next_watch_id_{1};
 };

@@ -12,3 +12,8 @@ client:
     initial_backoff_ms: 500
     max_backoff_ms: 5000
     max_attempts: 0
+  security:
+    root_ca_cert_path: "certs/ca.pem"
+    cert_chain_path: "certs/swarmkit-cli.pem"
+    private_key_path: "certs/swarmkit-cli.key"
+    server_authority_override: "localhost"

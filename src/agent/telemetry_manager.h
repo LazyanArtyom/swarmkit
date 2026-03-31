@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -35,11 +37,13 @@ namespace swarmkit::agent::internal {
 struct TelemetryState {
     std::mutex control_mutex;
     std::mutex data_mutex;
+    std::condition_variable data_cv;
     std::optional<core::TelemetryFrame> last_frame;
     std::uint64_t sequence{0};
     std::unordered_map<std::uint64_t, int> subscriber_rates_hz;
     bool backend_running{false};
     int backend_rate_hz{0};
+    bool shutting_down{false};
 };
 
 /// @brief Handle returned by TelemetryManager::AcquireLease().
@@ -86,6 +90,11 @@ class TelemetryManager {
     /// @returns true if a new frame was available (sequence > last_sequence).
     [[nodiscard]] static bool ReadFrame(const TelemetryLease& lease, std::uint64_t* last_sequence,
                                         core::TelemetryFrame* out_frame);
+
+    /// @brief Wait for a new frame or until timeout elapses.
+    [[nodiscard]] static bool WaitForFrame(const TelemetryLease& lease, std::uint64_t* last_sequence,
+                                           core::TelemetryFrame* out_frame,
+                                           std::chrono::milliseconds timeout);
 
     /// @brief Total number of backend start failures.
     [[nodiscard]] std::uint64_t BackendFailureCount() const {

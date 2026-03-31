@@ -17,18 +17,24 @@
 ///   all         <command>          (broadcast to all drones)
 ///   quit  (or Ctrl+D)
 
+#if defined(_WIN32)
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 
+#include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -56,6 +62,10 @@ constexpr std::string_view kAllTarget = "all";
 constexpr std::string_view kLockAction = "lock";
 constexpr std::string_view kUnlockAction = "unlock";
 constexpr std::string_view kServerClientId = "test-server";
+constexpr std::string_view kDefaultCaCertPath = "testdata/certs/ca.pem";
+constexpr std::string_view kDefaultClientCertPath = "testdata/certs/test-server.pem";
+constexpr std::string_view kDefaultClientKeyPath = "testdata/certs/test-server.key";
+constexpr std::string_view kDefaultServerName = "localhost";
 
 class TestServerLogBackend final : public cor::ILogBackend {
    public:
@@ -97,9 +107,65 @@ void ResetStopRequested() {
     return StopRequestedFlag() != 0;
 }
 
+void CloseStandardInput() {
+#if defined(_WIN32)
+    _close(_fileno(stdin));
+#else
+    close(STDIN_FILENO);
+#endif
+}
+
 extern "C" void OnSignal(int /*sig*/) {
     StopRequestedFlag() = 1;
-    close(STDIN_FILENO);
+    CloseStandardInput();
+}
+
+[[nodiscard]] int StdinFileDescriptor() {
+#if defined(_WIN32)
+    return _fileno(stdin);
+#else
+    return STDIN_FILENO;
+#endif
+}
+
+[[nodiscard]] int ReadFromStdin(char* buffer, int buffer_size) {
+#if defined(_WIN32)
+    return _read(StdinFileDescriptor(), buffer, buffer_size);
+#else
+    return static_cast<int>(
+        read(StdinFileDescriptor(), buffer, static_cast<std::size_t>(buffer_size)));
+#endif
+}
+
+[[nodiscard]] bool ReadLineFromStdin(std::string* out_line) {
+    if (out_line == nullptr) {
+        return false;
+    }
+
+    out_line->clear();
+    char next_char = '\0';
+    while (true) {
+        const int kBytesRead = ReadFromStdin(&next_char, 1);
+        if (kBytesRead == 0) {
+            return !out_line->empty();
+        }
+        if (kBytesRead < 0) {
+            if (errno == EINTR) {
+                if (IsStopRequested()) {
+                    return false;
+                }
+                continue;
+            }
+            return !out_line->empty();
+        }
+        if (next_char == '\r') {
+            continue;
+        }
+        if (next_char == '\n') {
+            return true;
+        }
+        out_line->push_back(next_char);
+    }
 }
 
 [[nodiscard]] std::string GetArg(int argc, char** argv, std::string_view key,
@@ -162,6 +228,15 @@ const std::vector<std::pair<std::string, std::string>> kDrones = {
     {"drone-2", "127.0.0.1:50062"},
     {"drone-3", "127.0.0.1:50063"},
 };
+
+[[nodiscard]] sc::ClientSecurityConfig BuildSecurityConfig(int argc, char** argv) {
+    sc::ClientSecurityConfig security;
+    security.root_ca_cert_path = GetArg(argc, argv, "--ca-cert", kDefaultCaCertPath);
+    security.cert_chain_path = GetArg(argc, argv, "--client-cert", kDefaultClientCertPath);
+    security.private_key_path = GetArg(argc, argv, "--client-key", kDefaultClientKeyPath);
+    security.server_authority_override = GetArg(argc, argv, "--server-name", kDefaultServerName);
+    return security;
+}
 
 /// @brief Build a timestamped CSV path next to the executable.
 fs::path MakeTelemetryPath(const char* argv0) {
@@ -389,6 +464,7 @@ int main(int argc, char** argv) {
 
     sc::ClientConfig default_cfg;
     std::vector<std::pair<std::string, std::string>> drone_endpoints = kDrones;
+    const sc::ClientSecurityConfig kSecurityConfig = BuildSecurityConfig(argc, argv);
 
     const std::string kSwarmConfigPath = GetArg(argc, argv, "--swarm-config", "");
     if (!kSwarmConfigPath.empty()) {
@@ -406,9 +482,8 @@ int main(int argc, char** argv) {
         const auto kAddressPreference =
             ParseAddressPreference(GetArg(argc, argv, "--address-mode", "primary"));
         for (const auto& drone : kSwarmConfig->drones) {
-            const bool kUseLocal =
-                kAddressPreference == sc::SwarmAddressPreference::kPreferLocal &&
-                !drone.local_address.empty();
+            const bool kUseLocal = kAddressPreference == sc::SwarmAddressPreference::kPreferLocal &&
+                                   !drone.local_address.empty();
             drone_endpoints.emplace_back(drone.drone_id,
                                          kUseLocal ? drone.local_address : drone.address);
         }
@@ -417,6 +492,7 @@ int main(int argc, char** argv) {
     default_cfg.client_id = "test-server";
     default_cfg.deadline_ms = kDeadlineMs;
     default_cfg.priority = cmd::CommandPriority::kOverride;
+    default_cfg.security = kSecurityConfig;
 
     sc::SwarmClient swarm(default_cfg);
     for (const auto& [drone_id, addr] : drone_endpoints) {
@@ -467,7 +543,7 @@ int main(int argc, char** argv) {
     std::string line;
     while (!IsStopRequested()) {
         std::cout << "> " << std::flush;
-        if (!std::getline(std::cin, line)) {
+        if (!ReadLineFromStdin(&line)) {
             break;
         }
         if (line == "quit" || line == "exit") {

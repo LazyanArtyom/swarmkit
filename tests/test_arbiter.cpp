@@ -143,4 +143,30 @@ TEST_CASE("CommandArbiter expires holders and resumes suspended clients", "[agen
     override_queue->Shutdown();
 }
 
+TEST_CASE("CommandArbiter expires holders without requiring another arbiter call",
+          "[agent][arbiter][expiry]") {
+    CommandArbiter arbiter;
+    auto queue = std::make_shared<EventQueue>();
+
+    const WatchToken kToken = arbiter.Watch(
+        "drone-1", "operator-client", commands::CommandPriority::kOperator, queue);
+
+    REQUIRE(arbiter
+                .CheckAndGrant(
+                    MakeContext("drone-1", "operator-client", commands::CommandPriority::kOperator),
+                    std::chrono::milliseconds{80})
+                .IsOk());
+
+    AuthorityEvent event;
+    REQUIRE(queue->Pop(event, kEventTimeout));
+    CHECK(event.kind == AuthorityEvent::Kind::kGranted);
+
+    REQUIRE(queue->Pop(event, std::chrono::milliseconds{250}));
+    CHECK(event.kind == AuthorityEvent::Kind::kExpired);
+    CHECK(event.holder_client_id.empty());
+
+    arbiter.Unwatch(kToken);
+    queue->Shutdown();
+}
+
 }  // namespace swarmkit::agent

@@ -4,9 +4,8 @@
 // This file is part of SwarmKit.
 // See LICENSE.md in the repository root for full license terms.
 
-#include "swarmkit/client/swarm_client.h"
-
 #include <expected>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,11 +14,14 @@
 
 #include "config_yaml.h"
 #include "env_utils.h"
+#include "security_utils.h"
+#include "swarmkit/client/swarm_client.h"
 
 namespace swarmkit::client {
 namespace {
 using core::internal::LooksLikeAddress;
 using core::internal::ParsePriorityValue;
+using core::internal::ResolveConfigRelativePath;
 
 template <typename T, typename ApplyFn>
 [[nodiscard]] core::Result ApplyOptionalScalar(const YAML::Node& node, std::string_view key,
@@ -109,22 +111,66 @@ template <typename T>
         !kResult.IsOk()) {
         return kResult;
     }
-    if (const core::Result kResult = AssignOptionalScalar<int>(stream_reconnect,
-                                                               "initial_backoff_ms",
-                                                               &policy->initial_backoff_ms);
+    if (const core::Result kResult = AssignOptionalScalar<int>(
+            stream_reconnect, "initial_backoff_ms", &policy->initial_backoff_ms);
         !kResult.IsOk()) {
         return kResult;
     }
-    if (const core::Result kResult = AssignOptionalScalar<int>(stream_reconnect,
-                                                               "max_backoff_ms",
-                                                               &policy->max_backoff_ms);
+    if (const core::Result kResult =
+            AssignOptionalScalar<int>(stream_reconnect, "max_backoff_ms", &policy->max_backoff_ms);
         !kResult.IsOk()) {
         return kResult;
     }
     return AssignOptionalScalar<int>(stream_reconnect, "max_attempts", &policy->max_attempts);
 }
 
+[[nodiscard]] core::Result ApplySecurityNode(const YAML::Node& root, std::string_view config_path,
+                                             ClientSecurityConfig* security) {
+    if (security == nullptr) {
+        return core::Result::Failed("client security config output is null");
+    }
+
+    const YAML::Node security_node = root["security"];
+    if (const core::Result kMapCheck = RequireMapIfPresent(security_node, "client.security");
+        !kMapCheck.IsOk()) {
+        return kMapCheck;
+    }
+    if (!security_node) {
+        return core::Result::Success();
+    }
+
+    if (const core::Result kResult = AssignOptionalScalar<std::string>(
+            security_node, "root_ca_cert_path", &security->root_ca_cert_path);
+        !kResult.IsOk()) {
+        return kResult;
+    }
+    if (const core::Result kResult = AssignOptionalScalar<std::string>(
+            security_node, "cert_chain_path", &security->cert_chain_path);
+        !kResult.IsOk()) {
+        return kResult;
+    }
+    if (const core::Result kResult = AssignOptionalScalar<std::string>(
+            security_node, "private_key_path", &security->private_key_path);
+        !kResult.IsOk()) {
+        return kResult;
+    }
+    if (const core::Result kResult = AssignOptionalScalar<std::string>(
+            security_node, "server_authority_override", &security->server_authority_override);
+        !kResult.IsOk()) {
+        return kResult;
+    }
+
+    security->root_ca_cert_path =
+        ResolveConfigRelativePath(std::string(config_path), security->root_ca_cert_path);
+    security->cert_chain_path =
+        ResolveConfigRelativePath(std::string(config_path), security->cert_chain_path);
+    security->private_key_path =
+        ResolveConfigRelativePath(std::string(config_path), security->private_key_path);
+    return core::Result::Success();
+}
+
 [[nodiscard]] core::Result ApplyClientConfigNode(const YAML::Node& document,
+                                                 std::string_view config_path,
                                                  ClientConfig* config) {
     if (config == nullptr) {
         return core::Result::Failed("client config output is null");
@@ -150,8 +196,9 @@ template <typename T>
         !kResult.IsOk()) {
         return kResult;
     }
-    if (const core::Result kResult =
-            ApplyOptionalScalar<std::string>(root, "priority", [config](const std::string& value) {
+    if (const core::Result kResult = ApplyOptionalScalar<std::string>(
+            root, "priority",
+            [config](const std::string& value) {
                 const auto kParsedPriority = ParsePriorityValue(value, "priority");
                 if (!kParsedPriority.has_value()) {
                     return kParsedPriority.error();
@@ -168,6 +215,10 @@ template <typename T>
     }
     if (const core::Result kResult =
             ApplyStreamReconnectPolicyNode(root, &config->stream_reconnect_policy);
+        !kResult.IsOk()) {
+        return kResult;
+    }
+    if (const core::Result kResult = ApplySecurityNode(root, config_path, &config->security);
         !kResult.IsOk()) {
         return kResult;
     }
@@ -245,7 +296,8 @@ std::expected<ClientConfig, core::Result> LoadClientConfigFromFile(const std::st
     }
 
     ClientConfig config;
-    if (const core::Result kResult = ApplyClientConfigNode(*loaded_yaml, &config); !kResult.IsOk()) {
+    if (const core::Result kResult = ApplyClientConfigNode(*loaded_yaml, path, &config);
+        !kResult.IsOk()) {
         return std::unexpected(kResult);
     }
     return config;
@@ -258,7 +310,8 @@ std::expected<SwarmConfig, core::Result> LoadSwarmConfigFromFile(const std::stri
     }
 
     SwarmConfig config;
-    if (const core::Result kResult = ApplyClientConfigNode(*loaded_yaml, &config.default_client_config);
+    if (const core::Result kResult =
+            ApplyClientConfigNode(*loaded_yaml, path, &config.default_client_config);
         !kResult.IsOk()) {
         return std::unexpected(kResult);
     }

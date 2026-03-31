@@ -65,6 +65,9 @@ struct SwarmConfig {
  *   ClientConfig cfg;
  *   cfg.client_id  = "gcs-server";
  *   cfg.deadline_ms = 3000;
+ *   cfg.security.root_ca_cert_path = "/etc/swarmkit/ca.pem";
+ *   cfg.security.cert_chain_path = "/etc/swarmkit/clients/gcs.pem";
+ *   cfg.security.private_key_path = "/etc/swarmkit/clients/gcs.key";
  *   SwarmClient swarm(cfg);
  *
  *   swarm.AddDrone("uav-1", "192.168.1.101:50061");
@@ -129,9 +132,8 @@ class SwarmClient {
      * @param address_preference Chooses whether local_address should override
      *                           address when present.
      */
-    core::Result ApplyConfig(const SwarmConfig& config,
-                             SwarmAddressPreference address_preference =
-                                 SwarmAddressPreference::kPrimary);
+    core::Result ApplyConfig(const SwarmConfig& config, SwarmAddressPreference address_preference =
+                                                            SwarmAddressPreference::kPrimary);
 
     /// @}
 

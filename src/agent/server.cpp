@@ -22,6 +22,7 @@
 #include "config_yaml.h"
 #include "env_utils.h"
 #include "runtime_counters.h"
+#include "security_utils.h"
 #include "server_test_support.h"
 #include "swarmkit/agent/arbiter.h"
 #include "swarmkit/core/logger.h"
@@ -49,9 +50,14 @@ constexpr std::string_view kAgentEnvBindAddr = "BIND_ADDR";
 constexpr std::string_view kAgentEnvDefaultAuthorityTtlMs = "DEFAULT_AUTHORITY_TTL_MS";
 constexpr std::string_view kAgentEnvDefaultTelemetryRateHz = "DEFAULT_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvMinTelemetryRateHz = "MIN_TELEMETRY_RATE_HZ";
+constexpr std::string_view kAgentEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
+constexpr std::string_view kAgentEnvCertChainPath = "CERT_CHAIN_PATH";
+constexpr std::string_view kAgentEnvPrivateKeyPath = "PRIVATE_KEY_PATH";
+constexpr std::string_view kAgentEnvAllowedClientIds = "ALLOWED_CLIENT_IDS";
 
 /// @brief Watcher poll interval while blocking inside WatchAuthority RPC.
 constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
+constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
 
 /// @name Time helpers
 /// @{
@@ -121,6 +127,126 @@ constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
         return core::Result::Rejected("telemetry rate_hz must be >= 0");
     }
     return core::Result::Success();
+}
+
+[[nodiscard]] std::vector<std::string> SplitCsvList(std::string_view value) {
+    std::vector<std::string> out;
+    std::size_t start = 0;
+    while (start < value.size()) {
+        const std::size_t end = value.find(',', start);
+        const std::string_view token =
+            end == std::string_view::npos ? value.substr(start) : value.substr(start, end - start);
+        const std::string kTrimmed = core::internal::TrimWhitespace(token);
+        if (!kTrimmed.empty()) {
+            out.push_back(kTrimmed);
+        }
+        if (end == std::string_view::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return out;
+}
+
+[[nodiscard]] std::optional<std::string> FindPeerAuthProperty(grpc::ServerContext* ctx,
+                                                              std::string_view property_name) {
+    if (ctx == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto kAuthContext = ctx->auth_context();
+    if (!kAuthContext || !kAuthContext->IsPeerAuthenticated()) {
+        return std::nullopt;
+    }
+
+    const auto kValues = kAuthContext->FindPropertyValues(std::string(property_name));
+    if (kValues.empty()) {
+        return std::nullopt;
+    }
+    return std::string(kValues.front().data(), kValues.front().size());
+}
+
+[[nodiscard]] std::optional<std::string> ResolvePeerIdentity(grpc::ServerContext* ctx) {
+    if (const auto kCommonName = FindPeerAuthProperty(ctx, "x509_common_name");
+        kCommonName.has_value()) {
+        return kCommonName;
+    }
+    if (const auto kSubjectAltName = FindPeerAuthProperty(ctx, "x509_subject_alternative_name");
+        kSubjectAltName.has_value()) {
+        return kSubjectAltName;
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] core::Result AuthorizePeer(grpc::ServerContext* ctx,
+                                         const AgentSecurityConfig& security,
+                                         std::string* requested_client_id) {
+    const auto kPeerIdentity = ResolvePeerIdentity(ctx);
+    if (!kPeerIdentity.has_value()) {
+        return core::Result::Rejected("authenticated peer identity is required");
+    }
+
+    if (!security.allowed_client_ids.empty() &&
+        std::find(security.allowed_client_ids.begin(), security.allowed_client_ids.end(),
+                  *kPeerIdentity) == security.allowed_client_ids.end()) {
+        return core::Result::Rejected("peer identity '" + *kPeerIdentity + "' is not authorized");
+    }
+
+    if (requested_client_id == nullptr) {
+        return core::Result::Success();
+    }
+    if (requested_client_id->empty()) {
+        *requested_client_id = *kPeerIdentity;
+        return core::Result::Success();
+    }
+    if (*requested_client_id != *kPeerIdentity) {
+        return core::Result::Rejected(
+            "request client_id must match the authenticated peer identity");
+    }
+    return core::Result::Success();
+}
+
+[[nodiscard]] std::shared_ptr<grpc::ServerCredentials> MakeServerCredentials(
+    const AgentSecurityConfig& security, core::Result* out_error) {
+    if (out_error != nullptr) {
+        *out_error = core::Result::Success();
+    }
+
+    std::string cert_chain;
+    if (const core::Result kResult =
+            core::internal::ReadTextFile(security.cert_chain_path, &cert_chain);
+        !kResult.IsOk()) {
+        if (out_error != nullptr) {
+            *out_error = kResult;
+        }
+        return {};
+    }
+
+    std::string private_key;
+    if (const core::Result kResult =
+            core::internal::ReadTextFile(security.private_key_path, &private_key);
+        !kResult.IsOk()) {
+        if (out_error != nullptr) {
+            *out_error = kResult;
+        }
+        return {};
+    }
+
+    grpc::SslServerCredentialsOptions options;
+    options.pem_key_cert_pairs.push_back(
+        grpc::SslServerCredentialsOptions::PemKeyCertPair{private_key, cert_chain});
+
+    if (const core::Result kResult =
+            core::internal::ReadTextFile(security.root_ca_cert_path, &options.pem_root_certs);
+        !kResult.IsOk()) {
+        if (out_error != nullptr) {
+            *out_error = kResult;
+        }
+        return {};
+    }
+    options.client_certificate_request = GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+
+    return grpc::SslServerCredentials(options);
 }
 
 /// @}
@@ -284,6 +410,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         if (reply == nullptr) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
         }
+        if (const core::Result kAuthResult = AuthorizePeer(ctx, config_.security, nullptr);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
+        }
 
         counters_.IncrementPingRequests();
         const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "ping");
@@ -299,6 +429,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                            swarmkit::v1::HealthReply* reply) override {
         if (reply == nullptr) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
+        }
+        if (const core::Result kAuthResult = AuthorizePeer(ctx, config_.security, nullptr);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
         }
 
         counters_.IncrementHealthRequests();
@@ -320,6 +454,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                                  swarmkit::v1::RuntimeStatsReply* reply) override {
         if (reply == nullptr) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
+        }
+        if (const core::Result kAuthResult = AuthorizePeer(ctx, config_.security, nullptr);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
         }
 
         counters_.IncrementRuntimeStatsRequests();
@@ -372,6 +510,11 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
         envelope.context.correlation_id =
             ResolveCorrelationId(ctx, envelope.context.correlation_id, "command");
+        if (const core::Result kAuthResult =
+                AuthorizePeer(ctx, config_.security, &envelope.context.client_id);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
+        }
 
         if (const core::Result kValidation = ValidateCommandContext(envelope.context);
             !kValidation.IsOk()) {
@@ -474,6 +617,11 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         CommandContext lock_context = ToCoreContext(req->ctx());
         lock_context.correlation_id =
             ResolveCorrelationId(ctx, lock_context.correlation_id, "lock");
+        if (const core::Result kAuthResult =
+                AuthorizePeer(ctx, config_.security, &lock_context.client_id);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
+        }
         const auto kTtlDuration = std::chrono::milliseconds{req->ttl_ms()};
 
         if (const core::Result kValidation = ValidateLockRequest(lock_context, req->ttl_ms());
@@ -520,15 +668,20 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         if (req == nullptr) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request");
         }
-        if (req->drone_id().empty() || req->client_id().empty()) {
+        std::string client_id = req->client_id();
+        if (const core::Result kAuthResult = AuthorizePeer(ctx, config_.security, &client_id);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
+        }
+        if (req->drone_id().empty() || client_id.empty()) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
                                 "drone_id and client_id must not be empty");
         }
         const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "unlock");
-        arbiter_.Release(req->drone_id(), req->client_id());
+        arbiter_.Release(req->drone_id(), client_id);
         core::Logger::InfoFmt(
             "rpc=ReleaseAuthority corr={} agent={} drone={} client={} result=released",
-            kCorrelationId, config_.agent_id, req->drone_id(), req->client_id());
+            kCorrelationId, config_.agent_id, req->drone_id(), client_id);
         return grpc::Status::OK;
     }
 
@@ -539,6 +692,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         grpc::ServerWriter<swarmkit::v1::TelemetryFrame>* writer) override {
         if (ctx == nullptr || writer == nullptr) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/writer");
+        }
+        if (const core::Result kAuthResult = AuthorizePeer(ctx, config_.security, nullptr);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
         }
         if (const core::Result kValidation = ValidateTelemetryRequest(req); !kValidation.IsOk()) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, kValidation.message);
@@ -552,7 +709,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         const int kEffectiveRateHz =
             std::max(config_.min_telemetry_rate_hz,
                      kRequestedRateHz <= 0 ? config_.default_telemetry_rate_hz : kRequestedRateHz);
-        const auto kSleepPeriod =
+        const auto kEmitPeriod =
             std::chrono::milliseconds(kMillisecondsPerSecond / kEffectiveRateHz);
 
         internal::TelemetryLease lease;
@@ -572,27 +729,35 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             kStreamId, config_.agent_id, kDroneId, kPeer, kEffectiveRateHz);
 
         std::uint64_t last_sequence = 0;
+        auto next_emit_at = std::chrono::steady_clock::now();
 
         while (!ctx->IsCancelled()) {
             core::TelemetryFrame frame;
-            if (internal::TelemetryManager::ReadFrame(lease, &last_sequence, &frame)) {
-                swarmkit::v1::TelemetryFrame out;
-                out.set_drone_id(frame.drone_id);
-                out.set_unix_time_ms(frame.unix_time_ms);
-                out.set_lat_deg(frame.lat_deg);
-                out.set_lon_deg(frame.lon_deg);
-                out.set_rel_alt_m(frame.rel_alt_m);
-                out.set_battery_percent(frame.battery_percent);
-                out.set_mode(frame.mode);
-                out.set_stream_id(kStreamId);
-
-                if (!writer->Write(out)) {
-                    break;
-                }
-                telemetry_.IncrementFramesSent();
+            if (!internal::TelemetryManager::WaitForFrame(lease, &last_sequence, &frame,
+                                                          kTelemetryWaitTimeout)) {
+                continue;
             }
 
-            std::this_thread::sleep_for(kSleepPeriod);
+            const auto kNow = std::chrono::steady_clock::now();
+            if (kNow < next_emit_at) {
+                continue;
+            }
+
+            swarmkit::v1::TelemetryFrame out;
+            out.set_drone_id(frame.drone_id);
+            out.set_unix_time_ms(frame.unix_time_ms);
+            out.set_lat_deg(frame.lat_deg);
+            out.set_lon_deg(frame.lon_deg);
+            out.set_rel_alt_m(frame.rel_alt_m);
+            out.set_battery_percent(frame.battery_percent);
+            out.set_mode(frame.mode);
+            out.set_stream_id(kStreamId);
+
+            if (!writer->Write(out)) {
+                break;
+            }
+            telemetry_.IncrementFramesSent();
+            next_emit_at = kNow + kEmitPeriod;
         }
 
         telemetry_.ReleaseLease(lease);
@@ -610,9 +775,13 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
 
         const std::string& drone_id = req->drone_id();
-        const std::string& client_id = req->client_id();
+        std::string client_id = req->client_id();
         const auto kPriority = static_cast<CommandPriority>(req->priority());
         const std::string kStreamId = ResolveCorrelationId(ctx, "", "watch");
+        if (const core::Result kAuthResult = AuthorizePeer(ctx, config_.security, &client_id);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
+        }
         if (drone_id.empty() || client_id.empty() || !IsValidPriority(kPriority)) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
                                 "invalid watch authority request");
@@ -672,6 +841,22 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 // AgentConfig
 // ---------------------------------------------------------------------------
 
+core::Result AgentSecurityConfig::Validate() const {
+    if (!core::internal::FileExists(cert_chain_path)) {
+        return core::Result::Rejected(
+            "security.cert_chain_path must point to an existing file for mTLS");
+    }
+    if (!core::internal::FileExists(private_key_path)) {
+        return core::Result::Rejected(
+            "security.private_key_path must point to an existing file for mTLS");
+    }
+    if (!core::internal::FileExists(root_ca_cert_path)) {
+        return core::Result::Rejected(
+            "security.root_ca_cert_path must point to an existing file for mTLS");
+    }
+    return core::Result::Success();
+}
+
 core::Result AgentConfig::Validate() const {
     if (agent_id.empty()) {
         return core::Result::Rejected("agent_id must not be empty");
@@ -691,7 +876,7 @@ core::Result AgentConfig::Validate() const {
     if (min_telemetry_rate_hz > default_telemetry_rate_hz) {
         return core::Result::Rejected("min_telemetry_rate_hz must be <= default_telemetry_rate_hz");
     }
-    return core::Result::Success();
+    return security.Validate();
 }
 
 void AgentConfig::ApplyEnvironment(std::string_view prefix) {
@@ -703,6 +888,15 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyIntEnv(prefix, kAgentEnvDefaultAuthorityTtlMs, &default_authority_ttl_ms);
     ApplyIntEnv(prefix, kAgentEnvDefaultTelemetryRateHz, &default_telemetry_rate_hz);
     ApplyIntEnv(prefix, kAgentEnvMinTelemetryRateHz, &min_telemetry_rate_hz);
+
+    ApplyStringEnv(prefix, kAgentEnvRootCaCertPath, &security.root_ca_cert_path);
+    ApplyStringEnv(prefix, kAgentEnvCertChainPath, &security.cert_chain_path);
+    ApplyStringEnv(prefix, kAgentEnvPrivateKeyPath, &security.private_key_path);
+    if (const auto kValue =
+            GetEnvValue(std::string(prefix) + std::string(kAgentEnvAllowedClientIds));
+        kValue.has_value()) {
+        security.allowed_client_ids = SplitCsvList(*kValue);
+    }
 }
 
 std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::string& path) {
@@ -752,6 +946,56 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         config.min_telemetry_rate_hz = **kValue;
     }
 
+    if (const YAML::Node security = root["security"]; security) {
+        if (!security.IsMap()) {
+            return std::unexpected(core::Result::Rejected("agent.security must be a map"));
+        }
+
+        if (const auto kValue =
+                core::yaml::ReadOptionalScalar<std::string>(security, "root_ca_cert_path");
+            !kValue.has_value()) {
+            return std::unexpected(kValue.error());
+        } else if (kValue->has_value()) {
+            config.security.root_ca_cert_path =
+                core::internal::ResolveConfigRelativePath(path, **kValue);
+        }
+
+        if (const auto kValue =
+                core::yaml::ReadOptionalScalar<std::string>(security, "cert_chain_path");
+            !kValue.has_value()) {
+            return std::unexpected(kValue.error());
+        } else if (kValue->has_value()) {
+            config.security.cert_chain_path =
+                core::internal::ResolveConfigRelativePath(path, **kValue);
+        }
+
+        if (const auto kValue =
+                core::yaml::ReadOptionalScalar<std::string>(security, "private_key_path");
+            !kValue.has_value()) {
+            return std::unexpected(kValue.error());
+        } else if (kValue->has_value()) {
+            config.security.private_key_path =
+                core::internal::ResolveConfigRelativePath(path, **kValue);
+        }
+
+        const YAML::Node allowed_client_ids = security["allowed_client_ids"];
+        if (allowed_client_ids) {
+            if (!allowed_client_ids.IsSequence()) {
+                return std::unexpected(
+                    core::Result::Rejected("agent.security.allowed_client_ids must be a sequence"));
+            }
+            config.security.allowed_client_ids.clear();
+            config.security.allowed_client_ids.reserve(allowed_client_ids.size());
+            for (const auto& entry : allowed_client_ids) {
+                if (!entry.IsScalar()) {
+                    return std::unexpected(core::Result::Rejected(
+                        "agent.security.allowed_client_ids entries must be scalars"));
+                }
+                config.security.allowed_client_ids.push_back(entry.as<std::string>());
+            }
+        }
+    }
+
     if (const core::Result kValidation = config.Validate(); !kValidation.IsOk()) {
         return std::unexpected(kValidation);
     }
@@ -773,7 +1017,14 @@ int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend) {
     }
 
     grpc::ServerBuilder builder;
-    builder.AddListeningPort(config.bind_addr, grpc::InsecureServerCredentials());
+    core::Result credentials_error = core::Result::Success();
+    auto credentials = MakeServerCredentials(config.security, &credentials_error);
+    if (!credentials) {
+        core::Logger::ErrorFmt("Failed to configure server credentials: {}",
+                               credentials_error.message);
+        return 1;
+    }
+    builder.AddListeningPort(config.bind_addr, credentials);
 
     auto service = internal::MakeAgentServiceForTesting(config, std::move(backend));
     builder.RegisterService(service.get());

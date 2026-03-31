@@ -4,3 +4,11 @@ agent:
   default_authority_ttl_ms: 5000
   default_telemetry_rate_hz: 5
   min_telemetry_rate_hz: 1
+  security:
+    root_ca_cert_path: "certs/ca.pem"
+    cert_chain_path: "certs/agent.pem"
+    private_key_path: "certs/agent.key"
+    allowed_client_ids:
+      - "swarmkit-cli"
+      - "test-client"
+      - "test-server"

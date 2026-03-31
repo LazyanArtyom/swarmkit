@@ -4,17 +4,16 @@
 // This file is part of SwarmKit.
 // See LICENSE.md in the repository root for full license terms.
 
-#include <catch2/catch_test_macros.hpp>
-
 #include <atomic>
+#include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <mutex>
 #include <string>
 #include <vector>
 
-#include "test_support.h"
 #include "swarmkit/client/client.h"
 #include "swarmkit/commands.h"
+#include "test_support.h"
 
 namespace swarmkit::client {
 namespace {
@@ -22,9 +21,7 @@ namespace {
 constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
 
 [[nodiscard]] Client MakeClient(const std::string& address) {
-    ClientConfig config;
-    config.address = address;
-    config.client_id = "integration-client";
+    ClientConfig config = testsupport::MakeMtlsClientConfig(address);
     config.retry_policy.max_attempts = 3;
     config.retry_policy.initial_backoff_ms = 10;
     config.retry_policy.max_backoff_ms = 20;
@@ -51,7 +48,7 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
 
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = "drone-1";
-    envelope.context.client_id = "integration-client";
+    envelope.context.client_id = "test-client";
     envelope.context.priority = commands::CommandPriority::kSupervisor;
     envelope.command = commands::FlightCmd{commands::CmdArm{}};
 
@@ -75,12 +72,12 @@ TEST_CASE("Client authority session auto releases lock and emits watch events",
 
     std::mutex events_mutex;
     std::vector<AuthorityEventInfo> operator_events;
-    operator_client.WatchAuthority({.drone_id = "drone-1",
-                                    .priority = commands::CommandPriority::kOperator},
-                                   [&](const AuthorityEventInfo& event) {
-                                       std::lock_guard<std::mutex> lock(events_mutex);
-                                       operator_events.push_back(event);
-                                   });
+    operator_client.WatchAuthority(
+        {.drone_id = "drone-1", .priority = commands::CommandPriority::kOperator},
+        [&](const AuthorityEventInfo& event) {
+            std::lock_guard<std::mutex> lock(events_mutex);
+            operator_events.push_back(event);
+        });
 
     {
         const auto kSession = operator_client.AcquireAuthoritySession("drone-1", 500);
@@ -113,8 +110,8 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
                                   }
                               });
 
-    REQUIRE(testsupport::WaitUntil(
-        [&] { return harness.backend().HasTelemetryStream("drone-1"); }, kWaitTimeout));
+    REQUIRE(testsupport::WaitUntil([&] { return harness.backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
 
     core::TelemetryFrame frame;
     frame.drone_id = "drone-1";
@@ -133,11 +130,12 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
         kWaitTimeout, std::chrono::milliseconds{50}));
 
     client.StopTelemetry();
-    REQUIRE(testsupport::WaitUntil(
-        [&] { return !harness.backend().HasTelemetryStream("drone-1"); }, kWaitTimeout));
+    REQUIRE(testsupport::WaitUntil([&] { return !harness.backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
 }
 
-TEST_CASE("Client reports backend execution failure and telemetry counters", "[client][integration]") {
+TEST_CASE("Client reports backend execution failure and telemetry counters",
+          "[client][integration]") {
     testsupport::AgentServerHarness harness;
     harness.backend().SetExecuteHandler([](const commands::CommandEnvelope&) {
         return core::Result::Failed("simulated backend failure");
@@ -147,7 +145,7 @@ TEST_CASE("Client reports backend execution failure and telemetry counters", "[c
 
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = "drone-1";
-    envelope.context.client_id = "integration-client";
+    envelope.context.client_id = "test-client";
     envelope.context.priority = commands::CommandPriority::kSupervisor;
     envelope.command = commands::FlightCmd{commands::CmdLand{}};
 
