@@ -7,8 +7,11 @@
 add_executable(swarmkit_tests
     test_arbiter.cpp
     test_basic.cpp
+    test_client_integration.cpp
     test_config.cpp
+    test_logger.cpp
     test_sim_backend.cpp
+    test_swarm_client.cpp
 )
 
 target_link_libraries(swarmkit_tests PRIVATE

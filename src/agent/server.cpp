@@ -5,6 +5,7 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include "swarmkit/agent/server.h"
+#include "server_test_support.h"
 
 #include <grpcpp/grpcpp.h>
 
@@ -1058,8 +1059,8 @@ int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend) {
     grpc::ServerBuilder builder;
     builder.AddListeningPort(config.bind_addr, grpc::InsecureServerCredentials());
 
-    AgentServiceImpl service(config, std::move(backend));
-    builder.RegisterService(&service);
+    auto service = internal::MakeAgentServiceForTesting(config, std::move(backend));
+    builder.RegisterService(service.get());
 
     std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
     if (!server) {
@@ -1070,6 +1071,11 @@ int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend) {
     core::Logger::InfoFmt("Agent '{}' listening on {}", config.agent_id, config.bind_addr);
     server->Wait();
     return 0;
+}
+
+std::unique_ptr<grpc::Service> internal::MakeAgentServiceForTesting(const AgentConfig& config,
+                                                                    DroneBackendPtr backend) {
+    return std::make_unique<AgentServiceImpl>(config, std::move(backend));
 }
 
 }  // namespace swarmkit::agent

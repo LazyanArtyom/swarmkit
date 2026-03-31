@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,11 +24,101 @@ namespace {
 constexpr std::string_view kDefaultLoggerName = "swarmkit";
 constexpr std::string_view kDefaultPattern = "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v";
 
+void PrintLoggerInitError(std::string_view message);
+spdlog::level::level_enum ToSpdLevel(LogLevel level);
+LogLevel SanitizeFlushLevel(LogLevel level);
+
+class SpdlogBackend final : public ILogBackend {
+   public:
+    explicit SpdlogBackend(const LoggerConfig& config)
+        : logger_(CreateLogger(config)) {}
+
+    [[nodiscard]] bool IsEnabled(LogLevel level) const override {
+        return logger_ && logger_->should_log(ToSpdLevel(level));
+    }
+
+    void Log(LogLevel level, std::string_view message) override {
+        if (!logger_) {
+            return;
+        }
+
+        switch (level) {
+            case LogLevel::kTrace:
+                logger_->trace(message);
+                break;
+            case LogLevel::kDebug:
+                logger_->debug(message);
+                break;
+            case LogLevel::kInfo:
+                logger_->info(message);
+                break;
+            case LogLevel::kWarn:
+                logger_->warn(message);
+                break;
+            case LogLevel::kError:
+                logger_->error(message);
+                break;
+            case LogLevel::kCritical:
+                logger_->critical(message);
+                break;
+            case LogLevel::kOff:
+                break;
+        }
+    }
+
+    void Flush() override {
+        if (logger_) {
+            logger_->flush();
+        }
+    }
+
+   private:
+    static std::shared_ptr<spdlog::logger> CreateLogger(const LoggerConfig& config) {
+        std::vector<spdlog::sink_ptr> sinks;
+        sinks.reserve(2);
+
+        if (config.sink_type == LogSinkType::kStdout ||
+            config.sink_type == LogSinkType::kStdoutAndRotatingFile) {
+            sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+        }
+
+        if (config.sink_type == LogSinkType::kRotatingFile ||
+            config.sink_type == LogSinkType::kStdoutAndRotatingFile) {
+            const std::filesystem::path kLogPath = config.log_file_path;
+            if (kLogPath.has_parent_path()) {
+                std::error_code error_code;
+                std::filesystem::create_directories(kLogPath.parent_path(), error_code);
+                if (error_code) {
+                    throw spdlog::spdlog_ex("failed to create log directory '" +
+                                            kLogPath.parent_path().string() +
+                                            "': " + error_code.message());
+                }
+            }
+
+            sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+                config.log_file_path, static_cast<std::size_t>(config.max_file_size_bytes),
+                static_cast<std::size_t>(config.max_files)));
+        }
+
+        auto logger = std::make_shared<spdlog::logger>(std::string{kDefaultLoggerName},
+                                                       sinks.begin(), sinks.end());
+        const std::string kPattern =
+            config.pattern.empty() ? std::string{kDefaultPattern} : config.pattern;
+        logger->set_pattern(kPattern);
+        logger->set_level(ToSpdLevel(config.level));
+        logger->flush_on(ToSpdLevel(SanitizeFlushLevel(config.flush_level)));
+        logger->set_error_handler([](const std::string& message) {
+            PrintLoggerInitError(std::string("spdlog internal error: ") + message);
+        });
+        return logger;
+    }
+
+    std::shared_ptr<spdlog::logger> logger_;
+};
+
 struct LoggerState {
     std::mutex mutex;
-    bool initialized{false};
-    LoggerConfig config;
-    std::shared_ptr<spdlog::logger> logger;
+    std::shared_ptr<ILogBackend> backend;
 };
 
 LoggerState& GetState() {
@@ -62,49 +153,6 @@ spdlog::level::level_enum ToSpdLevel(LogLevel level) {
 
 LogLevel SanitizeFlushLevel(LogLevel level) {
     return level == LogLevel::kOff ? LogLevel::kCritical : level;
-}
-
-std::shared_ptr<spdlog::logger> CreateLoggerUnlocked(const LoggerConfig& config) {
-    std::vector<spdlog::sink_ptr> sinks;
-    sinks.reserve(2);
-
-    if (config.sink_type == LogSinkType::kStdout ||
-        config.sink_type == LogSinkType::kStdoutAndRotatingFile) {
-        sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
-    }
-
-    if (config.sink_type == LogSinkType::kRotatingFile ||
-        config.sink_type == LogSinkType::kStdoutAndRotatingFile) {
-        const std::filesystem::path kLogPath = config.log_file_path;
-        if (kLogPath.has_parent_path()) {
-            std::error_code error_code;
-            std::filesystem::create_directories(kLogPath.parent_path(), error_code);
-            if (error_code) {
-                throw spdlog::spdlog_ex("failed to create log directory '" +
-                                        kLogPath.parent_path().string() +
-                                        "': " + error_code.message());
-            }
-        }
-
-        sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-            config.log_file_path, static_cast<std::size_t>(config.max_file_size_bytes),
-            static_cast<std::size_t>(config.max_files)));
-    }
-
-    auto created_logger = std::make_shared<spdlog::logger>(std::string{kDefaultLoggerName},
-                                                           sinks.begin(), sinks.end());
-    const std::string kPattern =
-        config.pattern.empty() ? std::string{kDefaultPattern} : config.pattern;
-    created_logger->set_pattern(kPattern);
-    created_logger->set_level(ToSpdLevel(config.level));
-    created_logger->flush_on(ToSpdLevel(SanitizeFlushLevel(config.flush_level)));
-    created_logger->set_error_handler([](const std::string& message) {
-        PrintLoggerInitError(std::string("spdlog internal error: ") + message);
-    });
-
-    spdlog::drop(std::string{kDefaultLoggerName});
-    spdlog::set_default_logger(created_logger);
-    return created_logger;
 }
 
 }  // namespace
@@ -199,9 +247,20 @@ core::Result ValidateLoggerConfig(const LoggerConfig& config) {
 }
 
 void Logger::Init(const LoggerConfig& config) {
+    SetBackend(CreateDefaultBackend(config));
+}
+
+void Logger::SetBackend(std::shared_ptr<ILogBackend> backend) {
+    if (!backend) {
+        backend = CreateDefaultBackend(LoggerConfig{});
+    }
+
     LoggerState& state = GetState();
     std::lock_guard<std::mutex> lock(state.mutex);
+    state.backend = std::move(backend);
+}
 
+std::shared_ptr<ILogBackend> Logger::CreateDefaultBackend(const LoggerConfig& config) {
     LoggerConfig active_config = config;
     if (const core::Result kValidation = ValidateLoggerConfig(config); !kValidation.IsOk()) {
         PrintLoggerInitError(std::string("invalid logger config: ") + kValidation.message +
@@ -210,44 +269,39 @@ void Logger::Init(const LoggerConfig& config) {
     }
 
     try {
-        state.config = active_config;
-        state.logger = CreateLoggerUnlocked(state.config);
+        return std::make_shared<SpdlogBackend>(active_config);
     } catch (const spdlog::spdlog_ex& error) {
         PrintLoggerInitError(std::string("failed to initialize configured logger: ") +
                              error.what() + " - falling back to stdout");
-        state.config = LoggerConfig{};
-        state.logger = CreateLoggerUnlocked(state.config);
+        return std::make_shared<SpdlogBackend>(LoggerConfig{});
     }
-    state.initialized = true;
 }
 
 void Logger::Shutdown() {
     LoggerState& state = GetState();
-    std::lock_guard<std::mutex> lock(state.mutex);
+    std::shared_ptr<ILogBackend> backend;
 
-    if (!state.initialized) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        backend = std::move(state.backend);
     }
 
-    if (state.logger) {
-        state.logger->flush();
+    if (backend) {
+        backend->Flush();
     }
-
-    spdlog::set_default_logger(nullptr);
-    spdlog::drop(std::string{kDefaultLoggerName});
-    state.logger.reset();
-    state.initialized = false;
-
-    spdlog::shutdown();
 }
 
 void Logger::Flush() {
     EnsureInitialized();
 
     LoggerState& state = GetState();
-    std::lock_guard<std::mutex> lock(state.mutex);
-    if (state.logger) {
-        state.logger->flush();
+    std::shared_ptr<ILogBackend> backend;
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        backend = state.backend;
+    }
+    if (backend) {
+        backend->Flush();
     }
 }
 
@@ -255,68 +309,46 @@ bool Logger::IsEnabled(LogLevel level) {
     EnsureInitialized();
 
     LoggerState& state = GetState();
-    std::lock_guard<std::mutex> lock(state.mutex);
-
-    if (!state.logger) {
-        return false;
+    std::shared_ptr<ILogBackend> backend;
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        backend = state.backend;
     }
-
-    return state.logger->should_log(ToSpdLevel(level));
+    return backend && backend->IsEnabled(level);
 }
 
 void Logger::EnsureInitialized() {
     LoggerState& state = GetState();
     std::lock_guard<std::mutex> lock(state.mutex);
 
-    if (state.initialized) {
+    if (state.backend) {
         return;
     }
 
-    LoggerConfig default_config;
-    state.config = default_config;
-    state.logger = CreateLoggerUnlocked(state.config);
-    state.initialized = true;
+    state.backend = CreateDefaultBackend(LoggerConfig{});
 }
 
 void Logger::Log(LogLevel level, fmt::string_view format, fmt::format_args arguments) {
+    if (level == LogLevel::kOff) {
+        return;
+    }
+
     EnsureInitialized();
 
     LoggerState& state = GetState();
-    std::shared_ptr<spdlog::logger> logger_copy;
+    std::shared_ptr<ILogBackend> backend;
 
     {
         std::lock_guard<std::mutex> lock(state.mutex);
-        logger_copy = state.logger;
+        backend = state.backend;
     }
 
-    if (!logger_copy) {
+    if (!backend) {
         return;
     }
 
     const std::string kMessage = fmt::vformat(format, arguments);
-
-    switch (level) {
-        case LogLevel::kTrace:
-            logger_copy->trace(kMessage);
-            break;
-        case LogLevel::kDebug:
-            logger_copy->debug(kMessage);
-            break;
-        case LogLevel::kInfo:
-            logger_copy->info(kMessage);
-            break;
-        case LogLevel::kWarn:
-            logger_copy->warn(kMessage);
-            break;
-        case LogLevel::kError:
-            logger_copy->error(kMessage);
-            break;
-        case LogLevel::kCritical:
-            logger_copy->critical(kMessage);
-            break;
-        case LogLevel::kOff:
-            break;
-    }
+    backend->Log(level, kMessage);
 }
 
 void Logger::Trace(const std::string& message) {

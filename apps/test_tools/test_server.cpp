@@ -19,7 +19,6 @@
 
 #include <unistd.h>
 
-#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
@@ -29,6 +28,7 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -57,10 +57,48 @@ constexpr std::string_view kLockAction = "lock";
 constexpr std::string_view kUnlockAction = "unlock";
 constexpr std::string_view kServerClientId = "test-server";
 
-std::atomic<bool> g_running{true};
+class TestServerLogBackend final : public cor::ILogBackend {
+   public:
+    explicit TestServerLogBackend(std::shared_ptr<cor::ILogBackend> fallback_backend)
+        : fallback_backend_(std::move(fallback_backend)) {}
+
+    [[nodiscard]] bool IsEnabled(cor::LogLevel level) const override {
+        return fallback_backend_ && fallback_backend_->IsEnabled(level);
+    }
+
+    void Log(cor::LogLevel level, std::string_view message) override {
+        if (!fallback_backend_) {
+            return;
+        }
+
+        fallback_backend_->Log(level, "[test-server] " + std::string(message));
+    }
+
+    void Flush() override {
+        if (fallback_backend_) {
+            fallback_backend_->Flush();
+        }
+    }
+
+   private:
+    std::shared_ptr<cor::ILogBackend> fallback_backend_;
+};
+
+volatile std::sig_atomic_t& StopRequestedFlag() {
+    static volatile std::sig_atomic_t stop_requested = 0;
+    return stop_requested;
+}
+
+void ResetStopRequested() {
+    StopRequestedFlag() = 0;
+}
+
+[[nodiscard]] bool IsStopRequested() {
+    return StopRequestedFlag() != 0;
+}
 
 extern "C" void OnSignal(int /*sig*/) {
-    g_running.store(false, std::memory_order_relaxed);
+    StopRequestedFlag() = 1;
     close(STDIN_FILENO);
 }
 
@@ -112,6 +150,9 @@ extern "C" void OnSignal(int /*sig*/) {
     }
     if (value == "file") {
         return cor::LogSinkType::kRotatingFile;
+    }
+    if (value == "both") {
+        return cor::LogSinkType::kStdoutAndRotatingFile;
     }
     return std::nullopt;
 }
@@ -339,8 +380,10 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    cor::Logger::Init(log_cfg);
+    cor::Logger::SetBackend(
+        std::make_shared<TestServerLogBackend>(cor::Logger::CreateDefaultBackend(log_cfg)));
 
+    ResetStopRequested();
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
 
@@ -422,7 +465,7 @@ int main(int argc, char** argv) {
         });
 
     std::string line;
-    while (g_running.load(std::memory_order_relaxed)) {
+    while (!IsStopRequested()) {
         std::cout << "> " << std::flush;
         if (!std::getline(std::cin, line)) {
             break;

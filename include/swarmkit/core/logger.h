@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -65,15 +66,32 @@ struct LoggerConfig {
 [[nodiscard]] std::string_view ToString(LogSinkType sink_type);
 [[nodiscard]] core::Result ValidateLoggerConfig(const LoggerConfig& config);
 
-/// Global, thread-safe logger backed by spdlog.
+/// Pluggable logger backend used by the global Logger facade.
+class ILogBackend {
+   public:
+    virtual ~ILogBackend() = default;
+
+    [[nodiscard]] virtual bool IsEnabled(LogLevel level) const = 0;
+    virtual void Log(LogLevel level, std::string_view message) = 0;
+    virtual void Flush() = 0;
+};
+
+/// Global, thread-safe logger facade backed by a configurable backend.
 class Logger final {
    public:
     Logger() = delete;
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
-    /// Initialise (or reconfigure) the global logger.
+    /// Initialise (or reconfigure) the global logger using the built-in backend.
     static void Init(const LoggerConfig& config);
+
+    /// Replace the active backend. Passing nullptr restores the built-in default backend.
+    static void SetBackend(std::shared_ptr<ILogBackend> backend);
+
+    /// Create the built-in backend using the given configuration.
+    [[nodiscard]] static std::shared_ptr<ILogBackend> CreateDefaultBackend(
+        const LoggerConfig& config);
 
     /// Flush and tear down the global logger.
     static void Shutdown();

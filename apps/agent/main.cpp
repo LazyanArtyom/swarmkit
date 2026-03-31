@@ -5,6 +5,7 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include <cstdlib>
+
 #include "app.h"
 
 int main(int argc, char** argv) {

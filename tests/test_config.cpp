@@ -53,6 +53,22 @@ TEST_CASE("LoadClientConfigFromFile parses YAML config", "[client][config]") {
     fs::remove(kConfigPath);
 }
 
+TEST_CASE("LoadClientConfigFromFile rejects invalid priority strings", "[client][config]") {
+    const fs::path kConfigPath = fs::temp_directory_path() / "swarmkit_client_invalid.yaml";
+    std::ofstream output(kConfigPath);
+    REQUIRE(output.is_open());
+    output << "client:\n";
+    output << "  address: 10.0.0.5:50061\n";
+    output << "  client_id: test-client\n";
+    output << "  priority: invalid-priority\n";
+    output.close();
+
+    const auto kLoaded = swarmkit::client::LoadClientConfigFromFile(kConfigPath.string());
+    CHECK_FALSE(kLoaded.has_value());
+
+    fs::remove(kConfigPath);
+}
+
 TEST_CASE("AgentConfig validates rates and bind address", "[agent][config]") {
     swarmkit::agent::AgentConfig config;
     CHECK(config.Validate().IsOk());
@@ -119,6 +135,41 @@ TEST_CASE("LoadSwarmConfigFromFile parses client defaults and drone topology", "
     CHECK(kLoaded->drones[1].drone_id == "drone-2");
     CHECK(kLoaded->drones[1].address == "192.168.1.102:50061");
     CHECK(kLoaded->drones[1].local_address.empty());
+
+    fs::remove(kConfigPath);
+}
+
+TEST_CASE("LoadSwarmConfigFromFile rejects duplicate drone ids", "[swarm][config]") {
+    const fs::path kConfigPath = fs::temp_directory_path() / "swarmkit_swarm_duplicate.yaml";
+    std::ofstream output(kConfigPath);
+    REQUIRE(output.is_open());
+    output << "swarm:\n";
+    output << "  drones:\n";
+    output << "    - drone_id: drone-1\n";
+    output << "      address: 192.168.1.101:50061\n";
+    output << "    - drone_id: drone-1\n";
+    output << "      address: 192.168.1.102:50061\n";
+    output.close();
+
+    const auto kLoaded = swarmkit::client::LoadSwarmConfigFromFile(kConfigPath.string());
+    CHECK_FALSE(kLoaded.has_value());
+
+    fs::remove(kConfigPath);
+}
+
+TEST_CASE("LoadSwarmConfigFromFile rejects invalid local addresses", "[swarm][config]") {
+    const fs::path kConfigPath = fs::temp_directory_path() / "swarmkit_swarm_invalid_local.yaml";
+    std::ofstream output(kConfigPath);
+    REQUIRE(output.is_open());
+    output << "swarm:\n";
+    output << "  drones:\n";
+    output << "    - drone_id: drone-1\n";
+    output << "      address: 192.168.1.101:50061\n";
+    output << "      local_address: invalid-local-address\n";
+    output.close();
+
+    const auto kLoaded = swarmkit::client::LoadSwarmConfigFromFile(kConfigPath.string());
+    CHECK_FALSE(kLoaded.has_value());
 
     fs::remove(kConfigPath);
 }

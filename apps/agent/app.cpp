@@ -56,7 +56,7 @@ void PrintUsage() {
 }
 
 [[nodiscard]] std::expected<swarmkit::core::LoggerConfig, int> BuildAgentLoggerConfig(int argc,
-                                                                                       char** argv) {
+                                                                                      char** argv) {
     swarmkit::core::LoggerConfig logger_cfg;
     logger_cfg.sink_type = swarmkit::core::LogSinkType::kStdout;
     logger_cfg.level = swarmkit::core::LogLevel::kInfo;
@@ -97,7 +97,7 @@ void PrintUsage() {
 }
 
 [[nodiscard]] std::expected<swarmkit::agent::AgentConfig, int> BuildAgentConfig(int argc,
-                                                                                 char** argv) {
+                                                                                char** argv) {
     swarmkit::agent::AgentConfig agent_cfg;
     const std::string kConfigPath = GetArg(argc, argv, "--config", "");
     if (!kConfigPath.empty()) {

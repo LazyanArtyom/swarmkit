@@ -8,6 +8,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "swarmkit/agent/arbiter.h"
 
@@ -71,6 +72,70 @@ TEST_CASE("CommandArbiter sends targeted preempt and resume notifications", "[ag
     CHECK(event.kind == AuthorityEvent::Kind::kResumed);
     CHECK(event.holder_client_id == "operator-client");
     CHECK_FALSE(override_queue->Pop(event, kNoEventTimeout));
+
+    arbiter.Unwatch(kOperatorToken);
+    arbiter.Unwatch(kOverrideToken);
+    operator_queue->Shutdown();
+    override_queue->Shutdown();
+}
+
+TEST_CASE("CommandArbiter rejects lower priority clients", "[agent][arbiter]") {
+    CommandArbiter arbiter;
+    REQUIRE(arbiter
+                .CheckAndGrant(
+                    MakeContext("drone-1", "override-client", commands::CommandPriority::kOverride),
+                    std::chrono::seconds{5})
+                .IsOk());
+
+    const core::Result kResult = arbiter.CheckAndGrant(
+        MakeContext("drone-1", "operator-client", commands::CommandPriority::kOperator),
+        std::chrono::seconds{5});
+    CHECK_FALSE(kResult.IsOk());
+    CHECK(kResult.message.find("override-client") != std::string::npos);
+}
+
+TEST_CASE("CommandArbiter expires holders and resumes suspended clients", "[agent][arbiter]") {
+    CommandArbiter arbiter;
+
+    auto operator_queue = std::make_shared<EventQueue>();
+    auto override_queue = std::make_shared<EventQueue>();
+
+    const WatchToken kOperatorToken = arbiter.Watch(
+        "drone-1", "operator-client", commands::CommandPriority::kOperator, operator_queue);
+    const WatchToken kOverrideToken = arbiter.Watch(
+        "drone-1", "override-client", commands::CommandPriority::kOverride, override_queue);
+
+    REQUIRE(arbiter
+                .CheckAndGrant(
+                    MakeContext("drone-1", "operator-client", commands::CommandPriority::kOperator),
+                    std::chrono::milliseconds{500})
+                .IsOk());
+    REQUIRE(arbiter
+                .CheckAndGrant(
+                    MakeContext("drone-1", "override-client", commands::CommandPriority::kOverride),
+                    std::chrono::milliseconds{50})
+                .IsOk());
+
+    std::this_thread::sleep_for(std::chrono::milliseconds{80});
+
+    REQUIRE(arbiter
+                .CheckAndGrant(MakeContext("drone-1", "supervisor-client",
+                                           commands::CommandPriority::kSupervisor),
+                               std::chrono::milliseconds{500})
+                .IsOk());
+
+    AuthorityEvent event;
+    REQUIRE(operator_queue->Pop(event, kEventTimeout));
+    CHECK(event.kind == AuthorityEvent::Kind::kGranted);
+    REQUIRE(operator_queue->Pop(event, kEventTimeout));
+    CHECK(event.kind == AuthorityEvent::Kind::kPreempted);
+    REQUIRE(operator_queue->Pop(event, kEventTimeout));
+    CHECK(event.kind == AuthorityEvent::Kind::kResumed);
+
+    REQUIRE(override_queue->Pop(event, kEventTimeout));
+    CHECK(event.kind == AuthorityEvent::Kind::kGranted);
+    REQUIRE(override_queue->Pop(event, kEventTimeout));
+    CHECK(event.kind == AuthorityEvent::Kind::kExpired);
 
     arbiter.Unwatch(kOperatorToken);
     arbiter.Unwatch(kOverrideToken);
