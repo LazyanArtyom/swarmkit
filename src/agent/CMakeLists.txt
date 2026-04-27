@@ -9,6 +9,7 @@ add_library(swarmkit_agent STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/arbiter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/telemetry_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backends/sim_backend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_backend.cpp
 )
 
 target_include_directories(swarmkit_agent PUBLIC
@@ -21,11 +22,19 @@ target_include_directories(swarmkit_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../core
 )
 
+target_include_directories(swarmkit_agent SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/mavlink_c_library_v2
+)
+
 target_link_libraries(swarmkit_agent PUBLIC
     swarmkit_core
     swarmkit_proto
     yaml-cpp::yaml-cpp
 )
+
+if (WIN32)
+    target_link_libraries(swarmkit_agent PRIVATE ws2_32)
+endif()
 
 set_target_properties(swarmkit_agent PROPERTIES EXPORT_NAME agent)
 

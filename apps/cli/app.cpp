@@ -157,13 +157,29 @@ void PrintUsage() {
 }
 
 [[nodiscard]] std::optional<std::string> FindCommandAction(int argc, char** argv) {
+    int command_index = -1;
     for (int index = 1; index < argc; ++index) {
         const std::string_view kCurrentArg = argv[index];
         if (IsOptionWithValue(kCurrentArg)) {
             ++index;
             continue;
         }
-        if (kCurrentArg.starts_with("--") || IsSubcommand(kCurrentArg)) {
+        if (kCurrentArg == "command") {
+            command_index = index;
+            break;
+        }
+    }
+    if (command_index < 0) {
+        return std::nullopt;
+    }
+
+    for (int index = command_index + 1; index < argc; ++index) {
+        const std::string_view kCurrentArg = argv[index];
+        if (IsOptionWithValue(kCurrentArg)) {
+            ++index;
+            continue;
+        }
+        if (kCurrentArg.starts_with("-") || IsSubcommand(kCurrentArg)) {
             continue;
         }
         return std::string(kCurrentArg);

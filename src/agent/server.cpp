@@ -593,7 +593,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
                 envelope.context.client_id, kExecResult.message);
             reply->set_status(swarmkit::v1::CommandReply::FAILED);
-            reply->set_message("command execution failed");
+            reply->set_message(kExecResult.message.empty() ? "command execution failed"
+                                                            : kExecResult.message);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_BACKEND_FAILURE);
             reply->set_debug_message(kExecResult.message);
         }

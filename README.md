@@ -6,7 +6,10 @@ Multi-agent UAV swarm control and telemetry platform.
 - **CLI** (`swarmkit-cli`) — developer tool to ping the agent, subscribe to live telemetry, and send commands.
 - **SDK** — static libraries + public headers for embedding SwarmKit into other projects (no Conan required in the consumer).
 
-MAVSDK is not vendored. Install and run `mavsdk_server` separately on the target device; the agent will connect to it over TCP at runtime.
+The default agent backend is a built-in simulator. For ArduPilot/PX4 SITL and
+future companion-computer deployments, the agent can also use the official
+MAVLink C headers vendored under `third_party/mavlink_c_library_v2` and talk
+directly to MAVLink UDP traffic.
 
 ---
 
@@ -98,6 +101,59 @@ certificates under `testdata/certs/` for local testing.
 ```
 
 Default bind address: `0.0.0.0:50061`.
+
+### MAVLink SITL backend
+
+For the first SITL drone, use the dedicated config:
+
+```bash
+./build/mac-debug/apps/swarmkit-agent \
+    --config testdata/agent_mavlink_drone1.yaml \
+    --log-level debug
+```
+
+That config starts the gRPC agent on `0.0.0.0:50061` and listens for MAVLink on
+`udp://0.0.0.0:14601`, targeting MAVLink `sysid=1`, `compid=1`.
+For a companion-computer deployment, keep the same backend and point
+`mavlink.bind_addr` at the UDP endpoint exposed by MAVLink Router, usually a
+localhost address on the Raspberry Pi.
+
+The same settings can be overridden from the command line:
+
+```bash
+./build/mac-debug/apps/swarmkit-agent \
+    --config testdata/agent_config.yaml \
+    --backend mavlink \
+    --mavlink-drone drone-1 \
+    --mavlink-bind 0.0.0.0:14601 \
+    --mavlink-target-system 1 \
+    --mavlink-target-component 1 \
+    --log-level debug
+```
+
+Once SITL heartbeats are arriving, subscribe to telemetry:
+
+```bash
+./build/mac-debug/apps/swarmkit-cli --config testdata/client_config.yaml \
+    127.0.0.1:50061 telemetry --drone drone-1 --rate 2
+```
+
+Basic command mapping is implemented through MAVLink:
+
+- `arm` / `disarm` use `MAV_CMD_COMPONENT_ARM_DISARM`
+- `arm` can optionally switch to a configured mode first; the ArduCopter test
+  profile uses GUIDED (`custom_mode=4`)
+- `takeoff` can optionally switch to a configured mode first, then uses
+  `MAV_CMD_NAV_TAKEOFF`
+- `land` uses `MAV_CMD_NAV_LAND`
+- `return_home` uses `MAV_CMD_NAV_RETURN_TO_LAUNCH`
+- `hold` uses `MAV_CMD_NAV_LOITER_UNLIM`
+- `waypoint` uses `SET_POSITION_TARGET_GLOBAL_INT`
+
+`COMMAND_LONG`-based commands wait for `COMMAND_ACK`; the CLI reports the
+autopilot ACK result instead of only confirming that a UDP packet was sent.
+ACK target fields are matched when present, while older/minimal ACK payloads
+that omit those extension fields are still accepted.
 
 **Terminal 2 — use the CLI:**
 

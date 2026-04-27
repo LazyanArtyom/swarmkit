@@ -1,0 +1,28 @@
+agent:
+  agent_id: "drone-1"
+  bind_addr: "0.0.0.0:50061"
+  backend: "mavlink"
+  default_authority_ttl_ms: 5000
+  default_telemetry_rate_hz: 5
+  min_telemetry_rate_hz: 1
+  mavlink:
+    drone_id: "drone-1"
+    bind_addr: "0.0.0.0:14601"
+    target_system: 1
+    target_component: 1
+    source_system: 245
+    source_component: 191
+    telemetry_rate_hz: 5
+    peer_discovery_timeout_ms: 2000
+    command_ack_timeout_ms: 2000
+    set_guided_before_arm: true
+    set_guided_before_takeoff: true
+    guided_mode: 4
+  security:
+    root_ca_cert_path: "certs/ca.pem"
+    cert_chain_path: "certs/agent.pem"
+    private_key_path: "certs/agent.key"
+    allowed_client_ids:
+      - "swarmkit-cli"
+      - "test-client"
+      - "test-server"
