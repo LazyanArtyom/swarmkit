@@ -32,10 +32,6 @@ target_link_libraries(swarmkit_agent PUBLIC
     yaml-cpp::yaml-cpp
 )
 
-if (WIN32)
-    target_link_libraries(swarmkit_agent PRIVATE ws2_32)
-endif()
-
 set_target_properties(swarmkit_agent PROPERTIES EXPORT_NAME agent)
 
 swarmkit_set_warnings(swarmkit_agent)

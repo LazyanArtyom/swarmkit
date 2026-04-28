@@ -15,13 +15,13 @@ directly to MAVLink UDP traffic.
 
 ## Prerequisites
 
-| Tool | macOS ARM64 | Linux x86\_64 | Windows x86\_64 |
-|------|-------------|----------------|-----------------|
-| Compiler | Xcode CLT (`xcode-select --install`) | GCC 13+ or Clang 17+ | MSVC 2022 (Desktop C++ workload) |
-| CMake | ≥ 3.28 | ≥ 3.28 | ≥ 3.28 |
-| Ninja | `brew install ninja` | `apt install ninja-build` | bundled with VS or `winget install Ninja-build.Ninja` |
-| Conan 2 | `pip install conan` | `pip install conan` | `pip install conan` |
-| Python | any recent | any recent | any recent |
+| Tool | macOS ARM64 | Linux x86\_64 |
+|------|-------------|----------------|
+| Compiler | Xcode CLT (`xcode-select --install`) | GCC 13+ or Clang 17+ |
+| CMake | ≥ 3.28 | ≥ 3.28 |
+| Ninja | `brew install ninja` | `apt install ninja-build` |
+| Conan 2 | `pip install conan` | `pip install conan` |
+| Python | any recent | any recent |
 
 Initialize Conan profile once after installation:
 
@@ -61,24 +61,6 @@ cmake --preset linux-release
 cmake --build --preset linux-release
 ```
 
-### Windows x86\_64
-
-Run in a **Developer PowerShell for VS 2022** (or any shell where `cl.exe` is on the path):
-
-```powershell
-# Debug
-conan install . -of build\conan -s build_type=Debug -s compiler.cppstd=23 --build=missing
-cmake --preset win-debug
-cmake --build --preset win-debug
-
-# Release
-conan install . -of build\conan -s build_type=Release -s compiler.cppstd=23 --build=missing
-cmake --preset win-release
-cmake --build --preset win-release
-```
-
----
-
 ## Run
 
 SwarmKit now uses mTLS for client/agent communication. The repo includes development-only
@@ -93,11 +75,6 @@ certificates under `testdata/certs/` for local testing.
     --id agent-1 \
     --bind 0.0.0.0:50061 \
     --log-level info
-```
-
-```powershell
-# Windows
-.\build\win-debug\apps\swarmkit-agent.exe --config testdata\agent_config.yaml --id agent-1
 ```
 
 Default bind address: `0.0.0.0:50061`.
@@ -188,8 +165,6 @@ ctest --preset mac-release --output-on-failure
 #Linux
 ctest --preset linux-release --output-on-failure
 
-#Windows
-ctest --preset win-release --output-on-failure
 ```
 
 ---
@@ -225,20 +200,6 @@ dist/swarmkit-<version>-sdk-linux-x86_64.tar.gz
 dist/swarmkit-<version>-tools-linux-x86_64.tar.gz
 ```
 
-### Windows x86\_64
-
-Run in **Developer PowerShell for VS 2022**:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\ci_package_win_x86_64.ps1
-```
-
-Produces:
-```
-dist\swarmkit-<version>-sdk-win-x86_64.zip
-dist\swarmkit-<version>-tools-win-x86_64.zip
-```
-
 **In VSCode** press **F8** to run the full package pipeline for the current platform.
 
 ---
@@ -250,8 +211,8 @@ The tools package contains only the two statically-linked binaries:
 ```
 swarmkit-<version>-tools-<platform>/
 └── bin/
-    ├── swarmkit-agent       (swarmkit-agent.exe on Windows)
-    └── swarmkit-cli         (swarmkit-cli.exe on Windows)
+    ├── swarmkit-agent
+    └── swarmkit-cli
 ```
 
 They depend only on system libraries and run on any machine of the same OS and architecture without additional dependencies.
@@ -272,12 +233,6 @@ tar xzf swarmkit-<version>-sdk-linux-x86_64.tar.gz \
     -C ~/swarmkit-sdk --strip-components=1
 ```
 
-```powershell
-#Windows — the top - level folder inside the zip becomes the SDK root
-Expand-Archive swarmkit-<version>-sdk-win-x86_64.zip -DestinationPath C:\swarmkit-sdk
-#SDK root: the extracted top-level folder inside C:\swarmkit-sdk
-```
-
 SDK layout:
 
 ```
@@ -289,7 +244,7 @@ SDK layout:
 │   ├── commands/              # flight/nav/swarm/payload command categories
 │   └── commands.h             # aggregate Command, CommandContext, CommandEnvelope
 ├── lib/
-│   ├── libswarmkit_core.a     # (.lib on Windows)
+│   ├── libswarmkit_core.a
 │   ├── libswarmkit_agent.a
 │   ├── libswarmkit_client.a
 │   ├── libswarmkit_proto.a
@@ -318,16 +273,6 @@ It produces three binaries for end-to-end swarm testing:
 #macOS / Linux
 cmake -B apps/test_tools/build -DCMAKE_PREFIX_PATH=~/swarmkit-sdk -DCMAKE_BUILD_TYPE=Release -S apps/test_tools
 cmake --build apps/test_tools/build
-```
-
-```powershell
-#Windows — adjust the path to match your actual SDK root folder
-cmake -B apps\test_tools\build `
-      -DCMAKE_PREFIX_PATH="C:\path\to\swarmkit-sdk" `
-      -DCMAKE_BUILD_TYPE=Release `
-      -GNinja `
-      -S apps\test_tools
-cmake --build apps\test_tools\build
 ```
 
 **Typical local workflow (4 terminals):**

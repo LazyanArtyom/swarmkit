@@ -17,11 +17,7 @@
 ///   all         <command>          (broadcast to all drones)
 ///   quit  (or Ctrl+D)
 
-#if defined(_WIN32)
-#include <io.h>
-#else
 #include <unistd.h>
-#endif
 
 #include <cerrno>
 #include <chrono>
@@ -108,11 +104,7 @@ void ResetStopRequested() {
 }
 
 void CloseStandardInput() {
-#if defined(_WIN32)
-    _close(_fileno(stdin));
-#else
     close(STDIN_FILENO);
-#endif
 }
 
 extern "C" void OnSignal(int /*sig*/) {
@@ -121,20 +113,12 @@ extern "C" void OnSignal(int /*sig*/) {
 }
 
 [[nodiscard]] int StdinFileDescriptor() {
-#if defined(_WIN32)
-    return _fileno(stdin);
-#else
     return STDIN_FILENO;
-#endif
 }
 
 [[nodiscard]] int ReadFromStdin(char* buffer, int buffer_size) {
-#if defined(_WIN32)
-    return _read(StdinFileDescriptor(), buffer, buffer_size);
-#else
     return static_cast<int>(
         read(StdinFileDescriptor(), buffer, static_cast<std::size_t>(buffer_size)));
-#endif
 }
 
 [[nodiscard]] bool ReadLineFromStdin(std::string* out_line) {

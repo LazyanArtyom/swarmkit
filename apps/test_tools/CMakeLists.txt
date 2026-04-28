@@ -14,11 +14,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(SwarmKit REQUIRED)
 find_package(Threads REQUIRED)
 
-# --- swarmkit-test-agents (POSIX only) ---------------------------------------
-if (NOT WIN32)
-    add_executable(swarmkit-test-agents test_agents.cpp)
-    target_link_libraries(swarmkit-test-agents PRIVATE swarmkit::core Threads::Threads)
-endif()
+# --- swarmkit-test-agents ----------------------------------------------------
+add_executable(swarmkit-test-agents test_agents.cpp)
+target_link_libraries(swarmkit-test-agents PRIVATE swarmkit::core Threads::Threads)
 
 # --- swarmkit-test-client ----------------------------------------------------
 add_executable(swarmkit-test-client test_client.cpp)

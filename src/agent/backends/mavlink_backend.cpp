@@ -12,8 +12,8 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <exception>
 #include <mutex>
 #include <optional>
@@ -29,20 +29,13 @@ extern "C" {
 #include "ardupilotmega/mavlink.h"
 }
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-using SocketHandle = SOCKET;
-constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
-#else
 #include <arpa/inet.h>
-#include <cerrno>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 using SocketHandle = int;
 constexpr SocketHandle kInvalidSocket = -1;
-#endif
 
 namespace swarmkit::agent {
 
@@ -51,7 +44,15 @@ using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
 namespace {
 
 constexpr int kMicrosecondsPerSecond = 1000000;
+constexpr int kMillisecondsPerSecond = 1000;
+constexpr int kUdpReceiveTimeoutMs = 200;
+constexpr long kUdpReceiveTimeoutUsec =
+    static_cast<long>(kUdpReceiveTimeoutMs) *
+    (kMicrosecondsPerSecond / kMillisecondsPerSecond);
+constexpr int kMaxUdpPort = 65535;
+constexpr std::size_t kUdpReceiveBufferBytes = 2048;
 constexpr double kDegE7 = 10000000.0;
+constexpr float kMillimetresPerMetre = 1000.0F;
 constexpr float kUnknownBattery = -1.0F;
 
 [[nodiscard]] std::int64_t NowUnixMs() {
@@ -72,7 +73,7 @@ constexpr float kUnknownBattery = -1.0F;
     const std::string port_text = value.substr(colon + 1);
     try {
         const int port = std::stoi(port_text);
-        if (port <= 0 || port > 65535) {
+        if (port <= 0 || port > kMaxUdpPort) {
             return std::nullopt;
         }
         return std::make_pair(host, static_cast<std::uint16_t>(port));
@@ -85,28 +86,16 @@ void CloseSocket(SocketHandle socket_handle) {
     if (socket_handle == kInvalidSocket) {
         return;
     }
-#ifdef _WIN32
-    closesocket(socket_handle);
-#else
     close(socket_handle);
-#endif
 }
 
 [[nodiscard]] core::Result ConfigureReceiveTimeout(SocketHandle socket_handle) {
-#ifdef _WIN32
-    constexpr DWORD kTimeoutMs = 200;
-    if (setsockopt(socket_handle, SOL_SOCKET, SO_RCVTIMEO,
-                   reinterpret_cast<const char*>(&kTimeoutMs), sizeof(kTimeoutMs)) != 0) {
-        return core::Result::Failed("failed to configure UDP receive timeout");
-    }
-#else
     timeval timeout{};
     timeout.tv_sec = 0;
-    timeout.tv_usec = 200 * 1000;
+    timeout.tv_usec = kUdpReceiveTimeoutUsec;
     if (setsockopt(socket_handle, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0) {
         return core::Result::Failed("failed to configure UDP receive timeout");
     }
-#endif
     return core::Result::Success();
 }
 
@@ -176,11 +165,6 @@ class MavlinkBackend final : public IDroneBackend {
         if (receiver_.joinable()) {
             receiver_.join();
         }
-#ifdef _WIN32
-        if (winsock_started_) {
-            WSACleanup();
-        }
-#endif
     }
 
     core::Result Execute(const CommandEnvelope& envelope) override {
@@ -266,14 +250,6 @@ class MavlinkBackend final : public IDroneBackend {
             return core::Result::Success();
         }
 
-#ifdef _WIN32
-        WSADATA wsa_data{};
-        if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-            return core::Result::Failed("WSAStartup failed");
-        }
-        winsock_started_ = true;
-#endif
-
         const auto host_port = SplitHostPort(config_.bind_addr);
         if (!host_port.has_value()) {
             return core::Result::Rejected("mavlink bind_addr must be in host:port format");
@@ -318,24 +294,23 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     void ReceiverLoop() {
-        std::array<std::uint8_t, 2048> buffer{};
+        std::array<std::uint8_t, kUdpReceiveBufferBytes> buffer{};
         mavlink_status_t status{};
         mavlink_message_t message{};
 
         while (running_.load(std::memory_order_relaxed)) {
             sockaddr_storage remote_addr{};
             socklen_t remote_len = sizeof(remote_addr);
-            const auto byte_count =
-                recvfrom(socket_, reinterpret_cast<char*>(buffer.data()),
-                         static_cast<int>(buffer.size()), 0,
-                         reinterpret_cast<sockaddr*>(&remote_addr), &remote_len);
+            const auto byte_count = recvfrom(socket_, buffer.data(), buffer.size(), 0,
+                                             reinterpret_cast<sockaddr*>(&remote_addr),
+                                             &remote_len);
             if (byte_count <= 0) {
                 continue;
             }
 
-            for (int i = 0; i < byte_count; ++i) {
-                if (mavlink_parse_char(MAVLINK_COMM_0, buffer[static_cast<std::size_t>(i)],
-                                       &message, &status) == 0) {
+            const auto valid_byte_count = static_cast<std::size_t>(byte_count);
+            for (std::size_t i = 0; i < valid_byte_count; ++i) {
+                if (mavlink_parse_char(MAVLINK_COMM_0, buffer[i], &message, &status) == 0) {
                     continue;
                 }
                 HandleMessage(message, remote_addr, remote_len);
@@ -406,7 +381,8 @@ class MavlinkBackend final : public IDroneBackend {
                     mavlink_msg_global_position_int_decode(&message, &position);
                     telemetry_cache_.lat_deg = static_cast<double>(position.lat) / kDegE7;
                     telemetry_cache_.lon_deg = static_cast<double>(position.lon) / kDegE7;
-                    telemetry_cache_.rel_alt_m = static_cast<float>(position.relative_alt) / 1000.0F;
+                    telemetry_cache_.rel_alt_m =
+                        static_cast<float>(position.relative_alt) / kMillimetresPerMetre;
                     should_publish = true;
                     break;
                 }
@@ -619,7 +595,7 @@ class MavlinkBackend final : public IDroneBackend {
 
         const auto sent = sendto(socket_, reinterpret_cast<const char*>(send_buffer.data()), length,
                                  0, reinterpret_cast<const sockaddr*>(&remote_addr), remote_len);
-        if (sent != length) {
+        if (sent != static_cast<ssize_t>(length)) {
             return core::Result::Failed("failed to send MAVLink UDP packet: sent=" +
                                         std::to_string(sent) +
                                         " expected=" + std::to_string(length));
@@ -696,9 +672,6 @@ class MavlinkBackend final : public IDroneBackend {
     std::atomic<bool> running_{false};
     SocketHandle socket_{kInvalidSocket};
     std::thread receiver_;
-#ifdef _WIN32
-    bool winsock_started_{false};
-#endif
 
     std::mutex endpoint_mutex_;
     std::condition_variable endpoint_cv_;

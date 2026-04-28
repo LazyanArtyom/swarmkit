@@ -29,11 +29,6 @@
       "inherits": "base"
     },
     {
-      "name": "win-base",
-      "hidden": true,
-      "inherits": "base"
-    },
-    {
       "name": "linux-debug",
       "inherits": "linux-base",
       "toolchainFile": "${sourceDir}/build/conan/build/Debug/generators/conan_toolchain.cmake",
@@ -52,14 +47,6 @@
       }
     },
     {
-      "name": "win-debug",
-      "inherits": "win-base",
-      "toolchainFile": "${sourceDir}/build/conan/build/Debug/generators/conan_toolchain.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
       "name": "linux-release",
       "inherits": "linux-base",
       "toolchainFile": "${sourceDir}/build/conan/build/Release/generators/conan_toolchain.cmake",
@@ -70,14 +57,6 @@
     {
       "name": "mac-release",
       "inherits": "mac-base",
-      "toolchainFile": "${sourceDir}/build/conan/build/Release/generators/conan_toolchain.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "win-release",
-      "inherits": "win-base",
       "toolchainFile": "${sourceDir}/build/conan/build/Release/generators/conan_toolchain.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
@@ -100,15 +79,6 @@
         "SWARMKIT_BUILD_TESTS": "OFF",
         "BUILD_TESTING": "OFF"
       }
-    },
-    {
-      "name": "win-sdk-release",
-      "inherits": "win-release",
-      "cacheVariables": {
-        "SWARMKIT_BUILD_TOOLS": "OFF",
-        "SWARMKIT_BUILD_TESTS": "OFF",
-        "BUILD_TESTING": "OFF"
-      }
     }
   ],
   "buildPresets": [
@@ -123,11 +93,6 @@
       "jobs": 0
     },
     {
-      "name": "win-debug",
-      "configurePreset": "win-debug",
-      "jobs": 0
-    },
-    {
       "name": "linux-release",
       "configurePreset": "linux-release",
       "jobs": 0
@@ -138,11 +103,6 @@
       "jobs": 0
     },
     {
-      "name": "win-release",
-      "configurePreset": "win-release",
-      "jobs": 0
-    },
-    {
       "name": "linux-sdk-release",
       "configurePreset": "linux-sdk-release",
       "jobs": 0
@@ -150,11 +110,6 @@
     {
       "name": "mac-sdk-release",
       "configurePreset": "mac-sdk-release",
-      "jobs": 0
-    },
-    {
-      "name": "win-sdk-release",
-      "configurePreset": "win-sdk-release",
       "jobs": 0
     }
   ],
@@ -174,13 +129,6 @@
       }
     },
     {
-      "name": "win-debug",
-      "configurePreset": "win-debug",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
       "name": "linux-release",
       "configurePreset": "linux-release",
       "output": {
@@ -190,13 +138,6 @@
     {
       "name": "mac-release",
       "configurePreset": "mac-release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "win-release",
-      "configurePreset": "win-release",
       "output": {
         "outputOnFailure": true
       }

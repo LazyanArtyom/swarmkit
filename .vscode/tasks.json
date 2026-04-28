@@ -9,7 +9,6 @@
             "type": "shell",
             "linux":   { "command": "bash", "args": ["-lc", "conan install . -of build/conan -s build_type=Debug   -s compiler.cppstd=23 --build=missing"] },
             "osx":     { "command": "bash", "args": ["-lc", "conan install . -of build/conan -s build_type=Debug   -s compiler.cppstd=23 --build=missing"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "conan install . -of build\\conan -s build_type=Debug   -s compiler.cppstd=23 --build=missing"] },
             "problemMatcher": []
         },
         {
@@ -17,7 +16,6 @@
             "type": "shell",
             "linux":   { "command": "bash", "args": ["-lc", "conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing"] },
             "osx":     { "command": "bash", "args": ["-lc", "conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "conan install . -of build\\conan -s build_type=Release -s compiler.cppstd=23 --build=missing"] },
             "problemMatcher": []
         },
         // ----------------------------------------------------------------
@@ -28,7 +26,6 @@
             "type": "shell",
             "linux":   { "command": "cmake --preset linux-debug" },
             "osx":     { "command": "cmake --preset mac-debug"   },
-            "windows": { "command": "cmake --preset win-debug"   },
             "dependsOn": ["conan-install-debug"],
             "problemMatcher": []
         },
@@ -37,7 +34,6 @@
             "type": "shell",
             "linux":   { "command": "cmake --preset linux-release" },
             "osx":     { "command": "cmake --preset mac-release"   },
-            "windows": { "command": "cmake --preset win-release"   },
             "dependsOn": ["conan-install-release"],
             "problemMatcher": []
         },
@@ -49,7 +45,6 @@
             "type": "shell",
             "linux":   { "command": "cmake --build --preset linux-debug" },
             "osx":     { "command": "cmake --build --preset mac-debug"   },
-            "windows": { "command": "cmake --build --preset win-debug"   },
             "dependsOn": ["configure-debug"],
             "problemMatcher": ["$gcc"]
         },
@@ -58,7 +53,6 @@
             "type": "shell",
             "linux":   { "command": "cmake --build --preset linux-release" },
             "osx":     { "command": "cmake --build --preset mac-release"   },
-            "windows": { "command": "cmake --build --preset win-release"   },
             "dependsOn": ["configure-release"],
             "problemMatcher": ["$gcc"]
         },
@@ -70,7 +64,6 @@
             "type": "shell",
             "linux":   { "command": "bash", "args": ["-lc", "cp build/linux-debug/compile_commands.json  ./compile_commands.json && touch compile_commands.json"] },
             "osx":     { "command": "bash", "args": ["-lc", "cp build/mac-debug/compile_commands.json    ./compile_commands.json && touch compile_commands.json"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Copy-Item -Force build\\win-debug\\compile_commands.json .\\compile_commands.json"] },
             "dependsOn": ["build-debug"],
             "problemMatcher": []
         },
@@ -79,7 +72,6 @@
             "type": "shell",
             "linux":   { "command": "bash", "args": ["-lc", "cp build/linux-release/compile_commands.json ./compile_commands.json && touch compile_commands.json"] },
             "osx":     { "command": "bash", "args": ["-lc", "cp build/mac-release/compile_commands.json   ./compile_commands.json && touch compile_commands.json"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Copy-Item -Force build\\win-release\\compile_commands.json .\\compile_commands.json"] },
             "dependsOn": ["build-release"],
             "problemMatcher": []
         },
@@ -108,7 +100,6 @@
             "type": "shell",
             "linux":   { "command": "bash", "args": ["-lc", "ctest --preset linux-release --output-on-failure"] },
             "osx":     { "command": "bash", "args": ["-lc", "ctest --preset mac-release   --output-on-failure"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "ctest --preset win-release --output-on-failure"] },
             "dependsOn": ["build-project-release"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []
@@ -121,7 +112,6 @@
             "type": "shell",
             "linux":   { "command": "bash", "args": ["-lc", "chmod +x scripts/ci_package_linux_x86_64.sh && ./scripts/ci_package_linux_x86_64.sh"] },
             "osx":     { "command": "bash", "args": ["-lc", "chmod +x scripts/ci_package_mac_arm64.sh  && ./scripts/ci_package_mac_arm64.sh"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\\scripts\\ci_package_win_x86_64.ps1"] },
             "dependsOn": ["run-tests-release"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []
@@ -134,7 +124,6 @@
             "type": "shell",
             "osx":     { "command": "bash", "args": ["-lc", "chmod +x scripts/deploy_sdk_mac.sh && ./scripts/deploy_sdk_mac.sh"] },
             "linux":   { "command": "bash", "args": ["-lc", "echo 'deploy_sdk_mac.sh is macOS only; skipping.'"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-Command", "Write-Host 'deploy_sdk_mac.sh is macOS only; skipping.'"] },
             "dependsOn": ["package-release"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []
@@ -147,7 +136,6 @@
             "type": "shell",
             "linux":   { "command": "${workspaceFolder}/build/linux-debug/apps/swarmkit-agent" },
             "osx":     { "command": "${workspaceFolder}/build/mac-debug/apps/swarmkit-agent"   },
-            "windows": { "command": "${workspaceFolder}\\build\\win-debug\\apps\\swarmkit-agent.exe" },
             "dependsOn": ["build-project-debug"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []
@@ -157,7 +145,6 @@
             "type": "shell",
             "linux":   { "command": "${workspaceFolder}/build/linux-release/apps/swarmkit-agent" },
             "osx":     { "command": "${workspaceFolder}/build/mac-release/apps/swarmkit-agent"   },
-            "windows": { "command": "${workspaceFolder}\\build\\win-release\\apps\\swarmkit-agent.exe" },
             "dependsOn": ["build-project-release"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []
@@ -167,7 +154,6 @@
             "type": "shell",
             "linux":   { "command": "bash", "args": ["-lc", "${workspaceFolder}/build/linux-debug/apps/swarmkit-cli 127.0.0.1:50061"] },
             "osx":     { "command": "bash", "args": ["-lc", "${workspaceFolder}/build/mac-debug/apps/swarmkit-cli   127.0.0.1:50061"] },
-            "windows": { "command": "powershell", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "& \"${workspaceFolder}\\build\\win-debug\\apps\\swarmkit-cli.exe\" 127.0.0.1:50061"] },
             "dependsOn": ["build-project-debug"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []
