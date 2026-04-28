@@ -247,6 +247,17 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                                    proto_cmd->mutable_takeoff()->set_alt_m(takeoff.alt_m);
                                },
                                [&](const commands::CmdLand&) { proto_cmd->mutable_land(); },
+                               [&](const commands::CmdSetMode& mode) {
+                                   auto* proto = proto_cmd->mutable_set_mode();
+                                   proto->set_mode(mode.mode);
+                                   proto->set_custom_mode(mode.custom_mode);
+                               },
+                               [&](const commands::CmdForceDisarm&) {
+                                   proto_cmd->mutable_force_disarm();
+                               },
+                               [&](const commands::CmdFlightTerminate&) {
+                                   proto_cmd->mutable_flight_terminate();
+                               },
                            },
                            flight);
             },
@@ -265,8 +276,83 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                         [&](const commands::CmdHoldPosition&) {
                             proto_cmd->mutable_hold_position();
                         },
+                        [&](const commands::CmdSetSpeed& speed) {
+                            proto_cmd->mutable_set_speed()->set_ground_mps(speed.ground_mps);
+                        },
+                        [&](const commands::CmdGoto& go_to) {
+                            auto* proto = proto_cmd->mutable_goto_position();
+                            proto->set_lat_deg(go_to.lat_deg);
+                            proto->set_lon_deg(go_to.lon_deg);
+                            proto->set_alt_m(go_to.alt_m);
+                            proto->set_speed_mps(go_to.speed_mps);
+                            proto->set_yaw_deg(go_to.yaw_deg);
+                            proto->set_use_yaw(go_to.use_yaw);
+                        },
+                        [&](const commands::CmdPause&) { proto_cmd->mutable_pause(); },
+                        [&](const commands::CmdResume&) { proto_cmd->mutable_resume(); },
+                        [&](const commands::CmdSetYaw& yaw) {
+                            auto* proto = proto_cmd->mutable_set_yaw();
+                            proto->set_yaw_deg(yaw.yaw_deg);
+                            proto->set_rate_deg_s(yaw.rate_deg_s);
+                            proto->set_relative(yaw.relative);
+                        },
+                        [&](const commands::CmdVelocity& velocity) {
+                            auto* proto = proto_cmd->mutable_velocity();
+                            proto->set_vx_mps(velocity.vx_mps);
+                            proto->set_vy_mps(velocity.vy_mps);
+                            proto->set_vz_mps(velocity.vz_mps);
+                            proto->set_duration_ms(velocity.duration_ms);
+                            proto->set_body_frame(velocity.body_frame);
+                        },
+                        [&](const commands::CmdSetHome& home) {
+                            auto* proto = proto_cmd->mutable_set_home();
+                            proto->set_use_current(home.use_current);
+                            proto->set_lat_deg(home.lat_deg);
+                            proto->set_lon_deg(home.lon_deg);
+                            proto->set_alt_m(home.alt_m);
+                        },
                     },
                     nav);
+            },
+
+            [&](const commands::MissionCmd& mission) {
+                std::visit(
+                    core::Overloaded{
+                        [&](const commands::CmdUploadMission& upload) {
+                            auto* proto = proto_cmd->mutable_upload_mission();
+                            for (const auto& item : upload.items) {
+                                auto* proto_item = proto->add_items();
+                                proto_item->set_command(item.command);
+                                proto_item->set_lat_deg(item.lat_deg);
+                                proto_item->set_lon_deg(item.lon_deg);
+                                proto_item->set_alt_m(item.alt_m);
+                                proto_item->set_param1(item.param1);
+                                proto_item->set_param2(item.param2);
+                                proto_item->set_param3(item.param3);
+                                proto_item->set_param4(item.param4);
+                                proto_item->set_current(item.current);
+                                proto_item->set_autocontinue(item.autocontinue);
+                            }
+                        },
+                        [&](const commands::CmdClearMission&) {
+                            proto_cmd->mutable_clear_mission();
+                        },
+                        [&](const commands::CmdStartMission& start) {
+                            auto* proto = proto_cmd->mutable_start_mission();
+                            proto->set_first_item(start.first_item);
+                            proto->set_last_item(start.last_item);
+                        },
+                        [&](const commands::CmdPauseMission&) {
+                            proto_cmd->mutable_pause_mission();
+                        },
+                        [&](const commands::CmdResumeMission&) {
+                            proto_cmd->mutable_resume_mission();
+                        },
+                        [&](const commands::CmdSetCurrentMissionItem& current) {
+                            proto_cmd->mutable_set_current_mission_item()->set_seq(current.seq);
+                        },
+                    },
+                    mission);
             },
 
             [&](const commands::SwarmCmd& swarm) {
@@ -288,8 +374,65 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                            swarm);
             },
 
-            /// @note PayloadCmd has no proto mapping yet; server will reject it.
-            [&](const commands::PayloadCmd&) {},
+            [&](const commands::PayloadCmd& payload) {
+                std::visit(
+                    core::Overloaded{
+                        [&](const commands::CmdPhoto& photo) {
+                            proto_cmd->mutable_photo()->set_camera_id(photo.camera_id);
+                        },
+                        [&](const commands::CmdPhotoIntervalStart& photo) {
+                            auto* proto = proto_cmd->mutable_photo_interval_start();
+                            proto->set_interval_s(photo.interval_s);
+                            proto->set_count(photo.count);
+                            proto->set_camera_id(photo.camera_id);
+                        },
+                        [&](const commands::CmdPhotoIntervalStop& photo) {
+                            proto_cmd->mutable_photo_interval_stop()->set_camera_id(photo.camera_id);
+                        },
+                        [&](const commands::CmdVideoStart& video) {
+                            auto* proto = proto_cmd->mutable_video_start();
+                            proto->set_stream_id(video.stream_id);
+                            proto->set_camera_id(video.camera_id);
+                        },
+                        [&](const commands::CmdVideoStop& video) {
+                            auto* proto = proto_cmd->mutable_video_stop();
+                            proto->set_stream_id(video.stream_id);
+                            proto->set_camera_id(video.camera_id);
+                        },
+                        [&](const commands::CmdGimbalPoint& gimbal) {
+                            auto* proto = proto_cmd->mutable_gimbal_point();
+                            proto->set_pitch_deg(gimbal.pitch_deg);
+                            proto->set_roll_deg(gimbal.roll_deg);
+                            proto->set_yaw_deg(gimbal.yaw_deg);
+                        },
+                        [&](const commands::CmdRoiLocation& roi) {
+                            auto* proto = proto_cmd->mutable_roi_location();
+                            proto->set_lat_deg(roi.lat_deg);
+                            proto->set_lon_deg(roi.lon_deg);
+                            proto->set_alt_m(roi.alt_m);
+                            proto->set_gimbal_id(roi.gimbal_id);
+                        },
+                        [&](const commands::CmdRoiClear& roi) {
+                            proto_cmd->mutable_roi_clear()->set_gimbal_id(roi.gimbal_id);
+                        },
+                        [&](const commands::CmdServo& servo) {
+                            auto* proto = proto_cmd->mutable_servo();
+                            proto->set_servo(servo.servo);
+                            proto->set_pwm(servo.pwm);
+                        },
+                        [&](const commands::CmdRelay& relay) {
+                            auto* proto = proto_cmd->mutable_relay();
+                            proto->set_relay(relay.relay);
+                            proto->set_enabled(relay.enabled);
+                        },
+                        [&](const commands::CmdGripper& gripper) {
+                            auto* proto = proto_cmd->mutable_gripper();
+                            proto->set_gripper(gripper.gripper);
+                            proto->set_release(gripper.release);
+                        },
+                    },
+                    payload);
+            },
 
         },
         envelope.command);

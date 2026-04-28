@@ -303,6 +303,12 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             return "DISARM";
         case swarmkit::v1::Command::kLand:
             return "LAND";
+        case swarmkit::v1::Command::kSetMode:
+            return "SET_MODE(" + proto.set_mode().mode() + ")";
+        case swarmkit::v1::Command::kForceDisarm:
+            return "FORCE_DISARM";
+        case swarmkit::v1::Command::kFlightTerminate:
+            return "FLIGHT_TERMINATE";
         case swarmkit::v1::Command::kTakeoff:
             return "TAKEOFF(" + std::to_string(static_cast<int>(proto.takeoff().alt_m())) + "m)";
         case swarmkit::v1::Command::kSetWaypoint:
@@ -313,12 +319,60 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             return "RETURN_HOME";
         case swarmkit::v1::Command::kHoldPosition:
             return "HOLD";
+        case swarmkit::v1::Command::kSetSpeed:
+            return "SET_SPEED";
+        case swarmkit::v1::Command::kGotoPosition:
+            return "GOTO";
+        case swarmkit::v1::Command::kPause:
+            return "PAUSE";
+        case swarmkit::v1::Command::kResume:
+            return "RESUME";
+        case swarmkit::v1::Command::kSetYaw:
+            return "SET_YAW";
+        case swarmkit::v1::Command::kVelocity:
+            return "VELOCITY";
+        case swarmkit::v1::Command::kSetHome:
+            return "SET_HOME";
         case swarmkit::v1::Command::kSetRole:
             return "SET_ROLE";
         case swarmkit::v1::Command::kSetFormation:
             return "SET_FORMATION";
         case swarmkit::v1::Command::kRunSequence:
             return "RUN_SEQUENCE";
+        case swarmkit::v1::Command::kUploadMission:
+            return "UPLOAD_MISSION";
+        case swarmkit::v1::Command::kClearMission:
+            return "CLEAR_MISSION";
+        case swarmkit::v1::Command::kStartMission:
+            return "START_MISSION";
+        case swarmkit::v1::Command::kPauseMission:
+            return "PAUSE_MISSION";
+        case swarmkit::v1::Command::kResumeMission:
+            return "RESUME_MISSION";
+        case swarmkit::v1::Command::kSetCurrentMissionItem:
+            return "SET_CURRENT_MISSION_ITEM";
+        case swarmkit::v1::Command::kPhoto:
+            return "PHOTO";
+        case swarmkit::v1::Command::kPhotoIntervalStart:
+            return "PHOTO_INTERVAL_START";
+        case swarmkit::v1::Command::kPhotoIntervalStop:
+            return "PHOTO_INTERVAL_STOP";
+        case swarmkit::v1::Command::kVideoStart:
+            return "VIDEO_START";
+        case swarmkit::v1::Command::kVideoStop:
+            return "VIDEO_STOP";
+        case swarmkit::v1::Command::kGimbalPoint:
+            return "GIMBAL_POINT";
+        case swarmkit::v1::Command::kRoiLocation:
+            return "ROI_LOCATION";
+        case swarmkit::v1::Command::kRoiClear:
+            return "ROI_CLEAR";
+        case swarmkit::v1::Command::kServo:
+            return "SERVO";
+        case swarmkit::v1::Command::kRelay:
+            return "RELAY";
+        case swarmkit::v1::Command::kGripper:
+            return "GRIPPER";
         default:
             return "UNKNOWN";
     }
@@ -350,6 +404,12 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             return FlightCmd{CmdLand{}};
         case swarmkit::v1::Command::kTakeoff:
             return FlightCmd{CmdTakeoff{proto.takeoff().alt_m()}};
+        case swarmkit::v1::Command::kSetMode:
+            return FlightCmd{CmdSetMode{proto.set_mode().mode(), proto.set_mode().custom_mode()}};
+        case swarmkit::v1::Command::kForceDisarm:
+            return FlightCmd{CmdForceDisarm{}};
+        case swarmkit::v1::Command::kFlightTerminate:
+            return FlightCmd{CmdFlightTerminate{}};
 
         case swarmkit::v1::Command::kSetWaypoint: {
             CmdSetWaypoint waypoint;
@@ -363,6 +423,70 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             return NavCmd{CmdReturnHome{}};
         case swarmkit::v1::Command::kHoldPosition:
             return NavCmd{CmdHoldPosition{}};
+        case swarmkit::v1::Command::kSetSpeed:
+            return NavCmd{CmdSetSpeed{proto.set_speed().ground_mps()}};
+        case swarmkit::v1::Command::kGotoPosition: {
+            CmdGoto go_to;
+            go_to.lat_deg = proto.goto_position().lat_deg();
+            go_to.lon_deg = proto.goto_position().lon_deg();
+            go_to.alt_m = proto.goto_position().alt_m();
+            go_to.speed_mps = proto.goto_position().speed_mps();
+            go_to.yaw_deg = proto.goto_position().yaw_deg();
+            go_to.use_yaw = proto.goto_position().use_yaw();
+            return NavCmd{go_to};
+        }
+        case swarmkit::v1::Command::kPause:
+            return NavCmd{CmdPause{}};
+        case swarmkit::v1::Command::kResume:
+            return NavCmd{CmdResume{}};
+        case swarmkit::v1::Command::kSetYaw:
+            return NavCmd{CmdSetYaw{proto.set_yaw().yaw_deg(), proto.set_yaw().rate_deg_s(),
+                                    proto.set_yaw().relative()}};
+        case swarmkit::v1::Command::kVelocity:
+            return NavCmd{CmdVelocity{proto.velocity().vx_mps(), proto.velocity().vy_mps(),
+                                      proto.velocity().vz_mps(),
+                                      proto.velocity().duration_ms(),
+                                      proto.velocity().body_frame()}};
+        case swarmkit::v1::Command::kSetHome: {
+            CmdSetHome home;
+            home.use_current = proto.set_home().use_current();
+            home.lat_deg = proto.set_home().lat_deg();
+            home.lon_deg = proto.set_home().lon_deg();
+            home.alt_m = proto.set_home().alt_m();
+            return NavCmd{home};
+        }
+
+        case swarmkit::v1::Command::kUploadMission: {
+            CmdUploadMission upload;
+            upload.items.reserve(static_cast<std::size_t>(proto.upload_mission().items_size()));
+            for (const auto& proto_item : proto.upload_mission().items()) {
+                MissionItem item;
+                item.command = static_cast<std::uint16_t>(proto_item.command());
+                item.lat_deg = proto_item.lat_deg();
+                item.lon_deg = proto_item.lon_deg();
+                item.alt_m = proto_item.alt_m();
+                item.param1 = proto_item.param1();
+                item.param2 = proto_item.param2();
+                item.param3 = proto_item.param3();
+                item.param4 = proto_item.param4();
+                item.current = proto_item.current();
+                item.autocontinue = proto_item.autocontinue();
+                upload.items.push_back(item);
+            }
+            return MissionCmd{std::move(upload)};
+        }
+        case swarmkit::v1::Command::kClearMission:
+            return MissionCmd{CmdClearMission{}};
+        case swarmkit::v1::Command::kStartMission:
+            return MissionCmd{CmdStartMission{proto.start_mission().first_item(),
+                                              proto.start_mission().last_item()}};
+        case swarmkit::v1::Command::kPauseMission:
+            return MissionCmd{CmdPauseMission{}};
+        case swarmkit::v1::Command::kResumeMission:
+            return MissionCmd{CmdResumeMission{}};
+        case swarmkit::v1::Command::kSetCurrentMissionItem:
+            return MissionCmd{CmdSetCurrentMissionItem{
+                proto.set_current_mission_item().seq()}};
 
         case swarmkit::v1::Command::kSetRole:
             return SwarmCmd{CmdSetRole{proto.set_role().role()}};
@@ -378,6 +502,42 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             sequence.sync_unix_ms = proto.run_sequence().sync_unix_ms();
             return SwarmCmd{std::move(sequence)};
         }
+
+        case swarmkit::v1::Command::kPhoto:
+            return PayloadCmd{CmdPhoto{proto.photo().camera_id()}};
+        case swarmkit::v1::Command::kPhotoIntervalStart:
+            return PayloadCmd{CmdPhotoIntervalStart{proto.photo_interval_start().interval_s(),
+                                                    proto.photo_interval_start().count(),
+                                                    proto.photo_interval_start().camera_id()}};
+        case swarmkit::v1::Command::kPhotoIntervalStop:
+            return PayloadCmd{CmdPhotoIntervalStop{proto.photo_interval_stop().camera_id()}};
+        case swarmkit::v1::Command::kVideoStart:
+            return PayloadCmd{CmdVideoStart{proto.video_start().stream_id(),
+                                            proto.video_start().camera_id()}};
+        case swarmkit::v1::Command::kVideoStop:
+            return PayloadCmd{CmdVideoStop{proto.video_stop().stream_id(),
+                                           proto.video_stop().camera_id()}};
+        case swarmkit::v1::Command::kGimbalPoint:
+            return PayloadCmd{CmdGimbalPoint{proto.gimbal_point().pitch_deg(),
+                                             proto.gimbal_point().roll_deg(),
+                                             proto.gimbal_point().yaw_deg()}};
+        case swarmkit::v1::Command::kRoiLocation: {
+            CmdRoiLocation roi;
+            roi.lat_deg = proto.roi_location().lat_deg();
+            roi.lon_deg = proto.roi_location().lon_deg();
+            roi.alt_m = proto.roi_location().alt_m();
+            roi.gimbal_id = proto.roi_location().gimbal_id();
+            return PayloadCmd{roi};
+        }
+        case swarmkit::v1::Command::kRoiClear:
+            return PayloadCmd{CmdRoiClear{proto.roi_clear().gimbal_id()}};
+        case swarmkit::v1::Command::kServo:
+            return PayloadCmd{CmdServo{proto.servo().servo(), proto.servo().pwm()}};
+        case swarmkit::v1::Command::kRelay:
+            return PayloadCmd{CmdRelay{proto.relay().relay(), proto.relay().enabled()}};
+        case swarmkit::v1::Command::kGripper:
+            return PayloadCmd{CmdGripper{proto.gripper().gripper(),
+                                         proto.gripper().release()}};
 
         default:
             return std::unexpected(core::Result::Rejected("unknown command kind"));

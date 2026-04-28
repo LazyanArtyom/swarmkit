@@ -28,6 +28,7 @@ struct MavlinkBackendConfig {
     bool set_guided_before_arm{true};
     bool set_guided_before_takeoff{true};
     int guided_mode{4};
+    bool allow_flight_termination{false};
 
     [[nodiscard]] core::Result Validate() const;
 };

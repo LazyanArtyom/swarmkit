@@ -85,6 +85,21 @@ class SimBackend final : public IDroneBackend {
                                        core::Logger::InfoFmt("SimBackend: LAND  drone={}",
                                                              context.drone_id);
                                    },
+                                   [&](const CmdSetMode& mode) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: SET_MODE mode={} custom={}  drone={}",
+                                           mode.mode, mode.custom_mode, context.drone_id);
+                                   },
+                                   [&](const CmdForceDisarm&) {
+                                       core::Logger::WarnFmt(
+                                           "SimBackend: FORCE_DISARM  drone={}",
+                                           context.drone_id);
+                                   },
+                                   [&](const CmdFlightTerminate&) {
+                                       core::Logger::WarnFmt(
+                                           "SimBackend: FLIGHT_TERMINATE  drone={}",
+                                           context.drone_id);
+                                   },
                                },
                                flight);
                 },
@@ -108,8 +123,89 @@ class SimBackend final : public IDroneBackend {
                                        core::Logger::InfoFmt("SimBackend: HOLD  drone={}",
                                                              context.drone_id);
                                    },
+                                   [&](const CmdSetSpeed& speed) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: SET_SPEED ground={}m/s  drone={}",
+                                           speed.ground_mps, context.drone_id);
+                                   },
+                                   [&](const CmdGoto& go_to) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: GOTO lat={} lon={} alt={}m speed={}  "
+                                           "drone={}",
+                                           go_to.lat_deg, go_to.lon_deg, go_to.alt_m,
+                                           go_to.speed_mps, context.drone_id);
+                                   },
+                                   [&](const CmdPause&) {
+                                       core::Logger::InfoFmt("SimBackend: PAUSE  drone={}",
+                                                             context.drone_id);
+                                   },
+                                   [&](const CmdResume&) {
+                                       core::Logger::InfoFmt("SimBackend: RESUME  drone={}",
+                                                             context.drone_id);
+                                   },
+                                   [&](const CmdSetYaw& yaw) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: SET_YAW yaw={} rate={} relative={}  "
+                                           "drone={}",
+                                           yaw.yaw_deg, yaw.rate_deg_s, yaw.relative,
+                                           context.drone_id);
+                                   },
+                                   [&](const CmdVelocity& velocity) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: VELOCITY vx={} vy={} vz={} duration={} "
+                                           "body={}  drone={}",
+                                           velocity.vx_mps, velocity.vy_mps, velocity.vz_mps,
+                                           velocity.duration_ms, velocity.body_frame,
+                                           context.drone_id);
+                                   },
+                                   [&](const CmdSetHome& home) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: SET_HOME current={} lat={} lon={} alt={}  "
+                                           "drone={}",
+                                           home.use_current, home.lat_deg, home.lon_deg,
+                                           home.alt_m, context.drone_id);
+                                   },
                                },
                                nav);
+                },
+                /// @}
+
+                /// @name Mission commands
+                /// @{
+                [&](const MissionCmd& mission) {
+                    std::visit(core::Overloaded{
+                                   [&](const CmdUploadMission& upload) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: UPLOAD_MISSION items={}  drone={}",
+                                           upload.items.size(), context.drone_id);
+                                   },
+                                   [&](const CmdClearMission&) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: CLEAR_MISSION  drone={}",
+                                           context.drone_id);
+                                   },
+                                   [&](const CmdStartMission& start) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: START_MISSION first={} last={}  drone={}",
+                                           start.first_item, start.last_item, context.drone_id);
+                                   },
+                                   [&](const CmdPauseMission&) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: PAUSE_MISSION  drone={}",
+                                           context.drone_id);
+                                   },
+                                   [&](const CmdResumeMission&) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: RESUME_MISSION  drone={}",
+                                           context.drone_id);
+                                   },
+                                   [&](const CmdSetCurrentMissionItem& current) {
+                                       core::Logger::InfoFmt(
+                                           "SimBackend: SET_CURRENT_MISSION_ITEM seq={}  drone={}",
+                                           current.seq, context.drone_id);
+                                   },
+                               },
+                               mission);
                 },
                 /// @}
 
@@ -141,9 +237,13 @@ class SimBackend final : public IDroneBackend {
 
                 /// @name Payload commands
                 /// @{
-                [&](const PayloadCmd&) {
-                    core::Logger::WarnFmt("SimBackend: payload commands not implemented  drone={}",
-                                          context.drone_id);
+                [&](const PayloadCmd& payload) {
+                    std::visit(
+                        [&](const auto&) {
+                            core::Logger::InfoFmt("SimBackend: PAYLOAD command  drone={}",
+                                                  context.drone_id);
+                        },
+                        payload);
                 },
                 /// @}
 

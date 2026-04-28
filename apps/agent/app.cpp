@@ -268,6 +268,8 @@ void ApplyMavlinkCliOverrides(int argc, char** argv,
             ReadOptionalYamlScalar(mavlink, "set_guided_before_takeoff",
                                    &selection.mavlink.set_guided_before_takeoff);
             ReadOptionalYamlScalar(mavlink, "guided_mode", &selection.mavlink.guided_mode);
+            ReadOptionalYamlScalar(mavlink, "allow_flight_termination",
+                                   &selection.mavlink.allow_flight_termination);
         }
     }
 
