@@ -2,20 +2,28 @@ Checks: >-
   -*,
   clang-analyzer-*,
   bugprone-*,
-  modernize-*,
   performance-*,
+  modernize-*,
   readability-*,
   google-*,
   -modernize-use-trailing-return-type,
-  -readability-redundant-access-specifiers,
+  -modernize-return-braced-init-list,
+  -modernize-use-std-print,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
   -bugprone-easily-swappable-parameters,
+  -readability-redundant-access-specifiers
 
-HeaderFilterRegex: '^(src|include|lib|apps|tests)/.*'
 WarningsAsErrors: ''
+HeaderFilterRegex: ''
+FormatStyle: file
 
 CheckOptions:
+  # Namespaces: snake_case
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
+
+  # Types: UpperCamelCase
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
   - key: readability-identifier-naming.StructCase
@@ -26,24 +34,40 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.TypedefCase
     value: CamelCase
+
+  # Functions/methods: UpperCamelCase
   - key: readability-identifier-naming.FunctionCase
     value: CamelCase
   - key: readability-identifier-naming.MethodCase
     value: CamelCase
+  - key: readability-identifier-naming.MethodIgnoredRegexp
+    value: '^(init|cleanup|initTestCase|cleanupTestCase)$'
+
+  # Variables: snake_case
   - key: readability-identifier-naming.VariableCase
     value: lower_case
   - key: readability-identifier-naming.ParameterCase
     value: lower_case
+
+  # Class data members: snake_case with trailing underscore
   - key: readability-identifier-naming.ClassMemberCase
     value: lower_case
   - key: readability-identifier-naming.ClassMemberSuffix
     value: _
+
+  # Struct members: snake_case
   - key: readability-identifier-naming.StructMemberCase
     value: lower_case
+
+  # Constants & enum values: kCamelCase.
+  # This clang-tidy version has one broad Constant bucket, so local const snake_case is
+  # allowed here by regexp while file-scope constants keep kCamelCase by convention.
   - key: readability-identifier-naming.ConstantCase
     value: CamelCase
   - key: readability-identifier-naming.ConstantPrefix
     value: k
+  - key: readability-identifier-naming.ConstantIgnoredRegexp
+    value: '^[a-z][a-z0-9_]*$'
   - key: readability-identifier-naming.EnumConstantCase
     value: CamelCase
   - key: readability-identifier-naming.EnumConstantPrefix

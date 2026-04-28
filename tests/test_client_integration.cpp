@@ -33,7 +33,7 @@ constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
 TEST_CASE("Client integrates with agent service for ping health stats and command execution",
           "[client][integration]") {
     testsupport::AgentServerHarness harness;
-    Client client = MakeClient(harness.address());
+    Client client = MakeClient(harness.Address());
 
     const PingResult kPing = client.Ping();
     REQUIRE(kPing.ok);
@@ -54,8 +54,8 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
 
     const CommandResult kCommand = client.SendCommand(envelope);
     REQUIRE(kCommand.ok);
-    CHECK(harness.backend().ExecuteCallCount() == 1);
-    CHECK(harness.backend().ExecuteCallAt(0).envelope.context.drone_id == "drone-1");
+    CHECK(harness.Backend().ExecuteCallCount() == 1);
+    CHECK(harness.Backend().ExecuteCallAt(0).envelope.context.drone_id == "drone-1");
 
     const RuntimeStats kStats = client.GetRuntimeStats();
     REQUIRE(kStats.ok);
@@ -67,8 +67,8 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
 TEST_CASE("Client authority session auto releases lock and emits watch events",
           "[client][integration][authority]") {
     testsupport::AgentServerHarness harness;
-    Client operator_client = MakeClient(harness.address());
-    Client override_client = MakeClient(harness.address());
+    Client operator_client = MakeClient(harness.Address());
+    Client override_client = MakeClient(harness.Address());
 
     std::mutex events_mutex;
     std::vector<AuthorityEventInfo> operator_events;
@@ -100,7 +100,7 @@ TEST_CASE("Client authority session auto releases lock and emits watch events",
 TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
           "[client][integration][telemetry]") {
     testsupport::AgentServerHarness harness;
-    Client client = MakeClient(harness.address());
+    Client client = MakeClient(harness.Address());
 
     std::atomic<int> frame_count{0};
     client.SubscribeTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
@@ -110,7 +110,7 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
                                   }
                               });
 
-    REQUIRE(testsupport::WaitUntil([&] { return harness.backend().HasTelemetryStream("drone-1"); },
+    REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
 
     core::TelemetryFrame frame;
@@ -124,24 +124,24 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
 
     REQUIRE(testsupport::WaitUntil(
         [&] {
-            harness.backend().EmitTelemetry("drone-1", frame);
+            harness.Backend().EmitTelemetry("drone-1", frame);
             return frame_count.load(std::memory_order_relaxed) >= 1;
         },
         kWaitTimeout, std::chrono::milliseconds{50}));
 
     client.StopTelemetry();
-    REQUIRE(testsupport::WaitUntil([&] { return !harness.backend().HasTelemetryStream("drone-1"); },
+    REQUIRE(testsupport::WaitUntil([&] { return !harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
 }
 
 TEST_CASE("Client reports backend execution failure and telemetry counters",
           "[client][integration]") {
     testsupport::AgentServerHarness harness;
-    harness.backend().SetExecuteHandler([](const commands::CommandEnvelope&) {
+    harness.Backend().SetExecuteHandler([](const commands::CommandEnvelope&) {
         return core::Result::Failed("simulated backend failure");
     });
 
-    Client client = MakeClient(harness.address());
+    Client client = MakeClient(harness.Address());
 
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = "drone-1";

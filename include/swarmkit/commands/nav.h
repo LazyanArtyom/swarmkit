@@ -59,11 +59,11 @@ struct CmdSetYaw {
 
 /// @brief Send a local/body velocity setpoint for manual-style control.
 struct CmdVelocity {
-    float vx_mps{};           ///< North/body-forward velocity depending on body_frame.
-    float vy_mps{};           ///< East/body-right velocity depending on body_frame.
-    float vz_mps{};           ///< Down velocity in NED; negative climbs.
+    float vx_mps{};              ///< North/body-forward velocity depending on body_frame.
+    float vy_mps{};              ///< East/body-right velocity depending on body_frame.
+    float vz_mps{};              ///< Down velocity in NED; negative climbs.
     std::int32_t duration_ms{};  ///< Intended client command duration; 0 = one setpoint.
-    bool body_frame{false};   ///< true = body frame, false = local NED.
+    bool body_frame{false};      ///< true = body frame, false = local NED.
 };
 
 /// @brief Set home to current location or explicit coordinates.

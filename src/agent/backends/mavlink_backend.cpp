@@ -36,6 +36,7 @@ extern "C" {
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 using SocketHandle = int;
@@ -50,9 +51,8 @@ namespace {
 constexpr int kMicrosecondsPerSecond = 1000000;
 constexpr int kMillisecondsPerSecond = 1000;
 constexpr int kUdpReceiveTimeoutMs = 200;
-constexpr long kUdpReceiveTimeoutUsec =
-    static_cast<long>(kUdpReceiveTimeoutMs) *
-    (kMicrosecondsPerSecond / kMillisecondsPerSecond);
+constexpr std::int64_t kUdpReceiveTimeoutUsec = static_cast<std::int64_t>(kUdpReceiveTimeoutMs) *
+                                                (kMicrosecondsPerSecond / kMillisecondsPerSecond);
 constexpr int kMaxUdpPort = 65535;
 constexpr std::size_t kUdpReceiveBufferBytes = 2048;
 constexpr double kDegE7 = 10000000.0;
@@ -74,19 +74,19 @@ constexpr float kUnknownBattery = -1.0F;
 }
 
 [[nodiscard]] std::string ToLower(std::string value) {
-    std::ranges::transform(value, value.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
+    std::ranges::transform(value, value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
     });
     return value;
 }
 
 [[nodiscard]] std::optional<int> ArduCopterModeFromName(std::string mode) {
     static const std::unordered_map<std::string, int> kModeMap{
-        {"stabilize", 0}, {"acro", 1},      {"alt-hold", 2}, {"althold", 2},
-        {"auto", 3},      {"guided", 4},    {"loiter", 5},   {"rtl", 6},
-        {"return", 6},    {"circle", 7},    {"land", 9},     {"drift", 11},
-        {"sport", 13},    {"flip", 14},     {"auto-tune", 15}, {"autotune", 15},
-        {"poshold", 16},  {"pos-hold", 16}, {"brake", 17},   {"throw", 18},
+        {"stabilize", 0}, {"acro", 1},          {"alt-hold", 2},   {"althold", 2},
+        {"auto", 3},      {"guided", 4},        {"loiter", 5},     {"rtl", 6},
+        {"return", 6},    {"circle", 7},        {"land", 9},       {"drift", 11},
+        {"sport", 13},    {"flip", 14},         {"auto-tune", 15}, {"autotune", 15},
+        {"poshold", 16},  {"pos-hold", 16},     {"brake", 17},     {"throw", 18},
         {"avoid", 19},    {"guided-nogps", 20}, {"smart-rtl", 21}, {"smartrtl", 21},
     };
     const auto iter = kModeMap.find(ToLower(std::move(mode)));
@@ -126,7 +126,7 @@ void CloseSocket(SocketHandle socket_handle) {
 [[nodiscard]] core::Result ConfigureReceiveTimeout(SocketHandle socket_handle) {
     timeval timeout{};
     timeout.tv_sec = 0;
-    timeout.tv_usec = kUdpReceiveTimeoutUsec;
+    timeout.tv_usec = static_cast<suseconds_t>(kUdpReceiveTimeoutUsec);
     if (setsockopt(socket_handle, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0) {
         return core::Result::Failed("failed to configure UDP receive timeout");
     }
@@ -254,32 +254,25 @@ class MavlinkBackend final : public IDroneBackend {
         }
         if (!WaitForEndpoint()) {
             return core::Result::Rejected("no MAVLink peer discovered yet for target system " +
-                                          std::to_string(config_.target_system) +
-                                          " on " + config_.bind_addr);
+                                          std::to_string(config_.target_system) + " on " +
+                                          config_.bind_addr);
         }
 
         std::lock_guard<std::mutex> command_lock(command_mutex_);
         core::Result result = core::Result::Rejected("command not handled");
-        std::visit(
-            core::Overloaded{
-                [&](const FlightCmd& flight) {
-                    result = ExecuteFlightCommand(flight, envelope.context);
-                },
-                [&](const NavCmd& nav) {
-                    result = ExecuteNavCommand(nav);
-                },
-                [&](const MissionCmd& mission) {
-                    result = ExecuteMissionCommand(mission);
-                },
-                [&](const SwarmCmd&) {
-                    result =
-                        core::Result::Rejected("MAVLink backend does not support swarm commands");
-                },
-                [&](const PayloadCmd& payload) {
-                    result = ExecutePayloadCommand(payload);
-                },
-            },
-            envelope.command);
+        std::visit(core::Overloaded{
+                       [&](const FlightCmd& flight) {
+                           result = ExecuteFlightCommand(flight, envelope.context);
+                       },
+                       [&](const NavCmd& nav) { result = ExecuteNavCommand(nav); },
+                       [&](const MissionCmd& mission) { result = ExecuteMissionCommand(mission); },
+                       [&](const SwarmCmd&) {
+                           result = core::Result::Rejected(
+                               "MAVLink backend does not support swarm commands");
+                       },
+                       [&](const PayloadCmd& payload) { result = ExecutePayloadCommand(payload); },
+                   },
+                   envelope.command);
         return result;
     }
 
@@ -304,7 +297,7 @@ class MavlinkBackend final : public IDroneBackend {
             config_.telemetry_rate_hz = std::max(1, rate_hertz);
         }
 
-        const core::Result result = EnsureReceiverStarted();
+        core::Result result = EnsureReceiverStarted();
         if (!result.IsOk()) {
             std::lock_guard<std::mutex> lock(callback_mutex_);
             telemetry_active_ = false;
@@ -384,9 +377,9 @@ class MavlinkBackend final : public IDroneBackend {
         while (running_.load(std::memory_order_relaxed)) {
             sockaddr_storage remote_addr{};
             socklen_t remote_len = sizeof(remote_addr);
-            const auto byte_count = recvfrom(socket_, buffer.data(), buffer.size(), 0,
-                                             reinterpret_cast<sockaddr*>(&remote_addr),
-                                             &remote_len);
+            const auto byte_count =
+                recvfrom(socket_, buffer.data(), buffer.size(), 0,
+                         reinterpret_cast<sockaddr*>(&remote_addr), &remote_len);
             if (byte_count <= 0) {
                 continue;
             }
@@ -413,9 +406,9 @@ class MavlinkBackend final : public IDroneBackend {
 
     [[nodiscard]] bool WaitForEndpoint() {
         std::unique_lock<std::mutex> lock(endpoint_mutex_);
-        return endpoint_cv_.wait_for(
-            lock, std::chrono::milliseconds{config_.peer_discovery_timeout_ms},
-            [&] { return endpoint_known_; });
+        return endpoint_cv_.wait_for(lock,
+                                     std::chrono::milliseconds{config_.peer_discovery_timeout_ms},
+                                     [&] { return endpoint_known_; });
     }
 
     void HandleMessage(const mavlink_message_t& message, const sockaddr_storage& remote_addr,
@@ -564,12 +557,12 @@ class MavlinkBackend final : public IDroneBackend {
     void RequestTelemetryIntervals() {
         const int rate_hz = std::max(1, config_.telemetry_rate_hz);
         const float interval_us =
-            static_cast<float>(kMicrosecondsPerSecond / std::max(1, rate_hz));
+            static_cast<float>(kMicrosecondsPerSecond) / static_cast<float>(rate_hz);
 
         const auto request_interval = [&](std::uint32_t message_id) {
-            const core::Result result = SendCommandLong(
-                MAV_CMD_SET_MESSAGE_INTERVAL, static_cast<float>(message_id), interval_us, 0.0F,
-                0.0F, 0.0F, 0.0F, 0.0F, false);
+            const core::Result result =
+                SendCommandLong(MAV_CMD_SET_MESSAGE_INTERVAL, static_cast<float>(message_id),
+                                interval_us, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, false);
             if (!result.IsOk()) {
                 core::Logger::WarnFmt(
                     "MavlinkBackend: failed to request message interval msgid={} detail={}",
@@ -591,9 +584,8 @@ class MavlinkBackend final : public IDroneBackend {
                     if (config_.set_guided_before_arm) {
                         const core::Result mode_result = SetConfiguredGuidedMode();
                         if (!mode_result.IsOk()) {
-                            result =
-                                core::Result::Failed("failed to set configured mode before arm: " +
-                                                     mode_result.message);
+                            result = core::Result::Failed(
+                                "failed to set configured mode before arm: " + mode_result.message);
                             return;
                         }
                     }
@@ -606,26 +598,21 @@ class MavlinkBackend final : public IDroneBackend {
                     if (config_.set_guided_before_takeoff) {
                         const core::Result mode_result = SetConfiguredGuidedMode();
                         if (!mode_result.IsOk()) {
-                            result =
-                                core::Result::Failed("failed to set configured takeoff mode before "
-                                                     "takeoff: " +
-                                                     mode_result.message);
+                            result = core::Result::Failed(
+                                "failed to set configured takeoff mode before "
+                                "takeoff: " +
+                                mode_result.message);
                             return;
                         }
                     }
                     result = SendCommandLong(MAV_CMD_NAV_TAKEOFF, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F,
                                              0.0F, static_cast<float>(takeoff.alt_m));
                 },
-                [&](const CmdLand&) {
-                    result = SendCommandLong(MAV_CMD_NAV_LAND);
-                },
-                [&](const CmdSetMode& mode) {
-                    result = SetMode(mode);
-                },
+                [&](const CmdLand&) { result = SendCommandLong(MAV_CMD_NAV_LAND); },
+                [&](const CmdSetMode& mode) { result = SetMode(mode); },
                 [&](const CmdForceDisarm&) {
                     if (context.priority != CommandPriority::kEmergency) {
-                        result = core::Result::Rejected(
-                            "force-disarm requires emergency priority");
+                        result = core::Result::Rejected("force-disarm requires emergency priority");
                         return;
                     }
                     result = SendCommandLong(MAV_CMD_COMPONENT_ARM_DISARM, 0.0F,
@@ -633,8 +620,8 @@ class MavlinkBackend final : public IDroneBackend {
                 },
                 [&](const CmdFlightTerminate&) {
                     if (context.priority != CommandPriority::kEmergency) {
-                        result = core::Result::Rejected(
-                            "flight-terminate requires emergency priority");
+                        result =
+                            core::Result::Rejected("flight-terminate requires emergency priority");
                         return;
                     }
                     if (!config_.allow_flight_termination) {
@@ -659,15 +646,9 @@ class MavlinkBackend final : public IDroneBackend {
                 [&](const CmdReturnHome&) {
                     result = SendCommandLong(MAV_CMD_NAV_RETURN_TO_LAUNCH);
                 },
-                [&](const CmdHoldPosition&) {
-                    result = SendCommandLong(MAV_CMD_NAV_LOITER_UNLIM);
-                },
-                [&](const CmdSetSpeed& speed) {
-                    result = SendSetSpeed(speed.ground_mps);
-                },
-                [&](const CmdGoto& go_to) {
-                    result = SendReposition(go_to);
-                },
+                [&](const CmdHoldPosition&) { result = SendCommandLong(MAV_CMD_NAV_LOITER_UNLIM); },
+                [&](const CmdSetSpeed& speed) { result = SendSetSpeed(speed.ground_mps); },
+                [&](const CmdGoto& go_to) { result = SendReposition(go_to); },
                 [&](const CmdPause&) {
                     result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkPause);
                 },
@@ -675,16 +656,12 @@ class MavlinkBackend final : public IDroneBackend {
                     result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkResume);
                 },
                 [&](const CmdSetYaw& yaw) {
-                    result = SendCommandLong(MAV_CMD_CONDITION_YAW, yaw.yaw_deg,
-                                             yaw.rate_deg_s, yaw.relative ? 1.0F : 0.0F,
-                                             yaw.relative ? 1.0F : 0.0F);
+                    result =
+                        SendCommandLong(MAV_CMD_CONDITION_YAW, yaw.yaw_deg, yaw.rate_deg_s,
+                                        yaw.relative ? 1.0F : 0.0F, yaw.relative ? 1.0F : 0.0F);
                 },
-                [&](const CmdVelocity& velocity) {
-                    result = SendVelocity(velocity);
-                },
-                [&](const CmdSetHome& home) {
-                    result = SendSetHome(home);
-                },
+                [&](const CmdVelocity& velocity) { result = SendVelocity(velocity); },
+                [&](const CmdSetHome& home) { result = SendSetHome(home); },
             },
             nav);
         return result;
@@ -715,9 +692,8 @@ class MavlinkBackend final : public IDroneBackend {
 
     [[nodiscard]] core::Result SendSetSpeed(float ground_mps) {
         const float speed = ground_mps > 0.0F ? ground_mps : kMavlinkDefaultSpeed;
-        return SendCommandLong(MAV_CMD_DO_CHANGE_SPEED,
-                               static_cast<float>(SPEED_TYPE_GROUNDSPEED), speed,
-                               kMavlinkDefaultThrottle);
+        return SendCommandLong(MAV_CMD_DO_CHANGE_SPEED, static_cast<float>(SPEED_TYPE_GROUNDSPEED),
+                               speed, kMavlinkDefaultThrottle);
     }
 
     [[nodiscard]] core::Result SendReposition(const CmdGoto& go_to) {
@@ -732,8 +708,7 @@ class MavlinkBackend final : public IDroneBackend {
         return SendCommandLong(MAV_CMD_DO_REPOSITION,
                                go_to.speed_mps > 0.0F ? go_to.speed_mps : kMavlinkDefaultSpeed,
                                static_cast<float>(MAV_DO_REPOSITION_FLAGS_CHANGE_MODE), 0.0F, yaw,
-                               static_cast<float>(go_to.lat_deg),
-                               static_cast<float>(go_to.lon_deg),
+                               static_cast<float>(go_to.lat_deg), static_cast<float>(go_to.lon_deg),
                                static_cast<float>(go_to.alt_m));
     }
 
@@ -742,8 +717,8 @@ class MavlinkBackend final : public IDroneBackend {
             return SendVelocityOnce(velocity);
         }
 
-        const auto deadline = std::chrono::steady_clock::now() +
-                              std::chrono::milliseconds{velocity.duration_ms};
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds{velocity.duration_ms};
         while (std::chrono::steady_clock::now() < deadline) {
             if (const core::Result result = SendVelocityOnce(velocity); !result.IsOk()) {
                 return result;
@@ -767,24 +742,22 @@ class MavlinkBackend final : public IDroneBackend {
         mavlink_msg_set_position_target_local_ned_pack(
             config_.source_system, config_.source_component, &message, 0, config_.target_system,
             config_.target_component,
-            velocity.body_frame ? MAV_FRAME_BODY_NED : MAV_FRAME_LOCAL_NED, type_mask, 0.0F,
-            0.0F, 0.0F, velocity.vx_mps, velocity.vy_mps, velocity.vz_mps, 0.0F, 0.0F, 0.0F,
-            0.0F, 0.0F);
+            velocity.body_frame ? MAV_FRAME_BODY_NED : MAV_FRAME_LOCAL_NED, type_mask, 0.0F, 0.0F,
+            0.0F, velocity.vx_mps, velocity.vy_mps, velocity.vz_mps, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
         return SendMavlinkMessage(message);
     }
 
     [[nodiscard]] core::Result SendSetHome(const CmdSetHome& home) {
         return SendCommandLong(MAV_CMD_DO_SET_HOME, home.use_current ? 1.0F : 0.0F, 0.0F, 0.0F,
                                0.0F, static_cast<float>(home.lat_deg),
-                               static_cast<float>(home.lon_deg),
-                               static_cast<float>(home.alt_m));
+                               static_cast<float>(home.lon_deg), static_cast<float>(home.alt_m));
     }
 
     [[nodiscard]] core::Result SendCommandLong(std::uint16_t command, float param1 = 0.0F,
-                                               float param2 = 0.0F,
-                                               float param3 = 0.0F, float param4 = 0.0F,
-                                               float param5 = 0.0F, float param6 = 0.0F,
-                                               float param7 = 0.0F, bool wait_for_ack = true) {
+                                               float param2 = 0.0F, float param3 = 0.0F,
+                                               float param4 = 0.0F, float param5 = 0.0F,
+                                               float param6 = 0.0F, float param7 = 0.0F,
+                                               bool wait_for_ack = true) {
         std::uint64_t ack_start_sequence{};
         if (wait_for_ack) {
             std::lock_guard<std::mutex> lock(ack_mutex_);
@@ -792,11 +765,10 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         mavlink_message_t message{};
-        mavlink_msg_command_long_pack(
-            config_.source_system, config_.source_component, &message, config_.target_system,
-            config_.target_component, command, 0, param1, param2, param3, param4, param5, param6,
-            param7);
-        const core::Result send_result = SendMavlinkMessage(message);
+        mavlink_msg_command_long_pack(config_.source_system, config_.source_component, &message,
+                                      config_.target_system, config_.target_component, command, 0,
+                                      param1, param2, param3, param4, param5, param6, param7);
+        core::Result send_result = SendMavlinkMessage(message);
         if (!send_result.IsOk() || !wait_for_ack) {
             return send_result;
         }
@@ -812,15 +784,11 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         mavlink_message_t message{};
-        const auto type_mask =
-            static_cast<std::uint16_t>(POSITION_TARGET_TYPEMASK_VX_IGNORE |
-                                       POSITION_TARGET_TYPEMASK_VY_IGNORE |
-                                       POSITION_TARGET_TYPEMASK_VZ_IGNORE |
-                                       POSITION_TARGET_TYPEMASK_AX_IGNORE |
-                                       POSITION_TARGET_TYPEMASK_AY_IGNORE |
-                                       POSITION_TARGET_TYPEMASK_AZ_IGNORE |
-                                       POSITION_TARGET_TYPEMASK_YAW_IGNORE |
-                                       POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE);
+        const auto type_mask = static_cast<std::uint16_t>(
+            POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE |
+            POSITION_TARGET_TYPEMASK_VZ_IGNORE | POSITION_TARGET_TYPEMASK_AX_IGNORE |
+            POSITION_TARGET_TYPEMASK_AY_IGNORE | POSITION_TARGET_TYPEMASK_AZ_IGNORE |
+            POSITION_TARGET_TYPEMASK_YAW_IGNORE | POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE);
 
         mavlink_msg_set_position_target_global_int_pack(
             config_.source_system, config_.source_component, &message, 0, config_.target_system,
@@ -833,45 +801,43 @@ class MavlinkBackend final : public IDroneBackend {
 
     [[nodiscard]] core::Result ExecuteMissionCommand(const MissionCmd& mission) {
         core::Result result = core::Result::Rejected("mission command not handled");
-        std::visit(
-            core::Overloaded{
-                [&](const CmdUploadMission& upload) {
-                    result = UploadMission(upload);
-                },
-                [&](const CmdClearMission&) {
-                    mavlink_message_t message{};
-                    mavlink_msg_mission_clear_all_pack(
-                        config_.source_system, config_.source_component, &message,
-                        config_.target_system, config_.target_component, MAV_MISSION_TYPE_MISSION);
-                    const std::uint64_t start_sequence = CaptureMissionAckSequence();
-                    if (const core::Result send_result = SendMavlinkMessage(message);
-                        !send_result.IsOk()) {
-                        result = send_result;
-                        return;
-                    }
-                    result = WaitForMissionAck(start_sequence);
-                },
-                [&](const CmdStartMission& start) {
-                    result = SendCommandLong(MAV_CMD_MISSION_START,
-                                             static_cast<float>(start.first_item),
-                                             static_cast<float>(start.last_item));
-                },
-                [&](const CmdPauseMission&) {
-                    result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkPause);
-                },
-                [&](const CmdResumeMission&) {
-                    result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkResume);
-                },
-                [&](const CmdSetCurrentMissionItem& current) {
-                    mavlink_message_t message{};
-                    mavlink_msg_mission_set_current_pack(
-                        config_.source_system, config_.source_component, &message,
-                        config_.target_system, config_.target_component,
-                        static_cast<std::uint16_t>(std::max(0, current.seq)));
-                    result = SendMavlinkMessage(message);
-                },
-            },
-            mission);
+        std::visit(core::Overloaded{
+                       [&](const CmdUploadMission& upload) { result = UploadMission(upload); },
+                       [&](const CmdClearMission&) {
+                           mavlink_message_t message{};
+                           mavlink_msg_mission_clear_all_pack(
+                               config_.source_system, config_.source_component, &message,
+                               config_.target_system, config_.target_component,
+                               MAV_MISSION_TYPE_MISSION);
+                           const std::uint64_t start_sequence = CaptureMissionAckSequence();
+                           if (const core::Result send_result = SendMavlinkMessage(message);
+                               !send_result.IsOk()) {
+                               result = send_result;
+                               return;
+                           }
+                           result = WaitForMissionAck(start_sequence);
+                       },
+                       [&](const CmdStartMission& start) {
+                           result = SendCommandLong(MAV_CMD_MISSION_START,
+                                                    static_cast<float>(start.first_item),
+                                                    static_cast<float>(start.last_item));
+                       },
+                       [&](const CmdPauseMission&) {
+                           result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkPause);
+                       },
+                       [&](const CmdResumeMission&) {
+                           result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkResume);
+                       },
+                       [&](const CmdSetCurrentMissionItem& current) {
+                           mavlink_message_t message{};
+                           mavlink_msg_mission_set_current_pack(
+                               config_.source_system, config_.source_component, &message,
+                               config_.target_system, config_.target_component,
+                               static_cast<std::uint16_t>(std::max(0, current.seq)));
+                           result = SendMavlinkMessage(message);
+                       },
+                   },
+                   mission);
         return result;
     }
 
@@ -922,9 +888,8 @@ class MavlinkBackend final : public IDroneBackend {
         mavlink_msg_mission_item_int_pack(
             config_.source_system, config_.source_component, &message, config_.target_system,
             config_.target_component, seq, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, item.command,
-            item.current ? 1 : 0, item.autocontinue ? 1 : 0, item.param1, item.param2,
-            item.param3, item.param4,
-            static_cast<std::int32_t>(std::llround(item.lat_deg * kDegE7)),
+            item.current ? 1 : 0, item.autocontinue ? 1 : 0, item.param1, item.param2, item.param3,
+            item.param4, static_cast<std::int32_t>(std::llround(item.lat_deg * kDegE7)),
             static_cast<std::int32_t>(std::llround(item.lon_deg * kDegE7)),
             static_cast<float>(item.alt_m), MAV_MISSION_TYPE_MISSION);
         return SendMavlinkMessage(message);
@@ -940,8 +905,7 @@ class MavlinkBackend final : public IDroneBackend {
                 },
                 [&](const CmdPhotoIntervalStart& photo) {
                     result = SendCommandLong(MAV_CMD_IMAGE_START_CAPTURE,
-                                             static_cast<float>(photo.camera_id),
-                                             photo.interval_s,
+                                             static_cast<float>(photo.camera_id), photo.interval_s,
                                              static_cast<float>(photo.count));
                 },
                 [&](const CmdPhotoIntervalStop& photo) {
@@ -964,31 +928,28 @@ class MavlinkBackend final : public IDroneBackend {
                                              static_cast<float>(MAV_MOUNT_MODE_MAVLINK_TARGETING));
                 },
                 [&](const CmdRoiLocation& roi) {
-                    result = SendCommandLong(MAV_CMD_DO_SET_ROI_LOCATION,
-                                             static_cast<float>(roi.gimbal_id), 0.0F, 0.0F, 0.0F,
-                                             static_cast<float>(roi.lat_deg),
-                                             static_cast<float>(roi.lon_deg),
-                                             static_cast<float>(roi.alt_m));
+                    result = SendCommandLong(
+                        MAV_CMD_DO_SET_ROI_LOCATION, static_cast<float>(roi.gimbal_id), 0.0F, 0.0F,
+                        0.0F, static_cast<float>(roi.lat_deg), static_cast<float>(roi.lon_deg),
+                        static_cast<float>(roi.alt_m));
                 },
                 [&](const CmdRoiClear& roi) {
-                    result = SendCommandLong(MAV_CMD_DO_SET_ROI_NONE,
-                                             static_cast<float>(roi.gimbal_id));
+                    result =
+                        SendCommandLong(MAV_CMD_DO_SET_ROI_NONE, static_cast<float>(roi.gimbal_id));
                 },
                 [&](const CmdServo& servo) {
-                    result = SendCommandLong(MAV_CMD_DO_SET_SERVO,
-                                             static_cast<float>(servo.servo),
+                    result = SendCommandLong(MAV_CMD_DO_SET_SERVO, static_cast<float>(servo.servo),
                                              static_cast<float>(servo.pwm));
                 },
                 [&](const CmdRelay& relay) {
-                    result = SendCommandLong(MAV_CMD_DO_SET_RELAY,
-                                             static_cast<float>(relay.relay),
+                    result = SendCommandLong(MAV_CMD_DO_SET_RELAY, static_cast<float>(relay.relay),
                                              relay.enabled ? 1.0F : 0.0F);
                 },
                 [&](const CmdGripper& gripper) {
-                    result = SendCommandLong(MAV_CMD_DO_GRIPPER,
-                                             static_cast<float>(gripper.gripper),
-                                             gripper.release ? static_cast<float>(GRIPPER_ACTION_RELEASE)
-                                                             : static_cast<float>(GRIPPER_ACTION_GRAB));
+                    result =
+                        SendCommandLong(MAV_CMD_DO_GRIPPER, static_cast<float>(gripper.gripper),
+                                        gripper.release ? static_cast<float>(GRIPPER_ACTION_RELEASE)
+                                                        : static_cast<float>(GRIPPER_ACTION_GRAB));
                 },
             },
             payload);
@@ -1013,9 +974,9 @@ class MavlinkBackend final : public IDroneBackend {
         const auto sent = sendto(socket_, reinterpret_cast<const char*>(send_buffer.data()), length,
                                  0, reinterpret_cast<const sockaddr*>(&remote_addr), remote_len);
         if (sent != static_cast<ssize_t>(length)) {
-            return core::Result::Failed("failed to send MAVLink UDP packet: sent=" +
-                                        std::to_string(sent) +
-                                        " expected=" + std::to_string(length));
+            return core::Result::Failed(
+                "failed to send MAVLink UDP packet: sent=" + std::to_string(sent) +
+                " expected=" + std::to_string(length));
         }
         return core::Result::Success();
     }
@@ -1028,9 +989,9 @@ class MavlinkBackend final : public IDroneBackend {
         }
         ack_cv_.notify_all();
         core::Logger::DebugFmt(
-            "MavlinkBackend: COMMAND_ACK command={} result={} param2={} target={}/{}",
-            ack.command, MavResultName(ack.result), ack.result_param2,
-            static_cast<int>(ack.target_system), static_cast<int>(ack.target_component));
+            "MavlinkBackend: COMMAND_ACK command={} result={} param2={} target={}/{}", ack.command,
+            MavResultName(ack.result), ack.result_param2, static_cast<int>(ack.target_system),
+            static_cast<int>(ack.target_component));
     }
 
     void RecordMissionRequest(const MissionRequest& request) {
@@ -1076,7 +1037,8 @@ class MavlinkBackend final : public IDroneBackend {
         if (!got_request) {
             return std::nullopt;
         }
-        return std::make_pair(*last_mission_request_, mission_request_sequence_);
+        return std::make_pair(last_mission_request_.value_or(MissionRequest{}),
+                              mission_request_sequence_);
     }
 
     [[nodiscard]] core::Result WaitForMissionAck(std::uint64_t start_sequence) {
@@ -1089,7 +1051,7 @@ class MavlinkBackend final : public IDroneBackend {
             return core::Result::Failed("timed out waiting for MISSION_ACK");
         }
 
-        const MissionAck ack = *last_mission_ack_;
+        const MissionAck ack = last_mission_ack_.value_or(MissionAck{});
         const std::string detail = "MISSION_ACK result=" + MissionResultName(ack.type) +
                                    " type=" + std::to_string(ack.mission_type);
         if (ack.type == MAV_MISSION_ACCEPTED) {
@@ -1101,21 +1063,22 @@ class MavlinkBackend final : public IDroneBackend {
     [[nodiscard]] core::Result WaitForCommandAck(std::uint16_t command,
                                                  std::uint64_t start_sequence) {
         std::unique_lock<std::mutex> lock(ack_mutex_);
-        const bool got_ack = ack_cv_.wait_for(lock,
-                                              std::chrono::milliseconds{
-                                                  config_.command_ack_timeout_ms},
-                                              [&] {
-            return ack_sequence_ != start_sequence && last_ack_.has_value() &&
-                   last_ack_->command == command && AckTargetsThisBackend(*last_ack_) &&
-                   last_ack_->result != MAV_RESULT_IN_PROGRESS;
-        });
+        const bool got_ack =
+            ack_cv_.wait_for(lock, std::chrono::milliseconds{config_.command_ack_timeout_ms}, [&] {
+                if (ack_sequence_ == start_sequence || !last_ack_.has_value()) {
+                    return false;
+                }
+                const CommandAck ack = last_ack_.value_or(CommandAck{});
+                return ack.command == command && AckTargetsThisBackend(ack) &&
+                       ack.result != MAV_RESULT_IN_PROGRESS;
+            });
 
         if (!got_ack) {
             return core::Result::Failed("timed out waiting for COMMAND_ACK command=" +
                                         std::to_string(command));
         }
 
-        const CommandAck ack = *last_ack_;
+        const CommandAck ack = last_ack_.value_or(CommandAck{});
         const std::string detail = "COMMAND_ACK command=" + std::to_string(ack.command) +
                                    " result=" + MavResultName(ack.result) +
                                    " param2=" + std::to_string(ack.result_param2) +

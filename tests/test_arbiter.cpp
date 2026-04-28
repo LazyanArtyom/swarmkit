@@ -148,8 +148,8 @@ TEST_CASE("CommandArbiter expires holders without requiring another arbiter call
     CommandArbiter arbiter;
     auto queue = std::make_shared<EventQueue>();
 
-    const WatchToken kToken = arbiter.Watch(
-        "drone-1", "operator-client", commands::CommandPriority::kOperator, queue);
+    const WatchToken kToken =
+        arbiter.Watch("drone-1", "operator-client", commands::CommandPriority::kOperator, queue);
 
     REQUIRE(arbiter
                 .CheckAndGrant(

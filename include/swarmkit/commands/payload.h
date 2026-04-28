@@ -22,7 +22,7 @@ struct CmdPhoto {
 
 struct CmdPhotoIntervalStart {
     float interval_s{};
-    int count{};       ///< 0 = keep capturing until stopped.
+    int count{};  ///< 0 = keep capturing until stopped.
     int camera_id{};
 };
 
@@ -78,8 +78,8 @@ struct CmdGripper {
  * Backends that have no payload should return
  * core::Result::Rejected("payload commands not supported").
  */
-using PayloadCmd = std::variant<CmdPhoto, CmdPhotoIntervalStart, CmdPhotoIntervalStop,
-                                CmdVideoStart, CmdVideoStop, CmdGimbalPoint, CmdRoiLocation,
-                                CmdRoiClear, CmdServo, CmdRelay, CmdGripper>;
+using PayloadCmd =
+    std::variant<CmdPhoto, CmdPhotoIntervalStart, CmdPhotoIntervalStop, CmdVideoStart, CmdVideoStop,
+                 CmdGimbalPoint, CmdRoiLocation, CmdRoiClear, CmdServo, CmdRelay, CmdGripper>;
 
 }  // namespace swarmkit::commands

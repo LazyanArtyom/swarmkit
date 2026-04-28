@@ -1,8 +1,29 @@
+---
+Language: Cpp
 BasedOnStyle: Google
+
+# Project override: keep Google style, but use four-space indentation.
 IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
 ColumnLimit: 100
+
+# Keep pointer/reference spelling consistent with the existing codebase.
 DerivePointerAlignment: false
 PointerAlignment: Left
+ReferenceAlignment: Left
+
+# Google's access labels sit one column before class members. Keep this explicit
+# because IndentWidth is intentionally different from upstream Google defaults.
+AccessModifierOffset: -1
+
+# Avoid dense one-line control flow while allowing empty inline hooks.
 AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# Keep Google-style include sorting/regrouping explicit.
 SortIncludes: true
 IncludeBlocks: Regroup

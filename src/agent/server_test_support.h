@@ -6,9 +6,9 @@
 
 #pragma once
 
-#include <memory>
-
 #include <grpcpp/impl/service_type.h>
+
+#include <memory>
 
 #include "swarmkit/agent/server.h"
 

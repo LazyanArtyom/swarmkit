@@ -72,7 +72,11 @@ class TelemetryManager {
           min_rate_hz_(std::max(1, min_rate_hz)) {}
 
     ~TelemetryManager() {
-        ShutdownAll();
+        try {
+            ShutdownAll();
+        } catch (...) {
+            static_cast<void>(0);
+        }
     }
 
     TelemetryManager(const TelemetryManager&) = delete;
@@ -92,7 +96,8 @@ class TelemetryManager {
                                         core::TelemetryFrame* out_frame);
 
     /// @brief Wait for a new frame or until timeout elapses.
-    [[nodiscard]] static bool WaitForFrame(const TelemetryLease& lease, std::uint64_t* last_sequence,
+    [[nodiscard]] static bool WaitForFrame(const TelemetryLease& lease,
+                                           std::uint64_t* last_sequence,
                                            core::TelemetryFrame* out_frame,
                                            std::chrono::milliseconds timeout);
 

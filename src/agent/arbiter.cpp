@@ -205,7 +205,8 @@ void CommandArbiter::RunExpiryLoop() {
     while (!shutdown_) {
         const auto kNextExpiry = ComputeNextExpiryLocked();
         if (!kNextExpiry.has_value()) {
-            expiry_cv_.wait(lock, [this] { return shutdown_ || ComputeNextExpiryLocked().has_value(); });
+            expiry_cv_.wait(lock,
+                            [this] { return shutdown_ || ComputeNextExpiryLocked().has_value(); });
         } else {
             expiry_cv_.wait_until(lock, *kNextExpiry, [this, &kNextExpiry] {
                 return shutdown_ || ComputeNextExpiryLocked() != kNextExpiry;
@@ -216,7 +217,8 @@ void CommandArbiter::RunExpiryLoop() {
             return;
         }
 
-        std::vector<std::pair<std::vector<WatcherEntry>, std::vector<PendingNotification>>> pending_batches;
+        std::vector<std::pair<std::vector<WatcherEntry>, std::vector<PendingNotification>>>
+            pending_batches;
 
         for (auto& [drone_id, state] : drone_states_) {
             std::vector<PendingNotification> notifications;

@@ -12,8 +12,8 @@
 
 #include <cstdio>
 #include <filesystem>
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,8 +30,7 @@ LogLevel SanitizeFlushLevel(LogLevel level);
 
 class SpdlogBackend final : public ILogBackend {
    public:
-    explicit SpdlogBackend(const LoggerConfig& config)
-        : logger_(CreateLogger(config)) {}
+    explicit SpdlogBackend(const LoggerConfig& config) : logger_(CreateLogger(config)) {}
 
     [[nodiscard]] bool IsEnabled(LogLevel level) const override {
         return logger_ && logger_->should_log(ToSpdLevel(level));

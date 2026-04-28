@@ -34,12 +34,13 @@ template <typename T, typename ApplyFn>
         return core::Result::Success();
     }
 
+    const T parsed_value = kValue->value_or(T{});
     using ApplyResult = std::invoke_result_t<ApplyFn, const T&>;
     if constexpr (std::is_same_v<ApplyResult, core::Result>) {
-        return apply(**kValue);
+        return apply(parsed_value);
     }
 
-    apply(**kValue);
+    apply(parsed_value);
     return core::Result::Success();
 }
 

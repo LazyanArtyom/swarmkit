@@ -7,8 +7,8 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 #include <variant>
+#include <vector>
 
 namespace swarmkit::commands {
 
@@ -47,7 +47,7 @@ struct CmdSetCurrentMissionItem {
     int seq{};
 };
 
-using MissionCmd = std::variant<CmdUploadMission, CmdClearMission, CmdStartMission,
-                                CmdPauseMission, CmdResumeMission, CmdSetCurrentMissionItem>;
+using MissionCmd = std::variant<CmdUploadMission, CmdClearMission, CmdStartMission, CmdPauseMission,
+                                CmdResumeMission, CmdSetCurrentMissionItem>;
 
 }  // namespace swarmkit::commands

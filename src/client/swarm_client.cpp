@@ -6,6 +6,7 @@
 
 #include "swarmkit/client/swarm_client.h"
 
+#include <exception>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -53,8 +54,7 @@ template <typename TaskFn>
     for (std::size_t index = 0; index < kParallelism; ++index) {
         workers.emplace_back([&clients, &next_index, &results, &results_mutex, &task_fn]() {
             while (true) {
-                const std::size_t kTaskIndex =
-                    next_index.fetch_add(1, std::memory_order_relaxed);
+                const std::size_t kTaskIndex = next_index.fetch_add(1, std::memory_order_relaxed);
                 if (kTaskIndex >= clients.size()) {
                     return;
                 }
@@ -104,7 +104,13 @@ SwarmClient::SwarmClient(ClientConfig default_config) : impl_(std::make_unique<I
 }
 
 SwarmClient::~SwarmClient() {
-    StopAllTelemetry();
+    try {
+        StopAllTelemetry();
+    } catch (const std::exception& exc) {
+        core::Logger::WarnFmt("SwarmClient::~SwarmClient failed to stop telemetry: {}", exc.what());
+    } catch (...) {
+        core::Logger::Warn("SwarmClient::~SwarmClient failed to stop telemetry");
+    }
 }
 
 void SwarmClient::AddDrone(const std::string& drone_id, const std::string& address) {
@@ -171,7 +177,8 @@ core::Result SwarmClient::ApplyConfig(const SwarmConfig& config,
                 address_preference == SwarmAddressPreference::kPreferLocal &&
                 !drone.local_address.empty();
             client_config.address = kUseLocalAddress ? drone.local_address : drone.address;
-            impl_->clients.emplace(drone.drone_id, std::make_shared<Client>(std::move(client_config)));
+            impl_->clients.emplace(drone.drone_id,
+                                   std::make_shared<Client>(std::move(client_config)));
         }
     }
 
@@ -181,9 +188,8 @@ core::Result SwarmClient::ApplyConfig(const SwarmConfig& config,
     }
 
     for (const auto& drone : config.drones) {
-        const bool kUseLocalAddress =
-            address_preference == SwarmAddressPreference::kPreferLocal &&
-            !drone.local_address.empty();
+        const bool kUseLocalAddress = address_preference == SwarmAddressPreference::kPreferLocal &&
+                                      !drone.local_address.empty();
         core::Logger::InfoFmt("SwarmClient: configured drone '{}' at {}", drone.drone_id,
                               kUseLocalAddress ? drone.local_address : drone.address);
     }
@@ -240,14 +246,14 @@ RuntimeStats SwarmClient::GetRuntimeStats(const std::string& drone_id) const {
 std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
     const commands::Command& command, const commands::CommandContext& context) const {
     const auto kSnapshot = impl_->Snapshot();
-    return RunCommandTasks(
-        kSnapshot, [&command, &context](const std::string& drone_id, const std::shared_ptr<Client>& client) {
-            commands::CommandEnvelope envelope;
-            envelope.context = context;
-            envelope.context.drone_id = drone_id;
-            envelope.command = command;
-            return client->SendCommand(envelope);
-        });
+    return RunCommandTasks(kSnapshot, [&command, &context](const std::string& drone_id,
+                                                           const std::shared_ptr<Client>& client) {
+        commands::CommandEnvelope envelope;
+        envelope.context = context;
+        envelope.context.drone_id = drone_id;
+        envelope.command = command;
+        return client->SendCommand(envelope);
+    });
 }
 
 void SwarmClient::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
@@ -321,11 +327,10 @@ void SwarmClient::UnlockDrone(const std::string& drone_id) const {
 
 std::unordered_map<std::string, CommandResult> SwarmClient::LockAll(std::int64_t ttl_ms) const {
     const auto kSnapshot = impl_->Snapshot();
-    return RunCommandTasks(kSnapshot,
-                           [ttl_ms](const std::string& drone_id,
-                                    const std::shared_ptr<Client>& client) {
-                               return client->LockAuthority(drone_id, ttl_ms);
-                           });
+    return RunCommandTasks(
+        kSnapshot, [ttl_ms](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            return client->LockAuthority(drone_id, ttl_ms);
+        });
 }
 
 void SwarmClient::UnlockAll() const {

@@ -81,8 +81,7 @@ class RuntimeCounters {
 
     /// @brief Set stream counters from TelemetryManager (called during snapshot).
     void SetTelemetryCounters(std::uint64_t total_subscriptions, std::uint64_t current_streams,
-                              std::uint64_t frames_sent,
-                              std::uint64_t telemetry_backend_failures) {
+                              std::uint64_t frames_sent, std::uint64_t telemetry_backend_failures) {
         total_telemetry_subscriptions_.store(total_subscriptions, std::memory_order_relaxed);
         current_telemetry_streams_.store(current_streams, std::memory_order_relaxed);
         telemetry_frames_sent_total_.store(frames_sent, std::memory_order_relaxed);
@@ -105,8 +104,7 @@ class RuntimeCounters {
                 current_authority_watchers_.load(std::memory_order_relaxed),
             .total_telemetry_subscriptions =
                 total_telemetry_subscriptions_.load(std::memory_order_relaxed),
-            .current_telemetry_streams =
-                current_telemetry_streams_.load(std::memory_order_relaxed),
+            .current_telemetry_streams = current_telemetry_streams_.load(std::memory_order_relaxed),
             .telemetry_frames_sent_total =
                 telemetry_frames_sent_total_.load(std::memory_order_relaxed),
             .backend_failures_total = backend_failures_total_.load(std::memory_order_relaxed) +

@@ -219,7 +219,7 @@ class AuthoritySession {
     [[nodiscard]] const std::string& DroneId() const {
         return drone_id_;
     }
-    void Reset();
+    void Reset() noexcept;
 
    private:
     friend class Client;

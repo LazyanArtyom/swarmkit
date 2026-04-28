@@ -39,15 +39,14 @@ int TelemetryManager::NormalizeRate(int requested_rate_hz) const {
 }
 
 core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int requested_rate_hz,
-                                             TelemetryLease* out_lease) {
+                                            TelemetryLease* out_lease) {
     if (out_lease == nullptr) {
         return core::Result::Failed("telemetry lease output is null");
     }
 
     const int kNormalizedRate = NormalizeRate(requested_rate_hz);
     auto state = GetOrCreateState(drone_id);
-    const std::uint64_t kSubscriberId =
-        next_subscriber_id_.fetch_add(1, std::memory_order_relaxed);
+    const std::uint64_t kSubscriberId = next_subscriber_id_.fetch_add(1, std::memory_order_relaxed);
 
     std::lock_guard<std::mutex> lock(state->control_mutex);
     state->subscriber_rates_hz[kSubscriberId] = kNormalizedRate;
@@ -171,14 +170,14 @@ void TelemetryManager::ReleaseLease(const TelemetryLease& lease) {
 }
 
 bool TelemetryManager::ReadFrame(const TelemetryLease& lease, std::uint64_t* last_sequence,
-                                  core::TelemetryFrame* out_frame) {
+                                 core::TelemetryFrame* out_frame) {
     if (!lease.state || last_sequence == nullptr || out_frame == nullptr) {
         return false;
     }
 
     std::lock_guard<std::mutex> lock(lease.state->data_mutex);
     if (lease.state->last_frame.has_value() && lease.state->sequence != *last_sequence) {
-        *out_frame = *lease.state->last_frame;
+        *out_frame = lease.state->last_frame.value_or(core::TelemetryFrame{});
         *last_sequence = lease.state->sequence;
         return true;
     }
@@ -201,7 +200,11 @@ bool TelemetryManager::WaitForFrame(const TelemetryLease& lease, std::uint64_t* 
         return false;
     }
 
-    *out_frame = *lease.state->last_frame;
+    if (!lease.state->last_frame.has_value()) {
+        return false;
+    }
+
+    *out_frame = lease.state->last_frame.value_or(core::TelemetryFrame{});
     *last_sequence = lease.state->sequence;
     return true;
 }
@@ -224,8 +227,9 @@ void TelemetryManager::ShutdownAll() {
     for (const auto& drone_id : drone_ids) {
         const core::Result kStopResult = backend_->StopTelemetry(drone_id);
         if (!kStopResult.IsOk()) {
-            core::Logger::WarnFmt("TelemetryManager: StopTelemetry('{}') failed during shutdown: {}",
-                                  drone_id, kStopResult.message);
+            core::Logger::WarnFmt(
+                "TelemetryManager: StopTelemetry('{}') failed during shutdown: {}", drone_id,
+                kStopResult.message);
         }
     }
 }

@@ -32,8 +32,8 @@ struct CmdTakeoff {
 
 /// @brief Switch to an autopilot mode by name or explicit custom mode.
 struct CmdSetMode {
-    std::string mode;      ///< Friendly mode name, e.g. guided, loiter, auto, rtl.
-    int custom_mode{-1};   ///< Autopilot-specific custom mode; -1 means use mode name.
+    std::string mode;     ///< Friendly mode name, e.g. guided, loiter, auto, rtl.
+    int custom_mode{-1};  ///< Autopilot-specific custom mode; -1 means use mode name.
 };
 
 /// @brief Force-disarm the vehicle, bypassing normal landed checks where supported.
@@ -48,7 +48,7 @@ struct CmdFlightTerminate {};
  * Implemented by every IDroneBackend.  Adding a new flight command here
  * without updating all backends produces a compile error (exhaustive visit).
  */
-using FlightCmd = std::variant<CmdArm, CmdDisarm, CmdTakeoff, CmdLand, CmdSetMode,
-                               CmdForceDisarm, CmdFlightTerminate>;
+using FlightCmd = std::variant<CmdArm, CmdDisarm, CmdTakeoff, CmdLand, CmdSetMode, CmdForceDisarm,
+                               CmdFlightTerminate>;
 
 }  // namespace swarmkit::commands

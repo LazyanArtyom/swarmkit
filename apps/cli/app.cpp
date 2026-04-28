@@ -6,6 +6,8 @@
 
 #include "app.h"
 
+#include <yaml-cpp/yaml.h>
+
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -20,8 +22,6 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
-
-#include <yaml-cpp/yaml.h>
 
 #include "common/arg_utils.h"
 #include "swarmkit/client/client.h"
@@ -134,15 +134,14 @@ struct CliInvocation {
            value == "--lat" || value == "--lon" || value == "--speed" || value == "--log-sink" ||
            value == "--log-file" || value == "--log-level" || value == "--ca-cert" ||
            value == "--client-cert" || value == "--client-key" || value == "--server-name" ||
-           value == "--priority" || value == "--mode" || value == "--custom-mode" || value == "--ground" ||
-           value == "--deg" || value == "--yaw" || value == "--vx" || value == "--vy" ||
-           value == "--vz" || value == "--duration-ms" || value == "--ttl-ms" ||
+           value == "--priority" || value == "--mode" || value == "--custom-mode" ||
+           value == "--ground" || value == "--deg" || value == "--yaw" || value == "--vx" ||
+           value == "--vy" || value == "--vz" || value == "--duration-ms" || value == "--ttl-ms" ||
            value == "--swarm-config" || value == "--address-mode" || value == "--file" ||
-           value == "--seq" || value == "--first" || value == "--last" ||
-           value == "--camera" || value == "--stream" || value == "--interval" ||
-           value == "--count" || value == "--pitch" || value == "--roll" ||
-           value == "--gimbal" || value == "--servo" || value == "--pwm" ||
-           value == "--relay" || value == "--gripper";
+           value == "--seq" || value == "--first" || value == "--last" || value == "--camera" ||
+           value == "--stream" || value == "--interval" || value == "--count" ||
+           value == "--pitch" || value == "--roll" || value == "--gimbal" || value == "--servo" ||
+           value == "--pwm" || value == "--relay" || value == "--gripper";
 }
 
 void PrintUsage() {
@@ -215,7 +214,8 @@ void PrintUsage() {
                  "  swarmkit-cli command --drone uav-1 takeoff --alt 30\n"
                  "  swarmkit-cli command --drone uav-1 goto --lat 40.18 --lon 44.51 --alt 50\n"
                  "  swarmkit-cli lock --drone uav-1 --ttl-ms 10000\n"
-                 "  swarmkit-cli swarm --swarm-config testdata/swarm_config.yaml broadcast takeoff --alt 5\n";
+                 "  swarmkit-cli swarm --swarm-config testdata/swarm_config.yaml broadcast takeoff "
+                 "--alt 5\n";
 }
 
 [[nodiscard]] std::expected<float, std::string> ParseFloatArg(std::string_view value,
@@ -348,9 +348,8 @@ void PrintUsage() {
 [[nodiscard]] std::expected<Command, std::string> BuildSetModeCommand(int argc, char** argv) {
     CmdSetMode mode;
     mode.mode = common::GetOptionValue(argc, argv, "--mode");
-    const auto custom_mode =
-        ParseIntArg(common::GetOptionValue(argc, argv, "--custom-mode", kDefaultCustomMode),
-                    "--custom-mode");
+    const auto custom_mode = ParseIntArg(
+        common::GetOptionValue(argc, argv, "--custom-mode", kDefaultCustomMode), "--custom-mode");
     if (!custom_mode.has_value()) {
         return std::unexpected(custom_mode.error());
     }
@@ -419,33 +418,45 @@ void PrintUsage() {
     if (!rate.has_value()) {
         return std::unexpected(rate.error());
     }
-    return NavCmd{CmdSetYaw{*yaw, *rate, common::HasFlag(argc, argv, "--relative")}};
+    return NavCmd{CmdSetYaw{
+        .yaw_deg = *yaw,
+        .rate_deg_s = *rate,
+        .relative = common::HasFlag(argc, argv, "--relative"),
+    }};
 }
 
 [[nodiscard]] std::expected<Command, std::string> BuildVelocityCommand(int argc, char** argv) {
-    const auto vx = ParseFloatArg(common::GetOptionValue(argc, argv, "--vx", kDefaultZero), "--vx");
-    const auto vy = ParseFloatArg(common::GetOptionValue(argc, argv, "--vy", kDefaultZero), "--vy");
-    const auto vz = ParseFloatArg(common::GetOptionValue(argc, argv, "--vz", kDefaultZero), "--vz");
-    const auto duration =
-        ParseIntArg(common::GetOptionValue(argc, argv, "--duration-ms", kDefaultDurationMs),
-                    "--duration-ms");
-    if (!vx.has_value()) {
-        return std::unexpected(vx.error());
+    const auto velocity_x =
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--vx", kDefaultZero), "--vx");
+    const auto velocity_y =
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--vy", kDefaultZero), "--vy");
+    const auto velocity_z =
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--vz", kDefaultZero), "--vz");
+    const auto duration = ParseIntArg(
+        common::GetOptionValue(argc, argv, "--duration-ms", kDefaultDurationMs), "--duration-ms");
+    if (!velocity_x.has_value()) {
+        return std::unexpected(velocity_x.error());
     }
-    if (!vy.has_value()) {
-        return std::unexpected(vy.error());
+    if (!velocity_y.has_value()) {
+        return std::unexpected(velocity_y.error());
     }
-    if (!vz.has_value()) {
-        return std::unexpected(vz.error());
+    if (!velocity_z.has_value()) {
+        return std::unexpected(velocity_z.error());
     }
     if (!duration.has_value()) {
         return std::unexpected(duration.error());
     }
-    return NavCmd{CmdVelocity{*vx, *vy, *vz, *duration, common::HasFlag(argc, argv, "--body-frame")}};
+    return NavCmd{CmdVelocity{
+        .vx_mps = *velocity_x,
+        .vy_mps = *velocity_y,
+        .vz_mps = *velocity_z,
+        .duration_ms = *duration,
+        .body_frame = common::HasFlag(argc, argv, "--body-frame"),
+    }};
 }
 
-[[nodiscard]] std::expected<Command, std::string> BuildSetHomeCommand(int argc, char** argv,
-                                                                      const std::vector<std::string>& actions) {
+[[nodiscard]] std::expected<Command, std::string> BuildSetHomeCommand(
+    int argc, char** argv, const std::vector<std::string>& actions) {
     CmdSetHome home;
     home.use_current = actions.size() >= 2 && actions[1] == "current";
     if (!home.use_current) {
@@ -481,7 +492,8 @@ void PrintUsage() {
     return kMavCmdNavWaypoint;
 }
 
-[[nodiscard]] std::expected<Command, std::string> BuildMissionUploadCommand(const std::string& path) {
+[[nodiscard]] std::expected<Command, std::string> BuildMissionUploadCommand(
+    const std::string& path) {
     if (path.empty()) {
         return std::unexpected("mission upload requires --file PATH or positional file path");
     }
@@ -495,7 +507,8 @@ void PrintUsage() {
         CmdUploadMission upload;
         for (const auto& node : items) {
             MissionItem item;
-            const std::string command = node["command"] ? node["command"].as<std::string>() : "waypoint";
+            const std::string command =
+                node["command"] ? node["command"].as<std::string>() : "waypoint";
             item.command = node["mav_cmd"] ? node["mav_cmd"].as<std::uint16_t>()
                                            : MissionCommandFromName(command);
             item.lat_deg = node["lat"] ? node["lat"].as<double>() : 0.0;
@@ -528,9 +541,8 @@ void PrintUsage() {
         return PayloadCmd{CmdPhoto{*camera}};
     }
     if (action == "photo-interval-start") {
-        const auto interval =
-            ParseFloatArg(common::GetOptionValue(argc, argv, "--interval", kDefaultZero),
-                          "--interval");
+        const auto interval = ParseFloatArg(
+            common::GetOptionValue(argc, argv, "--interval", kDefaultZero), "--interval");
         const auto count =
             ParseIntArg(common::GetOptionValue(argc, argv, "--count", kDefaultZero), "--count");
         if (!interval.has_value()) {
@@ -539,7 +551,11 @@ void PrintUsage() {
         if (!count.has_value()) {
             return std::unexpected(count.error());
         }
-        return PayloadCmd{CmdPhotoIntervalStart{*interval, *count, *camera}};
+        return PayloadCmd{CmdPhotoIntervalStart{
+            .interval_s = *interval,
+            .count = *count,
+            .camera_id = *camera,
+        }};
     }
     if (action == "photo-interval-stop") {
         return PayloadCmd{CmdPhotoIntervalStop{*camera}};
@@ -551,9 +567,15 @@ void PrintUsage() {
             return std::unexpected(stream.error());
         }
         if (action == "video-start") {
-            return PayloadCmd{CmdVideoStart{*stream, *camera}};
+            return PayloadCmd{CmdVideoStart{
+                .stream_id = *stream,
+                .camera_id = *camera,
+            }};
         }
-        return PayloadCmd{CmdVideoStop{*stream, *camera}};
+        return PayloadCmd{CmdVideoStop{
+            .stream_id = *stream,
+            .camera_id = *camera,
+        }};
     }
     if (action == "gimbal-point") {
         const auto pitch =
@@ -571,7 +593,11 @@ void PrintUsage() {
         if (!yaw.has_value()) {
             return std::unexpected(yaw.error());
         }
-        return PayloadCmd{CmdGimbalPoint{*pitch, *roll, *yaw}};
+        return PayloadCmd{CmdGimbalPoint{
+            .pitch_deg = *pitch,
+            .roll_deg = *roll,
+            .yaw_deg = *yaw,
+        }};
     }
     if (action == "roi-location") {
         const auto lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat"), "--lat");
@@ -591,7 +617,12 @@ void PrintUsage() {
         if (!gimbal.has_value()) {
             return std::unexpected(gimbal.error());
         }
-        return PayloadCmd{CmdRoiLocation{*lat, *lon, *alt, *gimbal}};
+        return PayloadCmd{CmdRoiLocation{
+            .lat_deg = *lat,
+            .lon_deg = *lon,
+            .alt_m = *alt,
+            .gimbal_id = *gimbal,
+        }};
     }
     if (action == "roi-clear") {
         const auto gimbal =
@@ -612,7 +643,10 @@ void PrintUsage() {
         if (!pwm.has_value()) {
             return std::unexpected(pwm.error());
         }
-        return PayloadCmd{CmdServo{*servo, *pwm}};
+        return PayloadCmd{CmdServo{
+            .servo = *servo,
+            .pwm = *pwm,
+        }};
     }
     if (action == "relay") {
         const auto relay =
@@ -620,15 +654,21 @@ void PrintUsage() {
         if (!relay.has_value()) {
             return std::unexpected(relay.error());
         }
-        return PayloadCmd{CmdRelay{*relay, common::HasFlag(argc, argv, "--on")}};
+        return PayloadCmd{CmdRelay{
+            .relay = *relay,
+            .enabled = common::HasFlag(argc, argv, "--on"),
+        }};
     }
     if (action == "gripper") {
-        const auto gripper = ParseIntArg(
-            common::GetOptionValue(argc, argv, "--gripper", kDefaultZero), "--gripper");
+        const auto gripper =
+            ParseIntArg(common::GetOptionValue(argc, argv, "--gripper", kDefaultZero), "--gripper");
         if (!gripper.has_value()) {
             return std::unexpected(gripper.error());
         }
-        return PayloadCmd{CmdGripper{*gripper, common::HasFlag(argc, argv, "--release")}};
+        return PayloadCmd{CmdGripper{
+            .gripper = *gripper,
+            .release = common::HasFlag(argc, argv, "--release"),
+        }};
     }
     return std::unexpected("Unknown payload action: " + action);
 }
@@ -699,13 +739,13 @@ void PrintUsage() {
     }
     if (action == "mission") {
         if (actions.size() < 2) {
-            return std::unexpected("mission requires upload, clear, start, pause, resume, or set-current");
+            return std::unexpected(
+                "mission requires upload, clear, start, pause, resume, or set-current");
         }
         const std::string& mission_action = actions[1];
         if (mission_action == "upload") {
-            const std::string file =
-                common::GetOptionValue(argc, argv, "--file",
-                                       actions.size() >= 3 ? actions[2] : std::string{});
+            const std::string file = common::GetOptionValue(
+                argc, argv, "--file", actions.size() >= 3 ? actions[2] : std::string{});
             return BuildMissionUploadCommand(file);
         }
         if (mission_action == "clear") {
@@ -722,7 +762,10 @@ void PrintUsage() {
             if (!last.has_value()) {
                 return std::unexpected(last.error());
             }
-            return MissionCmd{CmdStartMission{*first, *last}};
+            return MissionCmd{CmdStartMission{
+                .first_item = *first,
+                .last_item = *last,
+            }};
         }
         if (mission_action == "pause") {
             return MissionCmd{CmdPauseMission{}};
@@ -740,11 +783,10 @@ void PrintUsage() {
         }
         return std::unexpected("Unknown mission action: " + mission_action);
     }
-    if (action == "photo" || action == "photo-interval-start" ||
-        action == "photo-interval-stop" || action == "video-start" ||
-        action == "video-stop" || action == "gimbal-point" || action == "roi-location" ||
-        action == "roi-clear" || action == "servo" || action == "relay" ||
-        action == "gripper") {
+    if (action == "photo" || action == "photo-interval-start" || action == "photo-interval-stop" ||
+        action == "video-start" || action == "video-stop" || action == "gimbal-point" ||
+        action == "roi-location" || action == "roi-clear" || action == "servo" ||
+        action == "relay" || action == "gripper") {
         return BuildPayloadCommand(actions, argc, argv);
     }
     return std::unexpected("Unknown action: " + action);
@@ -754,9 +796,9 @@ void PrintUsage() {
     return BuildCommandFromActions(FindCommandActions(argc, argv), argc, argv);
 }
 
-[[nodiscard]] CommandEnvelope MakeCommandEnvelope(std::string_view drone_id, Command command,
-                                                  CommandPriority priority =
-                                                      CommandPriority::kSupervisor) {
+[[nodiscard]] CommandEnvelope MakeCommandEnvelope(
+    std::string_view drone_id, Command command,
+    CommandPriority priority = CommandPriority::kSupervisor) {
     CommandEnvelope envelope;
     envelope.context.drone_id = std::string(drone_id);
     envelope.context.client_id = std::string(kCliClientId);
@@ -1027,8 +1069,8 @@ int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz) {
 }
 
 [[nodiscard]] std::expected<std::int64_t, std::string> ParseTtlMs(int argc, char** argv) {
-    const auto ttl = ParseIntArg(common::GetOptionValue(argc, argv, "--ttl-ms", kDefaultZero),
-                                 "--ttl-ms");
+    const auto ttl =
+        ParseIntArg(common::GetOptionValue(argc, argv, "--ttl-ms", kDefaultZero), "--ttl-ms");
     if (!ttl.has_value()) {
         return std::unexpected(ttl.error());
     }
@@ -1113,7 +1155,8 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
     return swarm;
 }
 
-void PrintSwarmResults(const std::unordered_map<std::string, swarmkit::client::CommandResult>& results) {
+void PrintSwarmResults(
+    const std::unordered_map<std::string, swarmkit::client::CommandResult>& results) {
     for (const auto& [drone_id, result] : results) {
         std::cout << drone_id << ": " << (result.ok ? "OK" : "FAILED");
         if (!result.message.empty()) {

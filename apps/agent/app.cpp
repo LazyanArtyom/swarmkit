@@ -6,16 +6,16 @@
 
 #include "app.h"
 
-#include <cstdlib>
+#include <yaml-cpp/yaml.h>
+
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <expected>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
-
-#include <yaml-cpp/yaml.h>
 
 #include "common/arg_utils.h"
 #include "swarmkit/agent/mavlink_backend.h"
@@ -30,6 +30,7 @@ constexpr std::string_view kDefaultBindAddr = "0.0.0.0:50061";
 constexpr std::string_view kDefaultAgentId = "agent-1";
 constexpr std::string_view kDefaultLogLevel = "info";
 constexpr std::string_view kDefaultBackend = "sim";
+constexpr int kMaxMavlinkId = 255;
 
 struct BackendSelection {
     std::string backend{std::string(kDefaultBackend)};
@@ -95,7 +96,7 @@ void ReadOptionalYamlScalar(const YAML::Node& node, const char* key, T* out) {
 void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::uint8_t* out) {
     int value{};
     ReadOptionalYamlScalar(node, key, &value);
-    if (value > 0 && value <= 255 && out != nullptr) {
+    if (value > 0 && value <= kMaxMavlinkId && out != nullptr) {
         *out = static_cast<std::uint8_t>(value);
     }
 }
@@ -103,11 +104,14 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
 [[nodiscard]] std::optional<std::uint8_t> ParseByteOption(const std::string& value,
                                                           std::string_view option_name) {
     try {
-        const int id = std::stoi(value);
-        if (id > 0 && id <= 255) {
-            return static_cast<std::uint8_t>(id);
+        const int mavlink_id = std::stoi(value);
+        if (mavlink_id > 0 && mavlink_id <= kMaxMavlinkId) {
+            return static_cast<std::uint8_t>(mavlink_id);
         }
-    } catch (const std::exception&) {
+    } catch (const std::exception& exc) {
+        swarmkit::core::Logger::WarnFmt("Ignoring invalid {} value '{}': {}", option_name, value,
+                                        exc.what());
+        return std::nullopt;
     }
     swarmkit::core::Logger::WarnFmt("Ignoring invalid {} value '{}'", option_name, value);
     return std::nullopt;
@@ -127,19 +131,18 @@ void ApplyMavlinkCliOverrides(int argc, char** argv,
         !kValue.empty()) {
         mavlink->drone_id = kValue;
     }
-    if (const std::string kValue =
-            common::GetOptionValue(argc, argv, "--mavlink-target-system");
+    if (const std::string kValue = common::GetOptionValue(argc, argv, "--mavlink-target-system");
         !kValue.empty()) {
-        if (const auto id = ParseByteOption(kValue, "--mavlink-target-system"); id.has_value()) {
-            mavlink->target_system = *id;
+        if (const auto mavlink_id = ParseByteOption(kValue, "--mavlink-target-system");
+            mavlink_id.has_value()) {
+            mavlink->target_system = *mavlink_id;
         }
     }
-    if (const std::string kValue =
-            common::GetOptionValue(argc, argv, "--mavlink-target-component");
+    if (const std::string kValue = common::GetOptionValue(argc, argv, "--mavlink-target-component");
         !kValue.empty()) {
-        if (const auto id = ParseByteOption(kValue, "--mavlink-target-component");
-            id.has_value()) {
-            mavlink->target_component = *id;
+        if (const auto mavlink_id = ParseByteOption(kValue, "--mavlink-target-component");
+            mavlink_id.has_value()) {
+            mavlink->target_component = *mavlink_id;
         }
     }
 }
@@ -249,12 +252,10 @@ void ApplyMavlinkCliOverrides(int argc, char** argv,
         if (mavlink) {
             ReadOptionalYamlScalar(mavlink, "drone_id", &selection.mavlink.drone_id);
             ReadOptionalYamlScalar(mavlink, "bind_addr", &selection.mavlink.bind_addr);
-            ReadOptionalByteYamlScalar(mavlink, "target_system",
-                                       &selection.mavlink.target_system);
+            ReadOptionalByteYamlScalar(mavlink, "target_system", &selection.mavlink.target_system);
             ReadOptionalByteYamlScalar(mavlink, "target_component",
                                        &selection.mavlink.target_component);
-            ReadOptionalByteYamlScalar(mavlink, "source_system",
-                                       &selection.mavlink.source_system);
+            ReadOptionalByteYamlScalar(mavlink, "source_system", &selection.mavlink.source_system);
             ReadOptionalByteYamlScalar(mavlink, "source_component",
                                        &selection.mavlink.source_component);
             ReadOptionalYamlScalar(mavlink, "telemetry_rate_hz",

@@ -134,7 +134,7 @@ class RecordingBackend final : public agent::IDroneBackend {
         execute_handler_ = std::move(handler);
     }
 
-    void EmitTelemetry(const std::string& drone_id, core::TelemetryFrame frame) {
+    void EmitTelemetry(const std::string& drone_id, const core::TelemetryFrame& frame) {
         TelemetryCallback callback;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -198,7 +198,7 @@ class AgentServerHarness {
    public:
     AgentServerHarness() : AgentServerHarness(MakeDefaultConfig()) {}
 
-    explicit AgentServerHarness(agent::AgentConfig config) {
+    explicit AgentServerHarness(const agent::AgentConfig& config) {
         auto backend = std::make_unique<RecordingBackend>();
         backend_ = backend.get();
         service_ = agent::internal::MakeAgentServiceForTesting(config, std::move(backend));
@@ -216,8 +216,10 @@ class AgentServerHarness {
         static_cast<void>(
             core::internal::ReadTextFile(config.security.private_key_path, &private_key));
 
-        options.pem_key_cert_pairs.push_back(
-            grpc::SslServerCredentialsOptions::PemKeyCertPair{private_key, cert_chain});
+        options.pem_key_cert_pairs.push_back(grpc::SslServerCredentialsOptions::PemKeyCertPair{
+            .private_key = private_key,
+            .cert_chain = cert_chain,
+        });
         options.client_certificate_request =
             GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
         builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options),
@@ -236,11 +238,11 @@ class AgentServerHarness {
     AgentServerHarness(const AgentServerHarness&) = delete;
     AgentServerHarness& operator=(const AgentServerHarness&) = delete;
 
-    [[nodiscard]] const std::string& address() const {
+    [[nodiscard]] const std::string& Address() const {
         return address_;
     }
 
-    [[nodiscard]] RecordingBackend& backend() const {
+    [[nodiscard]] RecordingBackend& Backend() const {
         return *backend_;
     }
 

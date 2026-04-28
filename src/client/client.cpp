@@ -240,26 +240,25 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
         core::Overloaded{
 
             [&](const commands::FlightCmd& flight) {
-                std::visit(core::Overloaded{
-                               [&](const commands::CmdArm&) { proto_cmd->mutable_arm(); },
-                               [&](const commands::CmdDisarm&) { proto_cmd->mutable_disarm(); },
-                               [&](const commands::CmdTakeoff& takeoff) {
-                                   proto_cmd->mutable_takeoff()->set_alt_m(takeoff.alt_m);
-                               },
-                               [&](const commands::CmdLand&) { proto_cmd->mutable_land(); },
-                               [&](const commands::CmdSetMode& mode) {
-                                   auto* proto = proto_cmd->mutable_set_mode();
-                                   proto->set_mode(mode.mode);
-                                   proto->set_custom_mode(mode.custom_mode);
-                               },
-                               [&](const commands::CmdForceDisarm&) {
-                                   proto_cmd->mutable_force_disarm();
-                               },
-                               [&](const commands::CmdFlightTerminate&) {
-                                   proto_cmd->mutable_flight_terminate();
-                               },
-                           },
-                           flight);
+                std::visit(
+                    core::Overloaded{
+                        [&](const commands::CmdArm&) { proto_cmd->mutable_arm(); },
+                        [&](const commands::CmdDisarm&) { proto_cmd->mutable_disarm(); },
+                        [&](const commands::CmdTakeoff& takeoff) {
+                            proto_cmd->mutable_takeoff()->set_alt_m(takeoff.alt_m);
+                        },
+                        [&](const commands::CmdLand&) { proto_cmd->mutable_land(); },
+                        [&](const commands::CmdSetMode& mode) {
+                            auto* proto = proto_cmd->mutable_set_mode();
+                            proto->set_mode(mode.mode);
+                            proto->set_custom_mode(mode.custom_mode);
+                        },
+                        [&](const commands::CmdForceDisarm&) { proto_cmd->mutable_force_disarm(); },
+                        [&](const commands::CmdFlightTerminate&) {
+                            proto_cmd->mutable_flight_terminate();
+                        },
+                    },
+                    flight);
             },
 
             [&](const commands::NavCmd& nav) {
@@ -375,63 +374,63 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
             },
 
             [&](const commands::PayloadCmd& payload) {
-                std::visit(
-                    core::Overloaded{
-                        [&](const commands::CmdPhoto& photo) {
-                            proto_cmd->mutable_photo()->set_camera_id(photo.camera_id);
-                        },
-                        [&](const commands::CmdPhotoIntervalStart& photo) {
-                            auto* proto = proto_cmd->mutable_photo_interval_start();
-                            proto->set_interval_s(photo.interval_s);
-                            proto->set_count(photo.count);
-                            proto->set_camera_id(photo.camera_id);
-                        },
-                        [&](const commands::CmdPhotoIntervalStop& photo) {
-                            proto_cmd->mutable_photo_interval_stop()->set_camera_id(photo.camera_id);
-                        },
-                        [&](const commands::CmdVideoStart& video) {
-                            auto* proto = proto_cmd->mutable_video_start();
-                            proto->set_stream_id(video.stream_id);
-                            proto->set_camera_id(video.camera_id);
-                        },
-                        [&](const commands::CmdVideoStop& video) {
-                            auto* proto = proto_cmd->mutable_video_stop();
-                            proto->set_stream_id(video.stream_id);
-                            proto->set_camera_id(video.camera_id);
-                        },
-                        [&](const commands::CmdGimbalPoint& gimbal) {
-                            auto* proto = proto_cmd->mutable_gimbal_point();
-                            proto->set_pitch_deg(gimbal.pitch_deg);
-                            proto->set_roll_deg(gimbal.roll_deg);
-                            proto->set_yaw_deg(gimbal.yaw_deg);
-                        },
-                        [&](const commands::CmdRoiLocation& roi) {
-                            auto* proto = proto_cmd->mutable_roi_location();
-                            proto->set_lat_deg(roi.lat_deg);
-                            proto->set_lon_deg(roi.lon_deg);
-                            proto->set_alt_m(roi.alt_m);
-                            proto->set_gimbal_id(roi.gimbal_id);
-                        },
-                        [&](const commands::CmdRoiClear& roi) {
-                            proto_cmd->mutable_roi_clear()->set_gimbal_id(roi.gimbal_id);
-                        },
-                        [&](const commands::CmdServo& servo) {
-                            auto* proto = proto_cmd->mutable_servo();
-                            proto->set_servo(servo.servo);
-                            proto->set_pwm(servo.pwm);
-                        },
-                        [&](const commands::CmdRelay& relay) {
-                            auto* proto = proto_cmd->mutable_relay();
-                            proto->set_relay(relay.relay);
-                            proto->set_enabled(relay.enabled);
-                        },
-                        [&](const commands::CmdGripper& gripper) {
-                            auto* proto = proto_cmd->mutable_gripper();
-                            proto->set_gripper(gripper.gripper);
-                            proto->set_release(gripper.release);
-                        },
-                    },
-                    payload);
+                std::visit(core::Overloaded{
+                               [&](const commands::CmdPhoto& photo) {
+                                   proto_cmd->mutable_photo()->set_camera_id(photo.camera_id);
+                               },
+                               [&](const commands::CmdPhotoIntervalStart& photo) {
+                                   auto* proto = proto_cmd->mutable_photo_interval_start();
+                                   proto->set_interval_s(photo.interval_s);
+                                   proto->set_count(photo.count);
+                                   proto->set_camera_id(photo.camera_id);
+                               },
+                               [&](const commands::CmdPhotoIntervalStop& photo) {
+                                   proto_cmd->mutable_photo_interval_stop()->set_camera_id(
+                                       photo.camera_id);
+                               },
+                               [&](const commands::CmdVideoStart& video) {
+                                   auto* proto = proto_cmd->mutable_video_start();
+                                   proto->set_stream_id(video.stream_id);
+                                   proto->set_camera_id(video.camera_id);
+                               },
+                               [&](const commands::CmdVideoStop& video) {
+                                   auto* proto = proto_cmd->mutable_video_stop();
+                                   proto->set_stream_id(video.stream_id);
+                                   proto->set_camera_id(video.camera_id);
+                               },
+                               [&](const commands::CmdGimbalPoint& gimbal) {
+                                   auto* proto = proto_cmd->mutable_gimbal_point();
+                                   proto->set_pitch_deg(gimbal.pitch_deg);
+                                   proto->set_roll_deg(gimbal.roll_deg);
+                                   proto->set_yaw_deg(gimbal.yaw_deg);
+                               },
+                               [&](const commands::CmdRoiLocation& roi) {
+                                   auto* proto = proto_cmd->mutable_roi_location();
+                                   proto->set_lat_deg(roi.lat_deg);
+                                   proto->set_lon_deg(roi.lon_deg);
+                                   proto->set_alt_m(roi.alt_m);
+                                   proto->set_gimbal_id(roi.gimbal_id);
+                               },
+                               [&](const commands::CmdRoiClear& roi) {
+                                   proto_cmd->mutable_roi_clear()->set_gimbal_id(roi.gimbal_id);
+                               },
+                               [&](const commands::CmdServo& servo) {
+                                   auto* proto = proto_cmd->mutable_servo();
+                                   proto->set_servo(servo.servo);
+                                   proto->set_pwm(servo.pwm);
+                               },
+                               [&](const commands::CmdRelay& relay) {
+                                   auto* proto = proto_cmd->mutable_relay();
+                                   proto->set_relay(relay.relay);
+                                   proto->set_enabled(relay.enabled);
+                               },
+                               [&](const commands::CmdGripper& gripper) {
+                                   auto* proto = proto_cmd->mutable_gripper();
+                                   proto->set_gripper(gripper.gripper);
+                                   proto->set_release(gripper.release);
+                               },
+                           },
+                           payload);
             },
 
         },
@@ -860,12 +859,20 @@ AuthoritySession& AuthoritySession::operator=(AuthoritySession&& other) noexcept
     return *this;
 }
 
-void AuthoritySession::Reset() {
+void AuthoritySession::Reset() noexcept {
     if (client_ == nullptr) {
         return;
     }
 
-    client_->ReleaseAuthority(drone_id_);
+    try {
+        client_->ReleaseAuthority(drone_id_);
+    } catch (const std::exception& exc) {
+        core::Logger::WarnFmt("AuthoritySession::Reset failed for drone={}: {}", drone_id_,
+                              exc.what());
+    } catch (...) {
+        core::Logger::WarnFmt("AuthoritySession::Reset failed for drone={}: unknown exception",
+                              drone_id_);
+    }
     client_ = nullptr;
     drone_id_.clear();
 }
@@ -1025,8 +1032,8 @@ void Client::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHan
     impl_->telemetry.worker =
         std::thread([this, subscription = std::move(subscription), on_frame = std::move(on_frame),
                      on_error = std::move(on_error)]() mutable {
-            RunTelemetryLoop(ClientRuntime{impl_->config, *impl_->stub}, impl_->telemetry,
-                             subscription, on_frame, on_error);
+            RunTelemetryLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
+                             impl_->telemetry, subscription, on_frame, on_error);
         });
 }
 
@@ -1113,8 +1120,8 @@ void Client::WatchAuthority(AuthoritySubscription subscription, AuthorityEventHa
     impl_->authority.worker =
         std::thread([this, subscription = std::move(subscription), on_event = std::move(on_event),
                      on_error = std::move(on_error)]() mutable {
-            RunAuthorityLoop(ClientRuntime{impl_->config, *impl_->stub}, impl_->authority,
-                             subscription, on_event, on_error);
+            RunAuthorityLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
+                             impl_->authority, subscription, on_event, on_error);
         });
 }
 

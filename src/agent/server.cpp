@@ -187,8 +187,8 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     }
 
     if (!security.allowed_client_ids.empty() &&
-        std::find(security.allowed_client_ids.begin(), security.allowed_client_ids.end(),
-                  *kPeerIdentity) == security.allowed_client_ids.end()) {
+        std::ranges::find(security.allowed_client_ids, *kPeerIdentity) ==
+            security.allowed_client_ids.end()) {
         return core::Result::Rejected("peer identity '" + *kPeerIdentity + "' is not authorized");
     }
 
@@ -233,8 +233,10 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     }
 
     grpc::SslServerCredentialsOptions options;
-    options.pem_key_cert_pairs.push_back(
-        grpc::SslServerCredentialsOptions::PemKeyCertPair{private_key, cert_chain});
+    options.pem_key_cert_pairs.push_back(grpc::SslServerCredentialsOptions::PemKeyCertPair{
+        .private_key = private_key,
+        .cert_chain = cert_chain,
+    });
 
     if (const core::Result kResult =
             core::internal::ReadTextFile(security.root_ca_cert_path, &options.pem_root_certs);
@@ -405,7 +407,10 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         case swarmkit::v1::Command::kTakeoff:
             return FlightCmd{CmdTakeoff{proto.takeoff().alt_m()}};
         case swarmkit::v1::Command::kSetMode:
-            return FlightCmd{CmdSetMode{proto.set_mode().mode(), proto.set_mode().custom_mode()}};
+            return FlightCmd{CmdSetMode{
+                .mode = proto.set_mode().mode(),
+                .custom_mode = proto.set_mode().custom_mode(),
+            }};
         case swarmkit::v1::Command::kForceDisarm:
             return FlightCmd{CmdForceDisarm{}};
         case swarmkit::v1::Command::kFlightTerminate:
@@ -440,13 +445,19 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         case swarmkit::v1::Command::kResume:
             return NavCmd{CmdResume{}};
         case swarmkit::v1::Command::kSetYaw:
-            return NavCmd{CmdSetYaw{proto.set_yaw().yaw_deg(), proto.set_yaw().rate_deg_s(),
-                                    proto.set_yaw().relative()}};
+            return NavCmd{CmdSetYaw{
+                .yaw_deg = proto.set_yaw().yaw_deg(),
+                .rate_deg_s = proto.set_yaw().rate_deg_s(),
+                .relative = proto.set_yaw().relative(),
+            }};
         case swarmkit::v1::Command::kVelocity:
-            return NavCmd{CmdVelocity{proto.velocity().vx_mps(), proto.velocity().vy_mps(),
-                                      proto.velocity().vz_mps(),
-                                      proto.velocity().duration_ms(),
-                                      proto.velocity().body_frame()}};
+            return NavCmd{CmdVelocity{
+                .vx_mps = proto.velocity().vx_mps(),
+                .vy_mps = proto.velocity().vy_mps(),
+                .vz_mps = proto.velocity().vz_mps(),
+                .duration_ms = proto.velocity().duration_ms(),
+                .body_frame = proto.velocity().body_frame(),
+            }};
         case swarmkit::v1::Command::kSetHome: {
             CmdSetHome home;
             home.use_current = proto.set_home().use_current();
@@ -478,15 +489,16 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         case swarmkit::v1::Command::kClearMission:
             return MissionCmd{CmdClearMission{}};
         case swarmkit::v1::Command::kStartMission:
-            return MissionCmd{CmdStartMission{proto.start_mission().first_item(),
-                                              proto.start_mission().last_item()}};
+            return MissionCmd{CmdStartMission{
+                .first_item = proto.start_mission().first_item(),
+                .last_item = proto.start_mission().last_item(),
+            }};
         case swarmkit::v1::Command::kPauseMission:
             return MissionCmd{CmdPauseMission{}};
         case swarmkit::v1::Command::kResumeMission:
             return MissionCmd{CmdResumeMission{}};
         case swarmkit::v1::Command::kSetCurrentMissionItem:
-            return MissionCmd{CmdSetCurrentMissionItem{
-                proto.set_current_mission_item().seq()}};
+            return MissionCmd{CmdSetCurrentMissionItem{proto.set_current_mission_item().seq()}};
 
         case swarmkit::v1::Command::kSetRole:
             return SwarmCmd{CmdSetRole{proto.set_role().role()}};
@@ -506,21 +518,29 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         case swarmkit::v1::Command::kPhoto:
             return PayloadCmd{CmdPhoto{proto.photo().camera_id()}};
         case swarmkit::v1::Command::kPhotoIntervalStart:
-            return PayloadCmd{CmdPhotoIntervalStart{proto.photo_interval_start().interval_s(),
-                                                    proto.photo_interval_start().count(),
-                                                    proto.photo_interval_start().camera_id()}};
+            return PayloadCmd{CmdPhotoIntervalStart{
+                .interval_s = proto.photo_interval_start().interval_s(),
+                .count = proto.photo_interval_start().count(),
+                .camera_id = proto.photo_interval_start().camera_id(),
+            }};
         case swarmkit::v1::Command::kPhotoIntervalStop:
             return PayloadCmd{CmdPhotoIntervalStop{proto.photo_interval_stop().camera_id()}};
         case swarmkit::v1::Command::kVideoStart:
-            return PayloadCmd{CmdVideoStart{proto.video_start().stream_id(),
-                                            proto.video_start().camera_id()}};
+            return PayloadCmd{CmdVideoStart{
+                .stream_id = proto.video_start().stream_id(),
+                .camera_id = proto.video_start().camera_id(),
+            }};
         case swarmkit::v1::Command::kVideoStop:
-            return PayloadCmd{CmdVideoStop{proto.video_stop().stream_id(),
-                                           proto.video_stop().camera_id()}};
+            return PayloadCmd{CmdVideoStop{
+                .stream_id = proto.video_stop().stream_id(),
+                .camera_id = proto.video_stop().camera_id(),
+            }};
         case swarmkit::v1::Command::kGimbalPoint:
-            return PayloadCmd{CmdGimbalPoint{proto.gimbal_point().pitch_deg(),
-                                             proto.gimbal_point().roll_deg(),
-                                             proto.gimbal_point().yaw_deg()}};
+            return PayloadCmd{CmdGimbalPoint{
+                .pitch_deg = proto.gimbal_point().pitch_deg(),
+                .roll_deg = proto.gimbal_point().roll_deg(),
+                .yaw_deg = proto.gimbal_point().yaw_deg(),
+            }};
         case swarmkit::v1::Command::kRoiLocation: {
             CmdRoiLocation roi;
             roi.lat_deg = proto.roi_location().lat_deg();
@@ -532,12 +552,20 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         case swarmkit::v1::Command::kRoiClear:
             return PayloadCmd{CmdRoiClear{proto.roi_clear().gimbal_id()}};
         case swarmkit::v1::Command::kServo:
-            return PayloadCmd{CmdServo{proto.servo().servo(), proto.servo().pwm()}};
+            return PayloadCmd{CmdServo{
+                .servo = proto.servo().servo(),
+                .pwm = proto.servo().pwm(),
+            }};
         case swarmkit::v1::Command::kRelay:
-            return PayloadCmd{CmdRelay{proto.relay().relay(), proto.relay().enabled()}};
+            return PayloadCmd{CmdRelay{
+                .relay = proto.relay().relay(),
+                .enabled = proto.relay().enabled(),
+            }};
         case swarmkit::v1::Command::kGripper:
-            return PayloadCmd{CmdGripper{proto.gripper().gripper(),
-                                         proto.gripper().release()}};
+            return PayloadCmd{CmdGripper{
+                .gripper = proto.gripper().gripper(),
+                .release = proto.gripper().release(),
+            }};
 
         default:
             return std::unexpected(core::Result::Rejected("unknown command kind"));
@@ -754,7 +782,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 envelope.context.client_id, kExecResult.message);
             reply->set_status(swarmkit::v1::CommandReply::FAILED);
             reply->set_message(kExecResult.message.empty() ? "command execution failed"
-                                                            : kExecResult.message);
+                                                           : kExecResult.message);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_BACKEND_FAILURE);
             reply->set_debug_message(kExecResult.message);
         }
@@ -1072,39 +1100,50 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         return std::unexpected(core::Result::Rejected("agent YAML config must be a map"));
     }
 
-    if (const auto kValue = core::yaml::ReadOptionalScalar<std::string>(root, "agent_id");
-        !kValue.has_value()) {
-        return std::unexpected(kValue.error());
-    } else if (kValue->has_value()) {
-        config.agent_id = **kValue;
+    const auto agent_id = core::yaml::ReadOptionalScalar<std::string>(root, "agent_id");
+    if (!agent_id.has_value()) {
+        return std::unexpected(agent_id.error());
+    }
+    if (agent_id->has_value()) {
+        config.agent_id = agent_id->value_or(config.agent_id);
     }
 
-    if (const auto kValue = core::yaml::ReadOptionalScalar<std::string>(root, "bind_addr");
-        !kValue.has_value()) {
-        return std::unexpected(kValue.error());
-    } else if (kValue->has_value()) {
-        config.bind_addr = **kValue;
+    const auto bind_addr = core::yaml::ReadOptionalScalar<std::string>(root, "bind_addr");
+    if (!bind_addr.has_value()) {
+        return std::unexpected(bind_addr.error());
+    }
+    if (bind_addr->has_value()) {
+        config.bind_addr = bind_addr->value_or(config.bind_addr);
     }
 
-    if (const auto kValue = core::yaml::ReadOptionalScalar<int>(root, "default_authority_ttl_ms");
-        !kValue.has_value()) {
-        return std::unexpected(kValue.error());
-    } else if (kValue->has_value()) {
-        config.default_authority_ttl_ms = **kValue;
+    const auto default_authority_ttl_ms =
+        core::yaml::ReadOptionalScalar<int>(root, "default_authority_ttl_ms");
+    if (!default_authority_ttl_ms.has_value()) {
+        return std::unexpected(default_authority_ttl_ms.error());
+    }
+    if (default_authority_ttl_ms->has_value()) {
+        config.default_authority_ttl_ms =
+            default_authority_ttl_ms->value_or(config.default_authority_ttl_ms);
     }
 
-    if (const auto kValue = core::yaml::ReadOptionalScalar<int>(root, "default_telemetry_rate_hz");
-        !kValue.has_value()) {
-        return std::unexpected(kValue.error());
-    } else if (kValue->has_value()) {
-        config.default_telemetry_rate_hz = **kValue;
+    const auto default_telemetry_rate_hz =
+        core::yaml::ReadOptionalScalar<int>(root, "default_telemetry_rate_hz");
+    if (!default_telemetry_rate_hz.has_value()) {
+        return std::unexpected(default_telemetry_rate_hz.error());
+    }
+    if (default_telemetry_rate_hz->has_value()) {
+        config.default_telemetry_rate_hz =
+            default_telemetry_rate_hz->value_or(config.default_telemetry_rate_hz);
     }
 
-    if (const auto kValue = core::yaml::ReadOptionalScalar<int>(root, "min_telemetry_rate_hz");
-        !kValue.has_value()) {
-        return std::unexpected(kValue.error());
-    } else if (kValue->has_value()) {
-        config.min_telemetry_rate_hz = **kValue;
+    const auto min_telemetry_rate_hz =
+        core::yaml::ReadOptionalScalar<int>(root, "min_telemetry_rate_hz");
+    if (!min_telemetry_rate_hz.has_value()) {
+        return std::unexpected(min_telemetry_rate_hz.error());
+    }
+    if (min_telemetry_rate_hz->has_value()) {
+        config.min_telemetry_rate_hz =
+            min_telemetry_rate_hz->value_or(config.min_telemetry_rate_hz);
     }
 
     if (const YAML::Node security = root["security"]; security) {
@@ -1112,31 +1151,34 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             return std::unexpected(core::Result::Rejected("agent.security must be a map"));
         }
 
-        if (const auto kValue =
-                core::yaml::ReadOptionalScalar<std::string>(security, "root_ca_cert_path");
-            !kValue.has_value()) {
-            return std::unexpected(kValue.error());
-        } else if (kValue->has_value()) {
-            config.security.root_ca_cert_path =
-                core::internal::ResolveConfigRelativePath(path, **kValue);
+        const auto root_ca_cert_path =
+            core::yaml::ReadOptionalScalar<std::string>(security, "root_ca_cert_path");
+        if (!root_ca_cert_path.has_value()) {
+            return std::unexpected(root_ca_cert_path.error());
+        }
+        if (root_ca_cert_path->has_value()) {
+            config.security.root_ca_cert_path = core::internal::ResolveConfigRelativePath(
+                path, root_ca_cert_path->value_or(std::string{}));
         }
 
-        if (const auto kValue =
-                core::yaml::ReadOptionalScalar<std::string>(security, "cert_chain_path");
-            !kValue.has_value()) {
-            return std::unexpected(kValue.error());
-        } else if (kValue->has_value()) {
-            config.security.cert_chain_path =
-                core::internal::ResolveConfigRelativePath(path, **kValue);
+        const auto cert_chain_path =
+            core::yaml::ReadOptionalScalar<std::string>(security, "cert_chain_path");
+        if (!cert_chain_path.has_value()) {
+            return std::unexpected(cert_chain_path.error());
+        }
+        if (cert_chain_path->has_value()) {
+            config.security.cert_chain_path = core::internal::ResolveConfigRelativePath(
+                path, cert_chain_path->value_or(std::string{}));
         }
 
-        if (const auto kValue =
-                core::yaml::ReadOptionalScalar<std::string>(security, "private_key_path");
-            !kValue.has_value()) {
-            return std::unexpected(kValue.error());
-        } else if (kValue->has_value()) {
-            config.security.private_key_path =
-                core::internal::ResolveConfigRelativePath(path, **kValue);
+        const auto private_key_path =
+            core::yaml::ReadOptionalScalar<std::string>(security, "private_key_path");
+        if (!private_key_path.has_value()) {
+            return std::unexpected(private_key_path.error());
+        }
+        if (private_key_path->has_value()) {
+            config.security.private_key_path = core::internal::ResolveConfigRelativePath(
+                path, private_key_path->value_or(std::string{}));
         }
 
         const YAML::Node allowed_client_ids = security["allowed_client_ids"];

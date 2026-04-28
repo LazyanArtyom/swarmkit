@@ -35,8 +35,8 @@ TEST_CASE("SwarmClient apply config supports prefer local addresses", "[swarm][c
     SwarmConfig config;
     config.default_client_config = MakeDefaultClientConfig();
     config.drones = {
-        {.drone_id = "drone-1", .address = "127.0.0.1:1", .local_address = drone_one.address()},
-        {.drone_id = "drone-2", .address = "127.0.0.1:2", .local_address = drone_two.address()},
+        {.drone_id = "drone-1", .address = "127.0.0.1:1", .local_address = drone_one.Address()},
+        {.drone_id = "drone-2", .address = "127.0.0.1:2", .local_address = drone_two.Address()},
     };
 
     SwarmClient swarm(MakeDefaultClientConfig());
@@ -53,8 +53,8 @@ TEST_CASE("SwarmClient broadcasts commands and reports unknown drones", "[swarm]
     testsupport::AgentServerHarness drone_two;
 
     SwarmClient swarm(MakeDefaultClientConfig());
-    swarm.AddDrone("drone-1", drone_one.address());
-    swarm.AddDrone("drone-2", drone_two.address());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
 
     commands::CommandContext context;
     context.client_id = "test-client";
@@ -64,8 +64,8 @@ TEST_CASE("SwarmClient broadcasts commands and reports unknown drones", "[swarm]
     REQUIRE(kResults.size() == 2);
     CHECK(kResults.at("drone-1").ok);
     CHECK(kResults.at("drone-2").ok);
-    CHECK(drone_one.backend().ExecuteCallCount() == 1);
-    CHECK(drone_two.backend().ExecuteCallCount() == 1);
+    CHECK(drone_one.Backend().ExecuteCallCount() == 1);
+    CHECK(drone_two.Backend().ExecuteCallCount() == 1);
 
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = "missing";
@@ -81,8 +81,8 @@ TEST_CASE("SwarmClient lock all and unlock all operate on every drone", "[swarm]
     testsupport::AgentServerHarness drone_two;
 
     SwarmClient swarm(MakeDefaultClientConfig());
-    swarm.AddDrone("drone-1", drone_one.address());
-    swarm.AddDrone("drone-2", drone_two.address());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
 
     const auto kLockResults = swarm.LockAll(500);
     REQUIRE(kLockResults.size() == 2);
@@ -97,8 +97,8 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
     testsupport::AgentServerHarness drone_two;
 
     SwarmClient swarm(MakeDefaultClientConfig());
-    swarm.AddDrone("drone-1", drone_one.address());
-    swarm.AddDrone("drone-2", drone_two.address());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
 
     std::mutex mutex;
     std::unordered_set<std::string> seen_drones;
@@ -109,8 +109,8 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
 
     REQUIRE(testsupport::WaitUntil(
         [&] {
-            return drone_one.backend().HasTelemetryStream("drone-1") &&
-                   drone_two.backend().HasTelemetryStream("drone-2");
+            return drone_one.Backend().HasTelemetryStream("drone-1") &&
+                   drone_two.Backend().HasTelemetryStream("drone-2");
         },
         kWaitTimeout));
 
@@ -126,8 +126,8 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
 
     REQUIRE(testsupport::WaitUntil(
         [&] {
-            drone_one.backend().EmitTelemetry("drone-1", frame_one);
-            drone_two.backend().EmitTelemetry("drone-2", frame_two);
+            drone_one.Backend().EmitTelemetry("drone-1", frame_one);
+            drone_two.Backend().EmitTelemetry("drone-2", frame_two);
             std::lock_guard<std::mutex> lock(mutex);
             return seen_drones.size() == 2;
         },

@@ -6,12 +6,12 @@
 
 #pragma once
 
+#include <yaml-cpp/yaml.h>
+
 #include <expected>
 #include <optional>
 #include <string>
 #include <string_view>
-
-#include <yaml-cpp/yaml.h>
 
 #include "swarmkit/core/result.h"
 
@@ -21,8 +21,8 @@ namespace swarmkit::core::yaml {
     try {
         return YAML::LoadFile(path);
     } catch (const YAML::Exception& error) {
-        return std::unexpected(Result::Failed("failed to load YAML config '" + path + "': " +
-                                              error.what()));
+        return std::unexpected(
+            Result::Failed("failed to load YAML config '" + path + "': " + error.what()));
     }
 }
 
@@ -43,7 +43,7 @@ template <typename T>
         return std::optional<T>{};
     }
 
-    const YAML::Node child = node[std::string(key)];
+    YAML::Node child = node[std::string(key)];
     if (!child) {
         return std::optional<T>{};
     }
@@ -51,8 +51,8 @@ template <typename T>
     try {
         return child.as<T>();
     } catch (const YAML::Exception& error) {
-        return std::unexpected(Result::Rejected("invalid YAML field '" + std::string(key) +
-                                                "': " + error.what()));
+        return std::unexpected(
+            Result::Rejected("invalid YAML field '" + std::string(key) + "': " + error.what()));
     }
 }
 
@@ -62,31 +62,31 @@ template <typename T>
         return std::unexpected(Result::Rejected("YAML root must be a map"));
     }
 
-    const YAML::Node child = node[std::string(key)];
+    YAML::Node child = node[std::string(key)];
     if (!child) {
         return std::unexpected(Result::Rejected("missing YAML map '" + std::string(key) + "'"));
     }
     if (!child.IsMap()) {
-        return std::unexpected(Result::Rejected("YAML field '" + std::string(key) +
-                                                "' must be a map"));
+        return std::unexpected(
+            Result::Rejected("YAML field '" + std::string(key) + "' must be a map"));
     }
     return child;
 }
 
-[[nodiscard]] inline std::expected<YAML::Node, Result> ReadRequiredSequence(
-    const YAML::Node& node, std::string_view key) {
+[[nodiscard]] inline std::expected<YAML::Node, Result> ReadRequiredSequence(const YAML::Node& node,
+                                                                            std::string_view key) {
     if (!node || !node.IsMap()) {
         return std::unexpected(Result::Rejected("YAML root must be a map"));
     }
 
-    const YAML::Node child = node[std::string(key)];
+    YAML::Node child = node[std::string(key)];
     if (!child) {
-        return std::unexpected(Result::Rejected("missing YAML sequence '" + std::string(key) +
-                                                "'"));
+        return std::unexpected(
+            Result::Rejected("missing YAML sequence '" + std::string(key) + "'"));
     }
     if (!child.IsSequence()) {
-        return std::unexpected(Result::Rejected("YAML field '" + std::string(key) +
-                                                "' must be a sequence"));
+        return std::unexpected(
+            Result::Rejected("YAML field '" + std::string(key) + "' must be a sequence"));
     }
     return child;
 }
