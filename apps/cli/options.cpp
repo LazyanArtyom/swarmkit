@@ -31,10 +31,11 @@ namespace swarmkit::apps::cli::internal {
            value == "--ground" || value == "--deg" || value == "--yaw" || value == "--vx" ||
            value == "--vy" || value == "--vz" || value == "--duration-ms" || value == "--ttl-ms" ||
            value == "--swarm-config" || value == "--address-mode" || value == "--file" ||
-           value == "--seq" || value == "--first" || value == "--last" || value == "--camera" ||
-           value == "--stream" || value == "--interval" || value == "--count" ||
-           value == "--pitch" || value == "--roll" || value == "--gimbal" || value == "--servo" ||
-           value == "--pwm" || value == "--relay" || value == "--gripper";
+           value == "--telemetry-file" || value == "--telemetry-dir" || value == "--seq" ||
+           value == "--first" || value == "--last" || value == "--camera" || value == "--stream" ||
+           value == "--interval" || value == "--count" || value == "--pitch" || value == "--roll" ||
+           value == "--gimbal" || value == "--servo" || value == "--pwm" || value == "--relay" ||
+           value == "--gripper";
 }
 
 [[nodiscard]] std::expected<float, std::string> ParseFloatArg(std::string_view value,

@@ -6,13 +6,18 @@
 
 #include "runtime.h"
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <expected>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -40,6 +45,11 @@ using swarmkit::commands::CommandPriority;
 using swarmkit::commands::FlightCmd;
 using swarmkit::commands::NavCmd;
 
+struct SwarmRuntime {
+    std::unique_ptr<swarmkit::client::SwarmClient> client;
+    std::vector<std::string> drone_ids;
+};
+
 [[nodiscard]] volatile std::sig_atomic_t& StopRequestedFlag() {
     static volatile std::sig_atomic_t stop_requested = 0;
     return stop_requested;
@@ -55,6 +65,182 @@ extern "C" void OnSignal(int /*sig*/) {
 
 void ResetStopRequested() {
     StopRequestedFlag() = 0;
+}
+
+[[nodiscard]] std::string CsvField(std::string_view value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('"');
+    for (const char character : value) {
+        if (character == '"') {
+            out.push_back('"');
+        }
+        out.push_back(character);
+    }
+    out.push_back('"');
+    return out;
+}
+
+[[nodiscard]] std::string TelemetryCsvLine(const swarmkit::core::TelemetryFrame& frame) {
+    std::ostringstream line;
+    line << frame.unix_time_ms << "," << CsvField(frame.drone_id) << std::setprecision(10) << ","
+         << frame.lat_deg << "," << frame.lon_deg << "," << std::setprecision(5) << frame.rel_alt_m
+         << "," << frame.battery_percent << "," << CsvField(frame.mode) << "\n";
+    return line.str();
+}
+
+[[nodiscard]] bool FileNeedsHeader(const std::filesystem::path& path) {
+    std::error_code error;
+    return !std::filesystem::exists(path, error) || std::filesystem::file_size(path, error) == 0;
+}
+
+[[nodiscard]] std::string SanitizeFileStem(std::string_view value) {
+    std::string out;
+    out.reserve(value.size());
+    for (const char character : value) {
+        const bool is_safe =
+            (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+            (character >= '0' && character <= '9') || character == '-' || character == '_';
+        out.push_back(is_safe ? character : '_');
+    }
+    return out.empty() ? "default" : out;
+}
+
+class TelemetrySink {
+   public:
+    [[nodiscard]] static std::expected<std::unique_ptr<TelemetrySink>, std::string> FromArgs(
+        int argc, char** argv, bool allow_split) {
+        auto sink = std::make_unique<TelemetrySink>();
+        sink->console_enabled_ = !common::HasFlag(argc, argv, "--no-console");
+
+        const std::string combined_path = common::GetOptionValue(argc, argv, "--telemetry-file");
+        if (!combined_path.empty()) {
+            if (auto opened = OpenCsvFile(combined_path); opened.has_value()) {
+                sink->combined_file_ = std::make_unique<std::ofstream>(std::move(*opened));
+            } else {
+                return std::unexpected(opened.error());
+            }
+        }
+
+        const std::string dir_path = common::GetOptionValue(argc, argv, "--telemetry-dir");
+        if (!dir_path.empty()) {
+            if (!allow_split) {
+                return std::unexpected("--telemetry-dir is only valid for swarm telemetry");
+            }
+            std::error_code error;
+            std::filesystem::create_directories(dir_path, error);
+            if (error) {
+                return std::unexpected("failed to create telemetry directory '" + dir_path +
+                                       "': " + error.message());
+            }
+            sink->per_drone_dir_ = dir_path;
+        }
+        return sink;
+    }
+
+    void Write(const swarmkit::core::TelemetryFrame& frame) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (console_enabled_) {
+            std::cout << std::fixed << std::setprecision(kTelemetryCoordPrecision) << "["
+                      << frame.unix_time_ms << "]"
+                      << " drone=" << frame.drone_id << " lat=" << frame.lat_deg
+                      << " lon=" << frame.lon_deg << std::setprecision(kTelemetryValuePrecision)
+                      << " alt=" << frame.rel_alt_m << "m"
+                      << " bat=" << frame.battery_percent << "%"
+                      << " mode=" << frame.mode << "\n";
+        }
+
+        const std::string csv_line = TelemetryCsvLine(frame);
+        if (combined_file_) {
+            *combined_file_ << csv_line;
+            combined_file_->flush();
+        }
+        if (!per_drone_dir_.empty()) {
+            std::ofstream* file = GetDroneFile(frame.drone_id);
+            if (file != nullptr) {
+                *file << csv_line;
+                file->flush();
+            }
+        }
+    }
+
+    [[nodiscard]] bool WritesFiles() const {
+        return combined_file_ != nullptr || !per_drone_dir_.empty();
+    }
+
+   private:
+    [[nodiscard]] static std::expected<std::ofstream, std::string> OpenCsvFile(
+        const std::filesystem::path& path) {
+        if (path.has_parent_path()) {
+            std::error_code error;
+            std::filesystem::create_directories(path.parent_path(), error);
+            if (error) {
+                return std::unexpected("failed to create telemetry directory '" +
+                                       path.parent_path().string() + "': " + error.message());
+            }
+        }
+
+        const bool needs_header = FileNeedsHeader(path);
+        std::ofstream file(path, std::ios::app);
+        if (!file.is_open()) {
+            return std::unexpected("failed to open telemetry file '" + path.string() + "'");
+        }
+        if (needs_header) {
+            file << "unix_time_ms,drone_id,lat_deg,lon_deg,rel_alt_m,battery_percent,mode\n";
+        }
+        return file;
+    }
+
+    std::ofstream* GetDroneFile(const std::string& drone_id) {
+        if (const auto iter = per_drone_files_.find(drone_id); iter != per_drone_files_.end()) {
+            return iter->second.get();
+        }
+
+        const std::filesystem::path path =
+            std::filesystem::path(per_drone_dir_) / (SanitizeFileStem(drone_id) + ".csv");
+        auto opened = OpenCsvFile(path);
+        if (!opened.has_value()) {
+            std::cerr << opened.error() << "\n";
+            return nullptr;
+        }
+        auto file = std::make_unique<std::ofstream>(std::move(*opened));
+        std::ofstream* raw = file.get();
+        per_drone_files_.emplace(drone_id, std::move(file));
+        return raw;
+    }
+
+    bool console_enabled_{true};
+    std::unique_ptr<std::ofstream> combined_file_;
+    std::filesystem::path per_drone_dir_;
+    std::unordered_map<std::string, std::unique_ptr<std::ofstream>> per_drone_files_;
+    std::mutex mutex_;
+};
+
+[[nodiscard]] std::expected<std::int64_t, std::string> ParseDurationMs(int argc, char** argv) {
+    const auto duration = ParseIntArg(
+        common::GetOptionValue(argc, argv, "--duration-ms", kDefaultZero), "--duration-ms");
+    if (!duration.has_value()) {
+        return std::unexpected(duration.error());
+    }
+    if (*duration < 0) {
+        return std::unexpected("--duration-ms must be >= 0");
+    }
+    return static_cast<std::int64_t>(*duration);
+}
+
+void WaitForStop(std::int64_t duration_ms) {
+    const auto start = std::chrono::steady_clock::now();
+    while (!IsStopRequested()) {
+        if (duration_ms > 0) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - start)
+                                        .count();
+            if (elapsed_ms >= duration_ms) {
+                return;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(kTelemetryPollIntervalMs));
+    }
 }
 
 int RunCommand(Client& client, std::string_view drone_id, CommandPriority priority, int argc,
@@ -161,7 +347,19 @@ int RunStats(Client& client) {
     }
 }
 
-int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz) {
+int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz, int argc, char** argv) {
+    auto sink = TelemetrySink::FromArgs(argc, argv, false);
+    if (!sink.has_value()) {
+        std::cerr << sink.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    auto telemetry_sink = std::move(*sink);
+    const auto duration_ms = ParseDurationMs(argc, argv);
+    if (!duration_ms.has_value()) {
+        std::cerr << duration_ms.error() << "\n";
+        return EXIT_FAILURE;
+    }
+
     ResetStopRequested();
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
@@ -173,24 +371,20 @@ int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz) {
     subscription.drone_id = std::string(drone_id);
     subscription.rate_hertz = rate_hz;
 
+    if (telemetry_sink->WritesFiles()) {
+        std::cout << "Telemetry CSV logging enabled.\n";
+    }
+
     client.SubscribeTelemetry(
         subscription,
-        [](const swarmkit::core::TelemetryFrame& frame) {
-            std::cout << std::fixed << std::setprecision(kTelemetryCoordPrecision) << "["
-                      << frame.unix_time_ms << "]"
-                      << " drone=" << frame.drone_id << " lat=" << frame.lat_deg
-                      << " lon=" << frame.lon_deg << std::setprecision(kTelemetryValuePrecision)
-                      << " alt=" << frame.rel_alt_m << "m"
-                      << " bat=" << frame.battery_percent << "%"
-                      << " mode=" << frame.mode << "\n";
+        [&telemetry_sink](const swarmkit::core::TelemetryFrame& frame) {
+            telemetry_sink->Write(frame);
         },
         [](const std::string& error_msg) {
             std::cerr << "Telemetry stream error: " << error_msg << "\n";
         });
 
-    while (!IsStopRequested()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(kTelemetryPollIntervalMs));
-    }
+    WaitForStop(*duration_ms);
 
     client.StopTelemetry();
     std::cout << "\nStopped.\n";
@@ -256,8 +450,8 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
     return EXIT_SUCCESS;
 }
 
-[[nodiscard]] std::expected<std::unique_ptr<swarmkit::client::SwarmClient>, int> BuildSwarmClient(
-    const ClientConfig& client_cfg, int argc, char** argv) {
+[[nodiscard]] std::expected<SwarmRuntime, int> BuildSwarmRuntime(const ClientConfig& client_cfg,
+                                                                 int argc, char** argv) {
     const std::string config_path = common::GetOptionValue(argc, argv, "--swarm-config");
     if (config_path.empty()) {
         std::cerr << "swarm requires --swarm-config PATH\n";
@@ -271,28 +465,36 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
     }
     loaded->default_client_config = client_cfg;
 
-    auto swarm = std::make_unique<swarmkit::client::SwarmClient>(client_cfg);
+    SwarmRuntime runtime;
+    runtime.drone_ids.reserve(loaded->drones.size());
+    for (const auto& drone : loaded->drones) {
+        runtime.drone_ids.push_back(drone.drone_id);
+    }
+    runtime.client = std::make_unique<swarmkit::client::SwarmClient>(client_cfg);
     const std::string address_mode =
         common::GetOptionValue(argc, argv, "--address-mode", kDefaultAddressMode);
     const auto preference = address_mode == "local"
                                 ? swarmkit::client::SwarmAddressPreference::kPreferLocal
                                 : swarmkit::client::SwarmAddressPreference::kPrimary;
-    if (const auto result = swarm->ApplyConfig(*loaded, preference); !result.IsOk()) {
+    if (const auto result = runtime.client->ApplyConfig(*loaded, preference); !result.IsOk()) {
         std::cerr << "Invalid swarm config: " << result.message << "\n";
         return std::unexpected(EXIT_FAILURE);
     }
-    return swarm;
+    return runtime;
 }
 
-void PrintSwarmResults(
+[[nodiscard]] bool PrintSwarmResults(
     const std::unordered_map<std::string, swarmkit::client::CommandResult>& results) {
+    bool all_ok = true;
     for (const auto& [drone_id, result] : results) {
         std::cout << drone_id << ": " << (result.ok ? "OK" : "FAILED");
+        all_ok = all_ok && result.ok;
         if (!result.message.empty()) {
             std::cout << " " << result.message;
         }
         std::cout << "\n";
     }
+    return all_ok;
 }
 
 [[nodiscard]] std::vector<std::string> FindSwarmActions(int argc, char** argv) {
@@ -325,31 +527,177 @@ void PrintSwarmResults(
     return actions;
 }
 
+[[nodiscard]] bool ContainsDrone(const std::vector<std::string>& drone_ids,
+                                 std::string_view drone_id) {
+    return std::ranges::find(drone_ids, drone_id) != drone_ids.end();
+}
+
+int RunSwarmHealth(const SwarmRuntime& runtime) {
+    bool all_ok = true;
+    for (const auto& drone_id : runtime.drone_ids) {
+        const auto status = runtime.client->GetHealth(drone_id);
+        all_ok = all_ok && status.ok;
+        std::cout << drone_id << ": " << (status.ok ? "OK" : "FAILED");
+        if (status.ok) {
+            std::cout << " ready=" << (status.ready ? "true" : "false")
+                      << " agent_id=" << status.agent_id << " version=" << status.version;
+        } else if (!status.message.empty()) {
+            std::cout << " " << status.message;
+        } else if (!status.error.user_message.empty()) {
+            std::cout << " " << status.error.user_message;
+        }
+        std::cout << "\n";
+    }
+    return all_ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+int RunSwarmStats(const SwarmRuntime& runtime) {
+    bool all_ok = true;
+    for (const auto& drone_id : runtime.drone_ids) {
+        const auto stats = runtime.client->GetRuntimeStats(drone_id);
+        all_ok = all_ok && stats.ok;
+        std::cout << drone_id << ": " << (stats.ok ? "OK" : "FAILED");
+        if (stats.ok) {
+            std::cout << " ready=" << (stats.ready ? "true" : "false")
+                      << " commands=" << stats.command_requests_total
+                      << " rejected=" << stats.command_rejected_total
+                      << " failed=" << stats.command_failed_total
+                      << " telemetry_streams=" << stats.current_telemetry_streams
+                      << " frames=" << stats.telemetry_frames_sent_total
+                      << " backend_failures=" << stats.backend_failures_total;
+        } else if (!stats.error.user_message.empty()) {
+            std::cout << " " << stats.error.user_message;
+        }
+        std::cout << "\n";
+    }
+    return all_ok ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+int RunSwarmTelemetry(SwarmRuntime& runtime, int argc, char** argv) {
+    const auto rate_hz = ParseTelemetryRate(argc, argv);
+    if (!rate_hz.has_value()) {
+        std::cerr << rate_hz.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    auto sink = TelemetrySink::FromArgs(argc, argv, true);
+    if (!sink.has_value()) {
+        std::cerr << sink.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    auto telemetry_sink = std::move(*sink);
+    const auto duration_ms = ParseDurationMs(argc, argv);
+    if (!duration_ms.has_value()) {
+        std::cerr << duration_ms.error() << "\n";
+        return EXIT_FAILURE;
+    }
+
+    const std::string drone_id = common::GetOptionValue(argc, argv, "--drone");
+    if (!drone_id.empty() && !ContainsDrone(runtime.drone_ids, drone_id)) {
+        std::cerr << "drone '" << drone_id << "' is not present in swarm config\n";
+        return EXIT_FAILURE;
+    }
+
+    ResetStopRequested();
+    std::signal(SIGINT, OnSignal);
+    std::signal(SIGTERM, OnSignal);
+
+    if (drone_id.empty()) {
+        std::cout << "Subscribing to swarm telemetry: drones=" << runtime.drone_ids.size()
+                  << " rate=" << *rate_hz << " Hz\n";
+        runtime.client->SubscribeAllTelemetry(
+            *rate_hz,
+            [&telemetry_sink](const swarmkit::core::TelemetryFrame& frame) {
+                telemetry_sink->Write(frame);
+            },
+            [](const std::string& error_msg) {
+                std::cerr << "Telemetry stream error: " << error_msg << "\n";
+            });
+    } else {
+        std::cout << "Subscribing to swarm telemetry: drone=" << drone_id << " rate=" << *rate_hz
+                  << " Hz\n";
+        runtime.client->SubscribeTelemetry(
+            {.drone_id = drone_id, .rate_hertz = *rate_hz},
+            [&telemetry_sink](const swarmkit::core::TelemetryFrame& frame) {
+                telemetry_sink->Write(frame);
+            },
+            [](const std::string& error_msg) {
+                std::cerr << "Telemetry stream error: " << error_msg << "\n";
+            });
+    }
+    std::cout << "Press Ctrl+C to stop.\n\n";
+    if (telemetry_sink->WritesFiles()) {
+        std::cout << "Telemetry CSV logging enabled.\n";
+    }
+
+    WaitForStop(*duration_ms);
+
+    if (drone_id.empty()) {
+        runtime.client->StopAllTelemetry();
+    } else {
+        runtime.client->StopTelemetry(drone_id);
+    }
+    std::cout << "\nStopped.\n";
+    return EXIT_SUCCESS;
+}
+
 int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
-    auto swarm = BuildSwarmClient(client_cfg, argc, argv);
-    if (!swarm.has_value()) {
-        return swarm.error();
+    auto runtime = BuildSwarmRuntime(client_cfg, argc, argv);
+    if (!runtime.has_value()) {
+        return runtime.error();
     }
     const auto actions = FindSwarmActions(argc, argv);
     if (actions.empty()) {
-        std::cerr << "swarm requires lock-all, unlock-all, broadcast, land-all, or rtl-all\n";
+        std::cerr << "swarm requires health, stats, telemetry, command, lock-all, unlock-all, "
+                     "broadcast, land-all, or rtl-all\n";
         return EXIT_FAILURE;
     }
 
     Command command;
+    if (actions[0] == "health") {
+        return RunSwarmHealth(*runtime);
+    }
+    if (actions[0] == "stats") {
+        return RunSwarmStats(*runtime);
+    }
+    if (actions[0] == "telemetry") {
+        return RunSwarmTelemetry(*runtime, argc, argv);
+    }
     if (actions[0] == "lock-all") {
         const auto ttl_ms = ParseTtlMs(argc, argv);
         if (!ttl_ms.has_value()) {
             std::cerr << ttl_ms.error() << "\n";
             return EXIT_FAILURE;
         }
-        PrintSwarmResults((*swarm)->LockAll(*ttl_ms));
-        return EXIT_SUCCESS;
+        return PrintSwarmResults(runtime->client->LockAll(*ttl_ms)) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     if (actions[0] == "unlock-all") {
-        (*swarm)->UnlockAll();
+        runtime->client->UnlockAll();
         std::cout << "Unlock all OK\n";
         return EXIT_SUCCESS;
+    }
+    if (actions[0] == "command") {
+        const std::string drone_id = common::GetOptionValue(argc, argv, "--drone");
+        if (drone_id.empty()) {
+            std::cerr << "swarm command requires --drone DRONE_ID\n";
+            return EXIT_FAILURE;
+        }
+        if (!ContainsDrone(runtime->drone_ids, drone_id)) {
+            std::cerr << "drone '" << drone_id << "' is not present in swarm config\n";
+            return EXIT_FAILURE;
+        }
+        std::vector<std::string> command_actions;
+        if (actions.size() > 1) {
+            command_actions.assign(actions.begin() + 1, actions.end());
+        }
+        const auto built = BuildCommandFromActions(command_actions, argc, argv);
+        if (!built.has_value()) {
+            std::cerr << built.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        swarmkit::commands::CommandEnvelope envelope =
+            MakeCommandEnvelope(drone_id, *built, client_cfg.priority);
+        const auto result = runtime->client->SendCommand(envelope);
+        return PrintSwarmResults({{drone_id, result}}) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     if (actions[0] == "land-all") {
         command = FlightCmd{CmdLand{}};
@@ -374,8 +722,8 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     swarmkit::commands::CommandContext context;
     context.client_id = std::string(kCliClientId);
     context.priority = client_cfg.priority;
-    PrintSwarmResults((*swarm)->BroadcastCommand(command, context));
-    return EXIT_SUCCESS;
+    return PrintSwarmResults(runtime->client->BroadcastCommand(command, context)) ? EXIT_SUCCESS
+                                                                                  : EXIT_FAILURE;
 }
 
 }  // namespace
@@ -398,7 +746,7 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
             return EXIT_FAILURE;
         }
         return RunTelemetry(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
-                            *kRateHz);
+                            *kRateHz, argc, argv);
     }
     if (invocation.command == "command") {
         return RunCommand(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
