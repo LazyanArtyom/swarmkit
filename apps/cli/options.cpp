@@ -18,7 +18,7 @@ namespace swarmkit::apps::cli::internal {
 
 [[nodiscard]] bool IsSubcommand(std::string_view value) {
     return value == "ping" || value == "health" || value == "stats" || value == "telemetry" ||
-           value == "command" || value == "lock" || value == "unlock" ||
+           value == "command" || value == "sequence" || value == "lock" || value == "unlock" ||
            value == "watch-authority" || value == "swarm";
 }
 

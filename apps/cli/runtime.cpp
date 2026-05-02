@@ -6,6 +6,8 @@
 
 #include "runtime.h"
 
+#include <yaml-cpp/yaml.h>
+
 #include <algorithm>
 #include <chrono>
 #include <csignal>
@@ -48,6 +50,16 @@ using swarmkit::commands::NavCmd;
 struct SwarmRuntime {
     std::unique_ptr<swarmkit::client::SwarmClient> client;
     std::vector<std::string> drone_ids;
+};
+
+struct SequenceStep {
+    std::vector<std::string> args;
+    std::string drone_id;
+    bool broadcast{false};
+    bool continue_on_error{false};
+    int delay_ms{0};
+    int retries{0};
+    int retry_delay_ms{1000};
 };
 
 [[nodiscard]] volatile std::sig_atomic_t& StopRequestedFlag() {
@@ -228,6 +240,92 @@ class TelemetrySink {
     return static_cast<std::int64_t>(*duration);
 }
 
+[[nodiscard]] std::expected<std::string, std::string> ParseSequenceFilePath(int argc, char** argv) {
+    std::string path = common::GetOptionValue(argc, argv, "--file");
+    if (path.empty()) {
+        return std::unexpected("sequence requires --file PATH");
+    }
+    return path;
+}
+
+[[nodiscard]] std::vector<std::string> ReadYamlStringList(const YAML::Node& node) {
+    std::vector<std::string> out;
+    if (!node || !node.IsSequence()) {
+        return out;
+    }
+    out.reserve(node.size());
+    for (const YAML::Node& item : node) {
+        out.push_back(item.as<std::string>());
+    }
+    return out;
+}
+
+[[nodiscard]] std::expected<std::vector<SequenceStep>, std::string> LoadSequenceSteps(
+    const std::string& path) {
+    try {
+        const YAML::Node root = YAML::LoadFile(path);
+        const YAML::Node steps = root["steps"] ? root["steps"] : root;
+        if (!steps || !steps.IsSequence()) {
+            return std::unexpected("sequence file must contain a steps: sequence");
+        }
+
+        std::vector<SequenceStep> out;
+        out.reserve(steps.size());
+        for (const YAML::Node& node : steps) {
+            if (!node || !node.IsMap()) {
+                return std::unexpected("each sequence step must be a map");
+            }
+
+            SequenceStep step;
+            step.args = ReadYamlStringList(node["args"]);
+            step.drone_id = node["drone"] ? node["drone"].as<std::string>() : std::string{};
+            step.broadcast = node["broadcast"] ? node["broadcast"].as<bool>() : false;
+            step.continue_on_error =
+                node["continue_on_error"] ? node["continue_on_error"].as<bool>() : false;
+            step.delay_ms = node["delay_ms"] ? node["delay_ms"].as<int>() : 0;
+            step.retries = node["retries"] ? node["retries"].as<int>() : 0;
+            step.retry_delay_ms =
+                node["retry_delay_ms"] ? node["retry_delay_ms"].as<int>() : step.retry_delay_ms;
+            if (step.args.empty() && step.delay_ms <= 0) {
+                return std::unexpected("sequence step requires args or delay_ms");
+            }
+            if (step.delay_ms < 0) {
+                return std::unexpected("sequence step delay_ms must be >= 0");
+            }
+            if (step.retries < 0) {
+                return std::unexpected("sequence step retries must be >= 0");
+            }
+            if (step.retry_delay_ms < 0) {
+                return std::unexpected("sequence step retry_delay_ms must be >= 0");
+            }
+            out.push_back(std::move(step));
+        }
+        return out;
+    } catch (const YAML::Exception& exc) {
+        return std::unexpected("failed to load sequence file '" + path + "': " + exc.what());
+    }
+}
+
+void DelaySequenceStep(const SequenceStep& step) {
+    if (step.delay_ms > 0) {
+        std::cout << "delay " << step.delay_ms << "ms\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds{step.delay_ms});
+    }
+}
+
+[[nodiscard]] bool PrintCommandResult(std::string_view label,
+                                      const swarmkit::client::CommandResult& result) {
+    std::cout << label << ": " << (result.ok ? "OK" : "FAILED");
+    if (!result.message.empty()) {
+        std::cout << " " << result.message;
+    }
+    if (!result.correlation_id.empty()) {
+        std::cout << " [corr=" << result.correlation_id << "]";
+    }
+    std::cout << "\n";
+    return result.ok;
+}
+
 void WaitForStop(std::int64_t duration_ms) {
     const auto start = std::chrono::steady_clock::now();
     while (!IsStopRequested()) {
@@ -241,6 +339,71 @@ void WaitForStop(std::int64_t duration_ms) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(kTelemetryPollIntervalMs));
     }
+}
+
+int RunSequence(Client& client, std::string_view default_drone_id, CommandPriority priority,
+                int argc, char** argv) {
+    const auto path = ParseSequenceFilePath(argc, argv);
+    if (!path.has_value()) {
+        std::cerr << path.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    const auto steps = LoadSequenceSteps(*path);
+    if (!steps.has_value()) {
+        std::cerr << steps.error() << "\n";
+        return EXIT_FAILURE;
+    }
+
+    int failed_steps = 0;
+    for (std::size_t index = 0; index < steps->size(); ++index) {
+        const SequenceStep& step = steps->at(index);
+        DelaySequenceStep(step);
+        if (step.args.empty()) {
+            continue;
+        }
+
+        const std::string drone_id =
+            step.drone_id.empty() ? std::string(default_drone_id) : step.drone_id;
+        const auto command = BuildCommandFromTokens(step.args);
+        if (!command.has_value()) {
+            std::cerr << "step " << index << " build failed: " << command.error() << "\n";
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
+
+        bool step_ok = false;
+        const int attempts = step.retries + 1;
+        for (int attempt = 1; attempt <= attempts; ++attempt) {
+            const auto result =
+                client.SendCommand(MakeCommandEnvelope(drone_id, *command, priority));
+            std::string label = "step " + std::to_string(index) + " drone=" + drone_id;
+            if (attempts > 1) {
+                label += " attempt=" + std::to_string(attempt) + "/" + std::to_string(attempts);
+            }
+            step_ok = PrintCommandResult(label, result);
+            if (step_ok || attempt == attempts) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{step.retry_delay_ms});
+        }
+
+        if (!step_ok) {
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+        }
+    }
+
+    if (failed_steps > 0) {
+        std::cerr << "sequence completed with failed_steps=" << failed_steps << "\n";
+        return EXIT_FAILURE;
+    }
+    std::cout << "sequence OK steps=" << steps->size() << "\n";
+    return EXIT_SUCCESS;
 }
 
 int RunCommand(Client& client, std::string_view drone_id, CommandPriority priority, int argc,
@@ -640,6 +803,106 @@ int RunSwarmTelemetry(SwarmRuntime& runtime, int argc, char** argv) {
     return EXIT_SUCCESS;
 }
 
+int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, char** argv) {
+    const auto path = ParseSequenceFilePath(argc, argv);
+    if (!path.has_value()) {
+        std::cerr << path.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    const auto steps = LoadSequenceSteps(*path);
+    if (!steps.has_value()) {
+        std::cerr << steps.error() << "\n";
+        return EXIT_FAILURE;
+    }
+
+    const std::string default_drone_id = common::GetOptionValue(argc, argv, "--drone");
+    if (!default_drone_id.empty() && !ContainsDrone(runtime.drone_ids, default_drone_id)) {
+        std::cerr << "drone '" << default_drone_id << "' is not present in swarm config\n";
+        return EXIT_FAILURE;
+    }
+
+    int failed_steps = 0;
+    for (std::size_t index = 0; index < steps->size(); ++index) {
+        const SequenceStep& step = steps->at(index);
+        DelaySequenceStep(step);
+        if (step.args.empty()) {
+            continue;
+        }
+
+        const auto command = BuildCommandFromTokens(step.args);
+        if (!command.has_value()) {
+            std::cerr << "step " << index << " build failed: " << command.error() << "\n";
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
+
+        const std::string drone_id = step.drone_id.empty() ? default_drone_id : step.drone_id;
+        if (!step.broadcast && drone_id.empty()) {
+            std::cerr << "step " << index
+                      << " requires drone: DRONE_ID, broadcast: true, or global --drone\n";
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
+        if (!step.broadcast && !ContainsDrone(runtime.drone_ids, drone_id)) {
+            std::cerr << "step " << index << " drone '" << drone_id
+                      << "' is not present in swarm config\n";
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
+
+        const int attempts = step.retries + 1;
+        bool step_ok = false;
+        for (int attempt = 1; attempt <= attempts; ++attempt) {
+            if (step.broadcast) {
+                if (attempts > 1) {
+                    std::cout << "step " << index << " broadcast attempt=" << attempt << "/"
+                              << attempts << "\n";
+                }
+                swarmkit::commands::CommandContext context;
+                context.client_id = std::string(kCliClientId);
+                context.priority = priority;
+                step_ok = PrintSwarmResults(runtime.client->BroadcastCommand(*command, context));
+            } else {
+                const auto result =
+                    runtime.client->SendCommand(MakeCommandEnvelope(drone_id, *command, priority));
+                std::string label = "step " + std::to_string(index) + " drone=" + drone_id;
+                if (attempts > 1) {
+                    label += " attempt=" + std::to_string(attempt) + "/" + std::to_string(attempts);
+                }
+                step_ok = PrintCommandResult(label, result);
+            }
+
+            if (step_ok || attempt == attempts) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{step.retry_delay_ms});
+        }
+
+        if (!step_ok) {
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+        }
+    }
+
+    if (failed_steps > 0) {
+        std::cerr << "swarm sequence completed with failed_steps=" << failed_steps << "\n";
+        return EXIT_FAILURE;
+    }
+    std::cout << "swarm sequence OK steps=" << steps->size() << "\n";
+    return EXIT_SUCCESS;
+}
+
 int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     auto runtime = BuildSwarmRuntime(client_cfg, argc, argv);
     if (!runtime.has_value()) {
@@ -647,8 +910,8 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     }
     const auto actions = FindSwarmActions(argc, argv);
     if (actions.empty()) {
-        std::cerr << "swarm requires health, stats, telemetry, command, lock-all, unlock-all, "
-                     "broadcast, land-all, or rtl-all\n";
+        std::cerr << "swarm requires health, stats, telemetry, sequence, command, lock-all, "
+                     "unlock-all, broadcast, land-all, or rtl-all\n";
         return EXIT_FAILURE;
     }
 
@@ -661,6 +924,9 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     }
     if (actions[0] == "telemetry") {
         return RunSwarmTelemetry(*runtime, argc, argv);
+    }
+    if (actions[0] == "sequence") {
+        return RunSwarmSequence(*runtime, client_cfg.priority, argc, argv);
     }
     if (actions[0] == "lock-all") {
         const auto ttl_ms = ParseTtlMs(argc, argv);
@@ -751,6 +1017,10 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     if (invocation.command == "command") {
         return RunCommand(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
                           client_cfg.priority, argc, argv);
+    }
+    if (invocation.command == "sequence") {
+        return RunSequence(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
+                           client_cfg.priority, argc, argv);
     }
     if (invocation.command == "lock") {
         return RunLock(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId), argc,

@@ -18,6 +18,8 @@ namespace swarmkit::apps::cli::internal {
 [[nodiscard]] std::vector<std::string> FindCommandActions(int argc, char** argv);
 [[nodiscard]] std::expected<commands::Command, std::string> BuildCommandFromActions(
     const std::vector<std::string>& actions, int argc, char** argv);
+[[nodiscard]] std::expected<commands::Command, std::string> BuildCommandFromTokens(
+    const std::vector<std::string>& tokens);
 [[nodiscard]] std::expected<commands::Command, std::string> BuildCommandFromArgs(int argc,
                                                                                  char** argv);
 [[nodiscard]] commands::CommandEnvelope MakeCommandEnvelope(

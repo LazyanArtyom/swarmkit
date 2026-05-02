@@ -80,6 +80,13 @@ constexpr float kUnknownBattery = -1.0F;
     return value;
 }
 
+[[nodiscard]] bool IsUnsupportedCommandAck(const core::Result& result) {
+    return result.code == core::StatusCode::kRejected &&
+           (result.message.find("result=UNSUPPORTED") != std::string::npos ||
+            result.message.find("result=COMMAND_UNSUPPORTED_MAV_FRAME") != std::string::npos ||
+            result.message.find("result=COMMAND_INT_ONLY") != std::string::npos);
+}
+
 [[nodiscard]] std::optional<int> ArduCopterModeFromName(std::string mode) {
     static const std::unordered_map<std::string, int> kModeMap{
         {"stabilize", 0}, {"acro", 1},          {"alt-hold", 2},   {"althold", 2},
@@ -705,11 +712,20 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         const float yaw = go_to.use_yaw ? go_to.yaw_deg : std::numeric_limits<float>::quiet_NaN();
-        return SendCommandLong(MAV_CMD_DO_REPOSITION,
-                               go_to.speed_mps > 0.0F ? go_to.speed_mps : kMavlinkDefaultSpeed,
-                               static_cast<float>(MAV_DO_REPOSITION_FLAGS_CHANGE_MODE), 0.0F, yaw,
-                               static_cast<float>(go_to.lat_deg), static_cast<float>(go_to.lon_deg),
-                               static_cast<float>(go_to.alt_m));
+        core::Result reposition_result = SendCommandLong(
+            MAV_CMD_DO_REPOSITION, go_to.speed_mps > 0.0F ? go_to.speed_mps : kMavlinkDefaultSpeed,
+            static_cast<float>(MAV_DO_REPOSITION_FLAGS_CHANGE_MODE), 0.0F, yaw,
+            static_cast<float>(go_to.lat_deg), static_cast<float>(go_to.lon_deg),
+            static_cast<float>(go_to.alt_m));
+        if (!IsUnsupportedCommandAck(reposition_result)) {
+            return reposition_result;
+        }
+
+        core::Logger::WarnFmt(
+            "MavlinkBackend: MAV_CMD_DO_REPOSITION unsupported for drone={}, falling back to "
+            "SET_POSITION_TARGET_GLOBAL_INT",
+            config_.drone_id);
+        return SendSetPositionTargetGlobalInt(go_to);
     }
 
     [[nodiscard]] core::Result SendVelocity(const CmdVelocity& velocity) {
@@ -776,26 +792,42 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     [[nodiscard]] core::Result SendSetPositionTargetGlobalInt(const CmdSetWaypoint& waypoint) {
-        if (waypoint.speed_mps > 0.0F) {
-            if (const core::Result speed_result = SendSetSpeed(waypoint.speed_mps);
-                !speed_result.IsOk()) {
+        return SendSetPositionTargetGlobalInt(waypoint.lat_deg, waypoint.lon_deg, waypoint.alt_m,
+                                              waypoint.speed_mps, std::nullopt);
+    }
+
+    [[nodiscard]] core::Result SendSetPositionTargetGlobalInt(const CmdGoto& go_to) {
+        return SendSetPositionTargetGlobalInt(
+            go_to.lat_deg, go_to.lon_deg, go_to.alt_m, go_to.speed_mps,
+            go_to.use_yaw ? std::optional<float>{go_to.yaw_deg} : std::nullopt);
+    }
+
+    [[nodiscard]] core::Result SendSetPositionTargetGlobalInt(double lat_deg, double lon_deg,
+                                                              double alt_m, float speed_mps,
+                                                              std::optional<float> yaw_deg) {
+        if (speed_mps > 0.0F) {
+            if (const core::Result speed_result = SendSetSpeed(speed_mps); !speed_result.IsOk()) {
                 return speed_result;
             }
         }
 
         mavlink_message_t message{};
-        const auto type_mask = static_cast<std::uint16_t>(
+        auto type_mask = static_cast<std::uint16_t>(
             POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE |
             POSITION_TARGET_TYPEMASK_VZ_IGNORE | POSITION_TARGET_TYPEMASK_AX_IGNORE |
             POSITION_TARGET_TYPEMASK_AY_IGNORE | POSITION_TARGET_TYPEMASK_AZ_IGNORE |
             POSITION_TARGET_TYPEMASK_YAW_IGNORE | POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE);
+        if (yaw_deg.has_value()) {
+            type_mask =
+                static_cast<std::uint16_t>(type_mask & ~POSITION_TARGET_TYPEMASK_YAW_IGNORE);
+        }
 
         mavlink_msg_set_position_target_global_int_pack(
             config_.source_system, config_.source_component, &message, 0, config_.target_system,
             config_.target_component, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, type_mask,
-            static_cast<std::int32_t>(std::llround(waypoint.lat_deg * kDegE7)),
-            static_cast<std::int32_t>(std::llround(waypoint.lon_deg * kDegE7)),
-            static_cast<float>(waypoint.alt_m), 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+            static_cast<std::int32_t>(std::llround(lat_deg * kDegE7)),
+            static_cast<std::int32_t>(std::llround(lon_deg * kDegE7)), static_cast<float>(alt_m),
+            0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, yaw_deg.value_or(0.0F), 0.0F);
         return SendMavlinkMessage(message);
     }
 

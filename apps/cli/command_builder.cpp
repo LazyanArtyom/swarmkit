@@ -546,6 +546,39 @@ using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
     return std::unexpected("Unknown action: " + action);
 }
 
+[[nodiscard]] std::expected<commands::Command, std::string> BuildCommandFromTokens(
+    const std::vector<std::string>& tokens) {
+    if (tokens.empty()) {
+        return std::unexpected("command sequence step requires non-empty args");
+    }
+
+    std::vector<std::string> storage;
+    storage.reserve(tokens.size() + 2);
+    storage.emplace_back("swarmkit-cli");
+    storage.emplace_back("command");
+    storage.insert(storage.end(), tokens.begin(), tokens.end());
+
+    std::vector<char*> argv;
+    argv.reserve(storage.size());
+    for (std::string& arg : storage) {
+        argv.push_back(arg.data());
+    }
+
+    std::vector<std::string> actions;
+    for (std::size_t index = 0; index < tokens.size(); ++index) {
+        const std::string_view arg = tokens[index];
+        if (IsOptionWithValue(arg)) {
+            ++index;
+            continue;
+        }
+        if (!arg.starts_with("-")) {
+            actions.emplace_back(arg);
+        }
+    }
+
+    return BuildCommandFromActions(actions, static_cast<int>(argv.size()), argv.data());
+}
+
 [[nodiscard]] std::expected<commands::Command, std::string> BuildCommandFromArgs(int argc,
                                                                                  char** argv) {
     return BuildCommandFromActions(FindCommandActions(argc, argv), argc, argv);
