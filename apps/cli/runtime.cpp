@@ -9,7 +9,10 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <cmath>
+#include <condition_variable>
 #include <csignal>
 #include <cstdlib>
 #include <expected>
@@ -17,8 +20,11 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
+#include <numbers>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -52,11 +58,30 @@ struct SwarmRuntime {
     std::vector<std::string> drone_ids;
 };
 
+struct WaitCondition {
+    std::optional<float> alt_min_m;
+    std::optional<float> alt_max_m;
+    std::optional<double> lat_deg;
+    std::optional<double> lon_deg;
+    std::optional<float> target_alt_m;
+    std::optional<float> battery_min_percent;
+    std::optional<std::string> mode_contains;
+    std::optional<bool> armed;
+    bool wait_heartbeat{false};
+    bool wait_landed{false};
+    float position_radius_m{2.0F};
+    float alt_tolerance_m{0.75F};
+    float landed_alt_m{0.5F};
+    int timeout_ms{30000};
+};
+
 struct SequenceStep {
     std::vector<std::string> args;
+    std::vector<WaitCondition> wait_conditions;
     std::string drone_id;
     bool broadcast{false};
     bool continue_on_error{false};
+    bool verify{false};
     int delay_ms{0};
     int retries{0};
     int retry_delay_ms{1000};
@@ -99,6 +124,81 @@ void ResetStopRequested() {
          << frame.lat_deg << "," << frame.lon_deg << "," << std::setprecision(5) << frame.rel_alt_m
          << "," << frame.battery_percent << "," << CsvField(frame.mode) << "\n";
     return line.str();
+}
+
+[[nodiscard]] double DegToRad(double degrees) {
+    return degrees * std::numbers::pi / 180.0;
+}
+
+[[nodiscard]] double DistanceMeters(double lat_a_deg, double lon_a_deg, double lat_b_deg,
+                                    double lon_b_deg) {
+    constexpr double kEarthRadiusMeters = 6371000.0;
+    const double lat_a = DegToRad(lat_a_deg);
+    const double lat_b = DegToRad(lat_b_deg);
+    const double delta_lat = DegToRad(lat_b_deg - lat_a_deg);
+    const double delta_lon = DegToRad(lon_b_deg - lon_a_deg);
+    const double sin_lat = std::sin(delta_lat / 2.0);
+    const double sin_lon = std::sin(delta_lon / 2.0);
+    const double haversine =
+        (sin_lat * sin_lat) + (std::cos(lat_a) * std::cos(lat_b) * sin_lon * sin_lon);
+    return 2.0 * kEarthRadiusMeters * std::atan2(std::sqrt(haversine), std::sqrt(1.0 - haversine));
+}
+
+[[nodiscard]] std::string ToLowerAscii(std::string value) {
+    std::ranges::transform(value, value.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return value;
+}
+
+[[nodiscard]] bool ModeContains(std::string mode, std::string expected) {
+    mode = ToLowerAscii(std::move(mode));
+    expected = ToLowerAscii(std::move(expected));
+    return mode.find(expected) != std::string::npos;
+}
+
+[[nodiscard]] bool FrameMatchesWaitCondition(const swarmkit::core::TelemetryFrame& frame,
+                                             const WaitCondition& condition) {
+    if (condition.wait_heartbeat && frame.unix_time_ms <= 0) {
+        return false;
+    }
+    if (condition.alt_min_m.has_value() && frame.rel_alt_m < *condition.alt_min_m) {
+        return false;
+    }
+    if (condition.alt_max_m.has_value() && frame.rel_alt_m > *condition.alt_max_m) {
+        return false;
+    }
+    if (condition.target_alt_m.has_value() &&
+        std::abs(frame.rel_alt_m - *condition.target_alt_m) > condition.alt_tolerance_m) {
+        return false;
+    }
+    if (condition.lat_deg.has_value() && condition.lon_deg.has_value() &&
+        DistanceMeters(frame.lat_deg, frame.lon_deg, *condition.lat_deg, *condition.lon_deg) >
+            condition.position_radius_m) {
+        return false;
+    }
+    if (condition.battery_min_percent.has_value() &&
+        frame.battery_percent < *condition.battery_min_percent) {
+        return false;
+    }
+    if (condition.mode_contains.has_value() &&
+        !ModeContains(frame.mode, *condition.mode_contains)) {
+        return false;
+    }
+    if (condition.armed.has_value()) {
+        const bool frame_armed = ModeContains(frame.mode, "armed");
+        const bool frame_disarmed = ModeContains(frame.mode, "disarmed");
+        if (*condition.armed && (!frame_armed || frame_disarmed)) {
+            return false;
+        }
+        if (!*condition.armed && !frame_disarmed) {
+            return false;
+        }
+    }
+    if (condition.wait_landed && std::abs(frame.rel_alt_m) > condition.landed_alt_m) {
+        return false;
+    }
+    return true;
 }
 
 [[nodiscard]] bool FileNeedsHeader(const std::filesystem::path& path) {
@@ -228,6 +328,119 @@ class TelemetrySink {
     std::mutex mutex_;
 };
 
+class SequenceTelemetryMonitor {
+   public:
+    ~SequenceTelemetryMonitor() {
+        Stop();
+    }
+
+    SequenceTelemetryMonitor(const SequenceTelemetryMonitor&) = delete;
+    SequenceTelemetryMonitor& operator=(const SequenceTelemetryMonitor&) = delete;
+
+    SequenceTelemetryMonitor() = default;
+
+    void StartSingle(Client& client, const std::string& drone_id, int rate_hz) {
+        Stop();
+        single_client_ = &client;
+        single_drone_id_ = drone_id;
+        client.SubscribeTelemetry(
+            {.drone_id = drone_id, .rate_hertz = rate_hz},
+            [this](const swarmkit::core::TelemetryFrame& frame) { StoreFrame(frame); },
+            [](const std::string& error_msg) {
+                std::cerr << "Sequence telemetry stream error: " << error_msg << "\n";
+            });
+        running_ = true;
+    }
+
+    void StartSwarm(SwarmRuntime& runtime, int rate_hz) {
+        Stop();
+        swarm_client_ = runtime.client.get();
+        runtime.client->SubscribeAllTelemetry(
+            rate_hz, [this](const swarmkit::core::TelemetryFrame& frame) { StoreFrame(frame); },
+            [](const std::string& error_msg) {
+                std::cerr << "Sequence telemetry stream error: " << error_msg << "\n";
+            });
+        running_ = true;
+    }
+
+    void Stop() {
+        if (!running_) {
+            return;
+        }
+        if (single_client_ != nullptr) {
+            single_client_->StopTelemetry();
+        }
+        if (swarm_client_ != nullptr) {
+            swarm_client_->StopAllTelemetry();
+        }
+        single_client_ = nullptr;
+        swarm_client_ = nullptr;
+        running_ = false;
+    }
+
+    [[nodiscard]] bool WaitFor(const std::vector<std::string>& drone_ids,
+                               const WaitCondition& condition, std::string* detail) {
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds{condition.timeout_ms};
+
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (true) {
+            bool all_match = true;
+            for (const std::string& drone_id : drone_ids) {
+                const auto frame = FindFrameLocked(drone_id);
+                if (!frame.has_value() || !FrameMatchesWaitCondition(*frame, condition)) {
+                    all_match = false;
+                    break;
+                }
+            }
+            if (all_match) {
+                if (detail != nullptr) {
+                    *detail = "condition satisfied";
+                }
+                return true;
+            }
+            if (cv_.wait_until(lock, deadline) == std::cv_status::timeout) {
+                if (detail != nullptr) {
+                    *detail = "timed out waiting for telemetry condition";
+                }
+                return false;
+            }
+        }
+    }
+
+   private:
+    void StoreFrame(const swarmkit::core::TelemetryFrame& frame) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            frames_[frame.drone_id] = frame;
+            if (frames_.size() == 1) {
+                only_frame_ = frame;
+            }
+        }
+        cv_.notify_all();
+    }
+
+    [[nodiscard]] std::optional<swarmkit::core::TelemetryFrame> FindFrameLocked(
+        const std::string& drone_id) const {
+        if (const auto iter = frames_.find(drone_id); iter != frames_.end()) {
+            return iter->second;
+        }
+        if (frames_.size() == 1 && (drone_id == "default" || drone_id.empty())) {
+            return only_frame_;
+        }
+        return std::nullopt;
+    }
+
+    Client* single_client_{nullptr};
+    swarmkit::client::SwarmClient* swarm_client_{nullptr};
+    std::string single_drone_id_;
+    bool running_{false};
+    mutable std::mutex mutex_;
+    std::condition_variable cv_;
+    std::unordered_map<std::string, swarmkit::core::TelemetryFrame> frames_;
+    std::optional<swarmkit::core::TelemetryFrame> only_frame_;
+};
+
 [[nodiscard]] std::expected<std::int64_t, std::string> ParseDurationMs(int argc, char** argv) {
     const auto duration = ParseIntArg(
         common::GetOptionValue(argc, argv, "--duration-ms", kDefaultZero), "--duration-ms");
@@ -260,6 +473,152 @@ class TelemetrySink {
     return out;
 }
 
+void ReadOptionalWaitFloat(const YAML::Node& node, const char* key, std::optional<float>* out) {
+    if (out != nullptr && node && node[key]) {
+        *out = node[key].as<float>();
+    }
+}
+
+void ReadOptionalWaitDouble(const YAML::Node& node, const char* key, std::optional<double>* out) {
+    if (out != nullptr && node && node[key]) {
+        *out = node[key].as<double>();
+    }
+}
+
+void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
+    if (condition == nullptr || !node) {
+        return;
+    }
+    if (node["timeout_ms"]) {
+        condition->timeout_ms = node["timeout_ms"].as<int>();
+    }
+    if (node["radius_m"]) {
+        condition->position_radius_m = node["radius_m"].as<float>();
+    }
+    if (node["alt_tolerance_m"]) {
+        condition->alt_tolerance_m = node["alt_tolerance_m"].as<float>();
+    }
+    if (node["landed_alt_m"]) {
+        condition->landed_alt_m = node["landed_alt_m"].as<float>();
+    }
+}
+
+[[nodiscard]] std::expected<WaitCondition, std::string> ParseWaitCondition(const YAML::Node& node) {
+    WaitCondition condition;
+    try {
+        if (!node || !node.IsMap()) {
+            return std::unexpected("wait condition must be a map");
+        }
+
+        ApplyCommonWaitFields(node, &condition);
+        if (node["wait_heartbeat"]) {
+            condition.wait_heartbeat = node["wait_heartbeat"].as<bool>();
+        }
+        if (node["wait_alt"]) {
+            const YAML::Node wait_alt = node["wait_alt"];
+            if (wait_alt.IsScalar()) {
+                condition.target_alt_m = wait_alt.as<float>();
+            } else {
+                ReadOptionalWaitFloat(wait_alt, "min", &condition.alt_min_m);
+                ReadOptionalWaitFloat(wait_alt, "max", &condition.alt_max_m);
+                ReadOptionalWaitFloat(wait_alt, "target", &condition.target_alt_m);
+                ApplyCommonWaitFields(wait_alt, &condition);
+            }
+        }
+        if (node["wait_position"]) {
+            const YAML::Node wait_position = node["wait_position"];
+            ReadOptionalWaitDouble(wait_position, "lat", &condition.lat_deg);
+            ReadOptionalWaitDouble(wait_position, "lon", &condition.lon_deg);
+            ReadOptionalWaitFloat(wait_position, "alt", &condition.target_alt_m);
+            ApplyCommonWaitFields(wait_position, &condition);
+        }
+        if (node["wait_mode"]) {
+            condition.mode_contains = node["wait_mode"].as<std::string>();
+        }
+        if (node["wait_armed"]) {
+            condition.armed = true;
+        }
+        if (node["wait_disarmed"]) {
+            condition.armed = false;
+        }
+        if (node["wait_landed"]) {
+            condition.wait_landed = node["wait_landed"].as<bool>();
+        }
+        if (node["wait_battery_min"]) {
+            condition.battery_min_percent = node["wait_battery_min"].as<float>();
+        }
+        if (condition.timeout_ms <= 0) {
+            return std::unexpected("wait timeout_ms must be > 0");
+        }
+        return condition;
+    } catch (const YAML::Exception& exc) {
+        return std::unexpected("invalid wait condition: " + std::string(exc.what()));
+    }
+}
+
+[[nodiscard]] bool StepHasWaitCondition(const YAML::Node& node) {
+    return node["wait_heartbeat"] || node["wait_alt"] || node["wait_position"] ||
+           node["wait_mode"] || node["wait_armed"] || node["wait_disarmed"] ||
+           node["wait_landed"] || node["wait_battery_min"];
+}
+
+[[nodiscard]] bool IsDisarmAction(const SequenceStep& step) {
+    return step.args.size() == 1 && step.args.front() == "disarm";
+}
+
+[[nodiscard]] bool IsEmergencyAction(const SequenceStep& step) {
+    return !step.args.empty() && step.args.front() == "emergency";
+}
+
+[[nodiscard]] std::optional<WaitCondition> MakeVerificationCondition(const SequenceStep& step) {
+    if (!step.verify || step.args.empty()) {
+        return std::nullopt;
+    }
+    const std::string& action = step.args.front();
+    WaitCondition condition;
+    if (action == "takeoff") {
+        const auto alt_iter = std::ranges::find(step.args, "--alt");
+        condition.target_alt_m =
+            alt_iter != step.args.end() && std::next(alt_iter) != step.args.end()
+                ? std::stof(*std::next(alt_iter))
+                : std::stof(std::string(kDefaultTakeoffAlt));
+        condition.timeout_ms = 45000;
+        return condition;
+    }
+    if (action == "goto" || action == "waypoint") {
+        const auto read_value = [&](std::string_view key) -> std::optional<std::string> {
+            const auto iter = std::ranges::find(step.args, std::string(key));
+            if (iter == step.args.end() || std::next(iter) == step.args.end()) {
+                return std::nullopt;
+            }
+            return *std::next(iter);
+        };
+        const auto lat = read_value("--lat");
+        const auto lon = read_value("--lon");
+        if (!lat.has_value() || !lon.has_value()) {
+            return std::nullopt;
+        }
+        condition.lat_deg = std::stod(*lat);
+        condition.lon_deg = std::stod(*lon);
+        if (const auto alt = read_value("--alt"); alt.has_value()) {
+            condition.target_alt_m = std::stof(*alt);
+        }
+        condition.timeout_ms = 60000;
+        return condition;
+    }
+    if (action == "land") {
+        condition.wait_landed = true;
+        condition.timeout_ms = 60000;
+        return condition;
+    }
+    if (action == "disarm") {
+        condition.armed = false;
+        condition.timeout_ms = 30000;
+        return condition;
+    }
+    return std::nullopt;
+}
+
 [[nodiscard]] std::expected<std::vector<SequenceStep>, std::string> LoadSequenceSteps(
     const std::string& path) {
     try {
@@ -282,12 +641,20 @@ class TelemetrySink {
             step.broadcast = node["broadcast"] ? node["broadcast"].as<bool>() : false;
             step.continue_on_error =
                 node["continue_on_error"] ? node["continue_on_error"].as<bool>() : false;
+            step.verify = node["verify"] ? node["verify"].as<bool>() : false;
             step.delay_ms = node["delay_ms"] ? node["delay_ms"].as<int>() : 0;
             step.retries = node["retries"] ? node["retries"].as<int>() : 0;
             step.retry_delay_ms =
                 node["retry_delay_ms"] ? node["retry_delay_ms"].as<int>() : step.retry_delay_ms;
-            if (step.args.empty() && step.delay_ms <= 0) {
-                return std::unexpected("sequence step requires args or delay_ms");
+            if (StepHasWaitCondition(node)) {
+                const auto wait_condition = ParseWaitCondition(node);
+                if (!wait_condition.has_value()) {
+                    return std::unexpected(wait_condition.error());
+                }
+                step.wait_conditions.push_back(*wait_condition);
+            }
+            if (step.args.empty() && step.delay_ms <= 0 && step.wait_conditions.empty()) {
+                return std::unexpected("sequence step requires args, delay_ms, or wait_*");
             }
             if (step.delay_ms < 0) {
                 return std::unexpected("sequence step delay_ms must be >= 0");
@@ -326,6 +693,36 @@ void DelaySequenceStep(const SequenceStep& step) {
     return result.ok;
 }
 
+[[nodiscard]] std::vector<std::string> StepTargetDrones(const SequenceStep& step,
+                                                        std::string_view default_drone_id,
+                                                        const std::vector<std::string>& swarm_ids) {
+    if (step.broadcast) {
+        if (swarm_ids.empty()) {
+            return {std::string(default_drone_id)};
+        }
+        return swarm_ids;
+    }
+    if (!step.drone_id.empty()) {
+        return {step.drone_id};
+    }
+    return {std::string(default_drone_id)};
+}
+
+[[nodiscard]] bool WaitForConditions(SequenceTelemetryMonitor& monitor,
+                                     const std::vector<std::string>& drone_ids,
+                                     const std::vector<WaitCondition>& conditions,
+                                     std::size_t step_index) {
+    for (const WaitCondition& condition : conditions) {
+        std::string detail;
+        if (!monitor.WaitFor(drone_ids, condition, &detail)) {
+            std::cerr << "step " << step_index << " wait failed: " << detail << "\n";
+            return false;
+        }
+        std::cout << "step " << step_index << " wait OK\n";
+    }
+    return true;
+}
+
 void WaitForStop(std::int64_t duration_ms) {
     const auto start = std::chrono::steady_clock::now();
     while (!IsStopRequested()) {
@@ -354,10 +751,27 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
         return EXIT_FAILURE;
     }
 
+    const bool needs_telemetry = std::ranges::any_of(*steps, [](const SequenceStep& step) {
+        return !step.wait_conditions.empty() || step.verify || IsDisarmAction(step);
+    });
+    SequenceTelemetryMonitor monitor;
+    if (needs_telemetry) {
+        monitor.StartSingle(client, std::string(default_drone_id), kDefaultSequenceTelemetryRateHz);
+    }
+
     int failed_steps = 0;
     for (std::size_t index = 0; index < steps->size(); ++index) {
         const SequenceStep& step = steps->at(index);
         DelaySequenceStep(step);
+        const std::vector<std::string> target_drones = StepTargetDrones(step, default_drone_id, {});
+        if (!step.wait_conditions.empty() &&
+            !WaitForConditions(monitor, target_drones, step.wait_conditions, index)) {
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
         if (step.args.empty()) {
             continue;
         }
@@ -377,6 +791,15 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
         bool step_ok = false;
         const int attempts = step.retries + 1;
         for (int attempt = 1; attempt <= attempts; ++attempt) {
+            if (IsDisarmAction(step) && !IsEmergencyAction(step)) {
+                WaitCondition landed_condition;
+                landed_condition.wait_landed = true;
+                landed_condition.timeout_ms = 30000;
+                if (!WaitForConditions(monitor, target_drones, {landed_condition}, index)) {
+                    step_ok = false;
+                    break;
+                }
+            }
             const auto result =
                 client.SendCommand(MakeCommandEnvelope(drone_id, *command, priority));
             std::string label = "step " + std::to_string(index) + " drone=" + drone_id;
@@ -394,6 +817,16 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
             ++failed_steps;
             if (!step.continue_on_error) {
                 return EXIT_FAILURE;
+            }
+            continue;
+        }
+
+        if (const auto verification = MakeVerificationCondition(step); verification.has_value()) {
+            if (!WaitForConditions(monitor, target_drones, {*verification}, index)) {
+                ++failed_steps;
+                if (!step.continue_on_error) {
+                    return EXIT_FAILURE;
+                }
             }
         }
     }
@@ -821,10 +1254,38 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
         return EXIT_FAILURE;
     }
 
+    const bool needs_telemetry = std::ranges::any_of(*steps, [](const SequenceStep& step) {
+        return !step.wait_conditions.empty() || step.verify || IsDisarmAction(step);
+    });
+    SequenceTelemetryMonitor monitor;
+    if (needs_telemetry) {
+        monitor.StartSwarm(runtime, kDefaultSequenceTelemetryRateHz);
+    }
+
     int failed_steps = 0;
     for (std::size_t index = 0; index < steps->size(); ++index) {
         const SequenceStep& step = steps->at(index);
         DelaySequenceStep(step);
+        const std::vector<std::string> target_drones =
+            StepTargetDrones(step, default_drone_id, runtime.drone_ids);
+        if (!step.wait_conditions.empty() && target_drones.size() == 1 &&
+            target_drones.front().empty()) {
+            std::cerr << "step " << index
+                      << " wait requires drone: DRONE_ID, broadcast: true, or global --drone\n";
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
+        if (!step.wait_conditions.empty() &&
+            !WaitForConditions(monitor, target_drones, step.wait_conditions, index)) {
+            ++failed_steps;
+            if (!step.continue_on_error) {
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
         if (step.args.empty()) {
             continue;
         }
@@ -862,6 +1323,15 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
         const int attempts = step.retries + 1;
         bool step_ok = false;
         for (int attempt = 1; attempt <= attempts; ++attempt) {
+            if (IsDisarmAction(step) && !IsEmergencyAction(step)) {
+                WaitCondition landed_condition;
+                landed_condition.wait_landed = true;
+                landed_condition.timeout_ms = 30000;
+                if (!WaitForConditions(monitor, target_drones, {landed_condition}, index)) {
+                    step_ok = false;
+                    break;
+                }
+            }
             if (step.broadcast) {
                 if (attempts > 1) {
                     std::cout << "step " << index << " broadcast attempt=" << attempt << "/"
@@ -891,6 +1361,16 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
             ++failed_steps;
             if (!step.continue_on_error) {
                 return EXIT_FAILURE;
+            }
+            continue;
+        }
+
+        if (const auto verification = MakeVerificationCondition(step); verification.has_value()) {
+            if (!WaitForConditions(monitor, target_drones, {*verification}, index)) {
+                ++failed_steps;
+                if (!step.continue_on_error) {
+                    return EXIT_FAILURE;
+                }
             }
         }
     }

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -20,6 +21,16 @@ using swarmkit::commands::Command;
 using swarmkit::commands::CommandContext;
 using swarmkit::commands::CommandEnvelope;
 using swarmkit::commands::CommandPriority;
+
+struct BackendHealth {
+    bool ready{true};
+    std::string message{"ready"};
+    std::int64_t last_heartbeat_unix_ms{};
+    std::int64_t last_telemetry_unix_ms{};
+    bool armed{false};
+    int custom_mode{-1};
+    bool failsafe{false};
+};
 
 /// ---------------------------------------------------------------------------
 /// IDroneBackend -- abstract interface for drone vehicle control.
@@ -39,6 +50,11 @@ class IDroneBackend {
 
     virtual ~IDroneBackend() = default;
 
+    /// @brief Start backend resources that should be active before the first RPC.
+    [[nodiscard]] virtual swarmkit::core::Result Start() {
+        return swarmkit::core::Result::Success();
+    }
+
     /// @brief Execute a flight command described by @p envelope.
     /// @returns Ok on acceptance, Rejected if the command is not valid in the
     ///          current state, or Failed on a hard error.
@@ -57,6 +73,11 @@ class IDroneBackend {
     /// @brief Stop the active telemetry stream for @p drone_id.
     /// @note Safe to call when no stream is running (returns Ok silently).
     [[nodiscard]] virtual swarmkit::core::Result StopTelemetry(const std::string& drone_id) = 0;
+
+    /// @brief Report backend-specific readiness/liveness state for health checks.
+    [[nodiscard]] virtual BackendHealth GetHealth() const {
+        return {};
+    }
 };
 
 using DroneBackendPtr = std::unique_ptr<IDroneBackend>;

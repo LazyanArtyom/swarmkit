@@ -589,7 +589,13 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         : config_(std::move(config)),
           backend_(std::move(backend)),
           telemetry_(backend_.get(), config_.default_telemetry_rate_hz,
-                     config_.min_telemetry_rate_hz) {}
+                     config_.min_telemetry_rate_hz) {
+        if (const core::Result start_result = backend_->Start(); !start_result.IsOk()) {
+            ready_.store(false, std::memory_order_relaxed);
+            startup_error_ = start_result.message;
+            core::Logger::ErrorFmt("Agent backend failed to start: {}", start_result.message);
+        }
+    }
 
     // -- Unary RPCs -----------------------------------------------------------
 
@@ -625,14 +631,20 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         counters_.IncrementHealthRequests();
         const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "health");
-        const bool kIsReady = ready_.load(std::memory_order_relaxed);
+        BackendHealth backend_health = backend_->GetHealth();
+        if (!startup_error_.empty()) {
+            backend_health.ready = false;
+            backend_health.message = startup_error_;
+        }
+        const bool kIsReady = ready_.load(std::memory_order_relaxed) && backend_health.ready;
 
         reply->set_ok(true);
         reply->set_ready(kIsReady);
         reply->set_agent_id(config_.agent_id);
         reply->set_version(core::kSwarmkitVersionString);
         reply->set_unix_time_ms(NowUnixMs());
-        reply->set_message(kIsReady ? "ready" : "not ready");
+        reply->set_message(kIsReady ? backend_health.message
+                                    : "not ready: " + backend_health.message);
         reply->set_correlation_id(kCorrelationId);
         return grpc::Status::OK;
     }
@@ -1020,6 +1032,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
     internal::TelemetryManager telemetry_;
     internal::RuntimeCounters counters_;
     std::atomic<bool> ready_{true};
+    std::string startup_error_;
 };
 
 /// @}

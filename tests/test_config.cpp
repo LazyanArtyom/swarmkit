@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "swarmkit/agent/mavlink_backend.h"
 #include "swarmkit/agent/server.h"
 #include "swarmkit/client/client.h"
 #include "swarmkit/client/swarm_client.h"
@@ -183,6 +184,23 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->min_telemetry_rate_hz == 2);
 
     fs::remove(kConfigPath);
+}
+
+TEST_CASE("MAVLink autopilot profile parser supports production profiles",
+          "[agent][config][mavlink]") {
+    const auto copter = swarmkit::agent::ParseMavlinkAutopilotProfile("ardupilot-copter");
+    REQUIRE(copter.has_value());
+    CHECK(*copter == swarmkit::agent::MavlinkAutopilotProfile::kArdupilotCopter);
+
+    const auto plane = swarmkit::agent::ParseMavlinkAutopilotProfile("plane");
+    REQUIRE(plane.has_value());
+    CHECK(*plane == swarmkit::agent::MavlinkAutopilotProfile::kArdupilotPlane);
+
+    const auto px4 = swarmkit::agent::ParseMavlinkAutopilotProfile("px4");
+    REQUIRE(px4.has_value());
+    CHECK(*px4 == swarmkit::agent::MavlinkAutopilotProfile::kPx4);
+
+    CHECK_FALSE(swarmkit::agent::ParseMavlinkAutopilotProfile("unknown").has_value());
 }
 
 TEST_CASE("LoadAgentConfigFromFile parses agent security config", "[agent][config][security]") {

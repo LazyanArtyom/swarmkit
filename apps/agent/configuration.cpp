@@ -83,10 +83,10 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
     return std::nullopt;
 }
 
-void ApplyMavlinkCliOverrides(int argc, char** argv,
-                              swarmkit::agent::MavlinkBackendConfig* mavlink) {
+[[nodiscard]] std::expected<void, int> ApplyMavlinkCliOverrides(
+    int argc, char** argv, swarmkit::agent::MavlinkBackendConfig* mavlink) {
     if (mavlink == nullptr) {
-        return;
+        return {};
     }
 
     if (const std::string kValue = common::GetOptionValue(argc, argv, "--mavlink-bind");
@@ -96,6 +96,16 @@ void ApplyMavlinkCliOverrides(int argc, char** argv,
     if (const std::string kValue = common::GetOptionValue(argc, argv, "--mavlink-drone");
         !kValue.empty()) {
         mavlink->drone_id = kValue;
+    }
+    if (const std::string kValue = common::GetOptionValue(argc, argv, "--mavlink-autopilot");
+        !kValue.empty()) {
+        if (const auto parsed = swarmkit::agent::ParseMavlinkAutopilotProfile(kValue);
+            parsed.has_value()) {
+            mavlink->autopilot_profile = *parsed;
+        } else {
+            std::cerr << "Invalid --mavlink-autopilot value: " << parsed.error().message << "\n";
+            return std::unexpected(EXIT_FAILURE);
+        }
     }
     if (const std::string kValue = common::GetOptionValue(argc, argv, "--mavlink-target-system");
         !kValue.empty()) {
@@ -111,6 +121,7 @@ void ApplyMavlinkCliOverrides(int argc, char** argv,
             mavlink->target_component = *mavlink_id;
         }
     }
+    return {};
 }
 
 }  // namespace
@@ -219,6 +230,18 @@ void ApplyMavlinkCliOverrides(int argc, char** argv,
         if (mavlink) {
             ReadOptionalYamlScalar(mavlink, "drone_id", &selection.mavlink.drone_id);
             ReadOptionalYamlScalar(mavlink, "bind_addr", &selection.mavlink.bind_addr);
+            if (std::string autopilot_profile; mavlink["autopilot_profile"]) {
+                ReadOptionalYamlScalar(mavlink, "autopilot_profile", &autopilot_profile);
+                if (const auto parsed =
+                        swarmkit::agent::ParseMavlinkAutopilotProfile(autopilot_profile);
+                    parsed.has_value()) {
+                    selection.mavlink.autopilot_profile = *parsed;
+                } else {
+                    std::cerr << "Invalid mavlink.autopilot_profile: " << parsed.error().message
+                              << "\n";
+                    return std::unexpected(EXIT_FAILURE);
+                }
+            }
             ReadOptionalByteYamlScalar(mavlink, "target_system", &selection.mavlink.target_system);
             ReadOptionalByteYamlScalar(mavlink, "target_component",
                                        &selection.mavlink.target_component);
@@ -245,7 +268,10 @@ void ApplyMavlinkCliOverrides(int argc, char** argv,
         !kBackend.empty()) {
         selection.backend = kBackend;
     }
-    ApplyMavlinkCliOverrides(argc, argv, &selection.mavlink);
+    if (const auto cli_mavlink_overrides = ApplyMavlinkCliOverrides(argc, argv, &selection.mavlink);
+        !cli_mavlink_overrides.has_value()) {
+        return std::unexpected(cli_mavlink_overrides.error());
+    }
 
     if (selection.backend != "sim" && selection.backend != "mavlink") {
         std::cerr << "Invalid --backend value: " << selection.backend << "\n";

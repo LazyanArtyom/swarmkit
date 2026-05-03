@@ -20,6 +20,7 @@ void PrintUsage() {
                  "  --backend   sim|mavlink   Vehicle backend (default: sim)\n"
                  "  --mavlink-bind HOST:PORT  UDP MAVLink listen address\n"
                  "  --mavlink-drone ID        SwarmKit drone id for MAVLink backend\n"
+                 "  --mavlink-autopilot NAME  ardupilot-copter|ardupilot-plane|px4\n"
                  "  --mavlink-target-system N MAVLink target system id\n"
                  "  --mavlink-target-component N\n"
                  "                             MAVLink target component id\n"

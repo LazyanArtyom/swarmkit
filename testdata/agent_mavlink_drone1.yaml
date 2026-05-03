@@ -8,6 +8,7 @@ agent:
   mavlink:
     drone_id: "drone-1"
     bind_addr: "0.0.0.0:14601"
+    autopilot_profile: "ardupilot-copter"
     target_system: 1
     target_component: 1
     source_system: 245

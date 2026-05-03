@@ -7,17 +7,30 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <string>
+#include <string_view>
 
 #include "swarmkit/agent/backend.h"
 #include "swarmkit/core/result.h"
 
 namespace swarmkit::agent {
 
+enum class MavlinkAutopilotProfile : std::uint8_t {
+    kArdupilotCopter,
+    kArdupilotPlane,
+    kPx4,
+};
+
+[[nodiscard]] std::string_view ToString(MavlinkAutopilotProfile profile) noexcept;
+[[nodiscard]] std::expected<MavlinkAutopilotProfile, core::Result> ParseMavlinkAutopilotProfile(
+    std::string_view value);
+
 /// Runtime configuration for the direct MAVLink UDP backend.
 struct MavlinkBackendConfig {
     std::string drone_id{"drone-1"};
     std::string bind_addr{"0.0.0.0:14601"};
+    MavlinkAutopilotProfile autopilot_profile{MavlinkAutopilotProfile::kArdupilotCopter};
     std::uint8_t target_system{1};
     std::uint8_t target_component{1};
     std::uint8_t source_system{245};

@@ -32,6 +32,7 @@ inline constexpr std::uint16_t kMavCmdNavLand = 21;
 inline constexpr std::uint16_t kMavCmdNavReturnToLaunch = 20;
 
 inline constexpr int kTelemetryPollIntervalMs = 100;
+inline constexpr int kDefaultSequenceTelemetryRateHz = 5;
 inline constexpr int kTelemetryCoordPrecision = 5;
 inline constexpr int kTelemetryValuePrecision = 1;
 

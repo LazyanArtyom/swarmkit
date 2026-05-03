@@ -102,6 +102,7 @@ The same settings can be overridden from the command line:
     --config testdata/agent_config.yaml \
     --backend mavlink \
     --mavlink-drone drone-1 \
+    --mavlink-autopilot ardupilot-copter \
     --mavlink-bind 0.0.0.0:14601 \
     --mavlink-target-system 1 \
     --mavlink-target-component 1 \
@@ -126,11 +127,37 @@ Basic command mapping is implemented through MAVLink:
 - `return_home` uses `MAV_CMD_NAV_RETURN_TO_LAUNCH`
 - `hold` uses `MAV_CMD_NAV_LOITER_UNLIM`
 - `waypoint` uses `SET_POSITION_TARGET_GLOBAL_INT`
+- `goto` first tries `MAV_CMD_DO_REPOSITION` and falls back to
+  `SET_POSITION_TARGET_GLOBAL_INT` when the autopilot reports reposition as
+  unsupported.
 
 `COMMAND_LONG`-based commands wait for `COMMAND_ACK`; the CLI reports the
 autopilot ACK result instead of only confirming that a UDP packet was sent.
 ACK target fields are matched when present, while older/minimal ACK payloads
 that omit those extension fields are still accepted.
+
+For production-style automation, prefer CLI sequence files with telemetry
+verification instead of fixed sleeps only:
+
+```yaml
+steps:
+  - broadcast: true
+    args: [takeoff, --alt, 5]
+    verify: true
+  - drone: drone-1
+    args: [goto, --lat, -35.363, --lon, 149.1655, --alt, 5, --speed, 3]
+    verify: true
+  - drone: drone-1
+    wait_position: {lat: -35.363, lon: 149.1655, alt: 5, radius_m: 2}
+    timeout_ms: 60000
+  - broadcast: true
+    args: [land]
+    verify: true
+  - broadcast: true
+    args: [disarm]
+    retries: 10
+    retry_delay_ms: 2000
+```
 
 **Terminal 2 — use the CLI:**
 

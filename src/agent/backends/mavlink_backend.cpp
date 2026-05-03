@@ -64,7 +64,19 @@ constexpr float kMavlinkPause = 0.0F;
 constexpr float kMavlinkResume = 1.0F;
 constexpr std::uint16_t kMissionUploadMaxItems = 1000;
 constexpr int kVelocityCommandPeriodMs = 200;
+constexpr int kHeartbeatStaleTimeoutMs = 3000;
+constexpr int kTelemetryStaleTimeoutMs = 5000;
 constexpr float kUnknownBattery = -1.0F;
+constexpr int kPx4MainModeManual = 1;
+constexpr int kPx4MainModeAltctl = 2;
+constexpr int kPx4MainModePosctl = 3;
+constexpr int kPx4MainModeAuto = 4;
+constexpr int kPx4MainModeOffboard = 6;
+constexpr int kPx4SubModeAutoTakeoff = 2;
+constexpr int kPx4SubModeAutoLoiter = 3;
+constexpr int kPx4SubModeAutoMission = 4;
+constexpr int kPx4SubModeAutoRtl = 5;
+constexpr int kPx4SubModeAutoLand = 6;
 
 [[nodiscard]] std::int64_t NowUnixMs() {
     using std::chrono::duration_cast;
@@ -80,13 +92,6 @@ constexpr float kUnknownBattery = -1.0F;
     return value;
 }
 
-[[nodiscard]] bool IsUnsupportedCommandAck(const core::Result& result) {
-    return result.code == core::StatusCode::kRejected &&
-           (result.message.find("result=UNSUPPORTED") != std::string::npos ||
-            result.message.find("result=COMMAND_UNSUPPORTED_MAV_FRAME") != std::string::npos ||
-            result.message.find("result=COMMAND_INT_ONLY") != std::string::npos);
-}
-
 [[nodiscard]] std::optional<int> ArduCopterModeFromName(std::string mode) {
     static const std::unordered_map<std::string, int> kModeMap{
         {"stabilize", 0}, {"acro", 1},          {"alt-hold", 2},   {"althold", 2},
@@ -95,6 +100,48 @@ constexpr float kUnknownBattery = -1.0F;
         {"sport", 13},    {"flip", 14},         {"auto-tune", 15}, {"autotune", 15},
         {"poshold", 16},  {"pos-hold", 16},     {"brake", 17},     {"throw", 18},
         {"avoid", 19},    {"guided-nogps", 20}, {"smart-rtl", 21}, {"smartrtl", 21},
+    };
+    const auto iter = kModeMap.find(ToLower(std::move(mode)));
+    if (iter == kModeMap.end()) {
+        return std::nullopt;
+    }
+    return iter->second;
+}
+
+[[nodiscard]] std::optional<int> ArduPlaneModeFromName(std::string mode) {
+    static const std::unordered_map<std::string, int> kModeMap{
+        {"manual", 0},      {"circle", 1},  {"stabilize", 2}, {"training", 3}, {"acro", 4},
+        {"fbwa", 5},        {"fbwb", 6},    {"cruise", 7},    {"autotune", 8}, {"auto", 10},
+        {"rtl", 11},        {"loiter", 12}, {"takeoff", 13},  {"avoid", 15},   {"guided", 15},
+        {"qstabilize", 17}, {"qhover", 18}, {"qloiter", 19},  {"qland", 20},   {"qrtl", 21},
+    };
+    const auto iter = kModeMap.find(ToLower(std::move(mode)));
+    if (iter == kModeMap.end()) {
+        return std::nullopt;
+    }
+    return iter->second;
+}
+
+struct Px4Mode {
+    int main_mode{};
+    int sub_mode{};
+};
+
+[[nodiscard]] std::optional<Px4Mode> Px4ModeFromName(std::string mode) {
+    static const std::unordered_map<std::string, Px4Mode> kModeMap{
+        {"manual", {.main_mode = kPx4MainModeManual}},
+        {"altctl", {.main_mode = kPx4MainModeAltctl}},
+        {"posctl", {.main_mode = kPx4MainModePosctl}},
+        {"position", {.main_mode = kPx4MainModePosctl}},
+        {"auto", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoMission}},
+        {"mission", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoMission}},
+        {"rtl", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoRtl}},
+        {"return", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoRtl}},
+        {"land", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoLand}},
+        {"loiter", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoLoiter}},
+        {"hold", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoLoiter}},
+        {"takeoff", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoTakeoff}},
+        {"offboard", {.main_mode = kPx4MainModeOffboard}},
     };
     const auto iter = kModeMap.find(ToLower(std::move(mode)));
     if (iter == kModeMap.end()) {
@@ -159,12 +206,57 @@ struct TelemetryCache {
     std::string mode{"MAVLINK"};
 };
 
+[[nodiscard]] std::string MavResultName(std::uint8_t result);
+
 struct CommandAck {
     std::uint16_t command{};
     std::uint8_t result{};
     std::int32_t result_param2{};
     std::uint8_t target_system{};
     std::uint8_t target_component{};
+};
+
+struct MavlinkCommandAckResult {
+    CommandAck ack;
+    bool has_ack{false};
+    core::Result send_result{core::Result::Success()};
+
+    [[nodiscard]] bool IsUnsupported() const {
+        return has_ack &&
+               (ack.result == MAV_RESULT_UNSUPPORTED || ack.result == MAV_RESULT_COMMAND_INT_ONLY ||
+                ack.result == MAV_RESULT_COMMAND_UNSUPPORTED_MAV_FRAME);
+    }
+
+    [[nodiscard]] core::Result ToCoreResult() const {
+        if (!send_result.IsOk()) {
+            return send_result;
+        }
+        if (!has_ack) {
+            return core::Result::Success();
+        }
+
+        const std::string detail = "COMMAND_ACK command=" + std::to_string(ack.command) +
+                                   " result=" + MavResultName(ack.result) +
+                                   " param2=" + std::to_string(ack.result_param2) +
+                                   " target=" + std::to_string(ack.target_system) + "/" +
+                                   std::to_string(ack.target_component);
+        switch (ack.result) {
+            case MAV_RESULT_ACCEPTED:
+                return core::Result::Success(detail);
+            case MAV_RESULT_TEMPORARILY_REJECTED:
+            case MAV_RESULT_DENIED:
+            case MAV_RESULT_UNSUPPORTED:
+            case MAV_RESULT_CANCELLED:
+            case MAV_RESULT_COMMAND_LONG_ONLY:
+            case MAV_RESULT_COMMAND_INT_ONLY:
+            case MAV_RESULT_COMMAND_UNSUPPORTED_MAV_FRAME:
+            case MAV_RESULT_NOT_IN_CONTROL:
+                return core::Result::Rejected(detail);
+            case MAV_RESULT_FAILED:
+            default:
+                return core::Result::Failed(detail);
+        }
+    }
 };
 
 struct MissionRequest {
@@ -175,6 +267,20 @@ struct MissionRequest {
 struct MissionAck {
     std::uint8_t type{};
     std::uint8_t mission_type{MAV_MISSION_TYPE_MISSION};
+};
+
+struct MavlinkVehicleState {
+    std::int64_t last_heartbeat_unix_ms{};
+    std::int64_t last_telemetry_unix_ms{};
+    std::uint8_t system_id{};
+    std::uint8_t component_id{};
+    std::uint8_t mav_type{};
+    std::uint8_t autopilot{};
+    std::uint8_t base_mode{};
+    std::uint8_t system_status{};
+    bool armed{false};
+    int custom_mode{-1};
+    bool failsafe{false};
 };
 
 [[nodiscard]] std::string MavResultName(std::uint8_t result) {
@@ -255,6 +361,10 @@ class MavlinkBackend final : public IDroneBackend {
         }
     }
 
+    core::Result Start() override {
+        return EnsureReceiverStarted();
+    }
+
     core::Result Execute(const CommandEnvelope& envelope) override {
         if (const core::Result result = EnsureReceiverStarted(); !result.IsOk()) {
             return result;
@@ -324,6 +434,49 @@ class MavlinkBackend final : public IDroneBackend {
         telemetry_callback_ = nullptr;
         active_drone_id_.clear();
         return core::Result::Success();
+    }
+
+    BackendHealth GetHealth() const override {
+        const std::int64_t now_ms = NowUnixMs();
+        MavlinkVehicleState state;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            state = vehicle_state_;
+        }
+
+        BackendHealth health;
+        health.last_heartbeat_unix_ms = state.last_heartbeat_unix_ms;
+        health.last_telemetry_unix_ms = state.last_telemetry_unix_ms;
+        health.armed = state.armed;
+        health.custom_mode = state.custom_mode;
+        health.failsafe = state.failsafe;
+
+        if (state.last_heartbeat_unix_ms == 0) {
+            health.ready = false;
+            health.message = "MAVLink heartbeat not received";
+            return health;
+        }
+        if (now_ms - state.last_heartbeat_unix_ms > kHeartbeatStaleTimeoutMs) {
+            health.ready = false;
+            health.message = "MAVLink heartbeat stale";
+            return health;
+        }
+        if (state.failsafe) {
+            health.ready = false;
+            health.message = "MAVLink system status is failsafe/emergency";
+            return health;
+        }
+
+        health.ready = true;
+        health.message = "MAVLink ready sysid=" + std::to_string(state.system_id) +
+                         " compid=" + std::to_string(state.component_id) +
+                         " armed=" + (state.armed ? "true" : "false") +
+                         " custom_mode=" + std::to_string(state.custom_mode);
+        if (state.last_telemetry_unix_ms != 0 &&
+            now_ms - state.last_telemetry_unix_ms > kTelemetryStaleTimeoutMs) {
+            health.message += " telemetry=stale";
+        }
+        return health;
     }
 
    private:
@@ -482,6 +635,7 @@ class MavlinkBackend final : public IDroneBackend {
                     mavlink_heartbeat_t heartbeat{};
                     mavlink_msg_heartbeat_decode(&message, &heartbeat);
                     telemetry_cache_.mode = ModeString(heartbeat);
+                    UpdateHeartbeatState(message, heartbeat);
                     should_publish = true;
                     if (!message_intervals_requested_) {
                         message_intervals_requested_ = true;
@@ -496,6 +650,7 @@ class MavlinkBackend final : public IDroneBackend {
                     telemetry_cache_.lon_deg = static_cast<double>(position.lon) / kDegE7;
                     telemetry_cache_.rel_alt_m =
                         static_cast<float>(position.relative_alt) / kMillimetresPerMetre;
+                    UpdateTelemetryState(message);
                     should_publish = true;
                     break;
                 }
@@ -506,6 +661,7 @@ class MavlinkBackend final : public IDroneBackend {
                         telemetry_cache_.battery_percent =
                             static_cast<float>(sys_status.battery_remaining);
                     }
+                    UpdateTelemetryState(message);
                     should_publish = true;
                     break;
                 }
@@ -516,6 +672,7 @@ class MavlinkBackend final : public IDroneBackend {
                         telemetry_cache_.battery_percent =
                             static_cast<float>(battery.battery_remaining);
                     }
+                    UpdateTelemetryState(message);
                     should_publish = true;
                     break;
                 }
@@ -530,6 +687,32 @@ class MavlinkBackend final : public IDroneBackend {
         if (should_request_intervals) {
             RequestTelemetryIntervals();
         }
+    }
+
+    void UpdateHeartbeatState(const mavlink_message_t& message,
+                              const mavlink_heartbeat_t& heartbeat) {
+        const bool failsafe = heartbeat.system_status == MAV_STATE_CRITICAL ||
+                              heartbeat.system_status == MAV_STATE_EMERGENCY ||
+                              heartbeat.system_status == MAV_STATE_FLIGHT_TERMINATION;
+
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        vehicle_state_.last_heartbeat_unix_ms = NowUnixMs();
+        vehicle_state_.system_id = message.sysid;
+        vehicle_state_.component_id = message.compid;
+        vehicle_state_.mav_type = heartbeat.type;
+        vehicle_state_.autopilot = heartbeat.autopilot;
+        vehicle_state_.base_mode = heartbeat.base_mode;
+        vehicle_state_.system_status = heartbeat.system_status;
+        vehicle_state_.armed = (heartbeat.base_mode & MAV_MODE_FLAG_SAFETY_ARMED) != 0U;
+        vehicle_state_.custom_mode = static_cast<int>(heartbeat.custom_mode);
+        vehicle_state_.failsafe = failsafe;
+    }
+
+    void UpdateTelemetryState(const mavlink_message_t& message) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        vehicle_state_.last_telemetry_unix_ms = NowUnixMs();
+        vehicle_state_.system_id = message.sysid;
+        vehicle_state_.component_id = message.compid;
     }
 
     void PublishTelemetry() {
@@ -685,16 +868,40 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     [[nodiscard]] core::Result SetMode(const CmdSetMode& mode) {
+        if (config_.autopilot_profile == MavlinkAutopilotProfile::kPx4) {
+            return SetPx4Mode(mode);
+        }
+
         int custom_mode = mode.custom_mode;
         if (custom_mode < 0) {
-            const auto mapped_mode = ArduCopterModeFromName(mode.mode);
+            const auto mapped_mode =
+                config_.autopilot_profile == MavlinkAutopilotProfile::kArdupilotPlane
+                    ? ArduPlaneModeFromName(mode.mode)
+                    : ArduCopterModeFromName(mode.mode);
             if (!mapped_mode.has_value()) {
-                return core::Result::Rejected("unknown mode '" + mode.mode +
-                                              "'; use a known ArduCopter mode or --custom-mode");
+                return core::Result::Rejected("unknown mode '" + mode.mode + "' for autopilot " +
+                                              std::string(ToString(config_.autopilot_profile)) +
+                                              "; use a known mode or --custom-mode");
             }
             custom_mode = *mapped_mode;
         }
         return SetCustomMode(custom_mode);
+    }
+
+    [[nodiscard]] core::Result SetPx4Mode(const CmdSetMode& mode) {
+        if (mode.custom_mode >= 0) {
+            return SendCommandLong(MAV_CMD_DO_SET_MODE,
+                                   static_cast<float>(MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
+                                   static_cast<float>(mode.custom_mode));
+        }
+        const auto mapped_mode = Px4ModeFromName(mode.mode);
+        if (!mapped_mode.has_value()) {
+            return core::Result::Rejected("unknown PX4 mode '" + mode.mode +
+                                          "'; use --custom-mode or a known PX4 mode");
+        }
+        return SendCommandLong(
+            MAV_CMD_DO_SET_MODE, static_cast<float>(MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
+            static_cast<float>(mapped_mode->main_mode), static_cast<float>(mapped_mode->sub_mode));
     }
 
     [[nodiscard]] core::Result SendSetSpeed(float ground_mps) {
@@ -712,13 +919,13 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         const float yaw = go_to.use_yaw ? go_to.yaw_deg : std::numeric_limits<float>::quiet_NaN();
-        core::Result reposition_result = SendCommandLong(
+        const MavlinkCommandAckResult reposition_result = SendCommandLongDetailed(
             MAV_CMD_DO_REPOSITION, go_to.speed_mps > 0.0F ? go_to.speed_mps : kMavlinkDefaultSpeed,
             static_cast<float>(MAV_DO_REPOSITION_FLAGS_CHANGE_MODE), 0.0F, yaw,
             static_cast<float>(go_to.lat_deg), static_cast<float>(go_to.lon_deg),
             static_cast<float>(go_to.alt_m));
-        if (!IsUnsupportedCommandAck(reposition_result)) {
-            return reposition_result;
+        if (!reposition_result.IsUnsupported()) {
+            return reposition_result.ToCoreResult();
         }
 
         core::Logger::WarnFmt(
@@ -774,6 +981,15 @@ class MavlinkBackend final : public IDroneBackend {
                                                float param4 = 0.0F, float param5 = 0.0F,
                                                float param6 = 0.0F, float param7 = 0.0F,
                                                bool wait_for_ack = true) {
+        return SendCommandLongDetailed(command, param1, param2, param3, param4, param5, param6,
+                                       param7, wait_for_ack)
+            .ToCoreResult();
+    }
+
+    [[nodiscard]] MavlinkCommandAckResult SendCommandLongDetailed(
+        std::uint16_t command, float param1 = 0.0F, float param2 = 0.0F, float param3 = 0.0F,
+        float param4 = 0.0F, float param5 = 0.0F, float param6 = 0.0F, float param7 = 0.0F,
+        bool wait_for_ack = true) {
         std::uint64_t ack_start_sequence{};
         if (wait_for_ack) {
             std::lock_guard<std::mutex> lock(ack_mutex_);
@@ -786,7 +1002,7 @@ class MavlinkBackend final : public IDroneBackend {
                                       param1, param2, param3, param4, param5, param6, param7);
         core::Result send_result = SendMavlinkMessage(message);
         if (!send_result.IsOk() || !wait_for_ack) {
-            return send_result;
+            return {.send_result = std::move(send_result)};
         }
         return WaitForCommandAck(command, ack_start_sequence);
     }
@@ -1092,8 +1308,8 @@ class MavlinkBackend final : public IDroneBackend {
         return core::Result::Failed(detail);
     }
 
-    [[nodiscard]] core::Result WaitForCommandAck(std::uint16_t command,
-                                                 std::uint64_t start_sequence) {
+    [[nodiscard]] MavlinkCommandAckResult WaitForCommandAck(std::uint16_t command,
+                                                            std::uint64_t start_sequence) {
         std::unique_lock<std::mutex> lock(ack_mutex_);
         const bool got_ack =
             ack_cv_.wait_for(lock, std::chrono::milliseconds{config_.command_ack_timeout_ms}, [&] {
@@ -1106,32 +1322,12 @@ class MavlinkBackend final : public IDroneBackend {
             });
 
         if (!got_ack) {
-            return core::Result::Failed("timed out waiting for COMMAND_ACK command=" +
-                                        std::to_string(command));
+            return {.send_result = core::Result::Failed(
+                        "timed out waiting for COMMAND_ACK command=" + std::to_string(command))};
         }
 
         const CommandAck ack = last_ack_.value_or(CommandAck{});
-        const std::string detail = "COMMAND_ACK command=" + std::to_string(ack.command) +
-                                   " result=" + MavResultName(ack.result) +
-                                   " param2=" + std::to_string(ack.result_param2) +
-                                   " target=" + std::to_string(ack.target_system) + "/" +
-                                   std::to_string(ack.target_component);
-        switch (ack.result) {
-            case MAV_RESULT_ACCEPTED:
-                return core::Result::Success(detail);
-            case MAV_RESULT_TEMPORARILY_REJECTED:
-            case MAV_RESULT_DENIED:
-            case MAV_RESULT_UNSUPPORTED:
-            case MAV_RESULT_CANCELLED:
-            case MAV_RESULT_COMMAND_LONG_ONLY:
-            case MAV_RESULT_COMMAND_INT_ONLY:
-            case MAV_RESULT_COMMAND_UNSUPPORTED_MAV_FRAME:
-            case MAV_RESULT_NOT_IN_CONTROL:
-                return core::Result::Rejected(detail);
-            case MAV_RESULT_FAILED:
-            default:
-                return core::Result::Failed(detail);
-        }
+        return {.ack = ack, .has_ack = true};
     }
 
     [[nodiscard]] bool AckTargetsThisBackend(const CommandAck& ack) const {
@@ -1167,6 +1363,9 @@ class MavlinkBackend final : public IDroneBackend {
     TelemetryCache telemetry_cache_;
     bool message_intervals_requested_{false};
 
+    mutable std::mutex state_mutex_;
+    MavlinkVehicleState vehicle_state_;
+
     std::mutex ack_mutex_;
     std::condition_variable ack_cv_;
     std::optional<CommandAck> last_ack_;
@@ -1181,6 +1380,35 @@ class MavlinkBackend final : public IDroneBackend {
 };
 
 }  // namespace
+
+std::string_view ToString(MavlinkAutopilotProfile profile) noexcept {
+    switch (profile) {
+        case MavlinkAutopilotProfile::kArdupilotCopter:
+            return "ardupilot-copter";
+        case MavlinkAutopilotProfile::kArdupilotPlane:
+            return "ardupilot-plane";
+        case MavlinkAutopilotProfile::kPx4:
+            return "px4";
+    }
+    return "unknown";
+}
+
+std::expected<MavlinkAutopilotProfile, core::Result> ParseMavlinkAutopilotProfile(
+    std::string_view value) {
+    const std::string normalized = ToLower(std::string(value));
+    if (normalized == "ardupilot-copter" || normalized == "arducopter" || normalized == "copter") {
+        return MavlinkAutopilotProfile::kArdupilotCopter;
+    }
+    if (normalized == "ardupilot-plane" || normalized == "arduplane" || normalized == "plane") {
+        return MavlinkAutopilotProfile::kArdupilotPlane;
+    }
+    if (normalized == "px4") {
+        return MavlinkAutopilotProfile::kPx4;
+    }
+    return std::unexpected(
+        core::Result::Rejected("unsupported mavlink.autopilot_profile '" + std::string(value) +
+                               "'; expected ardupilot-copter|ardupilot-plane|px4"));
+}
 
 core::Result MavlinkBackendConfig::Validate() const {
     if (drone_id.empty()) {
