@@ -18,6 +18,23 @@ namespace swarmkit::agent {
 inline constexpr int kDefaultAuthorityTtlMs = 5000;
 inline constexpr int kDefaultTelemetryRateHz = 5;
 inline constexpr int kMinimumTelemetryRateHz = 1;
+inline constexpr float kDefaultCruiseSpeedMps = 4.0F;
+inline constexpr float kDefaultClimbSpeedMps = 1.5F;
+inline constexpr float kDefaultDescentSpeedMps = 1.0F;
+inline constexpr int kDefaultGoalMarginMs = 15000;
+inline constexpr int kDefaultMaxGoalTimeoutMs = 300000;
+
+struct VehicleProfile {
+    std::string profile_id{"generic-quad"};
+    float cruise_speed_mps{kDefaultCruiseSpeedMps};
+    float climb_speed_mps{kDefaultClimbSpeedMps};
+    float descent_speed_mps{kDefaultDescentSpeedMps};
+    int goal_margin_ms{kDefaultGoalMarginMs};
+    int max_goal_timeout_ms{kDefaultMaxGoalTimeoutMs};
+
+    [[nodiscard]] core::Result Validate() const;
+};
+
 struct AgentSecurityConfig {
     std::string root_ca_cert_path;
     std::string cert_chain_path;
@@ -36,6 +53,7 @@ struct AgentConfig {
     int default_authority_ttl_ms{kDefaultAuthorityTtlMs};
     int default_telemetry_rate_hz{kDefaultTelemetryRateHz};
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};
+    VehicleProfile vehicle_profile{};
     AgentSecurityConfig security{};
 
     [[nodiscard]] core::Result Validate() const;

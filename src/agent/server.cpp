@@ -11,12 +11,22 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <condition_variable>
+#include <cstdio>
 #include <cstdint>
+#include <deque>
 #include <expected>
+#include <exception>
 #include <memory>
+#include <mutex>
+#include <numbers>
+#include <optional>
+#include <queue>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 
 #include "config_yaml.h"
@@ -574,6 +584,496 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
 
 /// @}
 
+[[nodiscard]] double DegToRad(double degrees) {
+    return degrees * std::numbers::pi / 180.0;
+}
+
+[[nodiscard]] double DistanceMeters(double lat_a_deg, double lon_a_deg, double lat_b_deg,
+                                    double lon_b_deg) {
+    constexpr double kEarthRadiusMeters = 6371000.0;
+    const double lat_a = DegToRad(lat_a_deg);
+    const double lat_b = DegToRad(lat_b_deg);
+    const double delta_lat = DegToRad(lat_b_deg - lat_a_deg);
+    const double delta_lon = DegToRad(lon_b_deg - lon_a_deg);
+    const double sin_lat = std::sin(delta_lat / 2.0);
+    const double sin_lon = std::sin(delta_lon / 2.0);
+    const double haversine =
+        (sin_lat * sin_lat) + (std::cos(lat_a) * std::cos(lat_b) * sin_lon * sin_lon);
+    return 2.0 * kEarthRadiusMeters * std::atan2(std::sqrt(haversine), std::sqrt(1.0 - haversine));
+}
+
+struct LocalPointMeters {
+    double x{};
+    double y{};
+};
+
+[[nodiscard]] LocalPointMeters ProjectMeters(const core::TelemetryFrame& origin, double lat_deg,
+                                             double lon_deg) {
+    constexpr double kMetersPerDegreeLat = 111320.0;
+    const double meters_per_degree_lon = kMetersPerDegreeLat * std::cos(DegToRad(origin.lat_deg));
+    return {
+        .x = (lon_deg - origin.lon_deg) * meters_per_degree_lon,
+        .y = (lat_deg - origin.lat_deg) * kMetersPerDegreeLat,
+    };
+}
+
+[[nodiscard]] double CorridorDeviationMeters(const core::TelemetryFrame& origin,
+                                             const core::TelemetryFrame& current,
+                                             const swarmkit::v1::GeoPoint& target) {
+    const LocalPointMeters target_point = ProjectMeters(origin, target.lat_deg(), target.lon_deg());
+    const LocalPointMeters current_point = ProjectMeters(origin, current.lat_deg, current.lon_deg);
+    const double segment_len_sq =
+        (target_point.x * target_point.x) + (target_point.y * target_point.y);
+    if (segment_len_sq <= 1.0) {
+        return DistanceMeters(current.lat_deg, current.lon_deg, target.lat_deg(), target.lon_deg());
+    }
+    const double projection =
+        ((current_point.x * target_point.x) + (current_point.y * target_point.y)) / segment_len_sq;
+    const double clamped_projection = std::clamp(projection, 0.0, 1.0);
+    const double closest_x = target_point.x * clamped_projection;
+    const double closest_y = target_point.y * clamped_projection;
+    const double delta_x = current_point.x - closest_x;
+    const double delta_y = current_point.y - closest_y;
+    return std::sqrt((delta_x * delta_x) + (delta_y * delta_y));
+}
+
+[[nodiscard]] std::int64_t ComputeGoalTimeoutMs(const VehicleProfile& profile,
+                                                const swarmkit::v1::ActiveGoal& goal,
+                                                const std::optional<core::TelemetryFrame>& frame) {
+    if (goal.timeout_ms() > 0) {
+        return goal.timeout_ms();
+    }
+    double travel_seconds = 30.0;
+    if (frame.has_value()) {
+        const double distance_m =
+            DistanceMeters(frame->lat_deg, frame->lon_deg, goal.target().lat_deg(),
+                           goal.target().lon_deg());
+        const float speed_mps = goal.speed_mps() > 0.0F ? goal.speed_mps() : profile.cruise_speed_mps;
+        const double horizontal_seconds = speed_mps > 0.0F ? distance_m / speed_mps : 0.0;
+        const double alt_delta = goal.target().alt_m() - frame->rel_alt_m;
+        const float vertical_speed =
+            alt_delta >= 0.0 ? profile.climb_speed_mps : profile.descent_speed_mps;
+        const double vertical_seconds =
+            vertical_speed > 0.0F ? std::abs(alt_delta) / vertical_speed : 0.0;
+        travel_seconds = std::max(horizontal_seconds, vertical_seconds);
+    }
+    const auto calculated_ms = static_cast<std::int64_t>((travel_seconds * 1000.0) +
+                                                        profile.goal_margin_ms);
+    return std::clamp<std::int64_t>(calculated_ms, profile.goal_margin_ms,
+                                    profile.max_goal_timeout_ms);
+}
+
+class ReportQueue {
+   public:
+    void Push(swarmkit::v1::AgentReport report) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (shutdown_) {
+                return;
+            }
+            queue_.push(std::move(report));
+        }
+        cv_.notify_one();
+    }
+
+    [[nodiscard]] bool Pop(swarmkit::v1::AgentReport* out, std::chrono::milliseconds timeout) {
+        if (out == nullptr) {
+            return false;
+        }
+        std::unique_lock<std::mutex> lock(mutex_);
+        const bool ready =
+            cv_.wait_for(lock, timeout, [this] { return !queue_.empty() || shutdown_; });
+        if (!ready || queue_.empty()) {
+            return false;
+        }
+        *out = std::move(queue_.front());
+        queue_.pop();
+        return true;
+    }
+
+    void Shutdown() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            shutdown_ = true;
+        }
+        cv_.notify_all();
+    }
+
+   private:
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::queue<swarmkit::v1::AgentReport> queue_;
+    bool shutdown_{false};
+};
+
+struct ReportWatchToken {
+    std::uint64_t watch_id{};
+};
+
+class ReportHub {
+   public:
+    ReportWatchToken Watch(std::string drone_id, std::uint64_t after_sequence,
+                           const std::shared_ptr<ReportQueue>& queue) {
+        std::vector<swarmkit::v1::AgentReport> backlog;
+        ReportWatchToken token;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            token.watch_id = ++next_watch_id_;
+            watchers_.emplace(token.watch_id, Watcher{
+                                                  .drone_id = std::move(drone_id),
+                                                  .queue = queue,
+                                              });
+            for (const auto& report : backlog_) {
+                if (report.sequence() > after_sequence && Matches(watchers_.at(token.watch_id),
+                                                                  report)) {
+                    backlog.push_back(report);
+                }
+            }
+        }
+        for (auto& report : backlog) {
+            if (queue) {
+                queue->Push(std::move(report));
+            }
+        }
+        return token;
+    }
+
+    void Unwatch(ReportWatchToken token) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        watchers_.erase(token.watch_id);
+    }
+
+    void Publish(swarmkit::v1::AgentReport report) {
+        std::vector<std::shared_ptr<ReportQueue>> queues;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            report.set_sequence(++next_sequence_);
+            report.set_unix_time_ms(NowUnixMs());
+            backlog_.push_back(report);
+            constexpr std::size_t kMaxBacklog = 1000;
+            while (backlog_.size() > kMaxBacklog) {
+                backlog_.pop_front();
+            }
+            for (auto iter = watchers_.begin(); iter != watchers_.end();) {
+                if (auto queue = iter->second.queue.lock()) {
+                    if (Matches(iter->second, report)) {
+                        queues.push_back(std::move(queue));
+                    }
+                    ++iter;
+                } else {
+                    iter = watchers_.erase(iter);
+                }
+            }
+        }
+        for (const auto& queue : queues) {
+            queue->Push(report);
+        }
+    }
+
+   private:
+    struct Watcher {
+        std::string drone_id;
+        std::weak_ptr<ReportQueue> queue;
+    };
+
+    [[nodiscard]] static bool Matches(const Watcher& watcher,
+                                      const swarmkit::v1::AgentReport& report) {
+        return watcher.drone_id.empty() || watcher.drone_id == "all" ||
+               watcher.drone_id == report.drone_id();
+    }
+
+    std::mutex mutex_;
+    std::unordered_map<std::uint64_t, Watcher> watchers_;
+    std::deque<swarmkit::v1::AgentReport> backlog_;
+    std::uint64_t next_watch_id_{0};
+    std::uint64_t next_sequence_{0};
+};
+
+class ActiveGoalSupervisor {
+   public:
+    ActiveGoalSupervisor(internal::TelemetryManager* telemetry, ReportHub* reports,
+                         const AgentConfig* config)
+        : telemetry_(telemetry), reports_(reports), config_(config) {}
+
+    ~ActiveGoalSupervisor() noexcept {
+        try {
+            Shutdown();
+        } catch (const std::exception& exc) {
+            core::Logger::ErrorFmt("ActiveGoalSupervisor shutdown failed: {}", exc.what());
+        } catch (...) {
+            core::Logger::Error("ActiveGoalSupervisor shutdown failed with unknown exception");
+        }
+    }
+
+    ActiveGoalSupervisor(const ActiveGoalSupervisor&) = delete;
+    ActiveGoalSupervisor& operator=(const ActiveGoalSupervisor&) = delete;
+
+    [[nodiscard]] std::int64_t StartGoal(swarmkit::v1::ActiveGoal goal,
+                                         std::string correlation_id) {
+        std::thread old_worker;
+        std::shared_ptr<std::atomic<bool>> old_stop;
+        std::int64_t out_timeout{};
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (auto iter = goals_.find(goal.drone_id()); iter != goals_.end()) {
+                old_stop = iter->second.stop;
+                PublishGoalReport(iter->second.goal, swarmkit::v1::GOAL_SUPERSEDED,
+                                  swarmkit::v1::REPORT_INFO, 0.0, 0.0, 0.0,
+                                  iter->second.computed_timeout_ms, iter->second.started_unix_ms,
+                                  "superseded by newer active goal",
+                                  iter->second.correlation_id);
+                old_worker = std::move(iter->second.worker);
+                goals_.erase(iter);
+            }
+            if (old_stop) {
+                old_stop->store(true, std::memory_order_relaxed);
+            }
+
+            ActiveGoalRuntime runtime;
+            runtime.goal = std::move(goal);
+            runtime.correlation_id = std::move(correlation_id);
+            runtime.started_unix_ms = NowUnixMs();
+            runtime.computed_timeout_ms =
+                ComputeGoalTimeoutMs(config_->vehicle_profile, runtime.goal, std::nullopt);
+            runtime.status = swarmkit::v1::GOAL_ACTIVE;
+            runtime.stop = std::make_shared<std::atomic<bool>>(false);
+            const std::string drone_id = runtime.goal.drone_id();
+            const auto stop = runtime.stop;
+            const auto runtime_goal = runtime.goal;
+            const std::int64_t timeout_ms = runtime.computed_timeout_ms;
+            const std::string runtime_correlation_id = runtime.correlation_id;
+            const std::int64_t started_ms = runtime.started_unix_ms;
+            // NOLINTNEXTLINE(bugprone-exception-escape): the thread entry catches all exceptions.
+            runtime.worker = std::thread([this, runtime_goal, timeout_ms, started_ms,
+                                          runtime_correlation_id, stop] noexcept {
+                try {
+                    MonitorGoal(runtime_goal, timeout_ms, started_ms, runtime_correlation_id, stop);
+                } catch (...) {
+                    static_cast<void>(
+                        std::fputs("Active goal monitor failed\n", stderr));
+                }
+            });
+            PublishGoalReport(runtime.goal, swarmkit::v1::GOAL_ACTIVE, swarmkit::v1::REPORT_INFO,
+                              0.0, 0.0, 0.0, runtime.computed_timeout_ms,
+                              runtime.started_unix_ms, "active goal accepted",
+                              runtime.correlation_id);
+            out_timeout = runtime.computed_timeout_ms;
+            goals_.emplace(drone_id, std::move(runtime));
+        }
+        if (old_worker.joinable()) {
+            old_worker.join();
+        }
+        return out_timeout;
+    }
+
+    [[nodiscard]] core::Result CancelGoal(const std::string& drone_id, std::string_view goal_id,
+                                          std::string_view correlation_id) {
+        std::thread old_worker;
+        std::shared_ptr<std::atomic<bool>> old_stop;
+        swarmkit::v1::ActiveGoal old_goal;
+        std::int64_t timeout_ms{};
+        std::int64_t started_ms{};
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            const auto iter = goals_.find(drone_id);
+            if (iter == goals_.end()) {
+                return core::Result::Rejected("no active goal for drone");
+            }
+            if (!goal_id.empty() && iter->second.goal.goal_id() != goal_id) {
+                return core::Result::Rejected("active goal id does not match cancel request");
+            }
+            old_goal = iter->second.goal;
+            timeout_ms = iter->second.computed_timeout_ms;
+            started_ms = iter->second.started_unix_ms;
+            old_stop = iter->second.stop;
+            old_worker = std::move(iter->second.worker);
+            goals_.erase(iter);
+        }
+        if (old_stop) {
+            old_stop->store(true, std::memory_order_relaxed);
+        }
+        if (old_worker.joinable()) {
+            old_worker.join();
+        }
+        PublishGoalReport(old_goal, swarmkit::v1::GOAL_CANCELLED, swarmkit::v1::REPORT_INFO, 0.0,
+                          0.0, 0.0, timeout_ms, started_ms, "goal cancelled",
+                          std::string(correlation_id));
+        return core::Result::Success("goal cancelled");
+    }
+
+    [[nodiscard]] std::optional<std::pair<swarmkit::v1::ActiveGoal, std::int64_t>> GetGoal(
+        const std::string& drone_id, swarmkit::v1::GoalStatus* status) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto iter = goals_.find(drone_id);
+        if (iter == goals_.end()) {
+            return std::nullopt;
+        }
+        if (status != nullptr) {
+            *status = iter->second.status;
+        }
+        return std::make_pair(iter->second.goal, iter->second.computed_timeout_ms);
+    }
+
+    void Shutdown() {
+        std::vector<std::thread> workers;
+        std::vector<std::shared_ptr<std::atomic<bool>>> stops;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto& [_, runtime] : goals_) {
+                stops.push_back(runtime.stop);
+                workers.push_back(std::move(runtime.worker));
+            }
+            goals_.clear();
+        }
+        for (const auto& stop : stops) {
+            if (stop) {
+                stop->store(true, std::memory_order_relaxed);
+            }
+        }
+        for (auto& worker : workers) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+    }
+
+   private:
+    struct ActiveGoalRuntime {
+        swarmkit::v1::ActiveGoal goal;
+        swarmkit::v1::GoalStatus status{swarmkit::v1::GOAL_STATUS_UNSPECIFIED};
+        std::int64_t computed_timeout_ms{};
+        std::int64_t started_unix_ms{};
+        std::string correlation_id;
+        std::shared_ptr<std::atomic<bool>> stop;
+        std::thread worker;
+    };
+
+    void SetTerminalStatus(const std::string& drone_id, swarmkit::v1::GoalStatus status) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (auto iter = goals_.find(drone_id); iter != goals_.end()) {
+            iter->second.status = status;
+        }
+    }
+
+    void PublishGoalReport(const swarmkit::v1::ActiveGoal& goal, swarmkit::v1::GoalStatus status,
+                           swarmkit::v1::ReportSeverity severity, double distance_to_goal_m,
+                           double deviation_m, double altitude_error_m,
+                           std::int64_t timeout_ms, std::int64_t started_ms,
+                           std::string_view message, std::string_view correlation_id) {
+        if (reports_ == nullptr) {
+            return;
+        }
+        swarmkit::v1::AgentReport report;
+        report.set_drone_id(goal.drone_id());
+        report.set_correlation_id(std::string(correlation_id));
+        report.set_type(swarmkit::v1::GOAL_REPORT);
+        report.set_severity(severity);
+        report.set_message(std::string(message));
+        auto* goal_report = report.mutable_goal();
+        goal_report->set_drone_id(goal.drone_id());
+        goal_report->set_goal_id(goal.goal_id());
+        goal_report->set_revision(goal.revision());
+        goal_report->set_status(status);
+        goal_report->set_distance_to_goal_m(distance_to_goal_m);
+        goal_report->set_deviation_m(deviation_m);
+        goal_report->set_altitude_error_m(altitude_error_m);
+        goal_report->set_acceptance_radius_m(goal.acceptance_radius_m());
+        goal_report->set_deviation_radius_m(goal.deviation_radius_m());
+        goal_report->set_elapsed_ms(std::max<std::int64_t>(0, NowUnixMs() - started_ms));
+        goal_report->set_timeout_ms(timeout_ms);
+        goal_report->set_message(std::string(message));
+        reports_->Publish(std::move(report));
+    }
+
+    void MonitorGoal(const swarmkit::v1::ActiveGoal& goal, std::int64_t configured_timeout_ms,
+                     std::int64_t started_ms, const std::string& correlation_id,
+                     const std::shared_ptr<std::atomic<bool>>& stop) {
+        internal::TelemetryLease lease;
+        const core::Result acquire_result = telemetry_->AcquireLease(
+            goal.drone_id(), std::max(1, config_->default_telemetry_rate_hz), &lease);
+        if (!acquire_result.IsOk()) {
+            PublishGoalReport(goal, swarmkit::v1::GOAL_FAILED, swarmkit::v1::REPORT_ERROR, 0.0, 0.0,
+                              0.0, configured_timeout_ms, started_ms,
+                              "telemetry unavailable: " + acquire_result.message, correlation_id);
+            SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_FAILED);
+            return;
+        }
+
+        std::uint64_t last_sequence = 0;
+        std::optional<core::TelemetryFrame> origin;
+        bool reported_deviation = false;
+        std::int64_t timeout_ms = configured_timeout_ms;
+
+        while (stop && !stop->load(std::memory_order_relaxed)) {
+            core::TelemetryFrame frame;
+            if (!internal::TelemetryManager::WaitForFrame(lease, &last_sequence, &frame,
+                                                          kTelemetryWaitTimeout)) {
+                if (NowUnixMs() - started_ms >= timeout_ms) {
+                    PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT,
+                                      swarmkit::v1::REPORT_ERROR, 0.0, 0.0, 0.0, timeout_ms,
+                                      started_ms, "goal timed out without fresh telemetry",
+                                      correlation_id);
+                    SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_TIMEOUT);
+                    break;
+                }
+                continue;
+            }
+            if (!origin.has_value()) {
+                origin = frame;
+                timeout_ms = ComputeGoalTimeoutMs(config_->vehicle_profile, goal, origin);
+            }
+
+            const double distance_to_goal_m =
+                DistanceMeters(frame.lat_deg, frame.lon_deg, goal.target().lat_deg(),
+                               goal.target().lon_deg());
+            const double deviation_m = CorridorDeviationMeters(*origin, frame, goal.target());
+            const double altitude_error_m = std::abs(frame.rel_alt_m - goal.target().alt_m());
+            const bool altitude_ok =
+                altitude_error_m <= std::max(1.0F, goal.acceptance_radius_m());
+
+            if (distance_to_goal_m <= goal.acceptance_radius_m() && altitude_ok) {
+                PublishGoalReport(goal, swarmkit::v1::GOAL_REACHED, swarmkit::v1::REPORT_INFO,
+                                  distance_to_goal_m, deviation_m, altitude_error_m, timeout_ms,
+                                  started_ms, "goal reached", correlation_id);
+                SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_REACHED);
+                break;
+            }
+
+            if (goal.deviation_radius_m() > 0.0F && deviation_m > goal.deviation_radius_m()) {
+                if (!reported_deviation) {
+                    PublishGoalReport(goal, swarmkit::v1::GOAL_DEVIATING,
+                                      swarmkit::v1::REPORT_WARNING, distance_to_goal_m,
+                                      deviation_m, altitude_error_m, timeout_ms, started_ms,
+                                      "outside goal deviation radius", correlation_id);
+                    reported_deviation = true;
+                }
+            } else if (reported_deviation) {
+                PublishGoalReport(goal, swarmkit::v1::GOAL_ACTIVE, swarmkit::v1::REPORT_INFO,
+                                  distance_to_goal_m, deviation_m, altitude_error_m, timeout_ms,
+                                  started_ms, "goal back inside deviation envelope",
+                                  correlation_id);
+                reported_deviation = false;
+            }
+
+            if (NowUnixMs() - started_ms >= timeout_ms) {
+                PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR,
+                                  distance_to_goal_m, deviation_m, altitude_error_m, timeout_ms,
+                                  started_ms, "goal timed out", correlation_id);
+                SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_TIMEOUT);
+                break;
+            }
+        }
+
+        telemetry_->ReleaseLease(lease);
+    }
+
+    internal::TelemetryManager* telemetry_{nullptr};
+    ReportHub* reports_{nullptr};
+    const AgentConfig* config_{nullptr};
+    mutable std::mutex mutex_;
+    std::unordered_map<std::string, ActiveGoalRuntime> goals_;
+};
+
 /// @name AgentServiceImpl — gRPC service implementation
 /// @{
 
@@ -589,7 +1089,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         : config_(std::move(config)),
           backend_(std::move(backend)),
           telemetry_(backend_.get(), config_.default_telemetry_rate_hz,
-                     config_.min_telemetry_rate_hz) {
+                     config_.min_telemetry_rate_hz),
+          goals_(&telemetry_, &reports_, &config_) {
         if (const core::Result start_result = backend_->Start(); !start_result.IsOk()) {
             ready_.store(false, std::memory_order_relaxed);
             startup_error_ = start_result.message;
@@ -798,6 +1299,162 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_error_code(swarmkit::v1::ERROR_CODE_BACKEND_FAILURE);
             reply->set_debug_message(kExecResult.message);
         }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SetActiveGoal(grpc::ServerContext* ctx,
+                               const swarmkit::v1::SetActiveGoalRequest* req,
+                               swarmkit::v1::SetActiveGoalReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (!req->has_ctx() || !req->has_goal()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing ctx or goal field");
+        }
+
+        CommandContext context = ToCoreContext(req->ctx());
+        context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "goal");
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, &context.client_id);
+            !auth_result.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
+        }
+        if (context.drone_id.empty()) {
+            context.drone_id = req->goal().drone_id();
+        }
+        if (const core::Result validation = ValidateCommandContext(context); !validation.IsOk()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, validation.message);
+        }
+
+        swarmkit::v1::ActiveGoal goal = req->goal();
+        if (goal.drone_id().empty()) {
+            goal.set_drone_id(context.drone_id);
+        }
+        if (goal.drone_id() != context.drone_id) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "goal.drone_id must match ctx.drone_id");
+        }
+        if (const core::Result validation = ValidateActiveGoal(goal); !validation.IsOk()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, validation.message);
+        }
+
+        const core::Result arbiter_result =
+            arbiter_.CheckAndGrant(context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
+        if (!arbiter_result.IsOk()) {
+            reply->set_ok(false);
+            reply->set_message(arbiter_result.message);
+            reply->set_correlation_id(context.correlation_id);
+            reply->set_error_code(ToProtoErrorCode(arbiter_result.code));
+            reply->set_debug_message(arbiter_result.message);
+            PublishSimpleReport(context.drone_id, context.correlation_id,
+                                swarmkit::v1::AUTHORITY_REJECTED,
+                                swarmkit::v1::REPORT_WARNING, arbiter_result.message);
+            return grpc::Status::OK;
+        }
+
+        CommandEnvelope envelope;
+        envelope.context = context;
+        envelope.command = NavCmd{CmdGoto{
+            .lat_deg = goal.target().lat_deg(),
+            .lon_deg = goal.target().lon_deg(),
+            .alt_m = goal.target().alt_m(),
+            .speed_mps = goal.speed_mps(),
+        }};
+
+        const core::Result exec_result = backend_->Execute(envelope);
+        if (!exec_result.IsOk()) {
+            counters_.IncrementBackendFailures();
+            reply->set_ok(false);
+            reply->set_message(exec_result.message.empty() ? "active goal command failed"
+                                                           : exec_result.message);
+            reply->set_correlation_id(context.correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_BACKEND_FAILURE);
+            reply->set_debug_message(exec_result.message);
+            *reply->mutable_goal() = goal;
+            PublishGoalFailure(goal, context.correlation_id, exec_result.message);
+            return grpc::Status::OK;
+        }
+
+        const std::int64_t computed_timeout_ms = goals_.StartGoal(goal, context.correlation_id);
+        reply->set_ok(true);
+        reply->set_message(exec_result.message);
+        reply->set_correlation_id(context.correlation_id);
+        reply->set_error_code(swarmkit::v1::ERROR_CODE_NONE);
+        *reply->mutable_goal() = goal;
+        reply->set_computed_timeout_ms(computed_timeout_ms);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status CancelGoal(grpc::ServerContext* ctx,
+                            const swarmkit::v1::CancelGoalRequest* req,
+                            swarmkit::v1::CancelGoalReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (!req->has_ctx()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing ctx field");
+        }
+
+        CommandContext context = ToCoreContext(req->ctx());
+        context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "cancel-goal");
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, &context.client_id);
+            !auth_result.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
+        }
+        if (const core::Result validation = ValidateCommandContext(context); !validation.IsOk()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, validation.message);
+        }
+
+        const core::Result arbiter_result =
+            arbiter_.CheckAndGrant(context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
+        if (!arbiter_result.IsOk()) {
+            reply->set_ok(false);
+            reply->set_message(arbiter_result.message);
+            reply->set_correlation_id(context.correlation_id);
+            reply->set_error_code(ToProtoErrorCode(arbiter_result.code));
+            reply->set_debug_message(arbiter_result.message);
+            PublishSimpleReport(context.drone_id, context.correlation_id,
+                                swarmkit::v1::AUTHORITY_REJECTED,
+                                swarmkit::v1::REPORT_WARNING, arbiter_result.message);
+            return grpc::Status::OK;
+        }
+
+        const core::Result result =
+            goals_.CancelGoal(context.drone_id, req->goal_id(), context.correlation_id);
+        reply->set_ok(result.IsOk());
+        reply->set_message(result.message);
+        reply->set_correlation_id(context.correlation_id);
+        reply->set_error_code(ToProtoErrorCode(result.code));
+        reply->set_debug_message(result.message);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetActiveGoal(grpc::ServerContext* ctx,
+                               const swarmkit::v1::GetActiveGoalRequest* req,
+                               swarmkit::v1::GetActiveGoalReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, nullptr);
+            !auth_result.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
+        }
+        if (req->drone_id().empty()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "drone_id must not be empty");
+        }
+
+        swarmkit::v1::GoalStatus status = swarmkit::v1::GOAL_STATUS_UNSPECIFIED;
+        const auto goal = goals_.GetGoal(req->drone_id(), &status);
+        if (!goal.has_value()) {
+            reply->set_goal_present(false);
+            reply->set_status(swarmkit::v1::GOAL_STATUS_UNSPECIFIED);
+            reply->set_message("no active goal");
+            return grpc::Status::OK;
+        }
+        reply->set_goal_present(true);
+        *reply->mutable_goal() = goal->first;
+        reply->set_status(status);
+        reply->set_computed_timeout_ms(goal->second);
+        reply->set_message("goal found");
         return grpc::Status::OK;
     }
 
@@ -1025,11 +1682,112 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
+    grpc::Status SubscribeReports(
+        grpc::ServerContext* ctx, const swarmkit::v1::ReportSubscription* req,
+        grpc::ServerWriter<swarmkit::v1::AgentReport>* writer) override {
+        if (ctx == nullptr || req == nullptr || writer == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/writer");
+        }
+        std::string client_id = req->client_id();
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, &client_id);
+            !auth_result.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
+        }
+
+        const std::string stream_id = ResolveCorrelationId(ctx, "", "reports");
+        auto queue = std::make_shared<ReportQueue>();
+        const ReportWatchToken token =
+            reports_.Watch(req->drone_id(), req->after_sequence(), queue);
+        core::Logger::InfoFmt(
+            "rpc=SubscribeReports corr={} agent={} drone={} client={} result=connected", stream_id,
+            config_.agent_id, req->drone_id(), client_id);
+
+        while (!ctx->IsCancelled()) {
+            swarmkit::v1::AgentReport report;
+            if (!queue->Pop(&report, kWatchPollInterval)) {
+                continue;
+            }
+            if (!writer->Write(report)) {
+                break;
+            }
+        }
+
+        queue->Shutdown();
+        reports_.Unwatch(token);
+        core::Logger::InfoFmt(
+            "rpc=SubscribeReports corr={} agent={} drone={} client={} result=disconnected",
+            stream_id, config_.agent_id, req->drone_id(), client_id);
+        return grpc::Status::OK;
+    }
+
    private:
+    [[nodiscard]] static core::Result ValidateActiveGoal(const swarmkit::v1::ActiveGoal& goal) {
+        if (goal.drone_id().empty()) {
+            return core::Result::Rejected("goal.drone_id must not be empty");
+        }
+        if (goal.goal_id().empty()) {
+            return core::Result::Rejected("goal.goal_id must not be empty");
+        }
+        if (!goal.has_target()) {
+            return core::Result::Rejected("goal.target must be set");
+        }
+        if (goal.target().lat_deg() < -90.0 || goal.target().lat_deg() > 90.0 ||
+            goal.target().lon_deg() < -180.0 || goal.target().lon_deg() > 180.0) {
+            return core::Result::Rejected("goal target latitude/longitude out of range");
+        }
+        if (goal.speed_mps() < 0.0F) {
+            return core::Result::Rejected("goal.speed_mps must be >= 0");
+        }
+        if (goal.acceptance_radius_m() <= 0.0F) {
+            return core::Result::Rejected("goal.acceptance_radius_m must be > 0");
+        }
+        if (goal.deviation_radius_m() < 0.0F) {
+            return core::Result::Rejected("goal.deviation_radius_m must be >= 0");
+        }
+        if (goal.timeout_ms() < 0) {
+            return core::Result::Rejected("goal.timeout_ms must be >= 0");
+        }
+        return core::Result::Success();
+    }
+
+    void PublishSimpleReport(std::string_view drone_id, std::string_view correlation_id,
+                             swarmkit::v1::AgentReportType type,
+                             swarmkit::v1::ReportSeverity severity, std::string_view message) {
+        swarmkit::v1::AgentReport report;
+        report.set_drone_id(std::string(drone_id));
+        report.set_correlation_id(std::string(correlation_id));
+        report.set_type(type);
+        report.set_severity(severity);
+        report.set_message(std::string(message));
+        reports_.Publish(std::move(report));
+    }
+
+    void PublishGoalFailure(const swarmkit::v1::ActiveGoal& goal, std::string_view correlation_id,
+                            std::string_view message) {
+        swarmkit::v1::AgentReport report;
+        report.set_drone_id(goal.drone_id());
+        report.set_correlation_id(std::string(correlation_id));
+        report.set_type(swarmkit::v1::GOAL_REPORT);
+        report.set_severity(swarmkit::v1::REPORT_ERROR);
+        report.set_message(std::string(message));
+        auto* goal_report = report.mutable_goal();
+        goal_report->set_drone_id(goal.drone_id());
+        goal_report->set_goal_id(goal.goal_id());
+        goal_report->set_revision(goal.revision());
+        goal_report->set_status(swarmkit::v1::GOAL_FAILED);
+        goal_report->set_acceptance_radius_m(goal.acceptance_radius_m());
+        goal_report->set_deviation_radius_m(goal.deviation_radius_m());
+        goal_report->set_timeout_ms(goal.timeout_ms());
+        goal_report->set_message(std::string(message));
+        reports_.Publish(std::move(report));
+    }
+
     AgentConfig config_;
     DroneBackendPtr backend_;
     CommandArbiter arbiter_;
     internal::TelemetryManager telemetry_;
+    ReportHub reports_;
+    ActiveGoalSupervisor goals_;
     internal::RuntimeCounters counters_;
     std::atomic<bool> ready_{true};
     std::string startup_error_;
@@ -1042,6 +1800,28 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 // ---------------------------------------------------------------------------
 // AgentConfig
 // ---------------------------------------------------------------------------
+
+core::Result VehicleProfile::Validate() const {
+    if (profile_id.empty()) {
+        return core::Result::Rejected("vehicle_profile.profile_id must not be empty");
+    }
+    if (cruise_speed_mps <= 0.0F) {
+        return core::Result::Rejected("vehicle_profile.cruise_speed_mps must be > 0");
+    }
+    if (climb_speed_mps <= 0.0F) {
+        return core::Result::Rejected("vehicle_profile.climb_speed_mps must be > 0");
+    }
+    if (descent_speed_mps <= 0.0F) {
+        return core::Result::Rejected("vehicle_profile.descent_speed_mps must be > 0");
+    }
+    if (goal_margin_ms < 0) {
+        return core::Result::Rejected("vehicle_profile.goal_margin_ms must be >= 0");
+    }
+    if (max_goal_timeout_ms <= 0) {
+        return core::Result::Rejected("vehicle_profile.max_goal_timeout_ms must be > 0");
+    }
+    return core::Result::Success();
+}
 
 core::Result AgentSecurityConfig::Validate() const {
     if (!core::internal::FileExists(cert_chain_path)) {
@@ -1077,6 +1857,9 @@ core::Result AgentConfig::Validate() const {
     }
     if (min_telemetry_rate_hz > default_telemetry_rate_hz) {
         return core::Result::Rejected("min_telemetry_rate_hz must be <= default_telemetry_rate_hz");
+    }
+    if (const core::Result vehicle_result = vehicle_profile.Validate(); !vehicle_result.IsOk()) {
+        return vehicle_result;
     }
     return security.Validate();
 }
@@ -1157,6 +1940,72 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
     if (min_telemetry_rate_hz->has_value()) {
         config.min_telemetry_rate_hz =
             min_telemetry_rate_hz->value_or(config.min_telemetry_rate_hz);
+    }
+
+    if (const YAML::Node vehicle_profile = root["vehicle_profile"]; vehicle_profile) {
+        if (!vehicle_profile.IsMap()) {
+            return std::unexpected(core::Result::Rejected("agent.vehicle_profile must be a map"));
+        }
+
+        const auto profile_id =
+            core::yaml::ReadOptionalScalar<std::string>(vehicle_profile, "profile_id");
+        if (!profile_id.has_value()) {
+            return std::unexpected(profile_id.error());
+        }
+        if (profile_id->has_value()) {
+            config.vehicle_profile.profile_id =
+                profile_id->value_or(config.vehicle_profile.profile_id);
+        }
+
+        const auto cruise_speed_mps =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "cruise_speed_mps");
+        if (!cruise_speed_mps.has_value()) {
+            return std::unexpected(cruise_speed_mps.error());
+        }
+        if (cruise_speed_mps->has_value()) {
+            config.vehicle_profile.cruise_speed_mps =
+                cruise_speed_mps->value_or(config.vehicle_profile.cruise_speed_mps);
+        }
+
+        const auto climb_speed_mps =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "climb_speed_mps");
+        if (!climb_speed_mps.has_value()) {
+            return std::unexpected(climb_speed_mps.error());
+        }
+        if (climb_speed_mps->has_value()) {
+            config.vehicle_profile.climb_speed_mps =
+                climb_speed_mps->value_or(config.vehicle_profile.climb_speed_mps);
+        }
+
+        const auto descent_speed_mps =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "descent_speed_mps");
+        if (!descent_speed_mps.has_value()) {
+            return std::unexpected(descent_speed_mps.error());
+        }
+        if (descent_speed_mps->has_value()) {
+            config.vehicle_profile.descent_speed_mps =
+                descent_speed_mps->value_or(config.vehicle_profile.descent_speed_mps);
+        }
+
+        const auto goal_margin_ms =
+            core::yaml::ReadOptionalScalar<int>(vehicle_profile, "goal_margin_ms");
+        if (!goal_margin_ms.has_value()) {
+            return std::unexpected(goal_margin_ms.error());
+        }
+        if (goal_margin_ms->has_value()) {
+            config.vehicle_profile.goal_margin_ms =
+                goal_margin_ms->value_or(config.vehicle_profile.goal_margin_ms);
+        }
+
+        const auto max_goal_timeout_ms =
+            core::yaml::ReadOptionalScalar<int>(vehicle_profile, "max_goal_timeout_ms");
+        if (!max_goal_timeout_ms.has_value()) {
+            return std::unexpected(max_goal_timeout_ms.error());
+        }
+        if (max_goal_timeout_ms->has_value()) {
+            config.vehicle_profile.max_goal_timeout_ms =
+                max_goal_timeout_ms->value_or(config.vehicle_profile.max_goal_timeout_ms);
+        }
     }
 
     if (const YAML::Node security = root["security"]; security) {

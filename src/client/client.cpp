@@ -454,6 +454,7 @@ struct Client::Impl {
     std::unique_ptr<swarmkit::v1::AgentService::Stub> stub;
     StreamState telemetry;
     StreamState authority;
+    StreamState reports;
 
     explicit Impl(ClientConfig cfg)
         : config(std::move(cfg)),
@@ -592,6 +593,149 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     };
 }
 
+[[nodiscard]] swarmkit::v1::GeoPoint ToProtoGeoPoint(const GeoPoint& point) {
+    swarmkit::v1::GeoPoint proto;
+    proto.set_lat_deg(point.lat_deg);
+    proto.set_lon_deg(point.lon_deg);
+    proto.set_alt_m(point.alt_m);
+    return proto;
+}
+
+void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* proto_goal) {
+    if (proto_goal == nullptr) {
+        return;
+    }
+    proto_goal->set_drone_id(goal.drone_id);
+    proto_goal->set_goal_id(goal.goal_id);
+    proto_goal->set_revision(goal.revision);
+    *proto_goal->mutable_target() = ToProtoGeoPoint(goal.target);
+    proto_goal->set_speed_mps(goal.speed_mps);
+    proto_goal->set_acceptance_radius_m(goal.acceptance_radius_m);
+    proto_goal->set_deviation_radius_m(goal.deviation_radius_m);
+    proto_goal->set_timeout_ms(goal.timeout_ms);
+    proto_goal->set_role(goal.role);
+}
+
+[[nodiscard]] ActiveGoal ToActiveGoal(const swarmkit::v1::ActiveGoal& proto_goal) {
+    ActiveGoal goal;
+    goal.drone_id = proto_goal.drone_id();
+    goal.goal_id = proto_goal.goal_id();
+    goal.revision = proto_goal.revision();
+    goal.target = GeoPoint{
+        .lat_deg = proto_goal.target().lat_deg(),
+        .lon_deg = proto_goal.target().lon_deg(),
+        .alt_m = proto_goal.target().alt_m(),
+    };
+    goal.speed_mps = proto_goal.speed_mps();
+    goal.acceptance_radius_m = proto_goal.acceptance_radius_m();
+    goal.deviation_radius_m = proto_goal.deviation_radius_m();
+    goal.timeout_ms = proto_goal.timeout_ms();
+    goal.role = proto_goal.role();
+    return goal;
+}
+
+[[nodiscard]] GoalStatus ToGoalStatus(swarmkit::v1::GoalStatus status) {
+    using ProtoStatus = swarmkit::v1::GoalStatus;
+    switch (status) {
+        case ProtoStatus::GOAL_ACTIVE:
+            return GoalStatus::kActive;
+        case ProtoStatus::GOAL_REACHED:
+            return GoalStatus::kReached;
+        case ProtoStatus::GOAL_DEVIATING:
+            return GoalStatus::kDeviating;
+        case ProtoStatus::GOAL_TIMEOUT:
+            return GoalStatus::kTimeout;
+        case ProtoStatus::GOAL_CANCELLED:
+            return GoalStatus::kCancelled;
+        case ProtoStatus::GOAL_SUPERSEDED:
+            return GoalStatus::kSuperseded;
+        case ProtoStatus::GOAL_FAILED:
+            return GoalStatus::kFailed;
+        case ProtoStatus::GOAL_STATUS_UNSPECIFIED:
+        default:
+            return GoalStatus::kUnspecified;
+    }
+}
+
+[[nodiscard]] AgentReportType ToAgentReportType(swarmkit::v1::AgentReportType type) {
+    using ProtoType = swarmkit::v1::AgentReportType;
+    switch (type) {
+        case ProtoType::COMMAND_ACCEPTED:
+            return AgentReportType::kCommandAccepted;
+        case ProtoType::COMMAND_REJECTED:
+            return AgentReportType::kCommandRejected;
+        case ProtoType::COMMAND_ACKED:
+            return AgentReportType::kCommandAcked;
+        case ProtoType::COMMAND_FAILED:
+            return AgentReportType::kCommandFailed;
+        case ProtoType::GOAL_REPORT:
+            return AgentReportType::kGoalReport;
+        case ProtoType::TELEMETRY_STALE:
+            return AgentReportType::kTelemetryStale;
+        case ProtoType::HEARTBEAT_LOST:
+            return AgentReportType::kHeartbeatLost;
+        case ProtoType::HEALTH_CHANGED:
+            return AgentReportType::kHealthChanged;
+        case ProtoType::AUTHORITY_LOCKED:
+            return AgentReportType::kAuthorityLocked;
+        case ProtoType::AUTHORITY_REJECTED:
+            return AgentReportType::kAuthorityRejected;
+        case ProtoType::AUTHORITY_RELEASED:
+            return AgentReportType::kAuthorityReleased;
+        case ProtoType::AGENT_REPORT_TYPE_UNSPECIFIED:
+        default:
+            return AgentReportType::kUnspecified;
+    }
+}
+
+[[nodiscard]] ReportSeverity ToReportSeverity(swarmkit::v1::ReportSeverity severity) {
+    using ProtoSeverity = swarmkit::v1::ReportSeverity;
+    switch (severity) {
+        case ProtoSeverity::REPORT_WARNING:
+            return ReportSeverity::kWarning;
+        case ProtoSeverity::REPORT_ERROR:
+            return ReportSeverity::kError;
+        case ProtoSeverity::REPORT_CRITICAL:
+            return ReportSeverity::kCritical;
+        case ProtoSeverity::REPORT_INFO:
+        case ProtoSeverity::REPORT_SEVERITY_UNSPECIFIED:
+        default:
+            return ReportSeverity::kInfo;
+    }
+}
+
+[[nodiscard]] GoalReport ToGoalReport(const swarmkit::v1::GoalReport& proto_report) {
+    return GoalReport{
+        .drone_id = proto_report.drone_id(),
+        .goal_id = proto_report.goal_id(),
+        .revision = proto_report.revision(),
+        .status = ToGoalStatus(proto_report.status()),
+        .distance_to_goal_m = proto_report.distance_to_goal_m(),
+        .deviation_m = proto_report.deviation_m(),
+        .altitude_error_m = proto_report.altitude_error_m(),
+        .acceptance_radius_m = proto_report.acceptance_radius_m(),
+        .deviation_radius_m = proto_report.deviation_radius_m(),
+        .elapsed_ms = proto_report.elapsed_ms(),
+        .timeout_ms = proto_report.timeout_ms(),
+        .message = proto_report.message(),
+    };
+}
+
+[[nodiscard]] AgentReport ToAgentReport(const swarmkit::v1::AgentReport& proto_report) {
+    AgentReport report;
+    report.drone_id = proto_report.drone_id();
+    report.unix_time_ms = proto_report.unix_time_ms();
+    report.sequence = proto_report.sequence();
+    report.correlation_id = proto_report.correlation_id();
+    report.type = ToAgentReportType(proto_report.type());
+    report.severity = ToReportSeverity(proto_report.severity());
+    report.message = proto_report.message();
+    if (proto_report.has_goal()) {
+        report.goal = ToGoalReport(proto_report.goal());
+    }
+    return report;
+}
+
 [[nodiscard]] grpc::Status RunTelemetryStreamAttempt(ClientRuntime runtime,
                                                      StreamState& telemetry_stream,
                                                      const TelemetrySubscription& subscription,
@@ -617,6 +761,34 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
 
     const grpc::Status kFinalStatus = reader->Finish();
     ResetStreamContext(telemetry_stream);
+    return kFinalStatus;
+}
+
+[[nodiscard]] grpc::Status RunReportStreamAttempt(ClientRuntime runtime, StreamState& report_stream,
+                                                  const ReportSubscription& subscription,
+                                                  const AgentReportHandler& on_report,
+                                                  std::string_view stream_id) {
+    grpc::ClientContext* context = InstallStreamContext(report_stream, stream_id);
+
+    swarmkit::v1::ReportSubscription request;
+    request.set_drone_id(subscription.drone_id);
+    request.set_client_id(runtime.config.client_id);
+    request.set_after_sequence(subscription.after_sequence);
+
+    auto reader = runtime.stub.SubscribeReports(context, request);
+    swarmkit::v1::AgentReport proto_report;
+    while (reader->Read(&proto_report)) {
+        if (IsStopRequested(report_stream)) {
+            break;
+        }
+
+        if (on_report) {
+            on_report(ToAgentReport(proto_report));
+        }
+    }
+
+    const grpc::Status kFinalStatus = reader->Finish();
+    ResetStreamContext(report_stream);
     return kFinalStatus;
 }
 
@@ -706,6 +878,35 @@ void RunAuthorityLoop(ClientRuntime runtime, StreamState& authority_stream,
     }
 
     authority_stream.active.store(false, std::memory_order_relaxed);
+}
+
+void RunReportLoop(ClientRuntime runtime, StreamState& report_stream,
+                   const ReportSubscription& subscription, const AgentReportHandler& on_report,
+                   const TelemetryErrorHandler& on_error) {
+    StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
+
+    while (!IsStopRequested(report_stream)) {
+        ++retry_state.attempt_number;
+        const std::string kStreamId = MakeCorrelationId("reports");
+        const grpc::Status kFinalStatus =
+            RunReportStreamAttempt(runtime, report_stream, subscription, on_report, kStreamId);
+
+        if (IsStopRequested(report_stream)) {
+            break;
+        }
+
+        LogStreamFailure("reports", subscription.drone_id, kStreamId, kFinalStatus,
+                         retry_state.attempt_number);
+        if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
+                               kFinalStatus)) {
+            MaybeReportStreamFailure(on_error, kFinalStatus);
+            break;
+        }
+
+        SleepBeforeNextRetry(runtime.config.stream_reconnect_policy, &retry_state.backoff_ms);
+    }
+
+    report_stream.active.store(false, std::memory_order_relaxed);
 }
 
 core::Result ClientSecurityConfig::Validate() const {
@@ -839,6 +1040,7 @@ Client::Client(ClientConfig config) : impl_(std::make_unique<Impl>(std::move(con
 Client::~Client() {
     StopTelemetry();
     StopAuthorityWatch();
+    StopReports();
 }
 
 AuthoritySession::~AuthoritySession() {
@@ -1022,6 +1224,120 @@ CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) con
     return out;
 }
 
+GoalResult Client::SetActiveGoal(const ActiveGoal& goal) const {
+    GoalResult out;
+    const std::string kCorrelationId = MakeCorrelationId("goal");
+
+    swarmkit::v1::SetActiveGoalRequest req;
+    auto* proto_ctx = req.mutable_ctx();
+    proto_ctx->set_drone_id(goal.drone_id);
+    proto_ctx->set_client_id(impl_->config.client_id);
+    proto_ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+    proto_ctx->set_correlation_id(kCorrelationId);
+    PopulateProtoActiveGoal(goal, req.mutable_goal());
+
+    swarmkit::v1::SetActiveGoalReply rep;
+    int attempt_count = 0;
+    const grpc::Status kStatus =
+        InvokeUnaryWithRetry(impl_->config, kCorrelationId, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->SetActiveGoal(context, req, &rep);
+                             });
+
+    out.correlation_id = kCorrelationId;
+    if (!kStatus.ok()) {
+        PopulateTransportError(&out.error, kStatus, kCorrelationId, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.error.code = ToRpcStatusCode(rep.error_code());
+    out.error.user_message = rep.message();
+    out.error.debug_message = rep.debug_message();
+    out.error.correlation_id = out.correlation_id;
+    out.error.attempt_count = attempt_count;
+    if (rep.has_goal()) {
+        out.goal = ToActiveGoal(rep.goal());
+    }
+    out.computed_timeout_ms = rep.computed_timeout_ms();
+    return out;
+}
+
+CommandResult Client::CancelGoal(const std::string& drone_id, const std::string& goal_id) const {
+    CommandResult out;
+    const std::string kCorrelationId = MakeCorrelationId("cancel-goal");
+
+    swarmkit::v1::CancelGoalRequest req;
+    auto* proto_ctx = req.mutable_ctx();
+    proto_ctx->set_drone_id(drone_id);
+    proto_ctx->set_client_id(impl_->config.client_id);
+    proto_ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+    proto_ctx->set_correlation_id(kCorrelationId);
+    req.set_goal_id(goal_id);
+
+    swarmkit::v1::CancelGoalReply rep;
+    int attempt_count = 0;
+    const grpc::Status kStatus =
+        InvokeUnaryWithRetry(impl_->config, kCorrelationId, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->CancelGoal(context, req, &rep);
+                             });
+
+    out.correlation_id = kCorrelationId;
+    if (!kStatus.ok()) {
+        PopulateTransportError(&out.error, kStatus, kCorrelationId, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.error.code = ToRpcStatusCode(rep.error_code());
+    out.error.user_message = rep.message();
+    out.error.debug_message = rep.debug_message();
+    out.error.correlation_id = out.correlation_id;
+    out.error.attempt_count = attempt_count;
+    return out;
+}
+
+ActiveGoalStatus Client::GetActiveGoal(const std::string& drone_id) const {
+    ActiveGoalStatus out;
+    const std::string kCorrelationId = MakeCorrelationId("get-goal");
+
+    swarmkit::v1::GetActiveGoalRequest req;
+    req.set_drone_id(drone_id);
+
+    swarmkit::v1::GetActiveGoalReply rep;
+    int attempt_count = 0;
+    const grpc::Status kStatus =
+        InvokeUnaryWithRetry(impl_->config, kCorrelationId, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->GetActiveGoal(context, req, &rep);
+                             });
+
+    if (!kStatus.ok()) {
+        PopulateTransportError(&out.error, kStatus, kCorrelationId, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.has_goal = rep.goal_present();
+    if (rep.has_goal()) {
+        out.goal = ToActiveGoal(rep.goal());
+    }
+    out.status = ToGoalStatus(rep.status());
+    out.computed_timeout_ms = rep.computed_timeout_ms();
+    out.message = rep.message();
+    out.error.code = RpcStatusCode::kOk;
+    out.error.correlation_id = kCorrelationId;
+    out.error.attempt_count = attempt_count;
+    return out;
+}
+
 void Client::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
                                 TelemetryErrorHandler on_error) {
     StopTelemetry();
@@ -1127,6 +1443,25 @@ void Client::WatchAuthority(AuthoritySubscription subscription, AuthorityEventHa
 
 void Client::StopAuthorityWatch() {
     CancelAndJoinStream(impl_->authority);
+}
+
+void Client::SubscribeReports(ReportSubscription subscription, AgentReportHandler on_report,
+                              TelemetryErrorHandler on_error) {
+    StopReports();
+
+    impl_->reports.stop_requested.store(false, std::memory_order_relaxed);
+    impl_->reports.active.store(true, std::memory_order_relaxed);
+
+    impl_->reports.worker =
+        std::thread([this, subscription = std::move(subscription), on_report = std::move(on_report),
+                     on_error = std::move(on_error)]() mutable {
+            RunReportLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
+                          impl_->reports, subscription, on_report, on_error);
+        });
+}
+
+void Client::StopReports() {
+    CancelAndJoinStream(impl_->reports);
 }
 
 }  // namespace swarmkit::client

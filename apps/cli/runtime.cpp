@@ -104,6 +104,38 @@ void ResetStopRequested() {
     StopRequestedFlag() = 0;
 }
 
+[[nodiscard]] std::vector<std::string> FindActionsAfterCommand(int argc, char** argv,
+                                                               std::string_view command_name) {
+    int command_index = -1;
+    for (int index = 1; index < argc; ++index) {
+        const std::string_view current_arg = argv[index];
+        if (IsOptionWithValue(current_arg)) {
+            ++index;
+            continue;
+        }
+        if (current_arg == command_name) {
+            command_index = index;
+            break;
+        }
+    }
+    if (command_index < 0) {
+        return {};
+    }
+    std::vector<std::string> actions;
+    for (int index = command_index + 1; index < argc; ++index) {
+        const std::string_view current_arg = argv[index];
+        if (IsOptionWithValue(current_arg)) {
+            ++index;
+            continue;
+        }
+        if (current_arg.starts_with("-") || IsSubcommand(current_arg)) {
+            continue;
+        }
+        actions.emplace_back(current_arg);
+    }
+    return actions;
+}
+
 [[nodiscard]] std::string CsvField(std::string_view value) {
     std::string out;
     out.reserve(value.size() + 2);
@@ -116,6 +148,109 @@ void ResetStopRequested() {
     }
     out.push_back('"');
     return out;
+}
+
+[[nodiscard]] std::int64_t NowUnixMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+[[nodiscard]] std::string JsonEscape(std::string_view value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    for (const char character : value) {
+        switch (character) {
+            case '\\':
+                out += "\\\\";
+                break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                out.push_back(character);
+                break;
+        }
+    }
+    return out;
+}
+
+[[nodiscard]] std::string_view GoalStatusName(swarmkit::client::GoalStatus status) {
+    using swarmkit::client::GoalStatus;
+    switch (status) {
+        case GoalStatus::kActive:
+            return "active";
+        case GoalStatus::kReached:
+            return "reached";
+        case GoalStatus::kDeviating:
+            return "deviating";
+        case GoalStatus::kTimeout:
+            return "timeout";
+        case GoalStatus::kCancelled:
+            return "cancelled";
+        case GoalStatus::kSuperseded:
+            return "superseded";
+        case GoalStatus::kFailed:
+            return "failed";
+        case GoalStatus::kUnspecified:
+            return "unspecified";
+    }
+    return "unspecified";
+}
+
+[[nodiscard]] std::string_view ReportTypeName(swarmkit::client::AgentReportType type) {
+    using swarmkit::client::AgentReportType;
+    switch (type) {
+        case AgentReportType::kCommandAccepted:
+            return "command_accepted";
+        case AgentReportType::kCommandRejected:
+            return "command_rejected";
+        case AgentReportType::kCommandAcked:
+            return "command_acked";
+        case AgentReportType::kCommandFailed:
+            return "command_failed";
+        case AgentReportType::kGoalReport:
+            return "goal_report";
+        case AgentReportType::kTelemetryStale:
+            return "telemetry_stale";
+        case AgentReportType::kHeartbeatLost:
+            return "heartbeat_lost";
+        case AgentReportType::kHealthChanged:
+            return "health_changed";
+        case AgentReportType::kAuthorityLocked:
+            return "authority_locked";
+        case AgentReportType::kAuthorityRejected:
+            return "authority_rejected";
+        case AgentReportType::kAuthorityReleased:
+            return "authority_released";
+        case AgentReportType::kUnspecified:
+            return "unspecified";
+    }
+    return "unspecified";
+}
+
+[[nodiscard]] std::string_view SeverityName(swarmkit::client::ReportSeverity severity) {
+    using swarmkit::client::ReportSeverity;
+    switch (severity) {
+        case ReportSeverity::kWarning:
+            return "warning";
+        case ReportSeverity::kError:
+            return "error";
+        case ReportSeverity::kCritical:
+            return "critical";
+        case ReportSeverity::kInfo:
+            return "info";
+    }
+    return "info";
 }
 
 [[nodiscard]] std::string TelemetryCsvLine(const swarmkit::core::TelemetryFrame& frame) {
@@ -693,6 +828,117 @@ void DelaySequenceStep(const SequenceStep& step) {
     return result.ok;
 }
 
+[[nodiscard]] std::expected<swarmkit::client::ActiveGoal, std::string> ParseActiveGoal(
+    std::string_view drone_id, int argc, char** argv) {
+    const std::string goal_id = common::GetOptionValue(argc, argv, "--goal-id");
+    if (goal_id.empty()) {
+        return std::unexpected("goal set requires --goal-id ID");
+    }
+    const auto lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat"), "--lat");
+    const auto lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon"), "--lon");
+    const auto alt = ParseDoubleArg(common::GetOptionValue(argc, argv, "--alt"), "--alt");
+    if (!lat.has_value()) {
+        return std::unexpected(lat.error());
+    }
+    if (!lon.has_value()) {
+        return std::unexpected(lon.error());
+    }
+    if (!alt.has_value()) {
+        return std::unexpected(alt.error());
+    }
+
+    auto revision = static_cast<std::uint64_t>(NowUnixMs());
+    if (const std::string revision_value = common::GetOptionValue(argc, argv, "--revision");
+        !revision_value.empty()) {
+        const auto parsed_revision = ParseIntArg(revision_value, "--revision");
+        if (!parsed_revision.has_value()) {
+            return std::unexpected(parsed_revision.error());
+        }
+        if (*parsed_revision < 0) {
+            return std::unexpected("--revision must be >= 0");
+        }
+        revision = static_cast<std::uint64_t>(*parsed_revision);
+    }
+
+    const auto speed = ParseFloatArg(common::GetOptionValue(argc, argv, "--speed", kDefaultZero),
+                                     "--speed");
+    const auto acceptance_radius =
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--accept-radius", "2"),
+                      "--accept-radius");
+    const auto deviation_radius =
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--deviation-radius", "8"),
+                      "--deviation-radius");
+    const auto timeout_ms =
+        ParseIntArg(common::GetOptionValue(argc, argv, "--timeout-ms", kDefaultZero),
+                    "--timeout-ms");
+    if (!speed.has_value()) {
+        return std::unexpected(speed.error());
+    }
+    if (!acceptance_radius.has_value()) {
+        return std::unexpected(acceptance_radius.error());
+    }
+    if (!deviation_radius.has_value()) {
+        return std::unexpected(deviation_radius.error());
+    }
+    if (!timeout_ms.has_value()) {
+        return std::unexpected(timeout_ms.error());
+    }
+
+    return swarmkit::client::ActiveGoal{
+        .drone_id = std::string(drone_id),
+        .goal_id = goal_id,
+        .revision = revision,
+        .target = swarmkit::client::GeoPoint{
+            .lat_deg = *lat,
+            .lon_deg = *lon,
+            .alt_m = *alt,
+        },
+        .speed_mps = *speed,
+        .acceptance_radius_m = *acceptance_radius,
+        .deviation_radius_m = *deviation_radius,
+        .timeout_ms = *timeout_ms,
+        .role = common::GetOptionValue(argc, argv, "--role"),
+    };
+}
+
+void PrintReportText(const swarmkit::client::AgentReport& report, std::ostream& out) {
+    out << "[" << report.sequence << "] drone=" << report.drone_id
+        << " type=" << ReportTypeName(report.type) << " severity=" << SeverityName(report.severity);
+    if (report.goal.has_value()) {
+        out << " goal=" << report.goal->goal_id << " rev=" << report.goal->revision
+            << " status=" << GoalStatusName(report.goal->status)
+            << " dist=" << std::fixed << std::setprecision(1) << report.goal->distance_to_goal_m
+            << "m dev=" << report.goal->deviation_m
+            << "m alt_err=" << report.goal->altitude_error_m << "m";
+    }
+    if (!report.message.empty()) {
+        out << " msg=" << report.message;
+    }
+    out << "\n";
+}
+
+void PrintReportJsonl(const swarmkit::client::AgentReport& report, std::ostream& out) {
+    out << R"({"sequence":)" << report.sequence << R"(,"unix_time_ms":)" << report.unix_time_ms
+        << R"(,"drone_id":")" << JsonEscape(report.drone_id) << R"(","type":")"
+        << ReportTypeName(report.type) << R"(","severity":")" << SeverityName(report.severity)
+        << R"(","correlation_id":")" << JsonEscape(report.correlation_id) << R"(","message":")"
+        << JsonEscape(report.message) << "\"";
+    if (report.goal.has_value()) {
+        out << R"(,"goal":{"goal_id":")" << JsonEscape(report.goal->goal_id)
+            << R"(","revision":)" << report.goal->revision << R"(,"status":")"
+            << GoalStatusName(report.goal->status)
+            << R"(","distance_to_goal_m":)" << report.goal->distance_to_goal_m
+            << ",\"deviation_m\":" << report.goal->deviation_m
+            << ",\"altitude_error_m\":" << report.goal->altitude_error_m
+            << ",\"acceptance_radius_m\":" << report.goal->acceptance_radius_m
+            << ",\"deviation_radius_m\":" << report.goal->deviation_radius_m
+            << ",\"elapsed_ms\":" << report.goal->elapsed_ms
+            << ",\"timeout_ms\":" << report.goal->timeout_ms << R"(,"message":")"
+            << JsonEscape(report.goal->message) << "\"}";
+    }
+    out << "}\n";
+}
+
 [[nodiscard]] std::vector<std::string> StepTargetDrones(const SequenceStep& step,
                                                         std::string_view default_drone_id,
                                                         const std::vector<std::string>& swarm_ids) {
@@ -862,6 +1108,134 @@ int RunCommand(Client& client, std::string_view drone_id, CommandPriority priori
     }
 
     std::cout << "Command OK" << (kResult.message.empty() ? "" : ": " + kResult.message) << "\n";
+    return EXIT_SUCCESS;
+}
+
+int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
+    const std::vector<std::string> actions = FindActionsAfterCommand(argc, argv, "goal");
+    if (actions.empty()) {
+        std::cerr << "goal requires set, cancel, or get\n";
+        return EXIT_FAILURE;
+    }
+
+    if (actions[0] == "set") {
+        const auto goal = ParseActiveGoal(drone_id, argc, argv);
+        if (!goal.has_value()) {
+            std::cerr << goal.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        const auto result = client.SetActiveGoal(*goal);
+        if (!result.ok) {
+            std::cerr << "Goal set FAILED: " << result.message;
+            if (!result.correlation_id.empty()) {
+                std::cerr << " [corr=" << result.correlation_id << "]";
+            }
+            std::cerr << "\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "Goal set OK"
+                  << " goal_id=" << result.goal.goal_id << " revision=" << result.goal.revision
+                  << " computed_timeout_ms=" << result.computed_timeout_ms << "\n";
+        return EXIT_SUCCESS;
+    }
+
+    if (actions[0] == "cancel") {
+        const auto result = client.CancelGoal(std::string(drone_id),
+                                              common::GetOptionValue(argc, argv, "--goal-id"));
+        if (!result.ok) {
+            std::cerr << "Goal cancel FAILED: " << result.message;
+            if (!result.correlation_id.empty()) {
+                std::cerr << " [corr=" << result.correlation_id << "]";
+            }
+            std::cerr << "\n";
+            return EXIT_FAILURE;
+        }
+        std::cout << "Goal cancel OK" << (result.message.empty() ? "" : ": " + result.message)
+                  << "\n";
+        return EXIT_SUCCESS;
+    }
+
+    if (actions[0] == "get") {
+        const auto status = client.GetActiveGoal(std::string(drone_id));
+        if (status.error.code != swarmkit::client::RpcStatusCode::kOk) {
+            std::cerr << "Goal get FAILED: " << status.message << "\n";
+            return EXIT_FAILURE;
+        }
+        if (!status.has_goal) {
+            std::cout << "No active goal for drone=" << drone_id << "\n";
+            return EXIT_SUCCESS;
+        }
+        std::cout << "Active goal\n"
+                  << "  drone_id            : " << status.goal.drone_id << "\n"
+                  << "  goal_id             : " << status.goal.goal_id << "\n"
+                  << "  revision            : " << status.goal.revision << "\n"
+                  << "  status              : " << GoalStatusName(status.status) << "\n"
+                  << "  lat                 : " << status.goal.target.lat_deg << "\n"
+                  << "  lon                 : " << status.goal.target.lon_deg << "\n"
+                  << "  alt_m               : " << status.goal.target.alt_m << "\n"
+                  << "  speed_mps           : " << status.goal.speed_mps << "\n"
+                  << "  accept_radius_m     : " << status.goal.acceptance_radius_m << "\n"
+                  << "  deviation_radius_m  : " << status.goal.deviation_radius_m << "\n"
+                  << "  computed_timeout_ms : " << status.computed_timeout_ms << "\n";
+        return EXIT_SUCCESS;
+    }
+
+    std::cerr << "Unknown goal action: " << actions[0] << "\n";
+    return EXIT_FAILURE;
+}
+
+int RunReports(Client& client, std::string_view drone_id, int argc, char** argv) {
+    const std::string format = common::GetOptionValue(argc, argv, "--format", "text");
+    if (format != "text" && format != "jsonl") {
+        std::cerr << "--format must be text or jsonl\n";
+        return EXIT_FAILURE;
+    }
+    std::unique_ptr<std::ofstream> report_file;
+    std::ostream* out = &std::cout;
+    if (const std::string path = common::GetOptionValue(argc, argv, "--report-file"); !path.empty()) {
+        report_file = std::make_unique<std::ofstream>(path, std::ios::app);
+        if (!report_file->is_open()) {
+            std::cerr << "failed to open report file: " << path << "\n";
+            return EXIT_FAILURE;
+        }
+        out = report_file.get();
+    }
+
+    const auto after_sequence = ParseIntArg(
+        common::GetOptionValue(argc, argv, "--after-sequence", kDefaultZero), "--after-sequence");
+    if (!after_sequence.has_value()) {
+        std::cerr << after_sequence.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    if (*after_sequence < 0) {
+        std::cerr << "--after-sequence must be >= 0\n";
+        return EXIT_FAILURE;
+    }
+
+    ResetStopRequested();
+    std::signal(SIGINT, OnSignal);
+    std::signal(SIGTERM, OnSignal);
+
+    swarmkit::client::ReportSubscription subscription;
+    subscription.drone_id = std::string(drone_id);
+    subscription.after_sequence = static_cast<std::uint64_t>(*after_sequence);
+    client.SubscribeReports(
+        subscription,
+        [out, &format](const swarmkit::client::AgentReport& report) {
+            if (format == "jsonl") {
+                PrintReportJsonl(report, *out);
+            } else {
+                PrintReportText(report, *out);
+            }
+            out->flush();
+        },
+        [](const std::string& error_msg) { std::cerr << "Report stream error: " << error_msg << "\n"; });
+
+    std::cout << "Subscribed to reports: drone=" << drone_id << " format=" << format << "\n"
+              << "Press Ctrl+C to stop.\n";
+    WaitForStop(ParseDurationMs(argc, argv).value_or(0));
+    client.StopReports();
+    std::cout << "\nStopped.\n";
     return EXIT_SUCCESS;
 }
 
@@ -1501,6 +1875,13 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     if (invocation.command == "sequence") {
         return RunSequence(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
                            client_cfg.priority, argc, argv);
+    }
+    if (invocation.command == "goal") {
+        return RunGoal(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId), argc,
+                       argv);
+    }
+    if (invocation.command == "reports") {
+        return RunReports(client, common::GetOptionValue(argc, argv, "--drone", "all"), argc, argv);
     }
     if (invocation.command == "lock") {
         return RunLock(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId), argc,

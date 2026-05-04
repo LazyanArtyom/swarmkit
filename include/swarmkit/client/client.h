@@ -10,6 +10,7 @@
 #include <expected>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -185,6 +186,106 @@ struct AuthorityEventInfo {
     std::string correlation_id;
 };
 
+struct GeoPoint {
+    double lat_deg{};
+    double lon_deg{};
+    double alt_m{};
+};
+
+struct ActiveGoal {
+    std::string drone_id{"default"};
+    std::string goal_id;
+    std::uint64_t revision{};
+    GeoPoint target{};
+    float speed_mps{};
+    float acceptance_radius_m{2.0F};
+    float deviation_radius_m{8.0F};
+    std::int64_t timeout_ms{};  ///< 0 lets the agent compute from its vehicle profile.
+    std::string role;
+};
+
+enum class GoalStatus : std::uint8_t {
+    kUnspecified,
+    kActive,
+    kReached,
+    kDeviating,
+    kTimeout,
+    kCancelled,
+    kSuperseded,
+    kFailed,
+};
+
+enum class ReportSeverity : std::uint8_t {
+    kInfo,
+    kWarning,
+    kError,
+    kCritical,
+};
+
+enum class AgentReportType : std::uint8_t {
+    kUnspecified,
+    kCommandAccepted,
+    kCommandRejected,
+    kCommandAcked,
+    kCommandFailed,
+    kGoalReport,
+    kTelemetryStale,
+    kHeartbeatLost,
+    kHealthChanged,
+    kAuthorityLocked,
+    kAuthorityRejected,
+    kAuthorityReleased,
+};
+
+struct GoalReport {
+    std::string drone_id;
+    std::string goal_id;
+    std::uint64_t revision{};
+    GoalStatus status{GoalStatus::kUnspecified};
+    double distance_to_goal_m{};
+    double deviation_m{};
+    double altitude_error_m{};
+    float acceptance_radius_m{};
+    float deviation_radius_m{};
+    std::int64_t elapsed_ms{};
+    std::int64_t timeout_ms{};
+    std::string message;
+};
+
+struct AgentReport {
+    std::string drone_id;
+    std::int64_t unix_time_ms{};
+    std::uint64_t sequence{};
+    std::string correlation_id;
+    AgentReportType type{AgentReportType::kUnspecified};
+    ReportSeverity severity{ReportSeverity::kInfo};
+    std::string message;
+    std::optional<GoalReport> goal;
+};
+
+struct GoalResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    ActiveGoal goal;
+    std::int64_t computed_timeout_ms{};
+};
+
+struct ActiveGoalStatus {
+    bool has_goal{false};
+    ActiveGoal goal;
+    GoalStatus status{GoalStatus::kUnspecified};
+    std::int64_t computed_timeout_ms{};
+    std::string message;
+    RpcError error;
+};
+
+struct ReportSubscription {
+    std::string drone_id{"all"};
+    std::uint64_t after_sequence{};
+};
+
 /**
  * @brief Callback types used by SubscribeTelemetry().
  *
@@ -195,6 +296,7 @@ struct AuthorityEventInfo {
 using TelemetryHandler = std::function<void(const swarmkit::core::TelemetryFrame&)>;
 using TelemetryErrorHandler = std::function<void(const std::string&)>;
 using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
+using AgentReportHandler = std::function<void(const AgentReport&)>;
 /// @}
 
 /**
@@ -291,6 +393,16 @@ class Client {
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
 
+    /// @brief Set or replace the agent-supervised active goal for a drone.
+    [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoal& goal) const;
+
+    /// @brief Cancel the current active goal for a drone.
+    [[nodiscard]] CommandResult CancelGoal(const std::string& drone_id,
+                                           const std::string& goal_id = {}) const;
+
+    /// @brief Read the current active goal state known by the agent.
+    [[nodiscard]] ActiveGoalStatus GetActiveGoal(const std::string& drone_id) const;
+
     /**
      * @brief Acquire exclusive command authority for @p drone_id.
      *
@@ -356,6 +468,13 @@ class Client {
 
     /// @brief Cancel the active authority watch stream (if any).
     void StopAuthorityWatch();
+
+    /// @brief Subscribe to typed agent reports for goal/health/authority workflows.
+    void SubscribeReports(ReportSubscription subscription, AgentReportHandler on_report,
+                          TelemetryErrorHandler on_error = {});
+
+    /// @brief Cancel the active report stream (if any).
+    void StopReports();
 
    private:
     struct Impl;

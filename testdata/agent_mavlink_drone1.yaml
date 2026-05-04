@@ -5,6 +5,13 @@ agent:
   default_authority_ttl_ms: 5000
   default_telemetry_rate_hz: 5
   min_telemetry_rate_hz: 1
+  vehicle_profile:
+    profile_id: "sitl-copter"
+    cruise_speed_mps: 4.0
+    climb_speed_mps: 1.5
+    descent_speed_mps: 1.0
+    goal_margin_ms: 15000
+    max_goal_timeout_ms: 300000
   mavlink:
     drone_id: "drone-1"
     bind_addr: "0.0.0.0:14601"

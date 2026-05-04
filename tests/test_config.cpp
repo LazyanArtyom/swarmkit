@@ -169,6 +169,13 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "  default_authority_ttl_ms: 7000\n";
     output << "  default_telemetry_rate_hz: 8\n";
     output << "  min_telemetry_rate_hz: 2\n";
+    output << "  vehicle_profile:\n";
+    output << "    profile_id: heavy-copter\n";
+    output << "    cruise_speed_mps: 6.5\n";
+    output << "    climb_speed_mps: 2.0\n";
+    output << "    descent_speed_mps: 1.2\n";
+    output << "    goal_margin_ms: 25000\n";
+    output << "    max_goal_timeout_ms: 420000\n";
     output << "  security:\n";
     output << "    root_ca_cert_path: " << (kCertsPath / "ca.pem").string() << "\n";
     output << "    cert_chain_path: " << (kCertsPath / "agent.pem").string() << "\n";
@@ -182,6 +189,12 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->default_authority_ttl_ms == 7000);
     CHECK(kLoaded->default_telemetry_rate_hz == 8);
     CHECK(kLoaded->min_telemetry_rate_hz == 2);
+    CHECK(kLoaded->vehicle_profile.profile_id == "heavy-copter");
+    CHECK(kLoaded->vehicle_profile.cruise_speed_mps == 6.5F);
+    CHECK(kLoaded->vehicle_profile.climb_speed_mps == 2.0F);
+    CHECK(kLoaded->vehicle_profile.descent_speed_mps == 1.2F);
+    CHECK(kLoaded->vehicle_profile.goal_margin_ms == 25000);
+    CHECK(kLoaded->vehicle_profile.max_goal_timeout_ms == 420000);
 
     fs::remove(kConfigPath);
 }

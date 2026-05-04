@@ -18,8 +18,8 @@ namespace swarmkit::apps::cli::internal {
 
 [[nodiscard]] bool IsSubcommand(std::string_view value) {
     return value == "ping" || value == "health" || value == "stats" || value == "telemetry" ||
-           value == "command" || value == "sequence" || value == "lock" || value == "unlock" ||
-           value == "watch-authority" || value == "swarm";
+           value == "command" || value == "sequence" || value == "goal" || value == "reports" ||
+           value == "lock" || value == "unlock" || value == "watch-authority" || value == "swarm";
 }
 
 [[nodiscard]] bool IsOptionWithValue(std::string_view value) {
@@ -35,7 +35,10 @@ namespace swarmkit::apps::cli::internal {
            value == "--first" || value == "--last" || value == "--camera" || value == "--stream" ||
            value == "--interval" || value == "--count" || value == "--pitch" || value == "--roll" ||
            value == "--gimbal" || value == "--servo" || value == "--pwm" || value == "--relay" ||
-           value == "--gripper";
+           value == "--gripper" || value == "--goal-id" || value == "--revision" ||
+           value == "--accept-radius" || value == "--deviation-radius" ||
+           value == "--timeout-ms" || value == "--role" || value == "--format" ||
+           value == "--report-file" || value == "--after-sequence";
 }
 
 [[nodiscard]] std::expected<float, std::string> ParseFloatArg(std::string_view value,

@@ -26,6 +26,22 @@ service AgentService {
     /// Subscribe to a server-streaming telemetry feed.
     rpc StreamTelemetry(TelemetryRequest) returns (stream TelemetryFrame);
 
+    /// Set or replace the active supervised goal for one drone.
+    /// The agent sends the corresponding guided movement command, then reports
+    /// active/reached/deviating/failed status through SubscribeReports().
+    rpc SetActiveGoal(SetActiveGoalRequest) returns (SetActiveGoalReply);
+
+    /// Cancel the active supervised goal for one drone.
+    rpc CancelGoal(CancelGoalRequest) returns (CancelGoalReply);
+
+    /// Read the currently active supervised goal for one drone.
+    rpc GetActiveGoal(GetActiveGoalRequest) returns (GetActiveGoalReply);
+
+    /// Subscribe to typed agent reports: goal state, command state, health, and
+    /// authority events. Reports are intentionally policy-neutral so user
+    /// controllers can decide their own correction behavior.
+    rpc SubscribeReports(ReportSubscription) returns (stream AgentReport);
+
     /// Subscribe to command-authority change events for a drone.
     /// The stream delivers AuthorityEvent messages whenever a client acquires,
     /// preempts, or releases command authority.  Use this to implement
@@ -385,6 +401,134 @@ message CommandReply {
     string correlation_id = 3;
     ErrorCode error_code = 4;
     string debug_message = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Active goals and agent reports
+// ---------------------------------------------------------------------------
+
+message GeoPoint {
+    double lat_deg = 1;
+    double lon_deg = 2;
+    double alt_m = 3;
+}
+
+message ActiveGoal {
+    string drone_id = 1;
+    string goal_id = 2;
+    uint64 revision = 3;
+    GeoPoint target = 4;
+    float speed_mps = 5;
+    float acceptance_radius_m = 6;
+    float deviation_radius_m = 7;
+    int64 timeout_ms = 8;  // 0 => agent computes from vehicle profile.
+    string role = 9;       // Freeform user metadata, not sent to MAVLink.
+}
+
+enum GoalStatus {
+    GOAL_STATUS_UNSPECIFIED = 0;
+    GOAL_ACTIVE = 1;
+    GOAL_REACHED = 2;
+    GOAL_DEVIATING = 3;
+    GOAL_TIMEOUT = 4;
+    GOAL_CANCELLED = 5;
+    GOAL_SUPERSEDED = 6;
+    GOAL_FAILED = 7;
+}
+
+enum ReportSeverity {
+    REPORT_SEVERITY_UNSPECIFIED = 0;
+    REPORT_INFO = 1;
+    REPORT_WARNING = 2;
+    REPORT_ERROR = 3;
+    REPORT_CRITICAL = 4;
+}
+
+enum AgentReportType {
+    AGENT_REPORT_TYPE_UNSPECIFIED = 0;
+    COMMAND_ACCEPTED = 1;
+    COMMAND_REJECTED = 2;
+    COMMAND_ACKED = 3;
+    COMMAND_FAILED = 4;
+    GOAL_REPORT = 10;
+    TELEMETRY_STALE = 20;
+    HEARTBEAT_LOST = 21;
+    HEALTH_CHANGED = 22;
+    AUTHORITY_LOCKED = 30;
+    AUTHORITY_REJECTED = 31;
+    AUTHORITY_RELEASED = 32;
+}
+
+message GoalReport {
+    string drone_id = 1;
+    string goal_id = 2;
+    uint64 revision = 3;
+    GoalStatus status = 4;
+    double distance_to_goal_m = 5;
+    double deviation_m = 6;
+    double altitude_error_m = 7;
+    float acceptance_radius_m = 8;
+    float deviation_radius_m = 9;
+    int64 elapsed_ms = 10;
+    int64 timeout_ms = 11;
+    string message = 12;
+}
+
+message AgentReport {
+    string drone_id = 1;
+    int64 unix_time_ms = 2;
+    uint64 sequence = 3;
+    string correlation_id = 4;
+    AgentReportType type = 5;
+    ReportSeverity severity = 6;
+    string message = 7;
+    GoalReport goal = 10;
+}
+
+message SetActiveGoalRequest {
+    CommandContext ctx = 1;
+    ActiveGoal goal = 2;
+}
+
+message SetActiveGoalReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    ActiveGoal goal = 6;
+    int64 computed_timeout_ms = 7;
+}
+
+message CancelGoalRequest {
+    CommandContext ctx = 1;
+    string goal_id = 2;  // Empty means cancel whatever goal is active.
+}
+
+message CancelGoalReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+}
+
+message GetActiveGoalRequest {
+    string drone_id = 1;
+}
+
+message GetActiveGoalReply {
+    bool goal_present = 1;
+    ActiveGoal goal = 2;
+    GoalStatus status = 3;
+    int64 computed_timeout_ms = 4;
+    string message = 5;
+}
+
+message ReportSubscription {
+    string drone_id = 1;       // Empty or "all" subscribes to every drone.
+    string client_id = 2;
+    uint64 after_sequence = 3;  // Reserved for reconnect/resume; 0 = live only.
 }
 
 // ---------------------------------------------------------------------------
