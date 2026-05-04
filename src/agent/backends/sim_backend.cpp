@@ -340,6 +340,17 @@ class SimBackend final : public IDroneBackend {
         return core::Result::Success();
     }
 
+    [[nodiscard]] BackendCapabilities GetCapabilities() const override {
+        return {
+            .supports_mission_upload = true,
+            .supports_payload_control = true,
+            .supports_velocity_control = true,
+            .supports_flight_termination = false,
+            .autopilot_type = "sim",
+            .supported_modes = {"sim", "guided", "hold", "land", "rtl"},
+        };
+    }
+
    private:
     struct TelemetryStream {
         std::atomic<bool> running{true};

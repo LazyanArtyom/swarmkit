@@ -180,6 +180,17 @@ class RecordingBackend final : public agent::IDroneBackend {
         return iter == telemetry_streams_.end() ? 0 : iter->second.rate_hertz;
     }
 
+    [[nodiscard]] agent::BackendCapabilities GetCapabilities() const override {
+        return {
+            .supports_mission_upload = true,
+            .supports_payload_control = false,
+            .supports_velocity_control = true,
+            .supports_flight_termination = false,
+            .autopilot_type = "recording",
+            .supported_modes = {"guided", "loiter"},
+        };
+    }
+
    private:
     struct TelemetryStream {
         int rate_hertz{0};

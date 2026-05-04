@@ -693,6 +693,33 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
+    grpc::Status GetCapabilities(grpc::ServerContext* ctx,
+                                 const swarmkit::v1::CapabilitiesRequest* /*req*/,
+                                 swarmkit::v1::CapabilitiesReply* reply) override {
+        if (reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
+        }
+        if (const core::Result kAuthResult = AuthorizePeer(ctx, config_.security, nullptr);
+            !kAuthResult.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
+        }
+
+        const BackendCapabilities capabilities = backend_->GetCapabilities();
+        const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "capabilities");
+        reply->set_agent_id(config_.agent_id);
+        reply->set_unix_time_ms(NowUnixMs());
+        reply->set_correlation_id(kCorrelationId);
+        reply->set_supports_mission_upload(capabilities.supports_mission_upload);
+        reply->set_supports_payload_control(capabilities.supports_payload_control);
+        reply->set_supports_velocity_control(capabilities.supports_velocity_control);
+        reply->set_supports_flight_termination(capabilities.supports_flight_termination);
+        reply->set_autopilot_type(capabilities.autopilot_type);
+        for (const std::string& mode : capabilities.supported_modes) {
+            reply->add_supported_modes(mode);
+        }
+        return grpc::Status::OK;
+    }
+
     // -- Command RPC ----------------------------------------------------------
 
     grpc::Status SendCommand(grpc::ServerContext* ctx, const swarmkit::v1::CommandRequest* req,

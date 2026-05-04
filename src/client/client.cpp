@@ -1189,6 +1189,41 @@ RuntimeStats Client::GetRuntimeStats() const {
     return out;
 }
 
+BackendCapabilities Client::GetCapabilities() const {
+    BackendCapabilities out;
+    const std::string kCorrelationId = MakeCorrelationId("capabilities");
+
+    swarmkit::v1::CapabilitiesRequest req;
+    swarmkit::v1::CapabilitiesReply rep;
+    int attempt_count = 0;
+    const grpc::Status kStatus =
+        InvokeUnaryWithRetry(impl_->config, kCorrelationId, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->GetCapabilities(context, req, &rep);
+                             });
+
+    out.correlation_id = kCorrelationId;
+    if (!kStatus.ok()) {
+        PopulateTransportError(&out.error, kStatus, kCorrelationId, attempt_count);
+        return out;
+    }
+
+    out.ok = true;
+    out.agent_id = rep.agent_id();
+    out.unix_time_ms = rep.unix_time_ms();
+    out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.supports_mission_upload = rep.supports_mission_upload();
+    out.supports_payload_control = rep.supports_payload_control();
+    out.supports_velocity_control = rep.supports_velocity_control();
+    out.supports_flight_termination = rep.supports_flight_termination();
+    out.autopilot_type = rep.autopilot_type();
+    out.supported_modes.assign(rep.supported_modes().begin(), rep.supported_modes().end());
+    out.error.code = RpcStatusCode::kOk;
+    out.error.correlation_id = out.correlation_id;
+    out.error.attempt_count = attempt_count;
+    return out;
+}
+
 CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) const {
     CommandResult out;
 

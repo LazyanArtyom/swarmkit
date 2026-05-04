@@ -63,6 +63,15 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK(kStats.ping_requests_total >= 1);
     CHECK(kStats.health_requests_total >= 1);
     CHECK(kStats.command_requests_total >= 1);
+
+    const BackendCapabilities capabilities = client.GetCapabilities();
+    REQUIRE(capabilities.ok);
+    CHECK(capabilities.agent_id == "test-agent");
+    CHECK(capabilities.autopilot_type == "recording");
+    CHECK(capabilities.supports_mission_upload);
+    CHECK(capabilities.supports_velocity_control);
+    CHECK_FALSE(capabilities.supports_payload_control);
+    CHECK(std::ranges::contains(capabilities.supported_modes, "guided"));
 }
 
 TEST_CASE("Client authority session auto releases lock and emits watch events",

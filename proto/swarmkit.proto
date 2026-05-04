@@ -17,6 +17,7 @@ service AgentService {
     rpc Ping(PingRequest) returns (PingReply);
     rpc GetHealth(HealthRequest) returns (HealthReply);
     rpc GetRuntimeStats(RuntimeStatsRequest) returns (RuntimeStatsReply);
+    rpc GetCapabilities(CapabilitiesRequest) returns (CapabilitiesReply);
 
     /// Send one flight command to the agent.
     /// The agent routes the command through the CommandArbiter before
@@ -105,6 +106,20 @@ message RuntimeStatsReply {
     uint64 telemetry_frames_sent_total = 15;
     uint64 backend_failures_total = 16;
     bool ready = 17;
+}
+
+message CapabilitiesRequest {}
+
+message CapabilitiesReply {
+    string agent_id = 1;
+    int64 unix_time_ms = 2;
+    string correlation_id = 3;
+    bool supports_mission_upload = 4;
+    bool supports_payload_control = 5;
+    bool supports_velocity_control = 6;
+    bool supports_flight_termination = 7;
+    string autopilot_type = 8;
+    repeated string supported_modes = 9;
 }
 
 // ---------------------------------------------------------------------------

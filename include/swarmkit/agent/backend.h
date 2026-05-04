@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "swarmkit/commands.h"
 #include "swarmkit/core/result.h"
@@ -30,6 +31,15 @@ struct BackendHealth {
     bool armed{false};
     int custom_mode{-1};
     bool failsafe{false};
+};
+
+struct BackendCapabilities {
+    bool supports_mission_upload{false};
+    bool supports_payload_control{false};
+    bool supports_velocity_control{false};
+    bool supports_flight_termination{false};
+    std::string autopilot_type{"unknown"};
+    std::vector<std::string> supported_modes;
 };
 
 /// ---------------------------------------------------------------------------
@@ -76,6 +86,11 @@ class IDroneBackend {
 
     /// @brief Report backend-specific readiness/liveness state for health checks.
     [[nodiscard]] virtual BackendHealth GetHealth() const {
+        return {};
+    }
+
+    /// @brief Report backend/autopilot capabilities exposed to SDK clients.
+    [[nodiscard]] virtual BackendCapabilities GetCapabilities() const {
         return {};
     }
 };

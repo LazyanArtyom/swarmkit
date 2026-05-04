@@ -20,6 +20,7 @@ void PrintUsage() {
            "  ping                   Send a ping and print the agent response.\n"
            "  health                 Read agent health/readiness.\n"
            "  stats                  Read agent runtime counters.\n"
+           "  capabilities           Discover backend/autopilot feature support.\n"
            "  telemetry              Subscribe to telemetry and print frames.\n"
            "                         Press Ctrl+C to stop.\n"
            "  command                Send a command with selected priority.\n"

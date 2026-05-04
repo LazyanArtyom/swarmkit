@@ -18,9 +18,15 @@ swarmkit_enable_sanitizers(swarmkit-agent)
 add_executable(swarmkit-cli
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/app.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/command_builder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/flight_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/mission_command_parser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/nav_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/options.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/output.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/payload_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/telemetry_sink.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/usage.cpp
 )
 target_include_directories(swarmkit-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

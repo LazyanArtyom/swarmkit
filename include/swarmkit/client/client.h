@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "swarmkit/agent/arbiter.h"
 #include "swarmkit/commands.h"
@@ -155,6 +156,20 @@ struct RuntimeStats {
     std::uint64_t telemetry_frames_sent_total{0};
     std::uint64_t backend_failures_total{0};
     bool ready{false};
+    RpcError error;
+};
+
+struct BackendCapabilities {
+    bool ok{false};
+    std::string agent_id;
+    std::int64_t unix_time_ms{};
+    std::string correlation_id;
+    bool supports_mission_upload{false};
+    bool supports_payload_control{false};
+    bool supports_velocity_control{false};
+    bool supports_flight_termination{false};
+    std::string autopilot_type{"unknown"};
+    std::vector<std::string> supported_modes;
     RpcError error;
 };
 
@@ -380,6 +395,9 @@ class Client {
 
     /// @brief Read current agent runtime counters for observability.
     [[nodiscard]] RuntimeStats GetRuntimeStats() const;
+
+    /// @brief Discover backend/autopilot features this agent can execute.
+    [[nodiscard]] BackendCapabilities GetCapabilities() const;
 
     /**
      * @brief Send a single command to the agent.

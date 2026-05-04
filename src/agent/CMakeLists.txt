@@ -10,8 +10,14 @@ add_library(swarmkit_agent STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/active_goal_supervisor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/report_hub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/telemetry_manager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_command_executor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_common.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backends/sim_backend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_backend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_mission_protocol.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_state_cache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_telemetry_decoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_udp_transport.cpp
 )
 
 target_include_directories(swarmkit_agent PUBLIC
