@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <mutex>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -132,6 +133,107 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
     client.StopTelemetry();
     REQUIRE(testsupport::WaitUntil([&] { return !harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
+}
+
+TEST_CASE("Client active goal emits active and reached reports", "[client][integration][goal]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    std::mutex reports_mutex;
+    std::vector<AgentReport> reports;
+    client.SubscribeReports({.drone_id = "drone-1"}, [&](const AgentReport& report) {
+        std::lock_guard<std::mutex> lock(reports_mutex);
+        reports.push_back(report);
+    });
+
+    ActiveGoal goal;
+    goal.drone_id = "drone-1";
+    goal.goal_id = "goal-reached";
+    goal.revision = 7;
+    goal.target = {.lat_deg = 40.0, .lon_deg = 44.0, .alt_m = 10.0};
+    goal.acceptance_radius_m = 5.0F;
+    goal.deviation_radius_m = 25.0F;
+    goal.timeout_ms = 5000;
+
+    const GoalResult result = client.SetActiveGoal(goal);
+    REQUIRE(result.ok);
+    CHECK(result.goal.goal_id == "goal-reached");
+    CHECK(result.computed_timeout_ms == 5000);
+    REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
+
+    core::TelemetryFrame frame;
+    frame.drone_id = "drone-1";
+    frame.unix_time_ms = 123;
+    frame.lat_deg = 40.0;
+    frame.lon_deg = 44.0;
+    frame.rel_alt_m = 10.0F;
+    frame.battery_percent = 80.0F;
+    frame.mode = "guided";
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            std::lock_guard<std::mutex> lock(reports_mutex);
+            return std::ranges::any_of(reports, [](const AgentReport& report) {
+                return report.goal.has_value() &&
+                       report.goal->status == GoalStatus::kReached &&
+                       report.goal->goal_id == "goal-reached";
+            });
+        },
+        kWaitTimeout, std::chrono::milliseconds{50}));
+
+    const ActiveGoalStatus status = client.GetActiveGoal("drone-1");
+    REQUIRE(status.has_goal);
+    CHECK(status.status == GoalStatus::kReached);
+
+    client.StopReports();
+}
+
+TEST_CASE("Client can cancel active goal and receive cancellation report",
+          "[client][integration][goal]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    std::mutex reports_mutex;
+    std::vector<AgentReport> reports;
+    client.SubscribeReports({.drone_id = "drone-1"}, [&](const AgentReport& report) {
+        std::lock_guard<std::mutex> lock(reports_mutex);
+        reports.push_back(report);
+    });
+
+    ActiveGoal goal;
+    goal.drone_id = "drone-1";
+    goal.goal_id = "goal-cancel";
+    goal.revision = 8;
+    goal.target = {.lat_deg = 41.0, .lon_deg = 45.0, .alt_m = 20.0};
+    goal.acceptance_radius_m = 2.0F;
+    goal.deviation_radius_m = 10.0F;
+    goal.timeout_ms = 5000;
+
+    const GoalResult set_result = client.SetActiveGoal(goal);
+    REQUIRE(set_result.ok);
+    REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
+
+    const CommandResult cancel_result = client.CancelGoal("drone-1", "goal-cancel");
+    REQUIRE(cancel_result.ok);
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            std::lock_guard<std::mutex> lock(reports_mutex);
+            return std::ranges::any_of(reports, [](const AgentReport& report) {
+                return report.goal.has_value() &&
+                       report.goal->status == GoalStatus::kCancelled &&
+                       report.goal->goal_id == "goal-cancel";
+            });
+        },
+        kWaitTimeout));
+
+    const ActiveGoalStatus status = client.GetActiveGoal("drone-1");
+    CHECK_FALSE(status.has_goal);
+
+    client.StopReports();
 }
 
 TEST_CASE("Client reports backend execution failure and telemetry counters",

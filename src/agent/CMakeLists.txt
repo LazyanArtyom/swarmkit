@@ -7,6 +7,8 @@
 add_library(swarmkit_agent STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/server.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/arbiter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/active_goal_supervisor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/report_hub.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/telemetry_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backends/sim_backend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_backend.cpp
