@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "swarmkit/agent/arbiter.h"
@@ -191,6 +192,10 @@ struct BackendCapabilities {
     std::vector<std::string> supported_payloads;
     std::vector<std::string> supported_telemetry_fields;
     std::vector<std::string> backend_command_names;
+    std::vector<std::string> supported_payload_action_namespaces;
+    std::vector<std::string> supported_payload_action_names;
+    int payload_timing_precision_ms{};
+    bool supports_payload_scheduling{false};
     float max_horizontal_speed_mps{};
     float max_climb_speed_mps{};
     float max_descent_speed_mps{};
@@ -275,6 +280,8 @@ enum class AgentReportType : std::uint8_t {
     kAuthorityLocked,
     kAuthorityRejected,
     kAuthorityReleased,
+    kTrajectoryReport,
+    kTimeSyncReport,
 };
 
 struct GoalReport {
@@ -292,6 +299,44 @@ struct GoalReport {
     std::string message;
 };
 
+enum class TrajectoryReportStatus : std::uint8_t {
+    kUnspecified,
+    kUploaded,
+    kValidated,
+    kReady,
+    kStarted,
+    kLate,
+    kTracking,
+    kDrifting,
+    kAborted,
+    kCompleted,
+    kFailed,
+};
+
+struct TrajectoryReport {
+    std::string drone_id;
+    std::string execution_id;
+    std::uint64_t revision{};
+    TrajectoryReportStatus status{TrajectoryReportStatus::kUnspecified};
+    int active_segment{};
+    double distance_to_target_m{};
+    double drift_m{};
+    std::int64_t schedule_error_ms{};
+    std::string message;
+};
+
+struct TimeSyncState {
+    std::string drone_id;
+    std::int64_t agent_unix_time_ms{};
+    std::int64_t vehicle_unix_time_ms{};
+    std::int64_t clock_offset_ms{};
+    float sync_quality_percent{};
+    bool synced{false};
+    bool stale{true};
+    std::string source;
+    std::string message;
+};
+
 struct AgentReport {
     std::string drone_id;
     std::int64_t unix_time_ms{};
@@ -301,7 +346,140 @@ struct AgentReport {
     ReportSeverity severity{ReportSeverity::kInfo};
     std::string message;
     std::optional<GoalReport> goal;
+    std::optional<TrajectoryReport> trajectory;
+    std::optional<TimeSyncState> time_sync;
 };
+
+struct PayloadAction {
+    std::string action_namespace;
+    std::string name;
+    std::unordered_map<std::string, std::string> params;
+};
+
+struct TimedPayloadAction {
+    std::int64_t time_offset_ms{};
+    std::int64_t unix_time_ms{};
+    PayloadAction action;
+};
+
+struct LocalPoint {
+    double x_m{};
+    double y_m{};
+    double z_m{};
+};
+
+struct TrajectoryPoint {
+    std::int64_t time_offset_ms{};
+    std::int64_t unix_time_ms{};
+    GeoPoint position;
+    LocalPoint local_position;
+    bool use_local_position{false};
+    float vx_mps{};
+    float vy_mps{};
+    float vz_mps{};
+    bool has_velocity{false};
+    float yaw_deg{};
+    bool has_yaw{false};
+    std::vector<TimedPayloadAction> payload_actions;
+};
+
+struct Geofence {
+    double min_lat_deg{-90.0};
+    double max_lat_deg{90.0};
+    double min_lon_deg{-180.0};
+    double max_lon_deg{180.0};
+    float min_alt_m{};
+    float max_alt_m{};
+};
+
+struct TrajectoryValidationPolicy {
+    float min_battery_percent{};
+    std::optional<Geofence> geofence;
+    float min_spacing_m{};
+    bool require_gps{false};
+    bool require_ekf_ok{false};
+    float max_horizontal_speed_mps{};
+    float max_climb_speed_mps{};
+    float max_descent_speed_mps{};
+    float max_altitude_m{};
+    float tracking_tolerance_m{2.0F};
+};
+
+struct TrajectoryPlan {
+    std::string execution_id;
+    std::uint64_t revision{};
+    std::string drone_id{"default"};
+    std::string frame{"global"};
+    std::vector<TrajectoryPoint> points;
+    std::vector<TimedPayloadAction> payload_timeline;
+    TrajectoryValidationPolicy validation;
+    std::unordered_map<std::string, std::string> labels;
+};
+
+enum class ValidationSeverity : std::uint8_t {
+    kError,
+    kWarning,
+    kInfo,
+};
+
+struct ValidationIssue {
+    ValidationSeverity severity{ValidationSeverity::kInfo};
+    std::string code;
+    std::string message;
+    int point_index{-1};
+};
+
+struct ValidateTrajectoryResult {
+    bool ok{false};
+    std::vector<ValidationIssue> issues;
+    float max_required_horizontal_speed_mps{};
+    float max_required_climb_speed_mps{};
+    float max_required_descent_speed_mps{};
+    int first_failing_point_index{-1};
+};
+
+enum class ExecutionState : std::uint8_t {
+    kUnspecified,
+    kUploaded,
+    kValidated,
+    kReady,
+    kStarted,
+    kPaused,
+    kAborted,
+    kCompleted,
+    kFailed,
+};
+
+struct ExecutionHandle {
+    std::string execution_id;
+    std::uint64_t revision{};
+    std::string drone_id;
+    ExecutionState state{ExecutionState::kUnspecified};
+    std::int64_t uploaded_unix_ms{};
+    std::int64_t prepared_unix_ms{};
+    std::int64_t start_unix_ms{};
+    int active_segment{};
+    std::uint64_t last_report_sequence{};
+    std::string message;
+};
+
+struct ExecutionResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    ExecutionHandle handle;
+    ValidateTrajectoryResult validation;
+};
+
+struct TrajectoryStatus {
+    bool found{false};
+    ExecutionHandle handle;
+    TrajectoryPlan plan;
+    std::string message;
+    RpcError error;
+};
+
 
 struct GoalResult {
     bool ok{false};
@@ -445,6 +623,27 @@ class Client {
 
     /// @brief Read the current active goal state known by the agent.
     [[nodiscard]] ActiveGoalStatus GetActiveGoal(const std::string& drone_id) const;
+
+    [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan) const;
+    [[nodiscard]] ExecutionResult ClearTrajectory(const std::string& drone_id,
+                                                  const std::string& execution_id) const;
+    [[nodiscard]] ExecutionResult ValidateTrajectory(const TrajectoryPlan& plan) const;
+    [[nodiscard]] ExecutionResult PrepareTrajectory(const std::string& drone_id,
+                                                    const std::string& execution_id) const;
+    [[nodiscard]] ExecutionResult StartExecutionAt(const std::string& drone_id,
+                                                   const std::string& execution_id,
+                                                   std::int64_t unix_time_ms) const;
+    [[nodiscard]] ExecutionResult PauseExecution(const std::string& drone_id,
+                                                 const std::string& execution_id) const;
+    [[nodiscard]] ExecutionResult ResumeExecution(const std::string& drone_id,
+                                                  const std::string& execution_id) const;
+    [[nodiscard]] ExecutionResult AbortExecution(const std::string& drone_id,
+                                                 const std::string& execution_id) const;
+    [[nodiscard]] TrajectoryStatus GetExecution(const std::string& drone_id,
+                                                const std::string& execution_id) const;
+    [[nodiscard]] std::vector<ExecutionHandle> ListExecutions(
+        const std::string& drone_id = "all") const;
+    [[nodiscard]] TimeSyncState GetTimeSyncState(const std::string& drone_id = "default") const;
 
     /**
      * @brief Acquire exclusive command authority for @p drone_id.

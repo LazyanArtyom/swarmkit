@@ -233,12 +233,6 @@ class SimBackend final : public IDroneBackend {
                                            formation_cmd.formation_id, formation_cmd.slot_index,
                                            context.drone_id);
                                    },
-                                   [&](const CmdRunSequence& sequence_cmd) {
-                                       core::Logger::InfoFmt(
-                                           "SimBackend: RUN_SEQUENCE id={} sync_ms={}  drone={}",
-                                           sequence_cmd.sequence_id, sequence_cmd.sync_unix_ms,
-                                           context.drone_id);
-                                   },
                                },
                                swarm);
                 },
@@ -400,7 +394,7 @@ class SimBackend final : public IDroneBackend {
             .supports_flight_termination = false,
             .supports_backend_commands = true,
             .supports_time_sync = false,
-            .supports_trajectory_upload = false,
+            .supports_trajectory_upload = true,
             .autopilot_type = "sim",
             .supported_modes = {"sim", "guided", "hold", "land", "rtl"},
             .supported_commands =
@@ -412,6 +406,10 @@ class SimBackend final : public IDroneBackend {
             .supported_telemetry_fields =
                 {"position", "altitude", "velocity", "battery", "mode", "gps", "health"},
             .backend_command_names = {"sim.echo"},
+            .supported_payload_action_namespaces = {"sim", "led", "camera", "gimbal"},
+            .supported_payload_action_names = {"echo", "set-color", "photo", "point"},
+            .payload_timing_precision_ms = 20,
+            .supports_payload_scheduling = true,
             .limits =
                 {
                     .max_horizontal_speed_mps = 10.0F,

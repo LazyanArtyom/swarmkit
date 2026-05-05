@@ -65,6 +65,10 @@ struct BackendCapabilities {
     std::vector<std::string> supported_payloads;
     std::vector<std::string> supported_telemetry_fields;
     std::vector<std::string> backend_command_names;
+    std::vector<std::string> supported_payload_action_namespaces;
+    std::vector<std::string> supported_payload_action_names;
+    int payload_timing_precision_ms{};
+    bool supports_payload_scheduling{false};
     BackendNumericLimits limits;
 };
 

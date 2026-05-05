@@ -23,12 +23,18 @@ inline constexpr float kDefaultClimbSpeedMps = 1.5F;
 inline constexpr float kDefaultDescentSpeedMps = 1.0F;
 inline constexpr int kDefaultGoalMarginMs = 15000;
 inline constexpr int kDefaultMaxGoalTimeoutMs = 300000;
+inline constexpr float kDefaultMaxAltitudeM = 120.0F;
+inline constexpr float kDefaultMinBatteryPercent = 20.0F;
+inline constexpr float kDefaultTrackingToleranceM = 2.0F;
 
 struct VehicleProfile {
     std::string profile_id{"generic-quad"};
     float cruise_speed_mps{kDefaultCruiseSpeedMps};
     float climb_speed_mps{kDefaultClimbSpeedMps};
     float descent_speed_mps{kDefaultDescentSpeedMps};
+    float max_altitude_m{kDefaultMaxAltitudeM};
+    float min_battery_percent{kDefaultMinBatteryPercent};
+    float tracking_tolerance_m{kDefaultTrackingToleranceM};
     int goal_margin_ms{kDefaultGoalMarginMs};
     int max_goal_timeout_ms{kDefaultMaxGoalTimeoutMs};
 

@@ -6,6 +6,7 @@
 
 #include "swarmkit/client/swarm_client.h"
 
+#include <atomic>
 #include <exception>
 #include <mutex>
 #include <string>
@@ -75,6 +76,52 @@ template <typename TaskFn>
     return results;
 }
 
+template <typename Result, typename TaskFn>
+[[nodiscard]] std::unordered_map<std::string, Result> RunClientTasks(
+    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients, TaskFn&& task_fn) {
+    std::unordered_map<std::string, Result> results;
+    results.reserve(clients.size());
+    if (clients.empty()) {
+        return results;
+    }
+
+    const std::size_t kParallelism = ComputeParallelism(clients.size());
+    std::atomic<std::size_t> next_index{0};
+    std::mutex results_mutex;
+    std::vector<std::thread> workers;
+    workers.reserve(kParallelism);
+
+    for (std::size_t index = 0; index < kParallelism; ++index) {
+        workers.emplace_back([&clients, &next_index, &results, &results_mutex, &task_fn]() {
+            while (true) {
+                const std::size_t task_index = next_index.fetch_add(1, std::memory_order_relaxed);
+                if (task_index >= clients.size()) {
+                    return;
+                }
+                const auto& [drone_id, client] = clients[task_index];
+                Result result = task_fn(drone_id, client);
+                std::lock_guard<std::mutex> lock(results_mutex);
+                results.emplace(drone_id, std::move(result));
+            }
+        });
+    }
+
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    return results;
+}
+
+[[nodiscard]] ExecutionResult UnregisteredExecutionResult(const std::string& drone_id) {
+    ExecutionResult out;
+    out.ok = false;
+    out.message = "drone '" + drone_id + "' not registered";
+    out.error.code = RpcStatusCode::kInvalidArgument;
+    out.error.user_message = out.message;
+    return out;
+}
+
 }  // namespace
 
 /// @brief Holds per-drone Client instances and synchronises fleet-wide access.
@@ -106,6 +153,7 @@ SwarmClient::SwarmClient(ClientConfig default_config) : impl_(std::make_unique<I
 SwarmClient::~SwarmClient() {
     try {
         StopAllTelemetry();
+        StopAllReports();
     } catch (const std::exception& exc) {
         core::Logger::WarnFmt("SwarmClient::~SwarmClient failed to stop telemetry: {}", exc.what());
     } catch (...) {
@@ -256,6 +304,98 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
     });
 }
 
+ExecutionResult SwarmClient::UploadTrajectory(const TrajectoryPlan& plan) const {
+    std::shared_ptr<Client> client;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        auto iter = impl_->clients.find(plan.drone_id);
+        if (iter == impl_->clients.end()) {
+            return UnregisteredExecutionResult(plan.drone_id);
+        }
+        client = iter->second;
+    }
+    return client->UploadTrajectory(plan);
+}
+
+std::unordered_map<std::string, ExecutionResult> SwarmClient::UploadTrajectories(
+    const std::vector<TrajectoryPlan>& plans) const {
+    std::unordered_map<std::string, TrajectoryPlan> by_drone;
+    for (const auto& plan : plans) {
+        by_drone.emplace(plan.drone_id, plan);
+    }
+    const auto snapshot = impl_->Snapshot();
+    return RunClientTasks<ExecutionResult>(
+        snapshot, [&by_drone](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            const auto iter = by_drone.find(drone_id);
+            if (iter == by_drone.end()) {
+                ExecutionResult out;
+                out.ok = false;
+                out.message = "no trajectory plan supplied for drone";
+                out.error.code = RpcStatusCode::kInvalidArgument;
+                out.error.user_message = out.message;
+                return out;
+            }
+            return client->UploadTrajectory(iter->second);
+        });
+}
+
+std::unordered_map<std::string, ExecutionResult> SwarmClient::ValidateTrajectories(
+    const std::vector<TrajectoryPlan>& plans) const {
+    std::unordered_map<std::string, TrajectoryPlan> by_drone;
+    for (const auto& plan : plans) {
+        by_drone.emplace(plan.drone_id, plan);
+    }
+    const auto snapshot = impl_->Snapshot();
+    return RunClientTasks<ExecutionResult>(
+        snapshot, [&by_drone](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            const auto iter = by_drone.find(drone_id);
+            if (iter == by_drone.end()) {
+                ExecutionResult out;
+                out.ok = false;
+                out.message = "no trajectory plan supplied for drone";
+                out.error.code = RpcStatusCode::kInvalidArgument;
+                out.error.user_message = out.message;
+                return out;
+            }
+            return client->ValidateTrajectory(iter->second);
+        });
+}
+
+std::unordered_map<std::string, ExecutionResult> SwarmClient::PrepareAll(
+    const std::string& execution_id) const {
+    return RunClientTasks<ExecutionResult>(
+        impl_->Snapshot(), [&execution_id](const std::string& drone_id,
+                                           const std::shared_ptr<Client>& client) {
+            return client->PrepareTrajectory(drone_id, execution_id);
+        });
+}
+
+std::unordered_map<std::string, ExecutionResult> SwarmClient::StartAllAt(
+    const std::string& execution_id, std::int64_t unix_time_ms) const {
+    return RunClientTasks<ExecutionResult>(
+        impl_->Snapshot(), [&execution_id, unix_time_ms](const std::string& drone_id,
+                                                        const std::shared_ptr<Client>& client) {
+            return client->StartExecutionAt(drone_id, execution_id, unix_time_ms);
+        });
+}
+
+std::unordered_map<std::string, ExecutionResult> SwarmClient::AbortAll(
+    const std::string& execution_id) const {
+    return RunClientTasks<ExecutionResult>(
+        impl_->Snapshot(), [&execution_id](const std::string& drone_id,
+                                           const std::shared_ptr<Client>& client) {
+            return client->AbortExecution(drone_id, execution_id);
+        });
+}
+
+std::unordered_map<std::string, std::vector<ExecutionHandle>> SwarmClient::ListAllExecutions()
+    const {
+    return RunClientTasks<std::vector<ExecutionHandle>>(
+        impl_->Snapshot(), [](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            return client->ListExecutions(drone_id);
+        });
+}
+
 void SwarmClient::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
                                      TelemetryErrorHandler on_error) {
     std::shared_ptr<Client> client;
@@ -296,6 +436,21 @@ void SwarmClient::SubscribeAllTelemetry(int rate_hertz, const TelemetryHandler& 
 void SwarmClient::StopAllTelemetry() {
     for (const auto& [drone_id, client] : impl_->Snapshot()) {
         client->StopTelemetry();
+    }
+}
+
+void SwarmClient::SubscribeAllReports(const AgentReportHandler& on_report,
+                                      const TelemetryErrorHandler& on_error,
+                                      std::uint64_t after_sequence) {
+    for (const auto& [drone_id, client] : impl_->Snapshot()) {
+        client->SubscribeReports({.drone_id = drone_id, .after_sequence = after_sequence},
+                                 on_report, on_error);
+    }
+}
+
+void SwarmClient::StopAllReports() {
+    for (const auto& [drone_id, client] : impl_->Snapshot()) {
+        client->StopReports();
     }
 }
 

@@ -170,6 +170,25 @@ class SwarmClient {
 
     /// @}
 
+    /// @name Generic trajectory / execution coordination
+    /// @{
+
+    [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan) const;
+    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> UploadTrajectories(
+        const std::vector<TrajectoryPlan>& plans) const;
+    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> ValidateTrajectories(
+        const std::vector<TrajectoryPlan>& plans) const;
+    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> PrepareAll(
+        const std::string& execution_id) const;
+    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> StartAllAt(
+        const std::string& execution_id, std::int64_t unix_time_ms) const;
+    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> AbortAll(
+        const std::string& execution_id) const;
+    [[nodiscard]] std::unordered_map<std::string, std::vector<ExecutionHandle>> ListAllExecutions()
+        const;
+
+    /// @}
+
     /// @name Authority lock / unlock
     /// @{
 
@@ -242,6 +261,16 @@ class SwarmClient {
 
     /// @brief Stop telemetry subscriptions for all registered drones.
     void StopAllTelemetry();
+
+    /// @}
+
+    /// @name Reports
+    /// @{
+
+    void SubscribeAllReports(const AgentReportHandler& on_report,
+                             const TelemetryErrorHandler& on_error = {},
+                             std::uint64_t after_sequence = 0);
+    void StopAllReports();
 
     /// @}
 

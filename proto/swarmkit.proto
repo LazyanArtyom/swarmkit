@@ -38,6 +38,21 @@ service AgentService {
     /// Read the currently active supervised goal for one drone.
     rpc GetActiveGoal(GetActiveGoalRequest) returns (GetActiveGoalReply);
 
+    /// Generic timed trajectory/execution lifecycle. This is intentionally
+    /// domain-neutral: drone shows, patrol, mapping, and custom controllers can
+    /// all build their own logic on top of these primitives.
+    rpc UploadTrajectory(UploadTrajectoryRequest) returns (ExecutionReply);
+    rpc ClearTrajectory(ExecutionRequest) returns (ExecutionReply);
+    rpc ValidateTrajectory(ValidateTrajectoryRequest) returns (ValidateTrajectoryReply);
+    rpc PrepareTrajectory(ExecutionRequest) returns (ExecutionReply);
+    rpc StartExecutionAt(StartExecutionAtRequest) returns (ExecutionReply);
+    rpc PauseExecution(ExecutionRequest) returns (ExecutionReply);
+    rpc ResumeExecution(ExecutionRequest) returns (ExecutionReply);
+    rpc AbortExecution(ExecutionRequest) returns (ExecutionReply);
+    rpc GetExecution(GetExecutionRequest) returns (GetExecutionReply);
+    rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsReply);
+    rpc GetTimeSyncState(TimeSyncRequest) returns (TimeSyncState);
+
     /// Subscribe to typed agent reports: goal state, command state, health, and
     /// authority events. Reports are intentionally policy-neutral so user
     /// controllers can decide their own correction behavior.
@@ -145,6 +160,10 @@ message CapabilitiesReply {
     float max_climb_speed_mps = 22;
     float max_descent_speed_mps = 23;
     float max_altitude_m = 24;
+    repeated string supported_payload_action_namespaces = 25;
+    repeated string supported_payload_action_names = 26;
+    int32 payload_timing_precision_ms = 27;
+    bool supports_payload_scheduling = 28;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +311,7 @@ message CmdSetCurrentMissionItem {
     int32 seq = 1;
 }
 
-// --- Swarm commands (multi-agent coordination and choreography) ---
+// --- Swarm commands (multi-agent coordination) ---
 
 message CmdSetRole {
     string role = 1;  /// Freeform role label (e.g. "leader", "follower-3").
@@ -301,17 +320,6 @@ message CmdSetRole {
 message CmdSetFormation {
     string formation_id = 1;  /// Identifier of the formation template.
     int32 slot_index = 2;     /// Zero-based position within the formation.
-}
-
-/**
- * Execute a pre-defined choreography sequence.
- * sync_unix_ms is the absolute UNIX timestamp (ms) at which all agents
- * start simultaneously, enabling synchronised swarm animations.
- * Set to 0 to start immediately.
- */
-message CmdRunSequence {
-    string sequence_id = 1;
-    int64 sync_unix_ms = 2;
 }
 
 // --- Payload commands ---
@@ -410,7 +418,6 @@ message Command {
         // Swarm
         CmdSetRole set_role = 20;
         CmdSetFormation set_formation = 21;
-        CmdRunSequence run_sequence = 22;
 
         // Mission
         CmdUploadMission upload_mission = 31;
@@ -523,6 +530,8 @@ enum AgentReportType {
     AUTHORITY_LOCKED = 30;
     AUTHORITY_REJECTED = 31;
     AUTHORITY_RELEASED = 32;
+    TRAJECTORY_REPORT = 40;
+    TIME_SYNC_REPORT = 41;
 }
 
 message GoalReport {
@@ -549,6 +558,8 @@ message AgentReport {
     ReportSeverity severity = 6;
     string message = 7;
     GoalReport goal = 10;
+    TrajectoryReport trajectory = 11;
+    TimeSyncState time_sync = 12;
 }
 
 message SetActiveGoalRequest {
@@ -589,6 +600,226 @@ message GetActiveGoalReply {
     GoalStatus status = 3;
     int64 computed_timeout_ms = 4;
     string message = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Generic timed trajectory / execution
+// ---------------------------------------------------------------------------
+
+message LocalPoint {
+    double x_m = 1;
+    double y_m = 2;
+    double z_m = 3;
+}
+
+message PayloadAction {
+    string action_namespace = 1;
+    string name = 2;
+    map<string, string> params = 3;
+}
+
+message TimedPayloadAction {
+    int64 time_offset_ms = 1;
+    int64 unix_time_ms = 2;
+    PayloadAction action = 3;
+}
+
+message TrajectoryPoint {
+    int64 time_offset_ms = 1;
+    int64 unix_time_ms = 2;
+    GeoPoint position = 3;
+    LocalPoint local_position = 4;
+    bool use_local_position = 5;
+    float vx_mps = 6;
+    float vy_mps = 7;
+    float vz_mps = 8;
+    bool has_velocity = 9;
+    float yaw_deg = 10;
+    bool has_yaw = 11;
+    repeated TimedPayloadAction payload_actions = 12;
+}
+
+message Geofence {
+    double min_lat_deg = 1;
+    double max_lat_deg = 2;
+    double min_lon_deg = 3;
+    double max_lon_deg = 4;
+    float min_alt_m = 5;
+    float max_alt_m = 6;
+}
+
+message TrajectoryValidationPolicy {
+    float min_battery_percent = 1;
+    Geofence geofence = 2;
+    float min_spacing_m = 3;
+    bool require_gps = 4;
+    bool require_ekf_ok = 5;
+    float max_horizontal_speed_mps = 6;
+    float max_climb_speed_mps = 7;
+    float max_descent_speed_mps = 8;
+    float max_altitude_m = 9;
+    float tracking_tolerance_m = 10;
+}
+
+message TrajectoryPlan {
+    string execution_id = 1;
+    uint64 revision = 2;
+    string drone_id = 3;
+    string frame = 4;  // global|local-ned; point.use_local_position may override per point.
+    repeated TrajectoryPoint points = 5;
+    repeated TimedPayloadAction payload_timeline = 6;
+    TrajectoryValidationPolicy validation = 7;
+    map<string, string> labels = 8;
+}
+
+enum ValidationSeverity {
+    VALIDATION_SEVERITY_UNSPECIFIED = 0;
+    VALIDATION_ERROR = 1;
+    VALIDATION_WARNING = 2;
+    VALIDATION_INFO = 3;
+}
+
+message ValidationIssue {
+    ValidationSeverity severity = 1;
+    string code = 2;
+    string message = 3;
+    int32 point_index = 4;  // -1 means whole plan.
+}
+
+message ValidateTrajectoryResult {
+    bool ok = 1;
+    repeated ValidationIssue issues = 2;
+    float max_required_horizontal_speed_mps = 3;
+    float max_required_climb_speed_mps = 4;
+    float max_required_descent_speed_mps = 5;
+    int32 first_failing_point_index = 6;  // -1 when none.
+}
+
+enum ExecutionState {
+    EXECUTION_STATE_UNSPECIFIED = 0;
+    EXECUTION_UPLOADED = 1;
+    EXECUTION_VALIDATED = 2;
+    EXECUTION_READY = 3;
+    EXECUTION_STARTED = 4;
+    EXECUTION_PAUSED = 5;
+    EXECUTION_ABORTED = 6;
+    EXECUTION_COMPLETED = 7;
+    EXECUTION_FAILED = 8;
+}
+
+message ExecutionHandle {
+    string execution_id = 1;
+    uint64 revision = 2;
+    string drone_id = 3;
+    ExecutionState state = 4;
+    int64 uploaded_unix_ms = 5;
+    int64 prepared_unix_ms = 6;
+    int64 start_unix_ms = 7;
+    int32 active_segment = 8;
+    uint64 last_report_sequence = 9;
+    string message = 10;
+}
+
+enum TrajectoryReportStatus {
+    TRAJECTORY_STATUS_UNSPECIFIED = 0;
+    TRAJECTORY_UPLOADED = 1;
+    TRAJECTORY_VALIDATED = 2;
+    TRAJECTORY_READY = 3;
+    TRAJECTORY_STARTED = 4;
+    TRAJECTORY_LATE = 5;
+    TRAJECTORY_TRACKING = 6;
+    TRAJECTORY_DRIFTING = 7;
+    TRAJECTORY_ABORTED = 8;
+    TRAJECTORY_COMPLETED = 9;
+    TRAJECTORY_FAILED = 10;
+}
+
+message TrajectoryReport {
+    string drone_id = 1;
+    string execution_id = 2;
+    uint64 revision = 3;
+    TrajectoryReportStatus status = 4;
+    int32 active_segment = 5;
+    double distance_to_target_m = 6;
+    double drift_m = 7;
+    int64 schedule_error_ms = 8;
+    string message = 9;
+}
+
+message TimeSyncState {
+    string drone_id = 1;
+    int64 agent_unix_time_ms = 2;
+    int64 vehicle_unix_time_ms = 3;
+    int64 clock_offset_ms = 4;
+    float sync_quality_percent = 5;
+    bool synced = 6;
+    bool stale = 7;
+    string source = 8;
+    string message = 9;
+}
+
+message UploadTrajectoryRequest {
+    CommandContext ctx = 1;
+    TrajectoryPlan plan = 2;
+}
+
+message ValidateTrajectoryRequest {
+    CommandContext ctx = 1;
+    TrajectoryPlan plan = 2;
+}
+
+message ExecutionRequest {
+    CommandContext ctx = 1;
+    string execution_id = 2;
+}
+
+message StartExecutionAtRequest {
+    CommandContext ctx = 1;
+    string execution_id = 2;
+    int64 unix_time_ms = 3;  // 0 => start immediately.
+}
+
+message GetExecutionRequest {
+    string drone_id = 1;
+    string execution_id = 2;
+}
+
+message ListExecutionsRequest {
+    string drone_id = 1;  // Empty/all returns every execution known to this agent.
+}
+
+message TimeSyncRequest {
+    string drone_id = 1;
+}
+
+message ExecutionReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    ExecutionHandle handle = 6;
+    ValidateTrajectoryResult validation = 7;
+}
+
+message ValidateTrajectoryReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    ValidateTrajectoryResult validation = 6;
+}
+
+message GetExecutionReply {
+    bool found = 1;
+    ExecutionHandle handle = 2;
+    TrajectoryPlan plan = 3;
+    string message = 4;
+}
+
+message ListExecutionsReply {
+    repeated ExecutionHandle executions = 1;
 }
 
 message ReportSubscription {

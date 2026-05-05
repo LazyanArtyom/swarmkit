@@ -395,11 +395,6 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                                    proto_frm->set_formation_id(formation.formation_id);
                                    proto_frm->set_slot_index(formation.slot_index);
                                },
-                               [&](const commands::CmdRunSequence& sequence) {
-                                   auto* proto_seq = proto_cmd->mutable_run_sequence();
-                                   proto_seq->set_sequence_id(sequence.sequence_id);
-                                   proto_seq->set_sync_unix_ms(sequence.sync_unix_ms);
-                               },
                            },
                            swarm);
             },
@@ -742,6 +737,10 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
             return AgentReportType::kAuthorityRejected;
         case ProtoType::AUTHORITY_RELEASED:
             return AgentReportType::kAuthorityReleased;
+        case ProtoType::TRAJECTORY_REPORT:
+            return AgentReportType::kTrajectoryReport;
+        case ProtoType::TIME_SYNC_REPORT:
+            return AgentReportType::kTimeSyncReport;
         case ProtoType::AGENT_REPORT_TYPE_UNSPECIFIED:
         default:
             return AgentReportType::kUnspecified;
@@ -781,6 +780,311 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     };
 }
 
+[[nodiscard]] swarmkit::v1::PayloadAction ToProtoPayloadAction(const PayloadAction& action) {
+    swarmkit::v1::PayloadAction proto;
+    proto.set_action_namespace(action.action_namespace);
+    proto.set_name(action.name);
+    for (const auto& [key, value] : action.params) {
+        (*proto.mutable_params())[key] = value;
+    }
+    return proto;
+}
+
+[[nodiscard]] swarmkit::v1::TimedPayloadAction ToProtoTimedPayloadAction(
+    const TimedPayloadAction& action) {
+    swarmkit::v1::TimedPayloadAction proto;
+    proto.set_time_offset_ms(action.time_offset_ms);
+    proto.set_unix_time_ms(action.unix_time_ms);
+    *proto.mutable_action() = ToProtoPayloadAction(action.action);
+    return proto;
+}
+
+[[nodiscard]] swarmkit::v1::TrajectoryPoint ToProtoTrajectoryPoint(
+    const TrajectoryPoint& point) {
+    swarmkit::v1::TrajectoryPoint proto;
+    proto.set_time_offset_ms(point.time_offset_ms);
+    proto.set_unix_time_ms(point.unix_time_ms);
+    *proto.mutable_position() = ToProtoGeoPoint(point.position);
+    auto* local = proto.mutable_local_position();
+    local->set_x_m(point.local_position.x_m);
+    local->set_y_m(point.local_position.y_m);
+    local->set_z_m(point.local_position.z_m);
+    proto.set_use_local_position(point.use_local_position);
+    proto.set_vx_mps(point.vx_mps);
+    proto.set_vy_mps(point.vy_mps);
+    proto.set_vz_mps(point.vz_mps);
+    proto.set_has_velocity(point.has_velocity);
+    proto.set_yaw_deg(point.yaw_deg);
+    proto.set_has_yaw(point.has_yaw);
+    for (const auto& action : point.payload_actions) {
+        *proto.add_payload_actions() = ToProtoTimedPayloadAction(action);
+    }
+    return proto;
+}
+
+void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::TrajectoryPlan* proto) {
+    if (proto == nullptr) {
+        return;
+    }
+    proto->set_execution_id(plan.execution_id);
+    proto->set_revision(plan.revision);
+    proto->set_drone_id(plan.drone_id);
+    proto->set_frame(plan.frame);
+    for (const auto& point : plan.points) {
+        *proto->add_points() = ToProtoTrajectoryPoint(point);
+    }
+    for (const auto& action : plan.payload_timeline) {
+        *proto->add_payload_timeline() = ToProtoTimedPayloadAction(action);
+    }
+    auto* validation = proto->mutable_validation();
+    validation->set_min_battery_percent(plan.validation.min_battery_percent);
+    if (plan.validation.geofence.has_value()) {
+        auto* fence = validation->mutable_geofence();
+        fence->set_min_lat_deg(plan.validation.geofence->min_lat_deg);
+        fence->set_max_lat_deg(plan.validation.geofence->max_lat_deg);
+        fence->set_min_lon_deg(plan.validation.geofence->min_lon_deg);
+        fence->set_max_lon_deg(plan.validation.geofence->max_lon_deg);
+        fence->set_min_alt_m(plan.validation.geofence->min_alt_m);
+        fence->set_max_alt_m(plan.validation.geofence->max_alt_m);
+    }
+    validation->set_min_spacing_m(plan.validation.min_spacing_m);
+    validation->set_require_gps(plan.validation.require_gps);
+    validation->set_require_ekf_ok(plan.validation.require_ekf_ok);
+    validation->set_max_horizontal_speed_mps(plan.validation.max_horizontal_speed_mps);
+    validation->set_max_climb_speed_mps(plan.validation.max_climb_speed_mps);
+    validation->set_max_descent_speed_mps(plan.validation.max_descent_speed_mps);
+    validation->set_max_altitude_m(plan.validation.max_altitude_m);
+    validation->set_tracking_tolerance_m(plan.validation.tracking_tolerance_m);
+    for (const auto& [key, value] : plan.labels) {
+        (*proto->mutable_labels())[key] = value;
+    }
+}
+
+[[nodiscard]] GeoPoint ToGeoPoint(const swarmkit::v1::GeoPoint& point) {
+    return {
+        .lat_deg = point.lat_deg(),
+        .lon_deg = point.lon_deg(),
+        .alt_m = point.alt_m(),
+    };
+}
+
+[[nodiscard]] PayloadAction ToPayloadAction(const swarmkit::v1::PayloadAction& proto) {
+    PayloadAction action;
+    action.action_namespace = proto.action_namespace();
+    action.name = proto.name();
+    for (const auto& [key, value] : proto.params()) {
+        action.params.emplace(key, value);
+    }
+    return action;
+}
+
+[[nodiscard]] TimedPayloadAction ToTimedPayloadAction(
+    const swarmkit::v1::TimedPayloadAction& proto) {
+    return {
+        .time_offset_ms = proto.time_offset_ms(),
+        .unix_time_ms = proto.unix_time_ms(),
+        .action = proto.has_action() ? ToPayloadAction(proto.action()) : PayloadAction{},
+    };
+}
+
+[[nodiscard]] TrajectoryPoint ToTrajectoryPoint(const swarmkit::v1::TrajectoryPoint& proto) {
+    TrajectoryPoint point;
+    point.time_offset_ms = proto.time_offset_ms();
+    point.unix_time_ms = proto.unix_time_ms();
+    if (proto.has_position()) {
+        point.position = ToGeoPoint(proto.position());
+    }
+    if (proto.has_local_position()) {
+        point.local_position = LocalPoint{
+            .x_m = proto.local_position().x_m(),
+            .y_m = proto.local_position().y_m(),
+            .z_m = proto.local_position().z_m(),
+        };
+    }
+    point.use_local_position = proto.use_local_position();
+    point.vx_mps = proto.vx_mps();
+    point.vy_mps = proto.vy_mps();
+    point.vz_mps = proto.vz_mps();
+    point.has_velocity = proto.has_velocity();
+    point.yaw_deg = proto.yaw_deg();
+    point.has_yaw = proto.has_yaw();
+    for (const auto& action : proto.payload_actions()) {
+        point.payload_actions.push_back(ToTimedPayloadAction(action));
+    }
+    return point;
+}
+
+[[nodiscard]] TrajectoryPlan ToTrajectoryPlan(const swarmkit::v1::TrajectoryPlan& proto) {
+    TrajectoryPlan plan;
+    plan.execution_id = proto.execution_id();
+    plan.revision = proto.revision();
+    plan.drone_id = proto.drone_id();
+    plan.frame = proto.frame();
+    for (const auto& point : proto.points()) {
+        plan.points.push_back(ToTrajectoryPoint(point));
+    }
+    for (const auto& action : proto.payload_timeline()) {
+        plan.payload_timeline.push_back(ToTimedPayloadAction(action));
+    }
+    if (proto.has_validation()) {
+        const auto& validation = proto.validation();
+        plan.validation.min_battery_percent = validation.min_battery_percent();
+        if (validation.has_geofence()) {
+            const auto& fence = validation.geofence();
+            plan.validation.geofence = Geofence{
+                .min_lat_deg = fence.min_lat_deg(),
+                .max_lat_deg = fence.max_lat_deg(),
+                .min_lon_deg = fence.min_lon_deg(),
+                .max_lon_deg = fence.max_lon_deg(),
+                .min_alt_m = fence.min_alt_m(),
+                .max_alt_m = fence.max_alt_m(),
+            };
+        }
+        plan.validation.min_spacing_m = validation.min_spacing_m();
+        plan.validation.require_gps = validation.require_gps();
+        plan.validation.require_ekf_ok = validation.require_ekf_ok();
+        plan.validation.max_horizontal_speed_mps = validation.max_horizontal_speed_mps();
+        plan.validation.max_climb_speed_mps = validation.max_climb_speed_mps();
+        plan.validation.max_descent_speed_mps = validation.max_descent_speed_mps();
+        plan.validation.max_altitude_m = validation.max_altitude_m();
+        plan.validation.tracking_tolerance_m = validation.tracking_tolerance_m();
+    }
+    for (const auto& [key, value] : proto.labels()) {
+        plan.labels.emplace(key, value);
+    }
+    return plan;
+}
+
+[[nodiscard]] ValidationSeverity ToValidationSeverity(
+    swarmkit::v1::ValidationSeverity severity) {
+    switch (severity) {
+        case swarmkit::v1::VALIDATION_ERROR:
+            return ValidationSeverity::kError;
+        case swarmkit::v1::VALIDATION_WARNING:
+            return ValidationSeverity::kWarning;
+        case swarmkit::v1::VALIDATION_INFO:
+        case swarmkit::v1::VALIDATION_SEVERITY_UNSPECIFIED:
+        default:
+            return ValidationSeverity::kInfo;
+    }
+}
+
+[[nodiscard]] ValidateTrajectoryResult ToValidateTrajectoryResult(
+    const swarmkit::v1::ValidateTrajectoryResult& proto) {
+    ValidateTrajectoryResult result;
+    result.ok = proto.ok();
+    result.max_required_horizontal_speed_mps = proto.max_required_horizontal_speed_mps();
+    result.max_required_climb_speed_mps = proto.max_required_climb_speed_mps();
+    result.max_required_descent_speed_mps = proto.max_required_descent_speed_mps();
+    result.first_failing_point_index = proto.first_failing_point_index();
+    for (const auto& issue : proto.issues()) {
+        result.issues.push_back(ValidationIssue{
+            .severity = ToValidationSeverity(issue.severity()),
+            .code = issue.code(),
+            .message = issue.message(),
+            .point_index = issue.point_index(),
+        });
+    }
+    return result;
+}
+
+[[nodiscard]] ExecutionState ToExecutionState(swarmkit::v1::ExecutionState state) {
+    switch (state) {
+        case swarmkit::v1::EXECUTION_UPLOADED:
+            return ExecutionState::kUploaded;
+        case swarmkit::v1::EXECUTION_VALIDATED:
+            return ExecutionState::kValidated;
+        case swarmkit::v1::EXECUTION_READY:
+            return ExecutionState::kReady;
+        case swarmkit::v1::EXECUTION_STARTED:
+            return ExecutionState::kStarted;
+        case swarmkit::v1::EXECUTION_PAUSED:
+            return ExecutionState::kPaused;
+        case swarmkit::v1::EXECUTION_ABORTED:
+            return ExecutionState::kAborted;
+        case swarmkit::v1::EXECUTION_COMPLETED:
+            return ExecutionState::kCompleted;
+        case swarmkit::v1::EXECUTION_FAILED:
+            return ExecutionState::kFailed;
+        case swarmkit::v1::EXECUTION_STATE_UNSPECIFIED:
+        default:
+            return ExecutionState::kUnspecified;
+    }
+}
+
+[[nodiscard]] ExecutionHandle ToExecutionHandle(const swarmkit::v1::ExecutionHandle& proto) {
+    return {
+        .execution_id = proto.execution_id(),
+        .revision = proto.revision(),
+        .drone_id = proto.drone_id(),
+        .state = ToExecutionState(proto.state()),
+        .uploaded_unix_ms = proto.uploaded_unix_ms(),
+        .prepared_unix_ms = proto.prepared_unix_ms(),
+        .start_unix_ms = proto.start_unix_ms(),
+        .active_segment = proto.active_segment(),
+        .last_report_sequence = proto.last_report_sequence(),
+        .message = proto.message(),
+    };
+}
+
+[[nodiscard]] TrajectoryReportStatus ToTrajectoryReportStatus(
+    swarmkit::v1::TrajectoryReportStatus status) {
+    switch (status) {
+        case swarmkit::v1::TRAJECTORY_UPLOADED:
+            return TrajectoryReportStatus::kUploaded;
+        case swarmkit::v1::TRAJECTORY_VALIDATED:
+            return TrajectoryReportStatus::kValidated;
+        case swarmkit::v1::TRAJECTORY_READY:
+            return TrajectoryReportStatus::kReady;
+        case swarmkit::v1::TRAJECTORY_STARTED:
+            return TrajectoryReportStatus::kStarted;
+        case swarmkit::v1::TRAJECTORY_LATE:
+            return TrajectoryReportStatus::kLate;
+        case swarmkit::v1::TRAJECTORY_TRACKING:
+            return TrajectoryReportStatus::kTracking;
+        case swarmkit::v1::TRAJECTORY_DRIFTING:
+            return TrajectoryReportStatus::kDrifting;
+        case swarmkit::v1::TRAJECTORY_ABORTED:
+            return TrajectoryReportStatus::kAborted;
+        case swarmkit::v1::TRAJECTORY_COMPLETED:
+            return TrajectoryReportStatus::kCompleted;
+        case swarmkit::v1::TRAJECTORY_FAILED:
+            return TrajectoryReportStatus::kFailed;
+        case swarmkit::v1::TRAJECTORY_STATUS_UNSPECIFIED:
+        default:
+            return TrajectoryReportStatus::kUnspecified;
+    }
+}
+
+[[nodiscard]] TrajectoryReport ToTrajectoryReport(
+    const swarmkit::v1::TrajectoryReport& proto) {
+    return {
+        .drone_id = proto.drone_id(),
+        .execution_id = proto.execution_id(),
+        .revision = proto.revision(),
+        .status = ToTrajectoryReportStatus(proto.status()),
+        .active_segment = proto.active_segment(),
+        .distance_to_target_m = proto.distance_to_target_m(),
+        .drift_m = proto.drift_m(),
+        .schedule_error_ms = proto.schedule_error_ms(),
+        .message = proto.message(),
+    };
+}
+
+[[nodiscard]] TimeSyncState ToTimeSyncState(const swarmkit::v1::TimeSyncState& proto) {
+    return {
+        .drone_id = proto.drone_id(),
+        .agent_unix_time_ms = proto.agent_unix_time_ms(),
+        .vehicle_unix_time_ms = proto.vehicle_unix_time_ms(),
+        .clock_offset_ms = proto.clock_offset_ms(),
+        .sync_quality_percent = proto.sync_quality_percent(),
+        .synced = proto.synced(),
+        .stale = proto.stale(),
+        .source = proto.source(),
+        .message = proto.message(),
+    };
+}
+
 [[nodiscard]] AgentReport ToAgentReport(const swarmkit::v1::AgentReport& proto_report) {
     AgentReport report;
     report.drone_id = proto_report.drone_id();
@@ -792,6 +1096,12 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     report.message = proto_report.message();
     if (proto_report.has_goal()) {
         report.goal = ToGoalReport(proto_report.goal());
+    }
+    if (proto_report.has_trajectory()) {
+        report.trajectory = ToTrajectoryReport(proto_report.trajectory());
+    }
+    if (proto_report.has_time_sync()) {
+        report.time_sync = ToTimeSyncState(proto_report.time_sync());
     }
     return report;
 }
@@ -1302,6 +1612,13 @@ BackendCapabilities Client::GetCapabilities() const {
                                           rep.supported_telemetry_fields().end());
     out.backend_command_names.assign(rep.backend_command_names().begin(),
                                      rep.backend_command_names().end());
+    out.supported_payload_action_namespaces.assign(
+        rep.supported_payload_action_namespaces().begin(),
+        rep.supported_payload_action_namespaces().end());
+    out.supported_payload_action_names.assign(rep.supported_payload_action_names().begin(),
+                                              rep.supported_payload_action_names().end());
+    out.payload_timing_precision_ms = rep.payload_timing_precision_ms();
+    out.supports_payload_scheduling = rep.supports_payload_scheduling();
     out.max_horizontal_speed_mps = rep.max_horizontal_speed_mps();
     out.max_climb_speed_mps = rep.max_climb_speed_mps();
     out.max_descent_speed_mps = rep.max_descent_speed_mps();
@@ -1459,6 +1776,306 @@ ActiveGoalStatus Client::GetActiveGoal(const std::string& drone_id) const {
     out.error.correlation_id = kCorrelationId;
     out.error.attempt_count = attempt_count;
     return out;
+}
+
+ExecutionResult Client::UploadTrajectory(const TrajectoryPlan& plan) const {
+    ExecutionResult out;
+    const std::string kCorrelationId = MakeCorrelationId("trajectory-upload");
+    swarmkit::v1::UploadTrajectoryRequest req;
+    auto* ctx = req.mutable_ctx();
+    ctx->set_drone_id(plan.drone_id);
+    ctx->set_client_id(impl_->config.client_id);
+    ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+    ctx->set_correlation_id(kCorrelationId);
+    PopulateProtoTrajectoryPlan(plan, req.mutable_plan());
+
+    swarmkit::v1::ExecutionReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, kCorrelationId, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->UploadTrajectory(context, req, &rep);
+                             });
+    out.correlation_id = kCorrelationId;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, kCorrelationId, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.error.code = ToRpcStatusCode(rep.error_code());
+    out.error.user_message = rep.message();
+    out.error.debug_message = rep.debug_message();
+    out.error.correlation_id = out.correlation_id;
+    out.error.attempt_count = attempt_count;
+    if (rep.has_handle()) {
+        out.handle = ToExecutionHandle(rep.handle());
+    }
+    if (rep.has_validation()) {
+        out.validation = ToValidateTrajectoryResult(rep.validation());
+    }
+    return out;
+}
+
+ExecutionResult Client::ValidateTrajectory(const TrajectoryPlan& plan) const {
+    ExecutionResult out;
+    const std::string kCorrelationId = MakeCorrelationId("trajectory-validate");
+    swarmkit::v1::ValidateTrajectoryRequest req;
+    auto* ctx = req.mutable_ctx();
+    ctx->set_drone_id(plan.drone_id);
+    ctx->set_client_id(impl_->config.client_id);
+    ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+    ctx->set_correlation_id(kCorrelationId);
+    PopulateProtoTrajectoryPlan(plan, req.mutable_plan());
+
+    swarmkit::v1::ValidateTrajectoryReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, kCorrelationId, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->ValidateTrajectory(context, req, &rep);
+                             });
+    out.correlation_id = kCorrelationId;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, kCorrelationId, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.error.code = ToRpcStatusCode(rep.error_code());
+    out.error.user_message = rep.message();
+    out.error.debug_message = rep.debug_message();
+    out.error.correlation_id = out.correlation_id;
+    out.error.attempt_count = attempt_count;
+    if (rep.has_validation()) {
+        out.validation = ToValidateTrajectoryResult(rep.validation());
+    }
+    return out;
+}
+
+namespace {
+
+template <typename Call>
+[[nodiscard]] ExecutionResult InvokeExecutionMutation(const ClientConfig& config,
+                                                      std::string_view prefix,
+                                                      const std::string& drone_id,
+                                                      const std::string& execution_id,
+                                                      Call&& call) {
+    ExecutionResult out;
+    const std::string correlation_id = MakeCorrelationId(prefix);
+    swarmkit::v1::ExecutionReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(config, correlation_id, &attempt_count,
+                             [&](grpc::ClientContext* context) { return call(context, rep); });
+    out.correlation_id = correlation_id;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    static_cast<void>(drone_id);
+    static_cast<void>(execution_id);
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.error.code = ToRpcStatusCode(rep.error_code());
+    out.error.user_message = rep.message();
+    out.error.debug_message = rep.debug_message();
+    out.error.correlation_id = out.correlation_id;
+    out.error.attempt_count = attempt_count;
+    if (rep.has_handle()) {
+        out.handle = ToExecutionHandle(rep.handle());
+    }
+    if (rep.has_validation()) {
+        out.validation = ToValidateTrajectoryResult(rep.validation());
+    }
+    return out;
+}
+
+}  // namespace
+
+ExecutionResult Client::ClearTrajectory(const std::string& drone_id,
+                                        const std::string& execution_id) const {
+    return InvokeExecutionMutation(
+        impl_->config, "trajectory-clear", drone_id, execution_id,
+        [this, &drone_id, &execution_id](grpc::ClientContext* context,
+                                         swarmkit::v1::ExecutionReply& rep) {
+            swarmkit::v1::ExecutionRequest req;
+            auto* ctx = req.mutable_ctx();
+            ctx->set_drone_id(drone_id);
+            ctx->set_client_id(impl_->config.client_id);
+            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            req.set_execution_id(execution_id);
+            return impl_->stub->ClearTrajectory(context, req, &rep);
+        });
+}
+
+ExecutionResult Client::PrepareTrajectory(const std::string& drone_id,
+                                          const std::string& execution_id) const {
+    return InvokeExecutionMutation(
+        impl_->config, "trajectory-prepare", drone_id, execution_id,
+        [this, &drone_id, &execution_id](grpc::ClientContext* context,
+                                         swarmkit::v1::ExecutionReply& rep) {
+            swarmkit::v1::ExecutionRequest req;
+            auto* ctx = req.mutable_ctx();
+            ctx->set_drone_id(drone_id);
+            ctx->set_client_id(impl_->config.client_id);
+            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            req.set_execution_id(execution_id);
+            return impl_->stub->PrepareTrajectory(context, req, &rep);
+        });
+}
+
+ExecutionResult Client::StartExecutionAt(const std::string& drone_id,
+                                         const std::string& execution_id,
+                                         std::int64_t unix_time_ms) const {
+    return InvokeExecutionMutation(
+        impl_->config, "execution-start", drone_id, execution_id,
+        [this, &drone_id, &execution_id, unix_time_ms](grpc::ClientContext* context,
+                                                       swarmkit::v1::ExecutionReply& rep) {
+            swarmkit::v1::StartExecutionAtRequest req;
+            auto* ctx = req.mutable_ctx();
+            ctx->set_drone_id(drone_id);
+            ctx->set_client_id(impl_->config.client_id);
+            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            req.set_execution_id(execution_id);
+            req.set_unix_time_ms(unix_time_ms);
+            return impl_->stub->StartExecutionAt(context, req, &rep);
+        });
+}
+
+ExecutionResult Client::PauseExecution(const std::string& drone_id,
+                                       const std::string& execution_id) const {
+    return InvokeExecutionMutation(
+        impl_->config, "execution-pause", drone_id, execution_id,
+        [this, &drone_id, &execution_id](grpc::ClientContext* context,
+                                         swarmkit::v1::ExecutionReply& rep) {
+            swarmkit::v1::ExecutionRequest req;
+            auto* ctx = req.mutable_ctx();
+            ctx->set_drone_id(drone_id);
+            ctx->set_client_id(impl_->config.client_id);
+            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            req.set_execution_id(execution_id);
+            return impl_->stub->PauseExecution(context, req, &rep);
+        });
+}
+
+ExecutionResult Client::ResumeExecution(const std::string& drone_id,
+                                        const std::string& execution_id) const {
+    return InvokeExecutionMutation(
+        impl_->config, "execution-resume", drone_id, execution_id,
+        [this, &drone_id, &execution_id](grpc::ClientContext* context,
+                                         swarmkit::v1::ExecutionReply& rep) {
+            swarmkit::v1::ExecutionRequest req;
+            auto* ctx = req.mutable_ctx();
+            ctx->set_drone_id(drone_id);
+            ctx->set_client_id(impl_->config.client_id);
+            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            req.set_execution_id(execution_id);
+            return impl_->stub->ResumeExecution(context, req, &rep);
+        });
+}
+
+ExecutionResult Client::AbortExecution(const std::string& drone_id,
+                                       const std::string& execution_id) const {
+    return InvokeExecutionMutation(
+        impl_->config, "execution-abort", drone_id, execution_id,
+        [this, &drone_id, &execution_id](grpc::ClientContext* context,
+                                         swarmkit::v1::ExecutionReply& rep) {
+            swarmkit::v1::ExecutionRequest req;
+            auto* ctx = req.mutable_ctx();
+            ctx->set_drone_id(drone_id);
+            ctx->set_client_id(impl_->config.client_id);
+            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            req.set_execution_id(execution_id);
+            return impl_->stub->AbortExecution(context, req, &rep);
+        });
+}
+
+TrajectoryStatus Client::GetExecution(const std::string& drone_id,
+                                      const std::string& execution_id) const {
+    TrajectoryStatus out;
+    const std::string correlation_id = MakeCorrelationId("execution-get");
+    swarmkit::v1::GetExecutionRequest req;
+    req.set_drone_id(drone_id);
+    req.set_execution_id(execution_id);
+    swarmkit::v1::GetExecutionReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->GetExecution(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.found = rep.found();
+    out.message = rep.message();
+    if (rep.has_handle()) {
+        out.handle = ToExecutionHandle(rep.handle());
+    }
+    if (rep.has_plan()) {
+        out.plan = ToTrajectoryPlan(rep.plan());
+    }
+    out.error.code = RpcStatusCode::kOk;
+    out.error.correlation_id = correlation_id;
+    out.error.attempt_count = attempt_count;
+    return out;
+}
+
+std::vector<ExecutionHandle> Client::ListExecutions(const std::string& drone_id) const {
+    const std::string correlation_id = MakeCorrelationId("execution-list");
+    swarmkit::v1::ListExecutionsRequest req;
+    req.set_drone_id(drone_id);
+    swarmkit::v1::ListExecutionsReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->ListExecutions(context, req, &rep);
+                             });
+    std::vector<ExecutionHandle> out;
+    if (!status.ok()) {
+        return out;
+    }
+    for (const auto& handle : rep.executions()) {
+        out.push_back(ToExecutionHandle(handle));
+    }
+    return out;
+}
+
+TimeSyncState Client::GetTimeSyncState(const std::string& drone_id) const {
+    const std::string correlation_id = MakeCorrelationId("time-sync");
+    swarmkit::v1::TimeSyncRequest req;
+    req.set_drone_id(drone_id);
+    swarmkit::v1::TimeSyncState rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->stub->GetTimeSyncState(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        return {
+            .drone_id = drone_id,
+            .agent_unix_time_ms = 0,
+            .vehicle_unix_time_ms = 0,
+            .clock_offset_ms = 0,
+            .sync_quality_percent = 0.0F,
+            .synced = false,
+            .stale = true,
+            .source = "unavailable",
+            .message = status.error_message(),
+        };
+    }
+    return ToTimeSyncState(rep);
 }
 
 void Client::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,

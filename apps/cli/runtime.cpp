@@ -144,6 +144,8 @@ void ResetStopRequested() {
         .count();
 }
 
+int RunReports(Client& client, std::string_view drone_id, int argc, char** argv);
+
 [[nodiscard]] double DegToRad(double degrees) {
     return degrees * std::numbers::pi / 180.0;
 }
@@ -829,6 +831,335 @@ int RunCommand(Client& client, std::string_view drone_id, CommandPriority priori
     return EXIT_SUCCESS;
 }
 
+[[nodiscard]] std::string_view ExecutionStateName(swarmkit::client::ExecutionState state) {
+    using swarmkit::client::ExecutionState;
+    switch (state) {
+        case ExecutionState::kUploaded:
+            return "uploaded";
+        case ExecutionState::kValidated:
+            return "validated";
+        case ExecutionState::kReady:
+            return "ready";
+        case ExecutionState::kStarted:
+            return "started";
+        case ExecutionState::kPaused:
+            return "paused";
+        case ExecutionState::kAborted:
+            return "aborted";
+        case ExecutionState::kCompleted:
+            return "completed";
+        case ExecutionState::kFailed:
+            return "failed";
+        case ExecutionState::kUnspecified:
+            return "unspecified";
+    }
+    return "unspecified";
+}
+
+void PrintExecutionHandle(const swarmkit::client::ExecutionHandle& handle) {
+    std::cout << "Execution\n"
+              << "  execution_id         : " << handle.execution_id << "\n"
+              << "  revision             : " << handle.revision << "\n"
+              << "  drone_id             : " << handle.drone_id << "\n"
+              << "  state                : " << ExecutionStateName(handle.state) << "\n"
+              << "  uploaded_unix_ms     : " << handle.uploaded_unix_ms << "\n"
+              << "  prepared_unix_ms     : " << handle.prepared_unix_ms << "\n"
+              << "  start_unix_ms        : " << handle.start_unix_ms << "\n"
+              << "  active_segment       : " << handle.active_segment << "\n"
+              << "  last_report_sequence : " << handle.last_report_sequence << "\n"
+              << "  message              : " << handle.message << "\n";
+}
+
+void PrintValidation(const swarmkit::client::ValidateTrajectoryResult& validation) {
+    std::cout << "Validation " << (validation.ok ? "OK" : "FAILED") << "\n"
+              << "  max_required_horizontal_speed_mps : "
+              << validation.max_required_horizontal_speed_mps << "\n"
+              << "  max_required_climb_speed_mps      : "
+              << validation.max_required_climb_speed_mps << "\n"
+              << "  max_required_descent_speed_mps    : "
+              << validation.max_required_descent_speed_mps << "\n"
+              << "  first_failing_point_index         : "
+              << validation.first_failing_point_index << "\n";
+    for (const auto& issue : validation.issues) {
+        std::string_view severity = "info";
+        if (issue.severity == swarmkit::client::ValidationSeverity::kError) {
+            severity = "error";
+        } else if (issue.severity == swarmkit::client::ValidationSeverity::kWarning) {
+            severity = "warning";
+        }
+        std::cout << "  issue[" << issue.point_index << "] " << severity << " " << issue.code
+                  << ": " << issue.message << "\n";
+    }
+}
+
+[[nodiscard]] swarmkit::client::PayloadAction ParsePayloadAction(const YAML::Node& node) {
+    swarmkit::client::PayloadAction action;
+    if (node["namespace"]) {
+        action.action_namespace = node["namespace"].as<std::string>();
+    } else if (node["action_namespace"]) {
+        action.action_namespace = node["action_namespace"].as<std::string>();
+    }
+    action.name = node["name"] ? node["name"].as<std::string>() : "";
+    if (const YAML::Node params = node["params"]; params && params.IsMap()) {
+        for (const auto& param : params) {
+            action.params[param.first.as<std::string>()] = param.second.as<std::string>();
+        }
+    }
+    return action;
+}
+
+[[nodiscard]] swarmkit::client::TimedPayloadAction ParseTimedPayloadAction(
+    const YAML::Node& node) {
+    swarmkit::client::TimedPayloadAction action;
+    action.time_offset_ms = node["time_offset_ms"] ? node["time_offset_ms"].as<std::int64_t>() : 0;
+    action.unix_time_ms = node["unix_time_ms"] ? node["unix_time_ms"].as<std::int64_t>() : 0;
+    action.action = ParsePayloadAction(node["action"] ? node["action"] : node);
+    return action;
+}
+
+[[nodiscard]] std::expected<swarmkit::client::TrajectoryPlan, std::string> LoadTrajectoryPlan(
+    const std::string& path, std::string_view fallback_drone_id) {
+    if (path.empty()) {
+        return std::unexpected("trajectory requires --file PATH");
+    }
+    try {
+        const YAML::Node root = YAML::LoadFile(path);
+        const YAML::Node plan_node = root["trajectory"] ? root["trajectory"] : root;
+        swarmkit::client::TrajectoryPlan plan;
+        plan.execution_id =
+            plan_node["execution_id"] ? plan_node["execution_id"].as<std::string>() : "";
+        plan.revision = plan_node["revision"] ? plan_node["revision"].as<std::uint64_t>() : 0;
+        plan.drone_id =
+            plan_node["drone_id"] ? plan_node["drone_id"].as<std::string>()
+                                  : std::string(fallback_drone_id);
+        plan.frame = plan_node["frame"] ? plan_node["frame"].as<std::string>() : "global";
+        if (const YAML::Node validation = plan_node["validation"]; validation && validation.IsMap()) {
+            plan.validation.min_battery_percent =
+                validation["min_battery_percent"]
+                    ? validation["min_battery_percent"].as<float>()
+                    : 0.0F;
+            plan.validation.min_spacing_m =
+                validation["min_spacing_m"] ? validation["min_spacing_m"].as<float>() : 0.0F;
+            plan.validation.require_gps =
+                validation["require_gps"] ? validation["require_gps"].as<bool>() : false;
+            plan.validation.require_ekf_ok =
+                validation["require_ekf_ok"] ? validation["require_ekf_ok"].as<bool>() : false;
+            plan.validation.max_horizontal_speed_mps =
+                validation["max_horizontal_speed_mps"]
+                    ? validation["max_horizontal_speed_mps"].as<float>()
+                    : 0.0F;
+            plan.validation.max_climb_speed_mps =
+                validation["max_climb_speed_mps"]
+                    ? validation["max_climb_speed_mps"].as<float>()
+                    : 0.0F;
+            plan.validation.max_descent_speed_mps =
+                validation["max_descent_speed_mps"]
+                    ? validation["max_descent_speed_mps"].as<float>()
+                    : 0.0F;
+            plan.validation.max_altitude_m =
+                validation["max_altitude_m"] ? validation["max_altitude_m"].as<float>() : 0.0F;
+            plan.validation.tracking_tolerance_m =
+                validation["tracking_tolerance_m"]
+                    ? validation["tracking_tolerance_m"].as<float>()
+                    : 2.0F;
+            if (const YAML::Node fence = validation["geofence"]; fence && fence.IsMap()) {
+                plan.validation.geofence = swarmkit::client::Geofence{
+                    .min_lat_deg = fence["min_lat_deg"] ? fence["min_lat_deg"].as<double>() : -90.0,
+                    .max_lat_deg = fence["max_lat_deg"] ? fence["max_lat_deg"].as<double>() : 90.0,
+                    .min_lon_deg =
+                        fence["min_lon_deg"] ? fence["min_lon_deg"].as<double>() : -180.0,
+                    .max_lon_deg =
+                        fence["max_lon_deg"] ? fence["max_lon_deg"].as<double>() : 180.0,
+                    .min_alt_m = fence["min_alt_m"] ? fence["min_alt_m"].as<float>() : 0.0F,
+                    .max_alt_m = fence["max_alt_m"] ? fence["max_alt_m"].as<float>() : 0.0F,
+                };
+            }
+        }
+        const YAML::Node points = plan_node["points"];
+        if (!points || !points.IsSequence()) {
+            return std::unexpected("trajectory file must contain points: sequence");
+        }
+        for (const auto& node : points) {
+            swarmkit::client::TrajectoryPoint point;
+            point.time_offset_ms =
+                node["time_offset_ms"] ? node["time_offset_ms"].as<std::int64_t>() : 0;
+            point.unix_time_ms = node["unix_time_ms"] ? node["unix_time_ms"].as<std::int64_t>() : 0;
+            point.use_local_position =
+                node["use_local_position"] ? node["use_local_position"].as<bool>() : false;
+            if (node["lat"] || node["lon"] || node["alt"]) {
+                point.position = swarmkit::client::GeoPoint{
+                    .lat_deg = node["lat"] ? node["lat"].as<double>() : 0.0,
+                    .lon_deg = node["lon"] ? node["lon"].as<double>() : 0.0,
+                    .alt_m = node["alt"] ? node["alt"].as<double>() : 0.0,
+                };
+            }
+            if (node["x"] || node["y"] || node["z"]) {
+                point.local_position = swarmkit::client::LocalPoint{
+                    .x_m = node["x"] ? node["x"].as<double>() : 0.0,
+                    .y_m = node["y"] ? node["y"].as<double>() : 0.0,
+                    .z_m = node["z"] ? node["z"].as<double>() : 0.0,
+                };
+                point.use_local_position = true;
+            }
+            point.has_velocity = node["vx"] || node["vy"] || node["vz"];
+            point.vx_mps = node["vx"] ? node["vx"].as<float>() : 0.0F;
+            point.vy_mps = node["vy"] ? node["vy"].as<float>() : 0.0F;
+            point.vz_mps = node["vz"] ? node["vz"].as<float>() : 0.0F;
+            point.has_yaw = static_cast<bool>(node["yaw"]);
+            point.yaw_deg = node["yaw"] ? node["yaw"].as<float>() : 0.0F;
+            if (const YAML::Node actions = node["payload_actions"]; actions && actions.IsSequence()) {
+                for (const auto& action : actions) {
+                    point.payload_actions.push_back(ParseTimedPayloadAction(action));
+                }
+            }
+            plan.points.push_back(std::move(point));
+        }
+        if (const YAML::Node timeline = plan_node["payload_timeline"];
+            timeline && timeline.IsSequence()) {
+            for (const auto& action : timeline) {
+                plan.payload_timeline.push_back(ParseTimedPayloadAction(action));
+            }
+        }
+        if (const YAML::Node labels = plan_node["labels"]; labels && labels.IsMap()) {
+            for (const auto& label : labels) {
+                plan.labels[label.first.as<std::string>()] = label.second.as<std::string>();
+            }
+        }
+        return plan;
+    } catch (const YAML::Exception& exc) {
+        return std::unexpected("failed to load trajectory file '" + path + "': " + exc.what());
+    }
+}
+
+int PrintExecutionResult(std::string_view label, const swarmkit::client::ExecutionResult& result) {
+    if (!result.ok) {
+        std::cerr << label << " FAILED: " << result.message;
+        if (!result.correlation_id.empty()) {
+            std::cerr << " [corr=" << result.correlation_id << "]";
+        }
+        std::cerr << "\n";
+        if (!result.validation.issues.empty()) {
+            PrintValidation(result.validation);
+        }
+        return EXIT_FAILURE;
+    }
+    std::cout << label << " OK";
+    if (!result.message.empty()) {
+        std::cout << ": " << result.message;
+    }
+    std::cout << "\n";
+    if (!result.handle.execution_id.empty()) {
+        PrintExecutionHandle(result.handle);
+    }
+    if (!result.validation.issues.empty()) {
+        PrintValidation(result.validation);
+    }
+    return EXIT_SUCCESS;
+}
+
+int RunTrajectory(Client& client, std::string_view drone_id, int argc, char** argv) {
+    const std::vector<std::string> actions = FindActionsAfterCommand(argc, argv, "trajectory");
+    if (actions.empty()) {
+        std::cerr << "trajectory requires upload, validate, prepare, start-at, pause, resume, "
+                     "abort, clear, get, list, time-sync, or reports\n";
+        return EXIT_FAILURE;
+    }
+    const std::string execution_id = common::GetOptionValue(argc, argv, "--execution-id",
+                                                            actions.size() >= 2 ? actions[1] : "");
+    if (actions[0] == "upload" || actions[0] == "validate") {
+        const auto plan =
+            LoadTrajectoryPlan(common::GetOptionValue(argc, argv, "--file"), drone_id);
+        if (!plan.has_value()) {
+            std::cerr << plan.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        if (actions[0] == "upload") {
+            return PrintExecutionResult("Trajectory upload", client.UploadTrajectory(*plan));
+        }
+        const auto result = client.ValidateTrajectory(*plan);
+        if (result.error.code != swarmkit::client::RpcStatusCode::kOk &&
+            result.validation.issues.empty()) {
+            std::cerr << "Trajectory validate FAILED: " << result.message << "\n";
+            return EXIT_FAILURE;
+        }
+        PrintValidation(result.validation);
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (actions[0] == "reports") {
+        return RunReports(client, drone_id, argc, argv);
+    }
+    if (actions[0] == "list") {
+        for (const auto& handle : client.ListExecutions(std::string(drone_id))) {
+            std::cout << handle.drone_id << " " << handle.execution_id << " rev="
+                      << handle.revision << " state=" << ExecutionStateName(handle.state)
+                      << " active_segment=" << handle.active_segment << "\n";
+        }
+        return EXIT_SUCCESS;
+    }
+    if (actions[0] == "time-sync") {
+        const auto state = client.GetTimeSyncState(std::string(drone_id));
+        std::cout << "Time Sync\n"
+                  << "  drone_id              : " << state.drone_id << "\n"
+                  << "  agent_unix_time_ms    : " << state.agent_unix_time_ms << "\n"
+                  << "  vehicle_unix_time_ms  : " << state.vehicle_unix_time_ms << "\n"
+                  << "  clock_offset_ms       : " << state.clock_offset_ms << "\n"
+                  << "  sync_quality_percent  : " << state.sync_quality_percent << "\n"
+                  << "  synced                : " << (state.synced ? "true" : "false") << "\n"
+                  << "  stale                 : " << (state.stale ? "true" : "false") << "\n"
+                  << "  source                : " << state.source << "\n"
+                  << "  message               : " << state.message << "\n";
+        return EXIT_SUCCESS;
+    }
+    if (execution_id.empty()) {
+        std::cerr << "trajectory " << actions[0] << " requires --execution-id ID\n";
+        return EXIT_FAILURE;
+    }
+    if (actions[0] == "prepare") {
+        return PrintExecutionResult("Trajectory prepare",
+                                    client.PrepareTrajectory(std::string(drone_id), execution_id));
+    }
+    if (actions[0] == "start-at") {
+        const auto unix_time_ms = ParseIntArg(
+            common::GetOptionValue(argc, argv, "--unix-time-ms", kDefaultZero), "--unix-time-ms");
+        if (!unix_time_ms.has_value()) {
+            std::cerr << unix_time_ms.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        return PrintExecutionResult(
+            "Execution start",
+            client.StartExecutionAt(std::string(drone_id), execution_id, *unix_time_ms));
+    }
+    if (actions[0] == "pause") {
+        return PrintExecutionResult("Execution pause",
+                                    client.PauseExecution(std::string(drone_id), execution_id));
+    }
+    if (actions[0] == "resume") {
+        return PrintExecutionResult("Execution resume",
+                                    client.ResumeExecution(std::string(drone_id), execution_id));
+    }
+    if (actions[0] == "abort") {
+        return PrintExecutionResult("Execution abort",
+                                    client.AbortExecution(std::string(drone_id), execution_id));
+    }
+    if (actions[0] == "clear") {
+        return PrintExecutionResult("Trajectory clear",
+                                    client.ClearTrajectory(std::string(drone_id), execution_id));
+    }
+    if (actions[0] == "get") {
+        const auto status = client.GetExecution(std::string(drone_id), execution_id);
+        if (!status.found) {
+            std::cerr << "Execution not found: " << status.message << "\n";
+            return EXIT_FAILURE;
+        }
+        PrintExecutionHandle(status.handle);
+        std::cout << "  points               : " << status.plan.points.size() << "\n"
+                  << "  payload_timeline     : " << status.plan.payload_timeline.size() << "\n";
+        return EXIT_SUCCESS;
+    }
+    std::cerr << "Unknown trajectory action: " << actions[0] << "\n";
+    return EXIT_FAILURE;
+}
+
 int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
     const std::vector<std::string> actions = FindActionsAfterCommand(argc, argv, "goal");
     if (actions.empty()) {
@@ -1078,6 +1409,10 @@ int RunCapabilities(Client& client) {
               << (capabilities.supports_time_sync ? "true" : "false") << "\n"
               << "  supports_trajectory_upload  : "
               << (capabilities.supports_trajectory_upload ? "true" : "false") << "\n"
+              << "  supports_payload_scheduling : "
+              << (capabilities.supports_payload_scheduling ? "true" : "false") << "\n"
+              << "  payload_timing_precision_ms : " << capabilities.payload_timing_precision_ms
+              << "\n"
               << "  max_horizontal_speed_mps    : " << capabilities.max_horizontal_speed_mps
               << "\n"
               << "  max_climb_speed_mps         : " << capabilities.max_climb_speed_mps << "\n"
@@ -1088,6 +1423,8 @@ int RunCapabilities(Client& client) {
     print_list("supported_commands", capabilities.supported_commands);
     print_list("supported_mission_items", capabilities.supported_mission_items);
     print_list("supported_payloads", capabilities.supported_payloads);
+    print_list("payload_action_namespaces", capabilities.supported_payload_action_namespaces);
+    print_list("payload_action_names", capabilities.supported_payload_action_names);
     print_list("supported_telemetry_fields", capabilities.supported_telemetry_fields);
     print_list("backend_command_names", capabilities.backend_command_names);
     return EXIT_SUCCESS;
@@ -1664,6 +2001,10 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     if (invocation.command == "sequence") {
         return RunSequence(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
                            client_cfg.priority, argc, argv);
+    }
+    if (invocation.command == "trajectory") {
+        return RunTrajectory(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
+                             argc, argv);
     }
     if (invocation.command == "goal") {
         return RunGoal(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId), argc,

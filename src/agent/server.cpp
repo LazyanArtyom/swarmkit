@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,6 +33,7 @@
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
 #include "swarmkit/v1/swarmkit.pb.h"
 #include "telemetry_manager.h"
+#include "trajectory_execution_manager.h"
 
 namespace swarmkit::agent {
 
@@ -341,8 +343,6 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             return "SET_ROLE";
         case swarmkit::v1::Command::kSetFormation:
             return "SET_FORMATION";
-        case swarmkit::v1::Command::kRunSequence:
-            return "RUN_SEQUENCE";
         case swarmkit::v1::Command::kUploadMission:
             return "UPLOAD_MISSION";
         case swarmkit::v1::Command::kClearMission:
@@ -544,13 +544,6 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             formation.slot_index = proto.set_formation().slot_index();
             return SwarmCmd{std::move(formation)};
         }
-        case swarmkit::v1::Command::kRunSequence: {
-            CmdRunSequence sequence;
-            sequence.sequence_id = proto.run_sequence().sequence_id();
-            sequence.sync_unix_ms = proto.run_sequence().sync_unix_ms();
-            return SwarmCmd{std::move(sequence)};
-        }
-
         case swarmkit::v1::Command::kPhoto:
             return PayloadCmd{CmdPhoto{proto.photo().camera_id()}};
         case swarmkit::v1::Command::kPhotoIntervalStart:
@@ -635,7 +628,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
           backend_(std::move(backend)),
           telemetry_(backend_.get(), config_.default_telemetry_rate_hz,
                      config_.min_telemetry_rate_hz),
-          goals_(&telemetry_, &reports_, &config_) {
+          goals_(&telemetry_, &reports_, &config_),
+          executions_(backend_.get(), &telemetry_, &reports_, &config_) {
         if (const core::Result start_result = backend_->Start(); !start_result.IsOk()) {
             ready_.store(false, std::memory_order_relaxed);
             startup_error_ = start_result.message;
@@ -791,6 +785,14 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         for (const std::string& command : capabilities.backend_command_names) {
             reply->add_backend_command_names(command);
         }
+        for (const std::string& item : capabilities.supported_payload_action_namespaces) {
+            reply->add_supported_payload_action_namespaces(item);
+        }
+        for (const std::string& item : capabilities.supported_payload_action_names) {
+            reply->add_supported_payload_action_names(item);
+        }
+        reply->set_payload_timing_precision_ms(capabilities.payload_timing_precision_ms);
+        reply->set_supports_payload_scheduling(capabilities.supports_payload_scheduling);
         reply->set_max_horizontal_speed_mps(capabilities.limits.max_horizontal_speed_mps);
         reply->set_max_climb_speed_mps(capabilities.limits.max_climb_speed_mps);
         reply->set_max_descent_speed_mps(capabilities.limits.max_descent_speed_mps);
@@ -1063,6 +1065,220 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_status(status);
         reply->set_computed_timeout_ms(goal->second);
         reply->set_message("goal found");
+        return grpc::Status::OK;
+    }
+
+    grpc::Status UploadTrajectory(grpc::ServerContext* ctx,
+                                  const swarmkit::v1::UploadTrajectoryRequest* req,
+                                  swarmkit::v1::ExecutionReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (!req->has_ctx() || !req->has_plan()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing ctx or plan field");
+        }
+        auto context_result = PrepareExecutionContext(ctx, req->ctx(), req->plan().drone_id(),
+                                                      "trajectory-upload");
+        if (!context_result.has_value()) {
+            return context_result.error();
+        }
+        swarmkit::v1::TrajectoryPlan plan = req->plan();
+        if (plan.drone_id().empty()) {
+            plan.set_drone_id(context_result->drone_id);
+        }
+        if (plan.drone_id() != context_result->drone_id) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "plan.drone_id must match ctx.drone_id");
+        }
+        if (const core::Result arbiter_result = GrantExecutionAuthority(*context_result);
+            !arbiter_result.IsOk()) {
+            FillExecutionReply(reply, false, arbiter_result, context_result->correlation_id, {}, {});
+            return grpc::Status::OK;
+        }
+        swarmkit::v1::ExecutionHandle handle;
+        swarmkit::v1::ValidateTrajectoryResult validation;
+        const core::Result result =
+            executions_.Upload(std::move(plan), context_result->correlation_id, &handle, &validation);
+        FillExecutionReply(reply, result.IsOk(), result, context_result->correlation_id, handle,
+                           validation);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ValidateTrajectory(grpc::ServerContext* ctx,
+                                    const swarmkit::v1::ValidateTrajectoryRequest* req,
+                                    swarmkit::v1::ValidateTrajectoryReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (!req->has_ctx() || !req->has_plan()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing ctx or plan field");
+        }
+        auto context_result = PrepareExecutionContext(ctx, req->ctx(), req->plan().drone_id(),
+                                                      "trajectory-validate");
+        if (!context_result.has_value()) {
+            return context_result.error();
+        }
+        const auto validation = executions_.ValidatePlan(req->plan());
+        reply->set_ok(validation.ok());
+        reply->set_message(validation.ok() ? "trajectory valid" : "trajectory validation failed");
+        reply->set_correlation_id(context_result->correlation_id);
+        reply->set_error_code(validation.ok() ? swarmkit::v1::ERROR_CODE_NONE
+                                              : swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+        reply->set_debug_message(reply->message());
+        *reply->mutable_validation() = validation;
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ClearTrajectory(grpc::ServerContext* ctx,
+                                 const swarmkit::v1::ExecutionRequest* req,
+                                 swarmkit::v1::ExecutionReply* reply) override {
+        return HandleExecutionRequest(ctx, req, reply, "trajectory-clear",
+                                      [this](const CommandContext& context,
+                                             const std::string& execution_id,
+                                             swarmkit::v1::ExecutionHandle* handle,
+                                             swarmkit::v1::ValidateTrajectoryResult*) {
+                                          return executions_.Clear(context.drone_id, execution_id,
+                                                                   context.correlation_id, handle);
+                                      });
+    }
+
+    grpc::Status PrepareTrajectory(grpc::ServerContext* ctx,
+                                   const swarmkit::v1::ExecutionRequest* req,
+                                   swarmkit::v1::ExecutionReply* reply) override {
+        return HandleExecutionRequest(ctx, req, reply, "trajectory-prepare",
+                                      [this](const CommandContext& context,
+                                             const std::string& execution_id,
+                                             swarmkit::v1::ExecutionHandle* handle,
+                                             swarmkit::v1::ValidateTrajectoryResult* validation) {
+                                          return executions_.Prepare(context.drone_id, execution_id,
+                                                                     context.correlation_id, handle,
+                                                                     validation);
+                                      });
+    }
+
+    grpc::Status StartExecutionAt(grpc::ServerContext* ctx,
+                                  const swarmkit::v1::StartExecutionAtRequest* req,
+                                  swarmkit::v1::ExecutionReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (!req->has_ctx() || req->execution_id().empty()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "missing ctx or execution_id field");
+        }
+        auto context_result =
+            PrepareExecutionContext(ctx, req->ctx(), req->ctx().drone_id(), "execution-start");
+        if (!context_result.has_value()) {
+            return context_result.error();
+        }
+        if (const core::Result arbiter_result = GrantExecutionAuthority(*context_result);
+            !arbiter_result.IsOk()) {
+            FillExecutionReply(reply, false, arbiter_result, context_result->correlation_id, {}, {});
+            return grpc::Status::OK;
+        }
+        swarmkit::v1::ExecutionHandle handle;
+        const core::Result result =
+            executions_.StartAt(context_result->drone_id, req->execution_id(), req->unix_time_ms(),
+                                context_result->correlation_id, &handle);
+        FillExecutionReply(reply, result.IsOk(), result, context_result->correlation_id, handle, {});
+        return grpc::Status::OK;
+    }
+
+    grpc::Status PauseExecution(grpc::ServerContext* ctx,
+                                const swarmkit::v1::ExecutionRequest* req,
+                                swarmkit::v1::ExecutionReply* reply) override {
+        return HandleExecutionRequest(ctx, req, reply, "execution-pause",
+                                      [this](const CommandContext& context,
+                                             const std::string& execution_id,
+                                             swarmkit::v1::ExecutionHandle* handle,
+                                             swarmkit::v1::ValidateTrajectoryResult*) {
+                                          return executions_.Pause(context.drone_id, execution_id,
+                                                                   context.correlation_id, handle);
+                                      });
+    }
+
+    grpc::Status ResumeExecution(grpc::ServerContext* ctx,
+                                 const swarmkit::v1::ExecutionRequest* req,
+                                 swarmkit::v1::ExecutionReply* reply) override {
+        return HandleExecutionRequest(ctx, req, reply, "execution-resume",
+                                      [this](const CommandContext& context,
+                                             const std::string& execution_id,
+                                             swarmkit::v1::ExecutionHandle* handle,
+                                             swarmkit::v1::ValidateTrajectoryResult*) {
+                                          return executions_.Resume(context.drone_id, execution_id,
+                                                                    context.correlation_id, handle);
+                                      });
+    }
+
+    grpc::Status AbortExecution(grpc::ServerContext* ctx,
+                                const swarmkit::v1::ExecutionRequest* req,
+                                swarmkit::v1::ExecutionReply* reply) override {
+        return HandleExecutionRequest(ctx, req, reply, "execution-abort",
+                                      [this](const CommandContext& context,
+                                             const std::string& execution_id,
+                                             swarmkit::v1::ExecutionHandle* handle,
+                                             swarmkit::v1::ValidateTrajectoryResult*) {
+                                          return executions_.Abort(context.drone_id, execution_id,
+                                                                   context.correlation_id, handle);
+                                      });
+    }
+
+    grpc::Status GetExecution(grpc::ServerContext* ctx,
+                              const swarmkit::v1::GetExecutionRequest* req,
+                              swarmkit::v1::GetExecutionReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, nullptr);
+            !auth_result.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
+        }
+        if (req->drone_id().empty() || req->execution_id().empty()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "drone_id and execution_id must not be empty");
+        }
+        const auto execution = executions_.Get(req->drone_id(), req->execution_id());
+        if (!execution.has_value()) {
+            reply->set_found(false);
+            reply->set_message("execution not found");
+            return grpc::Status::OK;
+        }
+        reply->set_found(true);
+        *reply->mutable_handle() = execution->first;
+        *reply->mutable_plan() = execution->second;
+        reply->set_message("execution found");
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ListExecutions(grpc::ServerContext* ctx,
+                                const swarmkit::v1::ListExecutionsRequest* req,
+                                swarmkit::v1::ListExecutionsReply* reply) override {
+        if (reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
+        }
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, nullptr);
+            !auth_result.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
+        }
+        const std::string drone_id = req == nullptr ? "all" : req->drone_id();
+        for (const auto& handle : executions_.List(drone_id)) {
+            *reply->add_executions() = handle;
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetTimeSyncState(grpc::ServerContext* ctx,
+                                  const swarmkit::v1::TimeSyncRequest* req,
+                                  swarmkit::v1::TimeSyncState* reply) override {
+        if (reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null response");
+        }
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, nullptr);
+            !auth_result.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
+        }
+        *reply = internal::TrajectoryExecutionManager::GetTimeSyncState(
+            req == nullptr ? "default" : req->drone_id());
         return grpc::Status::OK;
     }
 
@@ -1344,6 +1560,89 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
     }
 
    private:
+    [[nodiscard]] std::expected<CommandContext, grpc::Status> PrepareExecutionContext(
+        grpc::ServerContext* ctx, const swarmkit::v1::CommandContext& proto_context,
+        std::string_view fallback_drone_id, std::string_view correlation_prefix) const {
+        CommandContext context = ToCoreContext(proto_context);
+        if (context.drone_id.empty()) {
+            context.drone_id = std::string(fallback_drone_id);
+        }
+        context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id,
+                                                      correlation_prefix);
+        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, &context.client_id);
+            !auth_result.IsOk()) {
+            return std::unexpected(
+                grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message));
+        }
+        if (const core::Result validation = ValidateCommandContext(context); !validation.IsOk()) {
+            return std::unexpected(
+                grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, validation.message));
+        }
+        return context;
+    }
+
+    [[nodiscard]] core::Result GrantExecutionAuthority(const CommandContext& context) {
+        return arbiter_.CheckAndGrant(
+            context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
+    }
+
+    static void FillExecutionReply(swarmkit::v1::ExecutionReply* reply, bool succeeded,
+                                   const core::Result& result,
+                                   std::string_view correlation_id,
+                                   const swarmkit::v1::ExecutionHandle& handle,
+                                   const swarmkit::v1::ValidateTrajectoryResult& validation) {
+        if (reply == nullptr) {
+            return;
+        }
+        reply->set_ok(succeeded);
+        reply->set_message(result.message);
+        reply->set_correlation_id(std::string(correlation_id));
+        reply->set_error_code(ToProtoErrorCode(result.code));
+        reply->set_debug_message(result.message);
+        if (!handle.execution_id().empty()) {
+            *reply->mutable_handle() = handle;
+        }
+        if (validation.issues_size() > 0 || validation.ok()) {
+            *reply->mutable_validation() = validation;
+        }
+    }
+
+    using ExecutionOperation = std::function<core::Result(
+        const CommandContext&, const std::string&, swarmkit::v1::ExecutionHandle*,
+        swarmkit::v1::ValidateTrajectoryResult*)>;
+
+    grpc::Status HandleExecutionRequest(grpc::ServerContext* ctx,
+                                        const swarmkit::v1::ExecutionRequest* req,
+                                        swarmkit::v1::ExecutionReply* reply,
+                                        std::string_view correlation_prefix,
+                                        const ExecutionOperation& operation) {
+        if (req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
+        }
+        if (!req->has_ctx() || req->execution_id().empty()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "missing ctx or execution_id field");
+        }
+        auto context_result =
+            PrepareExecutionContext(ctx, req->ctx(), req->ctx().drone_id(), correlation_prefix);
+        if (!context_result.has_value()) {
+            return context_result.error();
+        }
+        if (const core::Result arbiter_result = GrantExecutionAuthority(*context_result);
+            !arbiter_result.IsOk()) {
+            FillExecutionReply(reply, false, arbiter_result, context_result->correlation_id, {}, {});
+            return grpc::Status::OK;
+        }
+
+        swarmkit::v1::ExecutionHandle handle;
+        swarmkit::v1::ValidateTrajectoryResult validation;
+        const core::Result result =
+            operation(*context_result, req->execution_id(), &handle, &validation);
+        FillExecutionReply(reply, result.IsOk(), result, context_result->correlation_id, handle,
+                           validation);
+        return grpc::Status::OK;
+    }
+
     void PublishSimpleReport(std::string_view drone_id, std::string_view correlation_id,
                              swarmkit::v1::AgentReportType type,
                              swarmkit::v1::ReportSeverity severity, std::string_view message) {
@@ -1382,6 +1681,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
     internal::TelemetryManager telemetry_;
     internal::ReportHub reports_;
     internal::ActiveGoalSupervisor goals_;
+    internal::TrajectoryExecutionManager executions_;
     internal::RuntimeCounters counters_;
     std::atomic<bool> ready_{true};
     std::string startup_error_;
@@ -1407,6 +1707,15 @@ core::Result VehicleProfile::Validate() const {
     }
     if (descent_speed_mps <= 0.0F) {
         return core::Result::Rejected("vehicle_profile.descent_speed_mps must be > 0");
+    }
+    if (max_altitude_m <= 0.0F) {
+        return core::Result::Rejected("vehicle_profile.max_altitude_m must be > 0");
+    }
+    if (min_battery_percent < 0.0F || min_battery_percent > 100.0F) {
+        return core::Result::Rejected("vehicle_profile.min_battery_percent must be 0..100");
+    }
+    if (tracking_tolerance_m <= 0.0F) {
+        return core::Result::Rejected("vehicle_profile.tracking_tolerance_m must be > 0");
     }
     if (goal_margin_ms < 0) {
         return core::Result::Rejected("vehicle_profile.goal_margin_ms must be >= 0");
@@ -1579,6 +1888,36 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         if (descent_speed_mps->has_value()) {
             config.vehicle_profile.descent_speed_mps =
                 descent_speed_mps->value_or(config.vehicle_profile.descent_speed_mps);
+        }
+
+        const auto max_altitude_m =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "max_altitude_m");
+        if (!max_altitude_m.has_value()) {
+            return std::unexpected(max_altitude_m.error());
+        }
+        if (max_altitude_m->has_value()) {
+            config.vehicle_profile.max_altitude_m =
+                max_altitude_m->value_or(config.vehicle_profile.max_altitude_m);
+        }
+
+        const auto min_battery_percent =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "min_battery_percent");
+        if (!min_battery_percent.has_value()) {
+            return std::unexpected(min_battery_percent.error());
+        }
+        if (min_battery_percent->has_value()) {
+            config.vehicle_profile.min_battery_percent =
+                min_battery_percent->value_or(config.vehicle_profile.min_battery_percent);
+        }
+
+        const auto tracking_tolerance_m =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "tracking_tolerance_m");
+        if (!tracking_tolerance_m.has_value()) {
+            return std::unexpected(tracking_tolerance_m.error());
+        }
+        if (tracking_tolerance_m->has_value()) {
+            config.vehicle_profile.tracking_tolerance_m =
+                tracking_tolerance_m->value_or(config.vehicle_profile.tracking_tolerance_m);
         }
 
         const auto goal_margin_ms =
