@@ -10,12 +10,76 @@ namespace swarmkit::agent::mavlink {
 
 BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendConfig& config) {
     return {
+        .backend_name = "mavlink",
+        .protocol = "mavlink2",
+        .vehicle_class = config.autopilot_profile == MavlinkAutopilotProfile::kArdupilotPlane
+                             ? "fixed-wing"
+                             : "multirotor",
         .supports_mission_upload = true,
         .supports_payload_control = true,
         .supports_velocity_control = true,
         .supports_flight_termination = config.allow_flight_termination,
+        .supports_backend_commands = true,
         .autopilot_type = std::string(ToString(config.autopilot_profile)),
         .supported_modes = SupportedModes(config.autopilot_profile),
+        .supported_commands =
+            {
+                "arm",
+                "disarm",
+                "takeoff",
+                "land",
+                "return-home",
+                "hold",
+                "set-mode",
+                "set-speed",
+                "goto",
+                "set-yaw",
+                "velocity",
+                "pause",
+                "resume",
+                "set-home",
+                "mission-upload",
+                "mission-clear",
+                "mission-start",
+                "mission-pause",
+                "mission-resume",
+                "set-current-mission-item",
+                "backend-command",
+            },
+        .supported_mission_items =
+            {
+                "waypoint",
+                "takeoff",
+                "land",
+                "loiter",
+                "delay",
+            },
+        .supported_payloads =
+            {
+                "photo",
+                "photo-interval",
+                "video",
+                "gimbal",
+                "roi",
+                "servo",
+                "relay",
+                "gripper",
+            },
+        .supported_telemetry_fields =
+            {
+                "lat_deg",
+                "lon_deg",
+                "rel_alt_m",
+                "abs_alt_m",
+                "velocity",
+                "attitude",
+                "battery_percent",
+                "mode",
+                "armed",
+                "failsafe",
+                "gps",
+            },
+        .backend_command_names = {"mavlink.command-long"},
     };
 }
 

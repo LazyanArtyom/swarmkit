@@ -7,6 +7,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -16,11 +18,31 @@ namespace swarmkit::commands {
 /// Mission commands -- upload, start, pause/resume, and mission recovery.
 /// ---------------------------------------------------------------------------
 
+enum class MissionItemType : std::uint8_t {
+    kWaypoint,
+    kTakeoff,
+    kLand,
+    kLoiter,
+    kDelay,
+    kAction,
+    kPayloadAction,
+};
+
 struct MissionItem {
-    std::uint16_t command{};  ///< MAV_CMD_* value.
+    MissionItemType type{MissionItemType::kWaypoint};
     double lat_deg{};
     double lon_deg{};
     double alt_m{};
+    float hold_s{};
+    float acceptance_radius_m{};
+    float yaw_deg{};
+    std::string action_namespace;
+    std::string action_name;
+    std::unordered_map<std::string, std::string> params;
+
+    /// Optional backend-native command id. Generic users should prefer type.
+    std::uint16_t backend_command{};
+
     float param1{};
     float param2{};
     float param3{};

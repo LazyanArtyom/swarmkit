@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -33,6 +34,12 @@ constexpr float kInitialBatteryPct = 95.0F;
 constexpr double kGpsDriftDegPerTick = 0.00001;
 constexpr float kAltClimbMPerTick = 0.02F;
 constexpr float kBatteryDrainPct = 0.01F;
+
+[[nodiscard]] std::int64_t NowUnixMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
 
 /**
  * @brief Built-in drone simulator for development and testing.
@@ -249,6 +256,18 @@ class SimBackend final : public IDroneBackend {
                 },
                 /// @}
 
+                [&](const BackendCmd& backend) {
+                    std::visit(
+                        [&](const CmdBackendCommand& command) {
+                            core::Logger::InfoFmt(
+                                "SimBackend: BACKEND_COMMAND namespace={} name={} params={} "
+                                "drone={}",
+                                command.backend_namespace, command.name, command.params.size(),
+                                context.drone_id);
+                        },
+                        backend);
+                },
+
             },
             envelope.command);
 
@@ -302,8 +321,20 @@ class SimBackend final : public IDroneBackend {
                     frame.lat_deg = lat_deg;
                     frame.lon_deg = lon_deg;
                     frame.rel_alt_m = alt_m;
+                    frame.abs_alt_m = alt_m;
+                    frame.vx_mps = static_cast<float>(kGpsDriftDegPerTick * kEffectiveRate);
+                    frame.vy_mps = static_cast<float>(kGpsDriftDegPerTick * kEffectiveRate);
+                    frame.vz_mps = kAltClimbMPerTick * static_cast<float>(kEffectiveRate);
                     frame.battery_percent = battery_pct;
                     frame.mode = "SIM";
+                    frame.armed = true;
+                    frame.landed = false;
+                    frame.failsafe = false;
+                    frame.ekf_ok = true;
+                    frame.gps_fix_type = 3;
+                    frame.satellites_visible = 12;
+                    frame.gps_hdop = 0.8F;
+                    frame.link_quality_percent = 100.0F;
 
                     callback(frame);
 
@@ -340,14 +371,54 @@ class SimBackend final : public IDroneBackend {
         return core::Result::Success();
     }
 
+    [[nodiscard]] BackendHealth GetHealth() const override {
+        return {
+            .ready = true,
+            .message = "sim ready",
+            .backend_name = "sim",
+            .protocol = "sim",
+            .last_heartbeat_unix_ms = NowUnixMs(),
+            .last_telemetry_unix_ms = NowUnixMs(),
+            .armed = true,
+            .landed = false,
+            .custom_mode = 0,
+            .failsafe = false,
+            .gps_ok = true,
+            .ekf_ok = true,
+            .link_quality_percent = 100.0F,
+        };
+    }
+
     [[nodiscard]] BackendCapabilities GetCapabilities() const override {
         return {
+            .backend_name = "sim",
+            .protocol = "sim",
+            .vehicle_class = "multirotor",
             .supports_mission_upload = true,
             .supports_payload_control = true,
             .supports_velocity_control = true,
             .supports_flight_termination = false,
+            .supports_backend_commands = true,
+            .supports_time_sync = false,
+            .supports_trajectory_upload = false,
             .autopilot_type = "sim",
             .supported_modes = {"sim", "guided", "hold", "land", "rtl"},
+            .supported_commands =
+                {"arm", "disarm", "takeoff", "land", "goto", "velocity", "mission", "payload",
+                 "backend-command"},
+            .supported_mission_items =
+                {"waypoint", "takeoff", "land", "loiter", "delay", "action", "payload_action"},
+            .supported_payloads = {"camera", "gimbal", "servo", "relay", "gripper"},
+            .supported_telemetry_fields =
+                {"position", "altitude", "velocity", "battery", "mode", "gps", "health"},
+            .backend_command_names = {"sim.echo"},
+            .limits =
+                {
+                    .max_horizontal_speed_mps = 10.0F,
+                    .max_climb_speed_mps = 5.0F,
+                    .max_descent_speed_mps = 3.0F,
+                    .max_altitude_m = 120.0F,
+                },
         };
     }
 

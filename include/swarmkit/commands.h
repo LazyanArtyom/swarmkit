@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <variant>
 
+#include "swarmkit/commands/backend.h"
 #include "swarmkit/commands/flight.h"
 #include "swarmkit/commands/mission.h"
 #include "swarmkit/commands/nav.h"
@@ -85,7 +86,7 @@ enum class CommandPriority : std::uint8_t {
  * 4. Handle it in every IDroneBackend implementation (compile error if missed).
  * 5. Add proto messages and map them in server.cpp.
  */
-using Command = std::variant<FlightCmd, NavCmd, MissionCmd, SwarmCmd, PayloadCmd>;
+using Command = std::variant<FlightCmd, NavCmd, MissionCmd, SwarmCmd, PayloadCmd, BackendCmd>;
 
 /// ---------------------------------------------------------------------------
 /// CommandContext

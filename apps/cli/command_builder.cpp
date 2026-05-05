@@ -6,6 +6,9 @@
 
 #include "command_builder.h"
 
+#include <string>
+#include <string_view>
+#include <unordered_map>
 #include <utility>
 
 #include "common/arg_utils.h"
@@ -17,6 +20,42 @@
 #include "payload_command_parser.h"
 
 namespace swarmkit::apps::cli::internal {
+namespace {
+
+[[nodiscard]] std::unordered_map<std::string, std::string> ParseParams(int argc, char** argv) {
+    std::unordered_map<std::string, std::string> params;
+    for (int index = 1; index + 1 < argc; ++index) {
+        if (std::string_view{argv[index]} != "--param") {
+            continue;
+        }
+        const std::string value = argv[index + 1];
+        const std::size_t separator = value.find('=');
+        if (separator == std::string::npos || separator == 0 || separator + 1 >= value.size()) {
+            continue;
+        }
+        params[value.substr(0, separator)] = value.substr(separator + 1);
+    }
+    return params;
+}
+
+[[nodiscard]] std::expected<commands::Command, std::string> BuildBackendCommand(int argc,
+                                                                                char** argv) {
+    const std::string command_namespace = common::GetOptionValue(argc, argv, "--namespace");
+    const std::string name = common::GetOptionValue(argc, argv, "--name");
+    if (command_namespace.empty()) {
+        return std::unexpected("backend-command requires --namespace NAME");
+    }
+    if (name.empty()) {
+        return std::unexpected("backend-command requires --name NAME");
+    }
+    return commands::BackendCmd{commands::CmdBackendCommand{
+        .backend_namespace = command_namespace,
+        .name = name,
+        .params = ParseParams(argc, argv),
+    }};
+}
+
+}  // namespace
 
 [[nodiscard]] std::vector<std::string> FindCommandActions(int argc, char** argv) {
     int command_index = -1;
@@ -72,6 +111,9 @@ namespace swarmkit::apps::cli::internal {
                 "mission requires upload, clear, start, pause, resume, or set-current");
         }
         return BuildMissionCommand(actions, argc, argv);
+    }
+    if (action == "backend-command") {
+        return BuildBackendCommand(argc, argv);
     }
     if (action == "photo" || action == "photo-interval-start" || action == "photo-interval-stop" ||
         action == "video-start" || action == "video-stop" || action == "gimbal-point" ||

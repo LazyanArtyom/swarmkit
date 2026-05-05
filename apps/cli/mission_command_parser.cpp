@@ -9,6 +9,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <cstdint>
+#include <string>
 #include <utility>
 
 #include "common/arg_utils.h"
@@ -21,17 +22,26 @@ using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
 
 namespace {
 
-[[nodiscard]] std::uint16_t MissionCommandFromName(std::string_view name) {
+[[nodiscard]] MissionItemType MissionItemTypeFromName(std::string_view name) {
     if (name == "takeoff") {
-        return kMavCmdNavTakeoff;
+        return MissionItemType::kTakeoff;
     }
     if (name == "land") {
-        return kMavCmdNavLand;
+        return MissionItemType::kLand;
     }
-    if (name == "rtl" || name == "return-home") {
-        return kMavCmdNavReturnToLaunch;
+    if (name == "loiter") {
+        return MissionItemType::kLoiter;
     }
-    return kMavCmdNavWaypoint;
+    if (name == "delay") {
+        return MissionItemType::kDelay;
+    }
+    if (name == "action") {
+        return MissionItemType::kAction;
+    }
+    if (name == "payload-action") {
+        return MissionItemType::kPayloadAction;
+    }
+    return MissionItemType::kWaypoint;
 }
 
 [[nodiscard]] std::expected<Command, std::string> BuildMissionUploadCommand(
@@ -51,11 +61,24 @@ namespace {
             MissionItem item;
             const std::string command =
                 node["command"] ? node["command"].as<std::string>() : "waypoint";
-            item.command = node["mav_cmd"] ? node["mav_cmd"].as<std::uint16_t>()
-                                           : MissionCommandFromName(command);
+            item.type = MissionItemTypeFromName(command);
+            item.backend_command =
+                node["mav_cmd"] ? node["mav_cmd"].as<std::uint16_t>() : std::uint16_t{};
             item.lat_deg = node["lat"] ? node["lat"].as<double>() : 0.0;
             item.lon_deg = node["lon"] ? node["lon"].as<double>() : 0.0;
             item.alt_m = node["alt"] ? node["alt"].as<double>() : 0.0;
+            item.hold_s = node["hold_s"] ? node["hold_s"].as<float>() : 0.0F;
+            item.acceptance_radius_m =
+                node["acceptance_radius_m"] ? node["acceptance_radius_m"].as<float>() : 0.0F;
+            item.yaw_deg = node["yaw_deg"] ? node["yaw_deg"].as<float>() : 0.0F;
+            item.action_namespace =
+                node["action_namespace"] ? node["action_namespace"].as<std::string>() : "";
+            item.action_name = node["action_name"] ? node["action_name"].as<std::string>() : "";
+            if (const YAML::Node params = node["params"]; params && params.IsMap()) {
+                for (const auto& param : params) {
+                    item.params[param.first.as<std::string>()] = param.second.as<std::string>();
+                }
+            }
             item.param1 = node["param1"] ? node["param1"].as<float>() : 0.0F;
             item.param2 = node["param2"] ? node["param2"].as<float>() : 0.0F;
             item.param3 = node["param3"] ? node["param3"].as<float>() : 0.0F;

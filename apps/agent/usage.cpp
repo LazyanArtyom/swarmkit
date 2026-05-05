@@ -17,7 +17,7 @@ void PrintUsage() {
                  "  --id        AGENT_ID      Agent identifier (default: agent-1)\n"
                  "  --bind      HOST:PORT     Bind address    (default: 0.0.0.0:50061)\n"
                  "  --config    PATH          Load agent config from YAML file\n"
-                 "  --backend   sim|mavlink   Vehicle backend (default: sim)\n"
+                 "  --backend   NAME          Vehicle backend: sim, mavlink, or registered custom\n"
                  "  --mavlink-bind HOST:PORT  UDP MAVLink listen address\n"
                  "  --mavlink-drone ID        SwarmKit drone id for MAVLink backend\n"
                  "  --mavlink-autopilot NAME  ardupilot-copter|ardupilot-plane|px4\n"
@@ -31,6 +31,10 @@ void PrintUsage() {
                  "                             Logger sink type (default: stdout)\n"
                  "  --log-file  PATH          Rotating log file path when file logging is used\n"
                  "  --log-level LEVEL         trace|debug|info|warn|error|critical|off\n"
+                 "\n"
+                 "YAML:\n"
+                 "  agent.backend selects the registered backend.\n"
+                 "  agent.backend_options passes string key/value options to custom backends.\n"
                  "  --help                    Print this message\n";
 }
 

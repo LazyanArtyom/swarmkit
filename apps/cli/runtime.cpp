@@ -988,10 +988,21 @@ int RunHealth(Client& client) {
     }
 
     std::cout << "Health OK\n"
-              << "  ready     : " << (kStatus.ready ? "true" : "false") << "\n"
-              << "  agent_id  : " << kStatus.agent_id << "\n"
-              << "  version   : " << kStatus.version << "\n"
-              << "  time_ms   : " << kStatus.unix_time_ms << "\n";
+              << "  ready                  : " << (kStatus.ready ? "true" : "false") << "\n"
+              << "  agent_id               : " << kStatus.agent_id << "\n"
+              << "  version                : " << kStatus.version << "\n"
+              << "  time_ms                : " << kStatus.unix_time_ms << "\n"
+              << "  backend_name           : " << kStatus.backend_name << "\n"
+              << "  protocol               : " << kStatus.protocol << "\n"
+              << "  last_heartbeat_unix_ms : " << kStatus.last_heartbeat_unix_ms << "\n"
+              << "  last_telemetry_unix_ms : " << kStatus.last_telemetry_unix_ms << "\n"
+              << "  armed                  : " << (kStatus.armed ? "true" : "false") << "\n"
+              << "  landed                 : " << (kStatus.landed ? "true" : "false") << "\n"
+              << "  failsafe               : " << (kStatus.failsafe ? "true" : "false") << "\n"
+              << "  gps_ok                 : " << (kStatus.gps_ok ? "true" : "false") << "\n"
+              << "  ekf_ok                 : " << (kStatus.ekf_ok ? "true" : "false") << "\n"
+              << "  link_quality_percent   : " << kStatus.link_quality_percent << "\n"
+              << "  message                : " << kStatus.message << "\n";
     return EXIT_SUCCESS;
 }
 
@@ -1036,8 +1047,22 @@ int RunCapabilities(Client& client) {
         return EXIT_FAILURE;
     }
 
+    const auto print_list = [](std::string_view label, const std::vector<std::string>& values) {
+        std::cout << "  " << std::left << std::setw(29) << label << ": ";
+        for (std::size_t idx = 0; idx < values.size(); ++idx) {
+            if (idx != 0) {
+                std::cout << ", ";
+            }
+            std::cout << values[idx];
+        }
+        std::cout << "\n";
+    };
+
     std::cout << "Backend Capabilities\n"
               << "  agent_id                    : " << capabilities.agent_id << "\n"
+              << "  backend_name                : " << capabilities.backend_name << "\n"
+              << "  protocol                    : " << capabilities.protocol << "\n"
+              << "  vehicle_class               : " << capabilities.vehicle_class << "\n"
               << "  autopilot_type              : " << capabilities.autopilot_type << "\n"
               << "  supports_mission_upload     : "
               << (capabilities.supports_mission_upload ? "true" : "false") << "\n"
@@ -1047,14 +1072,24 @@ int RunCapabilities(Client& client) {
               << (capabilities.supports_velocity_control ? "true" : "false") << "\n"
               << "  supports_flight_termination : "
               << (capabilities.supports_flight_termination ? "true" : "false") << "\n"
-              << "  supported_modes             : ";
-    for (std::size_t idx = 0; idx < capabilities.supported_modes.size(); ++idx) {
-        if (idx != 0) {
-            std::cout << ", ";
-        }
-        std::cout << capabilities.supported_modes[idx];
-    }
-    std::cout << "\n";
+              << "  supports_backend_commands   : "
+              << (capabilities.supports_backend_commands ? "true" : "false") << "\n"
+              << "  supports_time_sync          : "
+              << (capabilities.supports_time_sync ? "true" : "false") << "\n"
+              << "  supports_trajectory_upload  : "
+              << (capabilities.supports_trajectory_upload ? "true" : "false") << "\n"
+              << "  max_horizontal_speed_mps    : " << capabilities.max_horizontal_speed_mps
+              << "\n"
+              << "  max_climb_speed_mps         : " << capabilities.max_climb_speed_mps << "\n"
+              << "  max_descent_speed_mps       : " << capabilities.max_descent_speed_mps
+              << "\n"
+              << "  max_altitude_m              : " << capabilities.max_altitude_m << "\n";
+    print_list("supported_modes", capabilities.supported_modes);
+    print_list("supported_commands", capabilities.supported_commands);
+    print_list("supported_mission_items", capabilities.supported_mission_items);
+    print_list("supported_payloads", capabilities.supported_payloads);
+    print_list("supported_telemetry_fields", capabilities.supported_telemetry_fields);
+    print_list("backend_command_names", capabilities.backend_command_names);
     return EXIT_SUCCESS;
 }
 

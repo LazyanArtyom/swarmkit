@@ -11,9 +11,8 @@
 
 #include "common/arg_utils.h"
 #include "configuration.h"
-#include "swarmkit/agent/mavlink_backend.h"
+#include "swarmkit/agent/backend_factory.h"
 #include "swarmkit/agent/server.h"
-#include "swarmkit/agent/sim_backend.h"
 #include "swarmkit/core/logger.h"
 #include "usage.h"
 
@@ -46,14 +45,17 @@ int RunAgentApp(int argc, char** argv) {
         return kBackendSelection.error();
     }
 
-    swarmkit::agent::DroneBackendPtr backend;
-    if (kBackendSelection->backend == "mavlink") {
-        backend = swarmkit::agent::MakeMavlinkBackend(kBackendSelection->mavlink);
-    } else {
-        backend = swarmkit::agent::MakeSimBackend();
+    swarmkit::agent::BackendRegistry registry;
+    swarmkit::agent::RegisterBuiltinBackends(&registry);
+    auto backend_result = registry.Create(kBackendSelection->request);
+    if (!backend_result.has_value()) {
+        swarmkit::core::Logger::ErrorFmt("Failed to create backend '{}': {}",
+                                         kBackendSelection->request.backend_name,
+                                         backend_result.error().message);
+        return EXIT_FAILURE;
     }
 
-    return swarmkit::agent::RunAgentServer(*kAgentConfig, std::move(backend));
+    return swarmkit::agent::RunAgentServer(*kAgentConfig, std::move(*backend_result));
 }
 
 }  // namespace swarmkit::apps::agent

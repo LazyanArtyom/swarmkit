@@ -13,7 +13,10 @@
 #include <exception>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <unordered_map>
+#include <utility>
 
 #include "common/arg_utils.h"
 
@@ -124,6 +127,50 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
     return {};
 }
 
+void PutOption(std::unordered_map<std::string, std::string>* options, std::string key,
+               std::string value) {
+    if (options == nullptr) {
+        return;
+    }
+    (*options)[std::move(key)] = std::move(value);
+}
+
+void PopulateMavlinkFactoryOptions(const swarmkit::agent::MavlinkBackendConfig& mavlink,
+                                   std::unordered_map<std::string, std::string>* options) {
+    PutOption(options, "drone_id", mavlink.drone_id);
+    PutOption(options, "bind_addr", mavlink.bind_addr);
+    PutOption(options, "autopilot_profile", std::string(ToString(mavlink.autopilot_profile)));
+    PutOption(options, "target_system", std::to_string(mavlink.target_system));
+    PutOption(options, "target_component", std::to_string(mavlink.target_component));
+    PutOption(options, "source_system", std::to_string(mavlink.source_system));
+    PutOption(options, "source_component", std::to_string(mavlink.source_component));
+    PutOption(options, "telemetry_rate_hz", std::to_string(mavlink.telemetry_rate_hz));
+    PutOption(options, "peer_discovery_timeout_ms",
+              std::to_string(mavlink.peer_discovery_timeout_ms));
+    PutOption(options, "command_ack_timeout_ms", std::to_string(mavlink.command_ack_timeout_ms));
+    PutOption(options, "set_guided_before_arm",
+              mavlink.set_guided_before_arm ? "true" : "false");
+    PutOption(options, "set_guided_before_takeoff",
+              mavlink.set_guided_before_takeoff ? "true" : "false");
+    PutOption(options, "guided_mode", std::to_string(mavlink.guided_mode));
+    PutOption(options, "allow_flight_termination",
+              mavlink.allow_flight_termination ? "true" : "false");
+}
+
+void ReadBackendOptionsYaml(const YAML::Node& node,
+                            std::unordered_map<std::string, std::string>* options) {
+    if (options == nullptr || !node || !node.IsMap()) {
+        return;
+    }
+    for (const auto& entry : node) {
+        try {
+            (*options)[entry.first.as<std::string>()] = entry.second.as<std::string>();
+        } catch (const YAML::Exception& ex) {
+            swarmkit::core::Logger::WarnFmt("Ignoring invalid backend option: {}", ex.what());
+        }
+    }
+}
+
 }  // namespace
 
 [[nodiscard]] std::expected<core::LoggerConfig, int> BuildAgentLoggerConfig(int argc, char** argv) {
@@ -220,11 +267,13 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
 }
 
 [[nodiscard]] std::expected<BackendSelection, int> BuildBackendSelection(int argc, char** argv) {
-    BackendSelection selection{.backend = std::string(kDefaultBackend)};
+    BackendSelection selection;
+    selection.request.backend_name = std::string(kDefaultBackend);
 
     if (const auto root = LoadRootYaml(argc, argv); root.has_value()) {
         const YAML::Node agent = SelectAgentSection(*root);
-        ReadOptionalYamlScalar(agent, "backend", &selection.backend);
+        ReadOptionalYamlScalar(agent, "backend", &selection.request.backend_name);
+        ReadBackendOptionsYaml(agent["backend_options"], &selection.request.options);
 
         const YAML::Node mavlink = agent["mavlink"] ? agent["mavlink"] : (*root)["mavlink"];
         if (mavlink) {
@@ -266,22 +315,23 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
 
     if (const std::string kBackend = common::GetOptionValue(argc, argv, "--backend");
         !kBackend.empty()) {
-        selection.backend = kBackend;
+        selection.request.backend_name = kBackend;
     }
     if (const auto cli_mavlink_overrides = ApplyMavlinkCliOverrides(argc, argv, &selection.mavlink);
         !cli_mavlink_overrides.has_value()) {
         return std::unexpected(cli_mavlink_overrides.error());
     }
 
-    if (selection.backend != "sim" && selection.backend != "mavlink") {
-        std::cerr << "Invalid --backend value: " << selection.backend << "\n";
+    if (selection.request.backend_name.empty()) {
+        std::cerr << "Invalid --backend value: backend name must not be empty\n";
         return std::unexpected(EXIT_FAILURE);
     }
-    if (selection.backend == "mavlink") {
+    if (selection.request.backend_name == "mavlink") {
         if (const core::Result kValidation = selection.mavlink.Validate(); !kValidation.IsOk()) {
             std::cerr << "Invalid MAVLink backend configuration: " << kValidation.message << "\n";
             return std::unexpected(EXIT_FAILURE);
         }
+        PopulateMavlinkFactoryOptions(selection.mavlink, &selection.request.options);
     }
 
     return selection;

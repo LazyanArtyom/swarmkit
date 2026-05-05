@@ -162,6 +162,28 @@ void ApplyUnaryClientContext(const ClientConfig& config, grpc::ClientContext* co
     context->AddMetadata(std::string(kCorrelationMetadataKey), std::string(correlation_id));
 }
 
+[[nodiscard]] swarmkit::v1::MissionItemType ToProtoMissionItemType(
+    commands::MissionItemType type) {
+    using commands::MissionItemType;
+    switch (type) {
+        case MissionItemType::kWaypoint:
+            return swarmkit::v1::MISSION_ITEM_WAYPOINT;
+        case MissionItemType::kTakeoff:
+            return swarmkit::v1::MISSION_ITEM_TAKEOFF;
+        case MissionItemType::kLand:
+            return swarmkit::v1::MISSION_ITEM_LAND;
+        case MissionItemType::kLoiter:
+            return swarmkit::v1::MISSION_ITEM_LOITER;
+        case MissionItemType::kDelay:
+            return swarmkit::v1::MISSION_ITEM_DELAY;
+        case MissionItemType::kAction:
+            return swarmkit::v1::MISSION_ITEM_ACTION;
+        case MissionItemType::kPayloadAction:
+            return swarmkit::v1::MISSION_ITEM_PAYLOAD_ACTION;
+    }
+    return swarmkit::v1::MISSION_ITEM_WAYPOINT;
+}
+
 template <typename Call>
 grpc::Status InvokeUnaryWithRetry(const ClientConfig& config, std::string_view correlation_id,
                                   int* attempts_used, Call&& call) {
@@ -321,10 +343,19 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                             auto* proto = proto_cmd->mutable_upload_mission();
                             for (const auto& item : upload.items) {
                                 auto* proto_item = proto->add_items();
-                                proto_item->set_command(item.command);
+                                proto_item->set_command(item.backend_command);
                                 proto_item->set_lat_deg(item.lat_deg);
                                 proto_item->set_lon_deg(item.lon_deg);
                                 proto_item->set_alt_m(item.alt_m);
+                                proto_item->set_type(ToProtoMissionItemType(item.type));
+                                proto_item->set_hold_s(item.hold_s);
+                                proto_item->set_acceptance_radius_m(item.acceptance_radius_m);
+                                proto_item->set_yaw_deg(item.yaw_deg);
+                                proto_item->set_action_namespace(item.action_namespace);
+                                proto_item->set_action_name(item.action_name);
+                                for (const auto& [key, value] : item.params) {
+                                    (*proto_item->mutable_params())[key] = value;
+                                }
                                 proto_item->set_param1(item.param1);
                                 proto_item->set_param2(item.param2);
                                 proto_item->set_param3(item.param3);
@@ -431,6 +462,20 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                                },
                            },
                            payload);
+            },
+
+            [&](const commands::BackendCmd& backend) {
+                std::visit(core::Overloaded{
+                               [&](const commands::CmdBackendCommand& command) {
+                                   auto* proto = proto_cmd->mutable_backend_command();
+                                   proto->set_backend_namespace(command.backend_namespace);
+                                   proto->set_name(command.name);
+                                   for (const auto& [key, value] : command.params) {
+                                       (*proto->mutable_params())[key] = value;
+                                   }
+                               },
+                           },
+                           backend);
             },
 
         },
@@ -577,8 +622,23 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     frame.lat_deg = proto_frame.lat_deg();
     frame.lon_deg = proto_frame.lon_deg();
     frame.rel_alt_m = proto_frame.rel_alt_m();
+    frame.abs_alt_m = proto_frame.abs_alt_m();
+    frame.vx_mps = proto_frame.vx_mps();
+    frame.vy_mps = proto_frame.vy_mps();
+    frame.vz_mps = proto_frame.vz_mps();
+    frame.roll_deg = proto_frame.roll_deg();
+    frame.pitch_deg = proto_frame.pitch_deg();
+    frame.yaw_deg = proto_frame.yaw_deg();
     frame.battery_percent = proto_frame.battery_percent();
     frame.mode = proto_frame.mode();
+    frame.armed = proto_frame.armed();
+    frame.landed = proto_frame.landed();
+    frame.failsafe = proto_frame.failsafe();
+    frame.ekf_ok = proto_frame.ekf_ok();
+    frame.gps_fix_type = proto_frame.gps_fix_type();
+    frame.satellites_visible = proto_frame.satellites_visible();
+    frame.gps_hdop = proto_frame.gps_hdop();
+    frame.link_quality_percent = proto_frame.link_quality_percent();
     return frame;
 }
 
@@ -1140,6 +1200,16 @@ HealthStatus Client::GetHealth() const {
     out.unix_time_ms = rep.unix_time_ms();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.backend_name = rep.backend_name();
+    out.protocol = rep.protocol();
+    out.last_heartbeat_unix_ms = rep.last_heartbeat_unix_ms();
+    out.last_telemetry_unix_ms = rep.last_telemetry_unix_ms();
+    out.armed = rep.armed();
+    out.landed = rep.landed();
+    out.failsafe = rep.failsafe();
+    out.gps_ok = rep.gps_ok();
+    out.ekf_ok = rep.ekf_ok();
+    out.link_quality_percent = rep.link_quality_percent();
     out.error.code = RpcStatusCode::kOk;
     out.error.correlation_id = out.correlation_id;
     out.error.attempt_count = attempt_count;
@@ -1212,12 +1282,30 @@ BackendCapabilities Client::GetCapabilities() const {
     out.agent_id = rep.agent_id();
     out.unix_time_ms = rep.unix_time_ms();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.backend_name = rep.backend_name();
+    out.protocol = rep.protocol();
+    out.vehicle_class = rep.vehicle_class();
     out.supports_mission_upload = rep.supports_mission_upload();
     out.supports_payload_control = rep.supports_payload_control();
     out.supports_velocity_control = rep.supports_velocity_control();
     out.supports_flight_termination = rep.supports_flight_termination();
+    out.supports_backend_commands = rep.supports_backend_commands();
+    out.supports_time_sync = rep.supports_time_sync();
+    out.supports_trajectory_upload = rep.supports_trajectory_upload();
     out.autopilot_type = rep.autopilot_type();
     out.supported_modes.assign(rep.supported_modes().begin(), rep.supported_modes().end());
+    out.supported_commands.assign(rep.supported_commands().begin(), rep.supported_commands().end());
+    out.supported_mission_items.assign(rep.supported_mission_items().begin(),
+                                       rep.supported_mission_items().end());
+    out.supported_payloads.assign(rep.supported_payloads().begin(), rep.supported_payloads().end());
+    out.supported_telemetry_fields.assign(rep.supported_telemetry_fields().begin(),
+                                          rep.supported_telemetry_fields().end());
+    out.backend_command_names.assign(rep.backend_command_names().begin(),
+                                     rep.backend_command_names().end());
+    out.max_horizontal_speed_mps = rep.max_horizontal_speed_mps();
+    out.max_climb_speed_mps = rep.max_climb_speed_mps();
+    out.max_descent_speed_mps = rep.max_descent_speed_mps();
+    out.max_altitude_m = rep.max_altitude_m();
     out.error.code = RpcStatusCode::kOk;
     out.error.correlation_id = out.correlation_id;
     out.error.attempt_count = attempt_count;

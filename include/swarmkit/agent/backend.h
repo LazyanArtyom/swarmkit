@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "swarmkit/commands.h"
@@ -26,20 +27,50 @@ using swarmkit::commands::CommandPriority;
 struct BackendHealth {
     bool ready{true};
     std::string message{"ready"};
+    std::string backend_name{"unknown"};
+    std::string protocol{"unknown"};
     std::int64_t last_heartbeat_unix_ms{};
     std::int64_t last_telemetry_unix_ms{};
     bool armed{false};
+    bool landed{false};
     int custom_mode{-1};
     bool failsafe{false};
+    bool gps_ok{false};
+    bool ekf_ok{true};
+    float link_quality_percent{};
+};
+
+struct BackendNumericLimits {
+    float max_horizontal_speed_mps{};
+    float max_climb_speed_mps{};
+    float max_descent_speed_mps{};
+    float max_altitude_m{};
 };
 
 struct BackendCapabilities {
+    std::string backend_name{"unknown"};
+    std::string protocol{"unknown"};
+    std::string vehicle_class{"unknown"};
     bool supports_mission_upload{false};
     bool supports_payload_control{false};
     bool supports_velocity_control{false};
     bool supports_flight_termination{false};
+    bool supports_backend_commands{false};
+    bool supports_time_sync{false};
+    bool supports_trajectory_upload{false};
     std::string autopilot_type{"unknown"};
     std::vector<std::string> supported_modes;
+    std::vector<std::string> supported_commands;
+    std::vector<std::string> supported_mission_items;
+    std::vector<std::string> supported_payloads;
+    std::vector<std::string> supported_telemetry_fields;
+    std::vector<std::string> backend_command_names;
+    BackendNumericLimits limits;
+};
+
+struct BackendFactoryRequest {
+    std::string backend_name;
+    std::unordered_map<std::string, std::string> options;
 };
 
 /// ---------------------------------------------------------------------------

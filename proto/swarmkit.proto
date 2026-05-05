@@ -84,6 +84,16 @@ message HealthReply {
     int64 unix_time_ms = 5;
     string message = 6;
     string correlation_id = 7;
+    string backend_name = 8;
+    string protocol = 9;
+    int64 last_heartbeat_unix_ms = 10;
+    int64 last_telemetry_unix_ms = 11;
+    bool armed = 12;
+    bool landed = 13;
+    bool failsafe = 14;
+    bool gps_ok = 15;
+    bool ekf_ok = 16;
+    float link_quality_percent = 17;
 }
 
 message RuntimeStatsRequest {}
@@ -120,6 +130,21 @@ message CapabilitiesReply {
     bool supports_flight_termination = 7;
     string autopilot_type = 8;
     repeated string supported_modes = 9;
+    string backend_name = 10;
+    string protocol = 11;
+    string vehicle_class = 12;
+    bool supports_backend_commands = 13;
+    bool supports_time_sync = 14;
+    bool supports_trajectory_upload = 15;
+    repeated string supported_commands = 16;
+    repeated string supported_mission_items = 17;
+    repeated string supported_payloads = 18;
+    repeated string supported_telemetry_fields = 19;
+    repeated string backend_command_names = 20;
+    float max_horizontal_speed_mps = 21;
+    float max_climb_speed_mps = 22;
+    float max_descent_speed_mps = 23;
+    float max_altitude_m = 24;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,8 +244,18 @@ message CmdSetHome {
 
 // --- Mission commands ---
 
+enum MissionItemType {
+    MISSION_ITEM_WAYPOINT = 0;
+    MISSION_ITEM_TAKEOFF = 1;
+    MISSION_ITEM_LAND = 2;
+    MISSION_ITEM_LOITER = 3;
+    MISSION_ITEM_DELAY = 4;
+    MISSION_ITEM_ACTION = 5;
+    MISSION_ITEM_PAYLOAD_ACTION = 6;
+}
+
 message MissionItem {
-    uint32 command = 1;
+    uint32 command = 1;  // Deprecated backend-native command id.
     double lat_deg = 2;
     double lon_deg = 3;
     double alt_m = 4;
@@ -230,6 +265,13 @@ message MissionItem {
     float param4 = 8;
     bool current = 9;
     bool autocontinue = 10;
+    MissionItemType type = 11;
+    float hold_s = 12;
+    float acceptance_radius_m = 13;
+    float yaw_deg = 14;
+    string action_namespace = 15;
+    string action_name = 16;
+    map<string, string> params = 17;
 }
 
 message CmdUploadMission {
@@ -330,6 +372,12 @@ message CmdGripper {
     bool release = 2;
 }
 
+message CmdBackendCommand {
+    string backend_namespace = 1;
+    string name = 2;
+    map<string, string> params = 3;
+}
+
 /**
  * Top-level discriminated union mirroring the C++ Command variant.
  * Grouped by category to keep the oneof extensible.
@@ -384,6 +432,9 @@ message Command {
         CmdServo servo = 58;
         CmdRelay relay = 59;
         CmdGripper gripper = 60;
+
+        // Backend-specific extension. Prefer typed core commands when possible.
+        CmdBackendCommand backend_command = 80;
     }
 }
 
@@ -628,4 +679,19 @@ message TelemetryFrame {
     float battery_percent = 6;
     string mode = 7;
     string stream_id = 8;
+    float abs_alt_m = 9;
+    float vx_mps = 10;
+    float vy_mps = 11;
+    float vz_mps = 12;
+    float roll_deg = 13;
+    float pitch_deg = 14;
+    float yaw_deg = 15;
+    bool armed = 16;
+    bool landed = 17;
+    bool failsafe = 18;
+    bool ekf_ok = 19;
+    int32 gps_fix_type = 20;
+    int32 satellites_visible = 21;
+    float gps_hdop = 22;
+    float link_quality_percent = 23;
 }

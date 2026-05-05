@@ -134,6 +134,16 @@ struct HealthStatus {
     std::int64_t unix_time_ms{};
     std::string message;
     std::string correlation_id;
+    std::string backend_name{"unknown"};
+    std::string protocol{"unknown"};
+    std::int64_t last_heartbeat_unix_ms{};
+    std::int64_t last_telemetry_unix_ms{};
+    bool armed{false};
+    bool landed{false};
+    bool failsafe{false};
+    bool gps_ok{false};
+    bool ekf_ok{true};
+    float link_quality_percent{};
     RpcError error;
 };
 
@@ -164,12 +174,27 @@ struct BackendCapabilities {
     std::string agent_id;
     std::int64_t unix_time_ms{};
     std::string correlation_id;
+    std::string backend_name{"unknown"};
+    std::string protocol{"unknown"};
+    std::string vehicle_class{"unknown"};
     bool supports_mission_upload{false};
     bool supports_payload_control{false};
     bool supports_velocity_control{false};
     bool supports_flight_termination{false};
+    bool supports_backend_commands{false};
+    bool supports_time_sync{false};
+    bool supports_trajectory_upload{false};
     std::string autopilot_type{"unknown"};
     std::vector<std::string> supported_modes;
+    std::vector<std::string> supported_commands;
+    std::vector<std::string> supported_mission_items;
+    std::vector<std::string> supported_payloads;
+    std::vector<std::string> supported_telemetry_fields;
+    std::vector<std::string> backend_command_names;
+    float max_horizontal_speed_mps{};
+    float max_climb_speed_mps{};
+    float max_descent_speed_mps{};
+    float max_altitude_m{};
     RpcError error;
 };
 

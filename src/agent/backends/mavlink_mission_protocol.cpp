@@ -8,11 +8,44 @@
 
 #include <algorithm>
 #include <cmath>
+#include <expected>
 #include <string>
 
 #include "swarmkit/core/logger.h"
 
 namespace swarmkit::agent::mavlink {
+namespace {
+
+[[nodiscard]] std::expected<std::uint16_t, core::Result> MissionCommandForItem(
+    const commands::MissionItem& item) {
+    if (item.backend_command != 0U) {
+        return item.backend_command;
+    }
+
+    switch (item.type) {
+        case commands::MissionItemType::kWaypoint:
+            return MAV_CMD_NAV_WAYPOINT;
+        case commands::MissionItemType::kTakeoff:
+            return MAV_CMD_NAV_TAKEOFF;
+        case commands::MissionItemType::kLand:
+            return MAV_CMD_NAV_LAND;
+        case commands::MissionItemType::kLoiter:
+            return MAV_CMD_NAV_LOITER_TIME;
+        case commands::MissionItemType::kDelay:
+            return MAV_CMD_NAV_DELAY;
+        case commands::MissionItemType::kAction:
+        case commands::MissionItemType::kPayloadAction:
+            return std::unexpected(core::Result::Rejected(
+                "mission action items require a backend-native command id for MAVLink"));
+    }
+    return std::unexpected(core::Result::Rejected("unknown mission item type"));
+}
+
+[[nodiscard]] float ParamOr(float value, float fallback) {
+    return value == 0.0F ? fallback : value;
+}
+
+}  // namespace
 
 void MavlinkMissionProtocol::RecordMissionRequest(const MissionRequest& request) {
     {
@@ -160,12 +193,21 @@ core::Result MavlinkMissionProtocol::SendMissionItem(const commands::MissionItem
                                                      std::uint16_t seq,
                                                      const MavlinkBackendConfig& config,
                                                      const Sender& send_message) {
+    const auto command = MissionCommandForItem(item);
+    if (!command.has_value()) {
+        return command.error();
+    }
+
+    const float param1 = ParamOr(item.param1, item.hold_s);
+    const float param2 = ParamOr(item.param2, item.acceptance_radius_m);
+    const float param4 = ParamOr(item.param4, item.yaw_deg);
+
     mavlink_message_t message{};
     mavlink_msg_mission_item_int_pack(
         config.source_system, config.source_component, &message, config.target_system,
-        config.target_component, seq, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, item.command,
-        item.current ? 1 : 0, item.autocontinue ? 1 : 0, item.param1, item.param2, item.param3,
-        item.param4, static_cast<std::int32_t>(std::llround(item.lat_deg * kDegE7)),
+        config.target_component, seq, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, *command,
+        item.current ? 1 : 0, item.autocontinue ? 1 : 0, param1, param2, item.param3,
+        param4, static_cast<std::int32_t>(std::llround(item.lat_deg * kDegE7)),
         static_cast<std::int32_t>(std::llround(item.lon_deg * kDegE7)),
         static_cast<float>(item.alt_m), MAV_MISSION_TYPE_MISSION);
     return send_message(message);

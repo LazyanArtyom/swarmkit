@@ -53,6 +53,36 @@ constexpr float kMavlinkPause = 0.0F;
 constexpr float kMavlinkResume = 1.0F;
 constexpr int kVelocityCommandPeriodMs = 200;
 
+[[nodiscard]] std::optional<float> FloatParam(
+    const std::unordered_map<std::string, std::string>& params, const std::string& name) {
+    const auto iter = params.find(name);
+    if (iter == params.end()) {
+        return std::nullopt;
+    }
+    try {
+        return std::stof(iter->second);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+[[nodiscard]] std::optional<std::uint16_t> CommandParam(
+    const std::unordered_map<std::string, std::string>& params) {
+    const auto iter = params.find("command");
+    if (iter == params.end()) {
+        return std::nullopt;
+    }
+    try {
+        const int command = std::stoi(iter->second);
+        if (command > 0 && command <= std::numeric_limits<std::uint16_t>::max()) {
+            return static_cast<std::uint16_t>(command);
+        }
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 class MavlinkBackend final : public IDroneBackend {
    public:
     explicit MavlinkBackend(MavlinkBackendConfig config) : config_(std::move(config)) {}
@@ -92,6 +122,7 @@ class MavlinkBackend final : public IDroneBackend {
                                "MAVLink backend does not support swarm commands");
                        },
                        [&](const PayloadCmd& payload) { result = ExecutePayloadCommand(payload); },
+                       [&](const BackendCmd& backend) { result = ExecuteBackendCommand(backend); },
                    },
                    envelope.command);
         return result;
@@ -288,7 +319,22 @@ class MavlinkBackend final : public IDroneBackend {
         frame.lat_deg = cache.lat_deg;
         frame.lon_deg = cache.lon_deg;
         frame.rel_alt_m = cache.rel_alt_m;
+        frame.abs_alt_m = cache.abs_alt_m;
+        frame.vx_mps = cache.vx_mps;
+        frame.vy_mps = cache.vy_mps;
+        frame.vz_mps = cache.vz_mps;
+        frame.roll_deg = cache.roll_deg;
+        frame.pitch_deg = cache.pitch_deg;
+        frame.yaw_deg = cache.yaw_deg;
         frame.battery_percent = cache.battery_percent;
+        frame.armed = cache.armed;
+        frame.landed = cache.landed;
+        frame.failsafe = cache.failsafe;
+        frame.ekf_ok = cache.ekf_ok;
+        frame.gps_fix_type = cache.gps_fix_type;
+        frame.satellites_visible = cache.satellites_visible;
+        frame.gps_hdop = cache.gps_hdop;
+        frame.link_quality_percent = cache.link_quality_percent;
         frame.mode = cache.mode;
         callback(frame);
     }
@@ -312,6 +358,8 @@ class MavlinkBackend final : public IDroneBackend {
         request_interval(MAVLINK_MSG_ID_GLOBAL_POSITION_INT);
         request_interval(MAVLINK_MSG_ID_SYS_STATUS);
         request_interval(MAVLINK_MSG_ID_BATTERY_STATUS);
+        request_interval(MAVLINK_MSG_ID_GPS_RAW_INT);
+        request_interval(MAVLINK_MSG_ID_ATTITUDE);
     }
 
     [[nodiscard]] core::Result ExecuteFlightCommand(const FlightCmd& flight,
@@ -686,6 +734,39 @@ class MavlinkBackend final : public IDroneBackend {
                 },
             },
             payload);
+        return result;
+    }
+
+    [[nodiscard]] core::Result ExecuteBackendCommand(const BackendCmd& backend) {
+        core::Result result = core::Result::Rejected("backend command not handled");
+        std::visit(
+            core::Overloaded{[&](const CmdBackendCommand& command) {
+                if (command.backend_namespace != "mavlink") {
+                    result = core::Result::Rejected("MAVLink backend command namespace must be "
+                                                    "'mavlink'");
+                    return;
+                }
+                if (command.name != "command-long") {
+                    result = core::Result::Rejected("unsupported MAVLink backend command '" +
+                                                    command.name + "'");
+                    return;
+                }
+                const auto mav_command = CommandParam(command.params);
+                if (!mav_command.has_value()) {
+                    result = core::Result::Rejected(
+                        "mavlink command-long requires numeric param 'command'");
+                    return;
+                }
+                result = SendCommandLong(
+                    *mav_command, FloatParam(command.params, "param1").value_or(0.0F),
+                    FloatParam(command.params, "param2").value_or(0.0F),
+                    FloatParam(command.params, "param3").value_or(0.0F),
+                    FloatParam(command.params, "param4").value_or(0.0F),
+                    FloatParam(command.params, "param5").value_or(0.0F),
+                    FloatParam(command.params, "param6").value_or(0.0F),
+                    FloatParam(command.params, "param7").value_or(0.0F));
+            }},
+            backend);
         return result;
     }
 

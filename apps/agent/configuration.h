@@ -9,6 +9,7 @@
 #include <expected>
 #include <string>
 
+#include "swarmkit/agent/backend_factory.h"
 #include "swarmkit/agent/mavlink_backend.h"
 #include "swarmkit/agent/server.h"
 #include "swarmkit/core/logger.h"
@@ -16,7 +17,7 @@
 namespace swarmkit::apps::agent::internal {
 
 struct BackendSelection {
-    std::string backend;
+    swarmkit::agent::BackendFactoryRequest request;
     swarmkit::agent::MavlinkBackendConfig mavlink;
 };
 

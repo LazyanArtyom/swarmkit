@@ -46,11 +46,16 @@ BackendHealth MavlinkStateCache::Health() const {
     const MavlinkVehicleState state = Snapshot();
 
     BackendHealth health;
+    health.backend_name = "mavlink";
+    health.protocol = "mavlink";
     health.last_heartbeat_unix_ms = state.last_heartbeat_unix_ms;
     health.last_telemetry_unix_ms = state.last_telemetry_unix_ms;
     health.armed = state.armed;
+    health.landed = !state.armed;
     health.custom_mode = state.custom_mode;
     health.failsafe = state.failsafe;
+    health.gps_ok = state.last_telemetry_unix_ms != 0;
+    health.ekf_ok = !state.failsafe;
 
     if (state.last_heartbeat_unix_ms == 0) {
         health.ready = false;

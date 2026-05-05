@@ -377,6 +377,9 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             return "RELAY";
         case swarmkit::v1::Command::kGripper:
             return "GRIPPER";
+        case swarmkit::v1::Command::kBackendCommand:
+            return "BACKEND_COMMAND(" + proto.backend_command().backend_namespace() + "." +
+                   proto.backend_command().name() + ")";
         default:
             return "UNKNOWN";
     }
@@ -395,6 +398,28 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             return ProtoKind::AuthorityEvent_Kind_EXPIRED;
     }
     return ProtoKind::AuthorityEvent_Kind_KIND_UNSPECIFIED;
+}
+
+[[nodiscard]] MissionItemType ToCoreMissionItemType(swarmkit::v1::MissionItemType type) {
+    switch (type) {
+        case swarmkit::v1::MISSION_ITEM_TAKEOFF:
+            return MissionItemType::kTakeoff;
+        case swarmkit::v1::MISSION_ITEM_LAND:
+            return MissionItemType::kLand;
+        case swarmkit::v1::MISSION_ITEM_LOITER:
+            return MissionItemType::kLoiter;
+        case swarmkit::v1::MISSION_ITEM_DELAY:
+            return MissionItemType::kDelay;
+        case swarmkit::v1::MISSION_ITEM_ACTION:
+            return MissionItemType::kAction;
+        case swarmkit::v1::MISSION_ITEM_PAYLOAD_ACTION:
+            return MissionItemType::kPayloadAction;
+        case swarmkit::v1::MissionItemType_INT_MIN_SENTINEL_DO_NOT_USE_:
+        case swarmkit::v1::MissionItemType_INT_MAX_SENTINEL_DO_NOT_USE_:
+        case swarmkit::v1::MISSION_ITEM_WAYPOINT:
+            return MissionItemType::kWaypoint;
+    }
+    return MissionItemType::kWaypoint;
 }
 
 [[nodiscard]] std::expected<Command, core::Result> ConvertProtoCommand(
@@ -474,10 +499,19 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
             upload.items.reserve(static_cast<std::size_t>(proto.upload_mission().items_size()));
             for (const auto& proto_item : proto.upload_mission().items()) {
                 MissionItem item;
-                item.command = static_cast<std::uint16_t>(proto_item.command());
+                item.type = ToCoreMissionItemType(proto_item.type());
+                item.backend_command = static_cast<std::uint16_t>(proto_item.command());
                 item.lat_deg = proto_item.lat_deg();
                 item.lon_deg = proto_item.lon_deg();
                 item.alt_m = proto_item.alt_m();
+                item.hold_s = proto_item.hold_s();
+                item.acceptance_radius_m = proto_item.acceptance_radius_m();
+                item.yaw_deg = proto_item.yaw_deg();
+                item.action_namespace = proto_item.action_namespace();
+                item.action_name = proto_item.action_name();
+                for (const auto& [key, value] : proto_item.params()) {
+                    item.params.emplace(key, value);
+                }
                 item.param1 = proto_item.param1();
                 item.param2 = proto_item.param2();
                 item.param3 = proto_item.param3();
@@ -568,6 +602,15 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
                 .gripper = proto.gripper().gripper(),
                 .release = proto.gripper().release(),
             }};
+        case swarmkit::v1::Command::kBackendCommand: {
+            CmdBackendCommand command;
+            command.backend_namespace = proto.backend_command().backend_namespace();
+            command.name = proto.backend_command().name();
+            for (const auto& [key, value] : proto.backend_command().params()) {
+                command.params.emplace(key, value);
+            }
+            return BackendCmd{std::move(command)};
+        }
 
         default:
             return std::unexpected(core::Result::Rejected("unknown command kind"));
@@ -649,6 +692,16 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_message(kIsReady ? backend_health.message
                                     : "not ready: " + backend_health.message);
         reply->set_correlation_id(kCorrelationId);
+        reply->set_backend_name(backend_health.backend_name);
+        reply->set_protocol(backend_health.protocol);
+        reply->set_last_heartbeat_unix_ms(backend_health.last_heartbeat_unix_ms);
+        reply->set_last_telemetry_unix_ms(backend_health.last_telemetry_unix_ms);
+        reply->set_armed(backend_health.armed);
+        reply->set_landed(backend_health.landed);
+        reply->set_failsafe(backend_health.failsafe);
+        reply->set_gps_ok(backend_health.gps_ok);
+        reply->set_ekf_ok(backend_health.ekf_ok);
+        reply->set_link_quality_percent(backend_health.link_quality_percent);
         return grpc::Status::OK;
     }
 
@@ -709,14 +762,39 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_agent_id(config_.agent_id);
         reply->set_unix_time_ms(NowUnixMs());
         reply->set_correlation_id(kCorrelationId);
+        reply->set_backend_name(capabilities.backend_name);
+        reply->set_protocol(capabilities.protocol);
+        reply->set_vehicle_class(capabilities.vehicle_class);
         reply->set_supports_mission_upload(capabilities.supports_mission_upload);
         reply->set_supports_payload_control(capabilities.supports_payload_control);
         reply->set_supports_velocity_control(capabilities.supports_velocity_control);
         reply->set_supports_flight_termination(capabilities.supports_flight_termination);
+        reply->set_supports_backend_commands(capabilities.supports_backend_commands);
+        reply->set_supports_time_sync(capabilities.supports_time_sync);
+        reply->set_supports_trajectory_upload(capabilities.supports_trajectory_upload);
         reply->set_autopilot_type(capabilities.autopilot_type);
         for (const std::string& mode : capabilities.supported_modes) {
             reply->add_supported_modes(mode);
         }
+        for (const std::string& command : capabilities.supported_commands) {
+            reply->add_supported_commands(command);
+        }
+        for (const std::string& item : capabilities.supported_mission_items) {
+            reply->add_supported_mission_items(item);
+        }
+        for (const std::string& payload : capabilities.supported_payloads) {
+            reply->add_supported_payloads(payload);
+        }
+        for (const std::string& field : capabilities.supported_telemetry_fields) {
+            reply->add_supported_telemetry_fields(field);
+        }
+        for (const std::string& command : capabilities.backend_command_names) {
+            reply->add_backend_command_names(command);
+        }
+        reply->set_max_horizontal_speed_mps(capabilities.limits.max_horizontal_speed_mps);
+        reply->set_max_climb_speed_mps(capabilities.limits.max_climb_speed_mps);
+        reply->set_max_descent_speed_mps(capabilities.limits.max_descent_speed_mps);
+        reply->set_max_altitude_m(capabilities.limits.max_altitude_m);
         return grpc::Status::OK;
     }
 
@@ -1137,9 +1215,24 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             out.set_lat_deg(frame.lat_deg);
             out.set_lon_deg(frame.lon_deg);
             out.set_rel_alt_m(frame.rel_alt_m);
+            out.set_abs_alt_m(frame.abs_alt_m);
+            out.set_vx_mps(frame.vx_mps);
+            out.set_vy_mps(frame.vy_mps);
+            out.set_vz_mps(frame.vz_mps);
+            out.set_roll_deg(frame.roll_deg);
+            out.set_pitch_deg(frame.pitch_deg);
+            out.set_yaw_deg(frame.yaw_deg);
             out.set_battery_percent(frame.battery_percent);
             out.set_mode(frame.mode);
             out.set_stream_id(kStreamId);
+            out.set_armed(frame.armed);
+            out.set_landed(frame.landed);
+            out.set_failsafe(frame.failsafe);
+            out.set_ekf_ok(frame.ekf_ok);
+            out.set_gps_fix_type(frame.gps_fix_type);
+            out.set_satellites_visible(frame.satellites_visible);
+            out.set_gps_hdop(frame.gps_hdop);
+            out.set_link_quality_percent(frame.link_quality_percent);
 
             if (!writer->Write(out)) {
                 break;
