@@ -12,6 +12,7 @@ add_executable(swarmkit_tests
     test_logger.cpp
     test_sim_backend.cpp
     test_swarm_client.cpp
+    test_trajectory_io.cpp
 )
 
 target_link_libraries(swarmkit_tests PRIVATE
