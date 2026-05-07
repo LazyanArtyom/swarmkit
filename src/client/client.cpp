@@ -58,6 +58,7 @@ constexpr std::string_view kClientEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
 constexpr std::string_view kClientEnvClientCertChainPath = "CLIENT_CERT_CHAIN_PATH";
 constexpr std::string_view kClientEnvClientPrivateKeyPath = "CLIENT_PRIVATE_KEY_PATH";
 constexpr std::string_view kClientEnvServerAuthorityOverride = "SERVER_AUTHORITY_OVERRIDE";
+constexpr std::string_view kClientEnvTransportSecurity = "TRANSPORT_SECURITY";
 constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
 
 [[nodiscard]] RpcStatusCode ToRpcStatusCode(const grpc::Status& status) {
@@ -85,19 +86,27 @@ constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
 
 [[nodiscard]] std::shared_ptr<grpc::ChannelCredentials> MakeChannelCredentials(
     const ClientSecurityConfig& security) {
+    const core::TransportSecurityMode mode = security.EffectiveTransportSecurity();
+    if (mode == core::TransportSecurityMode::kInsecure) {
+        return grpc::InsecureChannelCredentials();
+    }
+
     grpc::SslCredentialsOptions options;
     static_cast<void>(
         core::internal::ReadTextFile(security.root_ca_cert_path, &options.pem_root_certs));
-    static_cast<void>(
-        core::internal::ReadTextFile(security.private_key_path, &options.pem_private_key));
-    static_cast<void>(
-        core::internal::ReadTextFile(security.cert_chain_path, &options.pem_cert_chain));
+    if (mode == core::TransportSecurityMode::kMutualTls) {
+        static_cast<void>(
+            core::internal::ReadTextFile(security.private_key_path, &options.pem_private_key));
+        static_cast<void>(
+            core::internal::ReadTextFile(security.cert_chain_path, &options.pem_cert_chain));
+    }
     return grpc::SslCredentials(options);
 }
 
 [[nodiscard]] std::shared_ptr<grpc::Channel> MakeChannel(const ClientConfig& config) {
     const auto kCredentials = MakeChannelCredentials(config.security);
-    if (config.security.server_authority_override.empty()) {
+    if (config.security.server_authority_override.empty() ||
+        config.security.EffectiveTransportSecurity() == core::TransportSecurityMode::kInsecure) {
         return grpc::CreateChannel(config.address, kCredentials);
     }
 
@@ -1279,17 +1288,37 @@ void RunReportLoop(ClientRuntime runtime, StreamState& report_stream,
     report_stream.active.store(false, std::memory_order_relaxed);
 }
 
+core::TransportSecurityMode ClientSecurityConfig::EffectiveTransportSecurity() const {
+    if (transport_security != core::TransportSecurityMode::kAuto) {
+        return transport_security;
+    }
+    if (root_ca_cert_path.empty() && cert_chain_path.empty() && private_key_path.empty()) {
+        return core::TransportSecurityMode::kInsecure;
+    }
+    if (!root_ca_cert_path.empty() && cert_chain_path.empty() && private_key_path.empty()) {
+        return core::TransportSecurityMode::kTls;
+    }
+    return core::TransportSecurityMode::kMutualTls;
+}
+
 core::Result ClientSecurityConfig::Validate() const {
+    const core::TransportSecurityMode mode = EffectiveTransportSecurity();
+    if (mode == core::TransportSecurityMode::kInsecure) {
+        return core::Result::Success();
+    }
     if (!core::internal::FileExists(root_ca_cert_path)) {
-        return core::Result::Rejected("security.root_ca_cert_path must point to an existing file");
-    }
-    if (!core::internal::FileExists(cert_chain_path)) {
         return core::Result::Rejected(
-            "security.cert_chain_path must point to an existing file for mTLS");
+            "security.root_ca_cert_path must point to an existing file for TLS/mTLS");
     }
-    if (!core::internal::FileExists(private_key_path)) {
-        return core::Result::Rejected(
-            "security.private_key_path must point to an existing file for mTLS");
+    if (mode == core::TransportSecurityMode::kMutualTls) {
+        if (!core::internal::FileExists(cert_chain_path)) {
+            return core::Result::Rejected(
+                "security.cert_chain_path must point to an existing file for mTLS");
+        }
+        if (!core::internal::FileExists(private_key_path)) {
+            return core::Result::Rejected(
+                "security.private_key_path must point to an existing file for mTLS");
+        }
     }
     return core::Result::Success();
 }
@@ -1402,6 +1431,14 @@ void ClientConfig::ApplyEnvironment(std::string_view prefix) {
             GetEnvValue(std::string(prefix) + std::string(kClientEnvServerAuthorityOverride));
         kValue.has_value()) {
         security.server_authority_override = *kValue;
+    }
+    if (const auto kValue =
+            GetEnvValue(std::string(prefix) + std::string(kClientEnvTransportSecurity));
+        kValue.has_value()) {
+        const auto parsed = core::ParseTransportSecurityMode(*kValue);
+        if (parsed.has_value()) {
+            security.transport_security = *parsed;
+        }
     }
 }
 

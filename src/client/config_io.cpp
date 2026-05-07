@@ -140,6 +140,20 @@ template <typename T>
         return core::Result::Success();
     }
 
+    std::string tmp_transport_security;
+    if (const core::Result kResult = AssignOptionalScalar<std::string>(
+            security_node, "transport_security", &tmp_transport_security);
+        !kResult.IsOk()) {
+        return kResult;
+    }
+    if (!tmp_transport_security.empty()) {
+        const auto parsed = core::ParseTransportSecurityMode(tmp_transport_security);
+        if (!parsed.has_value()) {
+            return core::Result::Rejected(parsed.error());
+        }
+        security->transport_security = *parsed;
+    }
+
     if (const core::Result kResult = AssignOptionalScalar<std::string>(
             security_node, "root_ca_cert_path", &security->root_ca_cert_path);
         !kResult.IsOk()) {

@@ -58,6 +58,7 @@ constexpr std::string_view kAgentEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
 constexpr std::string_view kAgentEnvCertChainPath = "CERT_CHAIN_PATH";
 constexpr std::string_view kAgentEnvPrivateKeyPath = "PRIVATE_KEY_PATH";
 constexpr std::string_view kAgentEnvAllowedClientIds = "ALLOWED_CLIENT_IDS";
+constexpr std::string_view kAgentEnvTransportSecurity = "TRANSPORT_SECURITY";
 
 /// @brief Watcher poll interval while blocking inside WatchAuthority RPC.
 constexpr auto kWatchPollInterval = std::chrono::milliseconds{100};
@@ -185,6 +186,10 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
 [[nodiscard]] core::Result AuthorizePeer(grpc::ServerContext* ctx,
                                          const AgentSecurityConfig& security,
                                          std::string* requested_client_id) {
+    if (security.EffectiveTransportSecurity() != core::TransportSecurityMode::kMutualTls) {
+        return core::Result::Success();
+    }
+
     const auto kPeerIdentity = ResolvePeerIdentity(ctx);
     if (!kPeerIdentity.has_value()) {
         return core::Result::Rejected("authenticated peer identity is required");
@@ -216,6 +221,11 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         *out_error = core::Result::Success();
     }
 
+    const core::TransportSecurityMode mode = security.EffectiveTransportSecurity();
+    if (mode == core::TransportSecurityMode::kInsecure) {
+        return grpc::InsecureServerCredentials();
+    }
+
     std::string cert_chain;
     if (const core::Result kResult =
             core::internal::ReadTextFile(security.cert_chain_path, &cert_chain);
@@ -242,15 +252,20 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         .cert_chain = cert_chain,
     });
 
-    if (const core::Result kResult =
-            core::internal::ReadTextFile(security.root_ca_cert_path, &options.pem_root_certs);
-        !kResult.IsOk()) {
-        if (out_error != nullptr) {
-            *out_error = kResult;
+    if (mode == core::TransportSecurityMode::kMutualTls) {
+        if (const core::Result kResult =
+                core::internal::ReadTextFile(security.root_ca_cert_path, &options.pem_root_certs);
+            !kResult.IsOk()) {
+            if (out_error != nullptr) {
+                *out_error = kResult;
+            }
+            return {};
         }
-        return {};
+        options.client_certificate_request =
+            GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+    } else {
+        options.client_certificate_request = GRPC_SSL_DONT_REQUEST_CLIENT_CERTIFICATE;
     }
-    options.client_certificate_request = GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
 
     return grpc::SslServerCredentials(options);
 }
@@ -1726,18 +1741,44 @@ core::Result VehicleProfile::Validate() const {
     return core::Result::Success();
 }
 
+core::TransportSecurityMode AgentSecurityConfig::EffectiveTransportSecurity() const {
+    if (transport_security != core::TransportSecurityMode::kAuto) {
+        return transport_security;
+    }
+    if (root_ca_cert_path.empty() && cert_chain_path.empty() && private_key_path.empty()) {
+        return core::TransportSecurityMode::kInsecure;
+    }
+    if (!cert_chain_path.empty() && !private_key_path.empty() && root_ca_cert_path.empty()) {
+        return core::TransportSecurityMode::kTls;
+    }
+    return core::TransportSecurityMode::kMutualTls;
+}
+
 core::Result AgentSecurityConfig::Validate() const {
+    const core::TransportSecurityMode mode = EffectiveTransportSecurity();
+    if (mode == core::TransportSecurityMode::kInsecure) {
+        if (!allowed_client_ids.empty()) {
+            return core::Result::Rejected(
+                "security.allowed_client_ids requires mTLS transport security");
+        }
+        return core::Result::Success();
+    }
     if (!core::internal::FileExists(cert_chain_path)) {
         return core::Result::Rejected(
-            "security.cert_chain_path must point to an existing file for mTLS");
+            "security.cert_chain_path must point to an existing file for TLS/mTLS");
     }
     if (!core::internal::FileExists(private_key_path)) {
         return core::Result::Rejected(
-            "security.private_key_path must point to an existing file for mTLS");
+            "security.private_key_path must point to an existing file for TLS/mTLS");
     }
-    if (!core::internal::FileExists(root_ca_cert_path)) {
+    if (mode == core::TransportSecurityMode::kMutualTls &&
+        !core::internal::FileExists(root_ca_cert_path)) {
         return core::Result::Rejected(
             "security.root_ca_cert_path must point to an existing file for mTLS");
+    }
+    if (mode != core::TransportSecurityMode::kMutualTls && !allowed_client_ids.empty()) {
+        return core::Result::Rejected(
+            "security.allowed_client_ids requires mTLS transport security");
     }
     return core::Result::Success();
 }
@@ -1780,6 +1821,14 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyStringEnv(prefix, kAgentEnvRootCaCertPath, &security.root_ca_cert_path);
     ApplyStringEnv(prefix, kAgentEnvCertChainPath, &security.cert_chain_path);
     ApplyStringEnv(prefix, kAgentEnvPrivateKeyPath, &security.private_key_path);
+    if (const auto kValue =
+            GetEnvValue(std::string(prefix) + std::string(kAgentEnvTransportSecurity));
+        kValue.has_value()) {
+        const auto parsed = core::ParseTransportSecurityMode(*kValue);
+        if (parsed.has_value()) {
+            security.transport_security = *parsed;
+        }
+    }
     if (const auto kValue =
             GetEnvValue(std::string(prefix) + std::string(kAgentEnvAllowedClientIds));
         kValue.has_value()) {
@@ -1944,6 +1993,20 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
     if (const YAML::Node security = root["security"]; security) {
         if (!security.IsMap()) {
             return std::unexpected(core::Result::Rejected("agent.security must be a map"));
+        }
+
+        const auto transport_security =
+            core::yaml::ReadOptionalScalar<std::string>(security, "transport_security");
+        if (!transport_security.has_value()) {
+            return std::unexpected(transport_security.error());
+        }
+        if (transport_security->has_value()) {
+            const auto parsed =
+                core::ParseTransportSecurityMode(transport_security->value_or(std::string{}));
+            if (!parsed.has_value()) {
+                return std::unexpected(core::Result::Rejected(parsed.error()));
+            }
+            config.security.transport_security = *parsed;
         }
 
         const auto root_ca_cert_path =

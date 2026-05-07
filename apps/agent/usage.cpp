@@ -27,6 +27,8 @@ void PrintUsage() {
                  "  --ca-cert   PATH          mTLS CA certificate path\n"
                  "  --server-cert PATH        mTLS server certificate path\n"
                  "  --server-key PATH         mTLS server private key path\n"
+                 "  --transport-security MODE auto|insecure|tls|mtls (default: auto)\n"
+                 "  --insecure                Shortcut for --transport-security insecure\n"
                  "  --log-sink  stdout|file|both\n"
                  "                             Logger sink type (default: stdout)\n"
                  "  --log-file  PATH          Rotating log file path when file logging is used\n"

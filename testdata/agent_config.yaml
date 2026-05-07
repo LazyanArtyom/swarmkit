@@ -12,6 +12,7 @@ agent:
     goal_margin_ms: 15000
     max_goal_timeout_ms: 300000
   security:
+    transport_security: "mtls"
     root_ca_cert_path: "certs/ca.pem"
     cert_chain_path: "certs/agent.pem"
     private_key_path: "certs/agent.key"

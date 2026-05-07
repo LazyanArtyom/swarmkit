@@ -63,8 +63,17 @@ cmake --build --preset linux-release
 
 ## Run
 
-SwarmKit now uses mTLS for client/agent communication. The repo includes development-only
-certificates under `testdata/certs/` for local testing.
+SwarmKit supports `auto`, `insecure`, `tls`, and `mtls` transport modes for
+client/agent communication. Empty security config resolves to `insecure`, while
+the repo test configs explicitly use development-only mTLS certificates under
+`testdata/certs/`.
+
+For local SITL experiments you can skip certificates:
+
+```bash
+./build/mac-debug/apps/swarmkit-agent --insecure --id agent-1 --bind 0.0.0.0:50061
+./build/mac-debug/apps/swarmkit-cli --insecure 127.0.0.1:50061 ping
+```
 
 **Terminal 1 — start the agent:**
 

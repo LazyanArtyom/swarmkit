@@ -79,12 +79,23 @@ TEST_CASE("ClientConfig validates mTLS security settings", "[client][config][sec
     const fs::path kClientKey = WriteTempFile("swarmkit_test_client_key.pem", "client-key");
 
     swarmkit::client::ClientConfig config;
+    CHECK(config.Validate().IsOk());
+    CHECK(config.security.EffectiveTransportSecurity() ==
+          swarmkit::core::TransportSecurityMode::kInsecure);
+
     config.security.root_ca_cert_path = kRootCa.string();
+    CHECK(config.Validate().IsOk());
+    CHECK(config.security.EffectiveTransportSecurity() ==
+          swarmkit::core::TransportSecurityMode::kTls);
+
+    config.security.transport_security = swarmkit::core::TransportSecurityMode::kMutualTls;
     CHECK_FALSE(config.Validate().IsOk());
 
     config.security.cert_chain_path = kClientCert.string();
     config.security.private_key_path = kClientKey.string();
     CHECK(config.Validate().IsOk());
+    CHECK(config.security.EffectiveTransportSecurity() ==
+          swarmkit::core::TransportSecurityMode::kMutualTls);
 
     fs::remove(kRootCa);
     fs::remove(kClientCert);
@@ -106,6 +117,7 @@ TEST_CASE("LoadClientConfigFromFile parses YAML config", "[client][config]") {
     output << "  stream_reconnect:\n";
     output << "    enabled: false\n";
     output << "  security:\n";
+    output << "    transport_security: mtls\n";
     output << "    root_ca_cert_path: " << (kCertsPath / "ca.pem").string() << "\n";
     output << "    cert_chain_path: " << (kCertsPath / "swarmkit-cli.pem").string() << "\n";
     output << "    private_key_path: " << (kCertsPath / "swarmkit-cli.key").string() << "\n";
@@ -119,6 +131,8 @@ TEST_CASE("LoadClientConfigFromFile parses YAML config", "[client][config]") {
     CHECK(kLoaded->priority == swarmkit::commands::CommandPriority::kOverride);
     CHECK(kLoaded->retry_policy.max_attempts == 4);
     CHECK_FALSE(kLoaded->stream_reconnect_policy.enabled);
+    CHECK(kLoaded->security.transport_security ==
+          swarmkit::core::TransportSecurityMode::kMutualTls);
 
     fs::remove(kConfigPath);
 }
@@ -133,6 +147,7 @@ TEST_CASE("LoadClientConfigFromFile rejects invalid priority strings", "[client]
     output << "  client_id: test-client\n";
     output << "  priority: invalid-priority\n";
     output << "  security:\n";
+    output << "    transport_security: mtls\n";
     output << "    root_ca_cert_path: " << (kCertsPath / "ca.pem").string() << "\n";
     output << "    cert_chain_path: " << (kCertsPath / "swarmkit-cli.pem").string() << "\n";
     output << "    private_key_path: " << (kCertsPath / "swarmkit-cli.key").string() << "\n";
@@ -146,8 +161,14 @@ TEST_CASE("LoadClientConfigFromFile rejects invalid priority strings", "[client]
 
 TEST_CASE("AgentConfig validates rates and bind address", "[agent][config]") {
     swarmkit::agent::AgentConfig config;
+    CHECK(config.Validate().IsOk());
+    CHECK(config.security.EffectiveTransportSecurity() ==
+          swarmkit::core::TransportSecurityMode::kInsecure);
+
     ApplyDevAgentSecurity(&config);
     CHECK(config.Validate().IsOk());
+    CHECK(config.security.EffectiveTransportSecurity() ==
+          swarmkit::core::TransportSecurityMode::kMutualTls);
 
     config.bind_addr = "";
     CHECK_FALSE(config.Validate().IsOk());
@@ -177,6 +198,7 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "    goal_margin_ms: 25000\n";
     output << "    max_goal_timeout_ms: 420000\n";
     output << "  security:\n";
+    output << "    transport_security: mtls\n";
     output << "    root_ca_cert_path: " << (kCertsPath / "ca.pem").string() << "\n";
     output << "    cert_chain_path: " << (kCertsPath / "agent.pem").string() << "\n";
     output << "    private_key_path: " << (kCertsPath / "agent.key").string() << "\n";
@@ -195,6 +217,8 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->vehicle_profile.descent_speed_mps == 1.2F);
     CHECK(kLoaded->vehicle_profile.goal_margin_ms == 25000);
     CHECK(kLoaded->vehicle_profile.max_goal_timeout_ms == 420000);
+    CHECK(kLoaded->security.transport_security ==
+          swarmkit::core::TransportSecurityMode::kMutualTls);
 
     fs::remove(kConfigPath);
 }
@@ -247,6 +271,17 @@ TEST_CASE("LoadAgentConfigFromFile parses agent security config", "[agent][confi
     fs::remove(kServerCert);
     fs::remove(kServerKey);
     fs::remove(kConfigPath);
+}
+
+TEST_CASE("AgentConfig rejects identity ACL without mTLS", "[agent][config][security]") {
+    swarmkit::agent::AgentConfig config;
+    config.security.transport_security = swarmkit::core::TransportSecurityMode::kInsecure;
+    config.security.allowed_client_ids = {"gcs-1"};
+
+    const auto result = config.Validate();
+
+    CHECK_FALSE(result.IsOk());
+    CHECK(result.message.find("allowed_client_ids") != std::string::npos);
 }
 
 TEST_CASE("LoadClientConfigFromFile resolves relative mTLS cert paths",

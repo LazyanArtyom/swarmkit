@@ -19,6 +19,7 @@
 #include "swarmkit/agent/arbiter.h"
 #include "swarmkit/commands.h"
 #include "swarmkit/core/result.h"
+#include "swarmkit/core/security.h"
 #include "swarmkit/core/telemetry.h"
 
 namespace swarmkit::client {
@@ -67,11 +68,13 @@ struct StreamReconnectPolicy {
 };
 
 struct ClientSecurityConfig {
+    core::TransportSecurityMode transport_security{core::TransportSecurityMode::kAuto};
     std::string root_ca_cert_path;
     std::string cert_chain_path;
     std::string private_key_path;
     std::string server_authority_override;
 
+    [[nodiscard]] core::TransportSecurityMode EffectiveTransportSecurity() const;
     [[nodiscard]] core::Result Validate() const;
 };
 

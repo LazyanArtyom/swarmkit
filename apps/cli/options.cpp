@@ -42,7 +42,8 @@ namespace swarmkit::apps::cli::internal {
            value == "--timeout-ms" || value == "--role" || value == "--format" ||
            value == "--report-file" || value == "--after-sequence" ||
            value == "--execution-id" || value == "--unix-time-ms" ||
-           value == "--namespace" || value == "--name" || value == "--param";
+           value == "--namespace" || value == "--name" || value == "--param" ||
+           value == "--transport-security";
 }
 
 [[nodiscard]] std::expected<float, std::string> ParseFloatArg(std::string_view value,
@@ -201,6 +202,19 @@ namespace swarmkit::apps::cli::internal {
     if (const std::string kServerName = common::GetOptionValue(argc, argv, "--server-name");
         !kServerName.empty()) {
         client_cfg.security.server_authority_override = kServerName;
+    }
+    if (common::HasFlag(argc, argv, "--insecure")) {
+        client_cfg.security.transport_security = core::TransportSecurityMode::kInsecure;
+    }
+    if (const std::string transport_security =
+            common::GetOptionValue(argc, argv, "--transport-security");
+        !transport_security.empty()) {
+        const auto parsed = core::ParseTransportSecurityMode(transport_security);
+        if (!parsed.has_value()) {
+            std::cerr << parsed.error() << "\n";
+            return std::unexpected(EXIT_FAILURE);
+        }
+        client_cfg.security.transport_security = *parsed;
     }
     if (invocation.has_explicit_address) {
         client_cfg.address = invocation.address;

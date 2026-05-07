@@ -21,8 +21,10 @@ namespace swarmkit::agent::internal {
 namespace {
 
 constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
+constexpr auto kFinalTargetReportInterval = std::chrono::seconds{1};
 constexpr std::int64_t kLateThresholdMs = 250;
 constexpr float kDefaultTrackingToleranceM = 2.0F;
+constexpr float kMinimumTrajectorySpeedMps = 0.1F;
 
 [[nodiscard]] std::int64_t NowUnixMs() {
     using std::chrono::duration_cast;
@@ -63,6 +65,12 @@ constexpr float kDefaultTrackingToleranceM = 2.0F;
 
 [[nodiscard]] bool HasPosition(const swarmkit::v1::TrajectoryPoint& point) {
     return point.has_position() || point.has_local_position();
+}
+
+[[nodiscard]] bool HasValidationError(const swarmkit::v1::ValidateTrajectoryResult& result) {
+    return std::ranges::any_of(result.issues(), [](const auto& issue) {
+        return issue.severity() == swarmkit::v1::VALIDATION_ERROR;
+    });
 }
 
 void AddIssue(swarmkit::v1::ValidateTrajectoryResult* result,
@@ -111,6 +119,18 @@ void AddIssue(swarmkit::v1::ValidateTrajectoryResult* result,
         return point.unix_time_ms();
     }
     return start_unix_ms + point.time_offset_ms();
+}
+
+[[nodiscard]] double DistanceToPointMeters(const core::TelemetryFrame& frame,
+                                           const swarmkit::v1::TrajectoryPoint& point) {
+    if (!point.has_position()) {
+        return 0.0;
+    }
+    const double horizontal_m =
+        DistanceMeters(frame.lat_deg, frame.lon_deg, point.position().lat_deg(),
+                       point.position().lon_deg());
+    const double vertical_m = static_cast<double>(frame.rel_alt_m) - point.position().alt_m();
+    return std::sqrt((horizontal_m * horizontal_m) + (vertical_m * vertical_m));
 }
 
 }  // namespace
@@ -269,7 +289,7 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
         }
     }
 
-    result.set_ok(result.first_failing_point_index() < 0);
+    result.set_ok(!HasValidationError(result));
     return result;
 }
 
@@ -686,6 +706,21 @@ core::Result TrajectoryExecutionManager::SendPayloadAction(
     return backend_->Execute(envelope);
 }
 
+std::int64_t TrajectoryExecutionManager::ComputeTrajectoryReachTimeoutMs(
+    double distance_m) const {
+    if (config_ == nullptr) {
+        return agent::kDefaultGoalMarginMs;
+    }
+    const float speed_mps =
+        std::max(config_->vehicle_profile.cruise_speed_mps, kMinimumTrajectorySpeedMps);
+    const auto travel_ms = static_cast<std::int64_t>((distance_m / speed_mps) * 1000.0);
+    const std::int64_t timeout_ms =
+        travel_ms + static_cast<std::int64_t>(config_->vehicle_profile.goal_margin_ms);
+    return std::clamp(timeout_ms,
+                      static_cast<std::int64_t>(config_->vehicle_profile.goal_margin_ms),
+                      static_cast<std::int64_t>(config_->vehicle_profile.max_goal_timeout_ms));
+}
+
 void TrajectoryExecutionManager::RunExecution(const std::string& key,
                                               const std::string& correlation_id) {
     TelemetryLease lease;
@@ -818,6 +853,74 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
                 }
             }
         }
+        if (completed && telemetry_active && plan.points_size() > 0 &&
+            plan.points(plan.points_size() - 1).has_position()) {
+            const auto& final_point = plan.points(plan.points_size() - 1);
+            const float tolerance =
+                plan.validation().tracking_tolerance_m() > 0.0F
+                    ? plan.validation().tracking_tolerance_m()
+                    : kDefaultTrackingToleranceM;
+            bool reached = false;
+            bool deadline_initialized = false;
+            std::int64_t deadline_ms =
+                NowUnixMs() + static_cast<std::int64_t>(agent::kDefaultMaxGoalTimeoutMs);
+            std::int64_t next_report_ms = 0;
+            double last_distance_m = 0.0;
+
+            while (!stop->load(std::memory_order_relaxed)) {
+                core::TelemetryFrame frame;
+                if (!TelemetryManager::WaitForFrame(lease, &last_sequence, &frame,
+                                                    kTelemetryWaitTimeout)) {
+                    if (NowUnixMs() > deadline_ms) {
+                        break;
+                    }
+                    continue;
+                }
+
+                last_distance_m = DistanceToPointMeters(frame, final_point);
+                if (!deadline_initialized) {
+                    deadline_ms = NowUnixMs() + ComputeTrajectoryReachTimeoutMs(last_distance_m);
+                    deadline_initialized = true;
+                }
+                if (last_distance_m <= tolerance) {
+                    reached = true;
+                    PublishReport(plan, handle, swarmkit::v1::TRAJECTORY_TRACKING,
+                                  swarmkit::v1::REPORT_INFO, handle.active_segment(),
+                                  last_distance_m, last_distance_m, 0,
+                                  "trajectory final target reached", correlation_id);
+                    break;
+                }
+
+                const std::int64_t now_ms = NowUnixMs();
+                if (now_ms >= next_report_ms) {
+                    PublishReport(plan, handle, swarmkit::v1::TRAJECTORY_DRIFTING,
+                                  swarmkit::v1::REPORT_WARNING, handle.active_segment(),
+                                  last_distance_m, last_distance_m, 0,
+                                  "trajectory waiting for final target", correlation_id);
+                    next_report_ms = now_ms + kFinalTargetReportInterval.count();
+                }
+                if (now_ms > deadline_ms) {
+                    break;
+                }
+            }
+
+            if (!reached) {
+                completed = false;
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (auto iter = executions_.find(key); iter != executions_.end()) {
+                    iter->second.handle.set_state(swarmkit::v1::EXECUTION_FAILED);
+                    iter->second.handle.set_message("trajectory final target not reached");
+                    PublishReport(iter->second.plan, iter->second.handle,
+                                  swarmkit::v1::TRAJECTORY_FAILED,
+                                  swarmkit::v1::REPORT_ERROR,
+                                  iter->second.handle.active_segment(), last_distance_m,
+                                  last_distance_m, 0,
+                                  "trajectory final target not reached before timeout",
+                                  correlation_id);
+                }
+            }
+        }
+
         if (completed) {
             std::lock_guard<std::mutex> lock(mutex_);
             if (auto iter = executions_.find(key); iter != executions_.end()) {

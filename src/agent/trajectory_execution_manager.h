@@ -100,6 +100,7 @@ class TrajectoryExecutionManager {
                        std::int64_t schedule_error_ms, std::string_view message,
                        std::string_view correlation_id);
     void RunExecution(const std::string& key, const std::string& correlation_id);
+    [[nodiscard]] std::int64_t ComputeTrajectoryReachTimeoutMs(double distance_m) const;
     [[nodiscard]] core::Result SendTrajectoryPoint(
         const swarmkit::v1::TrajectoryPlan& plan, const swarmkit::v1::TrajectoryPoint& point,
         std::string_view correlation_id) const;

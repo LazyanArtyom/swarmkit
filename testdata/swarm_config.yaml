@@ -12,6 +12,7 @@ client:
     max_backoff_ms: 5000
     max_attempts: 0
   security:
+    transport_security: "mtls"
     root_ca_cert_path: "certs/ca.pem"
     cert_chain_path: "certs/test-server.pem"
     private_key_path: "certs/test-server.key"

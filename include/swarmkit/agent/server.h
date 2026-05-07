@@ -13,6 +13,7 @@
 
 #include "swarmkit/agent/backend.h"
 #include "swarmkit/core/result.h"
+#include "swarmkit/core/security.h"
 namespace swarmkit::agent {
 
 inline constexpr int kDefaultAuthorityTtlMs = 5000;
@@ -42,11 +43,13 @@ struct VehicleProfile {
 };
 
 struct AgentSecurityConfig {
+    core::TransportSecurityMode transport_security{core::TransportSecurityMode::kAuto};
     std::string root_ca_cert_path;
     std::string cert_chain_path;
     std::string private_key_path;
     std::vector<std::string> allowed_client_ids;
 
+    [[nodiscard]] core::TransportSecurityMode EffectiveTransportSecurity() const;
     [[nodiscard]] core::Result Validate() const;
 };
 

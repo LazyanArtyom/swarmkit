@@ -250,6 +250,19 @@ void ReadBackendOptionsYaml(const YAML::Node& node,
         !kServerKey.empty()) {
         agent_cfg.security.private_key_path = kServerKey;
     }
+    if (common::HasFlag(argc, argv, "--insecure")) {
+        agent_cfg.security.transport_security = core::TransportSecurityMode::kInsecure;
+    }
+    if (const std::string transport_security =
+            common::GetOptionValue(argc, argv, "--transport-security");
+        !transport_security.empty()) {
+        const auto parsed = core::ParseTransportSecurityMode(transport_security);
+        if (!parsed.has_value()) {
+            std::cerr << parsed.error() << "\n";
+            return std::unexpected(EXIT_FAILURE);
+        }
+        agent_cfg.security.transport_security = *parsed;
+    }
 
     if (agent_cfg.agent_id.empty()) {
         agent_cfg.agent_id = std::string(kDefaultAgentId);
