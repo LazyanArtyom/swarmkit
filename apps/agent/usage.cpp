@@ -17,6 +17,7 @@ void PrintUsage() {
                  "  --id        AGENT_ID      Agent identifier (default: agent-1)\n"
                  "  --bind      HOST:PORT     Bind address    (default: 0.0.0.0:50061)\n"
                  "  --config    PATH          Load agent config from YAML file\n"
+                 "  --report-log-file PATH   Append agent reports as JSONL\n"
                  "  --backend   NAME          Vehicle backend: sim, mavlink, or registered custom\n"
                  "  --mavlink-bind HOST:PORT  UDP MAVLink listen address\n"
                  "  --mavlink-drone ID        SwarmKit drone id for MAVLink backend\n"

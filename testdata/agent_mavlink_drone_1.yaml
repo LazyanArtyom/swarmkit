@@ -7,7 +7,7 @@ agent:
   min_telemetry_rate_hz: 1
   report_log_file: "/tmp/swarmkit-drone-1-reports.jsonl"
   vehicle_profile:
-    profile_id: "sitl-copter"
+    profile_id: "sitl-arducopter"
     cruise_speed_mps: 4.0
     climb_speed_mps: 1.5
     descent_speed_mps: 1.0
@@ -36,12 +36,6 @@ agent:
     set_guided_before_arm: true
     set_guided_before_takeoff: true
     guided_mode: 4
+    allow_flight_termination: false
   security:
-    transport_security: "mtls"
-    root_ca_cert_path: "certs/ca.pem"
-    cert_chain_path: "certs/agent.pem"
-    private_key_path: "certs/agent.key"
-    allowed_client_ids:
-      - "swarmkit-cli"
-      - "test-client"
-      - "test-server"
+    transport_security: "insecure"

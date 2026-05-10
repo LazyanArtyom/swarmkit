@@ -61,6 +61,19 @@ struct SwarmRuntime {
     std::vector<std::string> drone_ids;
 };
 
+struct SwarmResultPolicy {
+    bool continue_on_error{false};
+    bool require_all{false};
+    bool accept_already_satisfied{false};
+};
+
+struct SwarmResultSummary {
+    int sent{0};
+    int accepted{0};
+    int already_satisfied{0};
+    int failed{0};
+};
+
 struct WaitCondition {
     std::optional<float> alt_min_m;
     std::optional<float> alt_max_m;
@@ -465,6 +478,21 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
     return !step.args.empty() && step.args.front() == "emergency";
 }
 
+[[nodiscard]] bool IsAlreadySatisfied(const swarmkit::client::CommandResult& result) {
+    std::string message = result.message;
+    std::ranges::transform(message, message.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return result.ok && message.find("already satisfied") != std::string::npos;
+}
+
+[[nodiscard]] SwarmResultPolicy ParseSwarmResultPolicy(int argc, char** argv) {
+    return {
+        .continue_on_error = common::HasFlag(argc, argv, "--continue-on-error"),
+        .require_all = common::HasFlag(argc, argv, "--require-all"),
+        .accept_already_satisfied = common::HasFlag(argc, argv, "--accept-already-satisfied"),
+    };
+}
+
 [[nodiscard]] std::expected<std::vector<SequenceStep>, std::string> LoadSequenceSteps(
     const std::string& path) {
     try {
@@ -701,6 +729,7 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
         return EXIT_FAILURE;
     }
     const bool verify_commands = common::HasFlag(argc, argv, "--verify");
+    const bool continue_on_error = common::HasFlag(argc, argv, "--continue-on-error");
     const auto wait_options = ParseCommandWaitOptions(argc, argv);
     if (!wait_options.has_value()) {
         std::cerr << wait_options.error() << "\n";
@@ -723,7 +752,7 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
         if (!step.wait_conditions.empty() &&
             !WaitForConditions(monitor, target_drones, step.wait_conditions, index)) {
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -738,7 +767,7 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
         if (!command.has_value()) {
             std::cerr << "step " << index << " build failed: " << command.error() << "\n";
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -774,7 +803,7 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
 
         if (!step_ok) {
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -782,7 +811,7 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
 
     }
 
-    if (failed_steps > 0) {
+    if (failed_steps > 0 && !continue_on_error) {
         std::cerr << "sequence completed with failed_steps=" << failed_steps << "\n";
         return EXIT_FAILURE;
     }
@@ -1439,19 +1468,45 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
     return runtime;
 }
 
-[[nodiscard]] bool PrintSwarmResults(
+[[nodiscard]] SwarmResultSummary SummarizeSwarmResults(
     const std::unordered_map<std::string, swarmkit::client::CommandResult>& results) {
-    bool all_ok = true;
-    int ok_count = 0;
-    int failed_count = 0;
+    SwarmResultSummary summary;
+    summary.sent = static_cast<int>(results.size());
+    for (const auto& [drone_id, result] : results) {
+        static_cast<void>(drone_id);
+        if (IsAlreadySatisfied(result)) {
+            ++summary.already_satisfied;
+        } else if (result.ok) {
+            ++summary.accepted;
+        } else {
+            ++summary.failed;
+        }
+    }
+    return summary;
+}
+
+[[nodiscard]] bool SwarmResultAccepted(const SwarmResultSummary& summary,
+                                       const SwarmResultPolicy& policy) {
+    if (summary.sent == 0) {
+        return false;
+    }
+    const int effective_ok = summary.accepted + (policy.accept_already_satisfied
+                                                    ? summary.already_satisfied
+                                                    : 0);
+    if (policy.require_all) {
+        return summary.failed == 0 && effective_ok == summary.sent;
+    }
+    if (policy.continue_on_error) {
+        return effective_ok > 0;
+    }
+    return summary.failed == 0 && (summary.already_satisfied == 0 || policy.accept_already_satisfied);
+}
+
+[[nodiscard]] bool PrintSwarmResults(
+    const std::unordered_map<std::string, swarmkit::client::CommandResult>& results,
+    const SwarmResultPolicy& policy) {
     for (const auto& [drone_id, result] : results) {
         std::cout << drone_id << ": " << (result.ok ? "OK" : "FAILED");
-        all_ok = all_ok && result.ok;
-        if (result.ok) {
-            ++ok_count;
-        } else {
-            ++failed_count;
-        }
         if (!result.message.empty()) {
             std::cout << " " << result.message;
         }
@@ -1460,9 +1515,11 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
         }
         std::cout << "\n";
     }
-    std::cout << "summary: ok=" << ok_count << " failed=" << failed_count
-              << " total=" << results.size() << "\n";
-    return all_ok;
+    const SwarmResultSummary summary = SummarizeSwarmResults(results);
+    std::cout << "summary: sent=" << summary.sent << " accepted=" << summary.accepted
+              << " already_satisfied=" << summary.already_satisfied
+              << " failed=" << summary.failed << "\n";
+    return SwarmResultAccepted(summary, policy);
 }
 
 [[nodiscard]] std::vector<std::string> FindSwarmActions(int argc, char** argv) {
@@ -1620,6 +1677,10 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
         return EXIT_FAILURE;
     }
     const bool verify_commands = common::HasFlag(argc, argv, "--verify");
+    SwarmResultPolicy result_policy = ParseSwarmResultPolicy(argc, argv);
+    if (!result_policy.require_all && !result_policy.continue_on_error) {
+        result_policy.require_all = true;
+    }
     const auto wait_options = ParseCommandWaitOptions(argc, argv);
     if (!wait_options.has_value()) {
         std::cerr << wait_options.error() << "\n";
@@ -1651,7 +1712,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
             std::cerr << "step " << index
                       << " wait requires drone: DRONE_ID, broadcast: true, or global --drone\n";
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !result_policy.continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -1659,7 +1720,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
         if (!step.wait_conditions.empty() &&
             !WaitForConditions(monitor, target_drones, step.wait_conditions, index)) {
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !result_policy.continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -1683,7 +1744,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
             std::cerr << "step " << index
                       << " requires drone: DRONE_ID, broadcast: true, or global --drone\n";
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !result_policy.continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -1692,7 +1753,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
             std::cerr << "step " << index << " drone '" << drone_id
                       << "' is not present in swarm config\n";
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !result_policy.continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -1723,7 +1784,8 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
                     verify_step
                         ? runtime.client->BroadcastCommandAndWait(
                               *command, context, StepWaitOptions(*wait_options, step))
-                        : runtime.client->BroadcastCommand(*command, context));
+                        : runtime.client->BroadcastCommand(*command, context),
+                    result_policy);
             } else {
                 const auto envelope = MakeCommandEnvelope(drone_id, *command, priority);
                 const bool verify_step = verify_commands || step.verify;
@@ -1747,7 +1809,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
 
         if (!step_ok) {
             ++failed_steps;
-            if (!step.continue_on_error) {
+            if (!step.continue_on_error && !result_policy.continue_on_error) {
                 return EXIT_FAILURE;
             }
             continue;
@@ -1755,7 +1817,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
 
     }
 
-    if (failed_steps > 0) {
+    if (failed_steps > 0 && !result_policy.continue_on_error) {
         std::cerr << "swarm sequence completed with failed_steps=" << failed_steps << "\n";
         return EXIT_FAILURE;
     }
@@ -1776,6 +1838,10 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     }
 
     Command command;
+    SwarmResultPolicy result_policy = ParseSwarmResultPolicy(argc, argv);
+    if (!result_policy.require_all && !result_policy.continue_on_error) {
+        result_policy.require_all = true;
+    }
     if (actions[0] == "health") {
         return RunSwarmHealth(*runtime);
     }
@@ -1794,7 +1860,8 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
             std::cerr << ttl_ms.error() << "\n";
             return EXIT_FAILURE;
         }
-        return PrintSwarmResults(runtime->client->LockAll(*ttl_ms)) ? EXIT_SUCCESS : EXIT_FAILURE;
+        return PrintSwarmResults(runtime->client->LockAll(*ttl_ms), result_policy) ? EXIT_SUCCESS
+                                                                                   : EXIT_FAILURE;
     }
     if (actions[0] == "unlock-all") {
         runtime->client->UnlockAll();
@@ -1830,7 +1897,8 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
         }
         const auto result = verify ? runtime->client->SendCommandAndWait(envelope, *wait_options)
                                    : runtime->client->SendCommand(envelope);
-        return PrintSwarmResults({{drone_id, result}}) ? EXIT_SUCCESS : EXIT_FAILURE;
+        return PrintSwarmResults({{drone_id, result}}, result_policy) ? EXIT_SUCCESS
+                                                                      : EXIT_FAILURE;
     }
     if (actions[0] == "land-all") {
         command = FlightCmd{CmdLand{}};
@@ -1864,7 +1932,7 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     const auto results = verify ? runtime->client->BroadcastCommandAndWait(command, context,
                                                                            *wait_options)
                                 : runtime->client->BroadcastCommand(command, context);
-    return PrintSwarmResults(results) ? EXIT_SUCCESS : EXIT_FAILURE;
+    return PrintSwarmResults(results, result_policy) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 }  // namespace

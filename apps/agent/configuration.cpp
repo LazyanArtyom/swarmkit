@@ -238,6 +238,10 @@ void ReadBackendOptionsYaml(const YAML::Node& node,
     if (!kBindAddr.empty()) {
         agent_cfg.bind_addr = kBindAddr;
     }
+    if (const std::string report_log_file = common::GetOptionValue(argc, argv, "--report-log-file");
+        !report_log_file.empty()) {
+        agent_cfg.report_log_file = report_log_file;
+    }
     if (const std::string kRootCaCert = common::GetOptionValue(argc, argv, "--ca-cert");
         !kRootCaCert.empty()) {
         agent_cfg.security.root_ca_cert_path = kRootCaCert;

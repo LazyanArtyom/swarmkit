@@ -1,0 +1,27 @@
+client:
+  client_id: "swarmkit-sitl-supervisor"
+  deadline_ms: 5000
+  priority: "override"
+  retry:
+    max_attempts: 4
+    initial_backoff_ms: 200
+    max_backoff_ms: 1500
+  stream_reconnect:
+    enabled: true
+    initial_backoff_ms: 500
+    max_backoff_ms: 5000
+    max_attempts: 0
+  security:
+    transport_security: "insecure"
+
+swarm:
+  drones:
+    - drone_id: "drone-1"
+      address: "127.0.0.1:50061"
+      local_address: "127.0.0.1:50061"
+    - drone_id: "drone-2"
+      address: "127.0.0.1:50062"
+      local_address: "127.0.0.1:50062"
+    - drone_id: "drone-3"
+      address: "127.0.0.1:50063"
+      local_address: "127.0.0.1:50063"

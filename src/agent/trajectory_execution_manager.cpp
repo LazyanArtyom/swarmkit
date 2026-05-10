@@ -188,17 +188,22 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
     const float max_altitude = EffectiveMaxAltitude(profile, policy);
 
     std::optional<core::TelemetryFrame> telemetry = LatestTelemetry(plan.drone_id());
-    if (policy.require_gps() && (!telemetry.has_value() || telemetry->gps_fix_type < 3)) {
+    const float minimum_battery_percent =
+        policy.min_battery_percent() > 0.0F ? policy.min_battery_percent()
+                                            : profile.min_battery_percent;
+    if (policy.require_gps() &&
+        (!telemetry.has_value() || telemetry->gps_fix_type < profile.min_gps_fix_type ||
+         telemetry->satellites_visible < profile.min_satellites_visible ||
+         telemetry->gps_hdop <= 0.0F || telemetry->gps_hdop > profile.max_gps_hdop)) {
         AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "health.gps_required",
-                 "validation policy requires 3D GPS fix");
+                 "validation policy requires GPS health within vehicle profile limits");
     }
     if (policy.require_ekf_ok() && telemetry.has_value() && !telemetry->ekf_ok) {
         AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "health.ekf_required",
                  "validation policy requires EKF healthy");
     }
-    if (policy.min_battery_percent() > 0.0F && telemetry.has_value() &&
-        telemetry->battery_percent >= 0.0F &&
-        telemetry->battery_percent < policy.min_battery_percent()) {
+    if (minimum_battery_percent > 0.0F && telemetry.has_value() &&
+        telemetry->battery_percent >= 0.0F && telemetry->battery_percent < minimum_battery_percent) {
         AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "battery.min",
                  "battery is below trajectory minimum");
     }

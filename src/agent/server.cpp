@@ -55,6 +55,7 @@ constexpr std::string_view kAgentEnvBindAddr = "BIND_ADDR";
 constexpr std::string_view kAgentEnvDefaultAuthorityTtlMs = "DEFAULT_AUTHORITY_TTL_MS";
 constexpr std::string_view kAgentEnvDefaultTelemetryRateHz = "DEFAULT_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvMinTelemetryRateHz = "MIN_TELEMETRY_RATE_HZ";
+constexpr std::string_view kAgentEnvReportLogFile = "REPORT_LOG_FILE";
 constexpr std::string_view kAgentEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
 constexpr std::string_view kAgentEnvCertChainPath = "CERT_CHAIN_PATH";
 constexpr std::string_view kAgentEnvPrivateKeyPath = "PRIVATE_KEY_PATH";
@@ -644,6 +645,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
           backend_(std::move(backend)),
           telemetry_(backend_.get(), config_.default_telemetry_rate_hz,
                      config_.min_telemetry_rate_hz),
+          reports_(config_.report_log_file),
           goals_(&telemetry_, &reports_, &config_),
           executions_(backend_.get(), &telemetry_, &reports_, &config_) {
         if (const core::Result start_result = backend_->Start(); !start_result.IsOk()) {
@@ -1757,14 +1759,36 @@ core::Result VehicleProfile::Validate() const {
     if (min_battery_percent < 0.0F || min_battery_percent > 100.0F) {
         return core::Result::Rejected("vehicle_profile.min_battery_percent must be 0..100");
     }
+    if (battery_reserve_percent < 0.0F || battery_reserve_percent > 100.0F) {
+        return core::Result::Rejected("vehicle_profile.battery_reserve_percent must be 0..100");
+    }
+    if (battery_reserve_percent > min_battery_percent) {
+        return core::Result::Rejected(
+            "vehicle_profile.battery_reserve_percent must be <= min_battery_percent");
+    }
     if (tracking_tolerance_m <= 0.0F) {
         return core::Result::Rejected("vehicle_profile.tracking_tolerance_m must be > 0");
     }
     if (goal_margin_ms < 0) {
         return core::Result::Rejected("vehicle_profile.goal_margin_ms must be >= 0");
     }
+    if (takeoff_timeout_margin_ms < 0) {
+        return core::Result::Rejected("vehicle_profile.takeoff_timeout_margin_ms must be >= 0");
+    }
+    if (land_timeout_margin_ms < 0) {
+        return core::Result::Rejected("vehicle_profile.land_timeout_margin_ms must be >= 0");
+    }
     if (max_goal_timeout_ms <= 0) {
         return core::Result::Rejected("vehicle_profile.max_goal_timeout_ms must be > 0");
+    }
+    if (min_gps_fix_type < 0) {
+        return core::Result::Rejected("vehicle_profile.min_gps_fix_type must be >= 0");
+    }
+    if (min_satellites_visible < 0) {
+        return core::Result::Rejected("vehicle_profile.min_satellites_visible must be >= 0");
+    }
+    if (max_gps_hdop <= 0.0F) {
+        return core::Result::Rejected("vehicle_profile.max_gps_hdop must be > 0");
     }
     return core::Result::Success();
 }
@@ -1845,6 +1869,7 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyIntEnv(prefix, kAgentEnvDefaultAuthorityTtlMs, &default_authority_ttl_ms);
     ApplyIntEnv(prefix, kAgentEnvDefaultTelemetryRateHz, &default_telemetry_rate_hz);
     ApplyIntEnv(prefix, kAgentEnvMinTelemetryRateHz, &min_telemetry_rate_hz);
+    ApplyStringEnv(prefix, kAgentEnvReportLogFile, &report_log_file);
 
     ApplyStringEnv(prefix, kAgentEnvRootCaCertPath, &security.root_ca_cert_path);
     ApplyStringEnv(prefix, kAgentEnvCertChainPath, &security.cert_chain_path);
@@ -1922,6 +1947,14 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             min_telemetry_rate_hz->value_or(config.min_telemetry_rate_hz);
     }
 
+    const auto report_log_file = core::yaml::ReadOptionalScalar<std::string>(root, "report_log_file");
+    if (!report_log_file.has_value()) {
+        return std::unexpected(report_log_file.error());
+    }
+    if (report_log_file->has_value()) {
+        config.report_log_file = report_log_file->value_or(config.report_log_file);
+    }
+
     if (const YAML::Node vehicle_profile = root["vehicle_profile"]; vehicle_profile) {
         if (!vehicle_profile.IsMap()) {
             return std::unexpected(core::Result::Rejected("agent.vehicle_profile must be a map"));
@@ -1987,6 +2020,16 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
                 min_battery_percent->value_or(config.vehicle_profile.min_battery_percent);
         }
 
+        const auto battery_reserve_percent =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "battery_reserve_percent");
+        if (!battery_reserve_percent.has_value()) {
+            return std::unexpected(battery_reserve_percent.error());
+        }
+        if (battery_reserve_percent->has_value()) {
+            config.vehicle_profile.battery_reserve_percent = battery_reserve_percent->value_or(
+                config.vehicle_profile.battery_reserve_percent);
+        }
+
         const auto tracking_tolerance_m =
             core::yaml::ReadOptionalScalar<float>(vehicle_profile, "tracking_tolerance_m");
         if (!tracking_tolerance_m.has_value()) {
@@ -2007,6 +2050,27 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
                 goal_margin_ms->value_or(config.vehicle_profile.goal_margin_ms);
         }
 
+        const auto takeoff_timeout_margin_ms =
+            core::yaml::ReadOptionalScalar<int>(vehicle_profile, "takeoff_timeout_margin_ms");
+        if (!takeoff_timeout_margin_ms.has_value()) {
+            return std::unexpected(takeoff_timeout_margin_ms.error());
+        }
+        if (takeoff_timeout_margin_ms->has_value()) {
+            config.vehicle_profile.takeoff_timeout_margin_ms =
+                takeoff_timeout_margin_ms->value_or(
+                    config.vehicle_profile.takeoff_timeout_margin_ms);
+        }
+
+        const auto land_timeout_margin_ms =
+            core::yaml::ReadOptionalScalar<int>(vehicle_profile, "land_timeout_margin_ms");
+        if (!land_timeout_margin_ms.has_value()) {
+            return std::unexpected(land_timeout_margin_ms.error());
+        }
+        if (land_timeout_margin_ms->has_value()) {
+            config.vehicle_profile.land_timeout_margin_ms =
+                land_timeout_margin_ms->value_or(config.vehicle_profile.land_timeout_margin_ms);
+        }
+
         const auto max_goal_timeout_ms =
             core::yaml::ReadOptionalScalar<int>(vehicle_profile, "max_goal_timeout_ms");
         if (!max_goal_timeout_ms.has_value()) {
@@ -2015,6 +2079,36 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         if (max_goal_timeout_ms->has_value()) {
             config.vehicle_profile.max_goal_timeout_ms =
                 max_goal_timeout_ms->value_or(config.vehicle_profile.max_goal_timeout_ms);
+        }
+
+        const auto min_gps_fix_type =
+            core::yaml::ReadOptionalScalar<int>(vehicle_profile, "min_gps_fix_type");
+        if (!min_gps_fix_type.has_value()) {
+            return std::unexpected(min_gps_fix_type.error());
+        }
+        if (min_gps_fix_type->has_value()) {
+            config.vehicle_profile.min_gps_fix_type =
+                min_gps_fix_type->value_or(config.vehicle_profile.min_gps_fix_type);
+        }
+
+        const auto min_satellites_visible =
+            core::yaml::ReadOptionalScalar<int>(vehicle_profile, "min_satellites_visible");
+        if (!min_satellites_visible.has_value()) {
+            return std::unexpected(min_satellites_visible.error());
+        }
+        if (min_satellites_visible->has_value()) {
+            config.vehicle_profile.min_satellites_visible =
+                min_satellites_visible->value_or(config.vehicle_profile.min_satellites_visible);
+        }
+
+        const auto max_gps_hdop =
+            core::yaml::ReadOptionalScalar<float>(vehicle_profile, "max_gps_hdop");
+        if (!max_gps_hdop.has_value()) {
+            return std::unexpected(max_gps_hdop.error());
+        }
+        if (max_gps_hdop->has_value()) {
+            config.vehicle_profile.max_gps_hdop =
+                max_gps_hdop->value_or(config.vehicle_profile.max_gps_hdop);
         }
     }
 

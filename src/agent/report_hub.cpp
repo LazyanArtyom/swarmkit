@@ -6,9 +6,14 @@
 
 #include "report_hub.h"
 
+#include <google/protobuf/util/json_util.h>
+
 #include <chrono>
+#include <string_view>
 #include <utility>
 #include <vector>
+
+#include "swarmkit/core/logger.h"
 
 namespace swarmkit::agent::internal {
 namespace {
@@ -18,6 +23,49 @@ namespace {
     using std::chrono::milliseconds;
     using std::chrono::system_clock;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+[[nodiscard]] std::string JsonEscape(std::string_view value) {
+    std::string out;
+    out.reserve(value.size());
+    for (const char ch : value) {
+        switch (ch) {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                out += ch;
+                break;
+        }
+    }
+    return out;
+}
+
+[[nodiscard]] std::string ReportToJson(const swarmkit::v1::AgentReport& report) {
+    google::protobuf::util::JsonPrintOptions options;
+    options.add_whitespace = false;
+    options.preserve_proto_field_names = true;
+    std::string json;
+    const auto status = google::protobuf::util::MessageToJsonString(report, &json, options);
+    if (status.ok()) {
+        return json;
+    }
+    return R"({"sequence":)" + std::to_string(report.sequence()) + R"(,"unix_time_ms":)" +
+           std::to_string(report.unix_time_ms()) + R"(,"drone_id":")" +
+           JsonEscape(report.drone_id()) + R"(","message":")" + JsonEscape(report.message()) +
+           R"("})";
 }
 
 }  // namespace
@@ -56,6 +104,18 @@ void ReportQueue::Shutdown() {
     cv_.notify_all();
 }
 
+ReportHub::ReportHub(std::string report_log_file) {
+    if (report_log_file.empty()) {
+        return;
+    }
+    report_log_.open(report_log_file, std::ios::app);
+    if (!report_log_.is_open()) {
+        core::Logger::WarnFmt("ReportHub: failed to open report_log_file '{}'", report_log_file);
+        return;
+    }
+    core::Logger::InfoFmt("ReportHub: JSONL report logging enabled at '{}'", report_log_file);
+}
+
 ReportWatchToken ReportHub::Watch(std::string drone_id, std::uint64_t after_sequence,
                                   const std::shared_ptr<ReportQueue>& queue) {
     std::vector<swarmkit::v1::AgentReport> backlog;
@@ -88,10 +148,12 @@ void ReportHub::Unwatch(ReportWatchToken token) {
 
 void ReportHub::Publish(swarmkit::v1::AgentReport report) {
     std::vector<std::shared_ptr<ReportQueue>> queues;
+    swarmkit::v1::AgentReport finalized_report;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         report.set_sequence(++next_sequence_);
         report.set_unix_time_ms(NowUnixMs());
+        finalized_report = report;
         backlog_.push_back(report);
         constexpr std::size_t kMaxBacklog = 1000;
         while (backlog_.size() > kMaxBacklog) {
@@ -107,9 +169,13 @@ void ReportHub::Publish(swarmkit::v1::AgentReport report) {
                 iter = watchers_.erase(iter);
             }
         }
+        if (report_log_.is_open()) {
+            report_log_ << ReportToJson(finalized_report) << '\n';
+            report_log_.flush();
+        }
     }
     for (const auto& queue : queues) {
-        queue->Push(report);
+        queue->Push(finalized_report);
     }
 }
 

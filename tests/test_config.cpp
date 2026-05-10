@@ -190,13 +190,23 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "  default_authority_ttl_ms: 7000\n";
     output << "  default_telemetry_rate_hz: 8\n";
     output << "  min_telemetry_rate_hz: 2\n";
+    output << "  report_log_file: /tmp/swarmkit-agent-reports.jsonl\n";
     output << "  vehicle_profile:\n";
     output << "    profile_id: heavy-copter\n";
     output << "    cruise_speed_mps: 6.5\n";
     output << "    climb_speed_mps: 2.0\n";
     output << "    descent_speed_mps: 1.2\n";
+    output << "    max_altitude_m: 150\n";
+    output << "    min_battery_percent: 25\n";
+    output << "    battery_reserve_percent: 12\n";
+    output << "    tracking_tolerance_m: 1.5\n";
     output << "    goal_margin_ms: 25000\n";
+    output << "    takeoff_timeout_margin_ms: 22000\n";
+    output << "    land_timeout_margin_ms: 33000\n";
     output << "    max_goal_timeout_ms: 420000\n";
+    output << "    min_gps_fix_type: 4\n";
+    output << "    min_satellites_visible: 9\n";
+    output << "    max_gps_hdop: 1.8\n";
     output << "  security:\n";
     output << "    transport_security: mtls\n";
     output << "    root_ca_cert_path: " << (kCertsPath / "ca.pem").string() << "\n";
@@ -211,12 +221,22 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->default_authority_ttl_ms == 7000);
     CHECK(kLoaded->default_telemetry_rate_hz == 8);
     CHECK(kLoaded->min_telemetry_rate_hz == 2);
+    CHECK(kLoaded->report_log_file == "/tmp/swarmkit-agent-reports.jsonl");
     CHECK(kLoaded->vehicle_profile.profile_id == "heavy-copter");
     CHECK(kLoaded->vehicle_profile.cruise_speed_mps == 6.5F);
     CHECK(kLoaded->vehicle_profile.climb_speed_mps == 2.0F);
     CHECK(kLoaded->vehicle_profile.descent_speed_mps == 1.2F);
+    CHECK(kLoaded->vehicle_profile.max_altitude_m == 150.0F);
+    CHECK(kLoaded->vehicle_profile.min_battery_percent == 25.0F);
+    CHECK(kLoaded->vehicle_profile.battery_reserve_percent == 12.0F);
+    CHECK(kLoaded->vehicle_profile.tracking_tolerance_m == 1.5F);
     CHECK(kLoaded->vehicle_profile.goal_margin_ms == 25000);
+    CHECK(kLoaded->vehicle_profile.takeoff_timeout_margin_ms == 22000);
+    CHECK(kLoaded->vehicle_profile.land_timeout_margin_ms == 33000);
     CHECK(kLoaded->vehicle_profile.max_goal_timeout_ms == 420000);
+    CHECK(kLoaded->vehicle_profile.min_gps_fix_type == 4);
+    CHECK(kLoaded->vehicle_profile.min_satellites_visible == 9);
+    CHECK(kLoaded->vehicle_profile.max_gps_hdop == 1.8F);
     CHECK(kLoaded->security.transport_security ==
           swarmkit::core::TransportSecurityMode::kMutualTls);
 

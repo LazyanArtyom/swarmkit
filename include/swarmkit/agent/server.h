@@ -23,10 +23,16 @@ inline constexpr float kDefaultCruiseSpeedMps = 4.0F;
 inline constexpr float kDefaultClimbSpeedMps = 1.5F;
 inline constexpr float kDefaultDescentSpeedMps = 1.0F;
 inline constexpr int kDefaultGoalMarginMs = 15000;
+inline constexpr int kDefaultTakeoffTimeoutMarginMs = 20000;
+inline constexpr int kDefaultLandTimeoutMarginMs = 30000;
 inline constexpr int kDefaultMaxGoalTimeoutMs = 300000;
 inline constexpr float kDefaultMaxAltitudeM = 120.0F;
 inline constexpr float kDefaultMinBatteryPercent = 20.0F;
+inline constexpr float kDefaultBatteryReservePercent = 15.0F;
 inline constexpr float kDefaultTrackingToleranceM = 2.0F;
+inline constexpr int kDefaultMinGpsFixType = 3;
+inline constexpr int kDefaultMinSatellitesVisible = 6;
+inline constexpr float kDefaultMaxGpsHdop = 2.5F;
 
 struct VehicleProfile {
     std::string profile_id{"generic-quad"};
@@ -35,9 +41,15 @@ struct VehicleProfile {
     float descent_speed_mps{kDefaultDescentSpeedMps};
     float max_altitude_m{kDefaultMaxAltitudeM};
     float min_battery_percent{kDefaultMinBatteryPercent};
+    float battery_reserve_percent{kDefaultBatteryReservePercent};
     float tracking_tolerance_m{kDefaultTrackingToleranceM};
     int goal_margin_ms{kDefaultGoalMarginMs};
+    int takeoff_timeout_margin_ms{kDefaultTakeoffTimeoutMarginMs};
+    int land_timeout_margin_ms{kDefaultLandTimeoutMarginMs};
     int max_goal_timeout_ms{kDefaultMaxGoalTimeoutMs};
+    int min_gps_fix_type{kDefaultMinGpsFixType};
+    int min_satellites_visible{kDefaultMinSatellitesVisible};
+    float max_gps_hdop{kDefaultMaxGpsHdop};
 
     [[nodiscard]] core::Result Validate() const;
 };
@@ -62,6 +74,7 @@ struct AgentConfig {
     int default_authority_ttl_ms{kDefaultAuthorityTtlMs};
     int default_telemetry_rate_hz{kDefaultTelemetryRateHz};
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};
+    std::string report_log_file;
     VehicleProfile vehicle_profile{};
     AgentSecurityConfig security{};
 

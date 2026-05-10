@@ -4,13 +4,23 @@ agent:
   default_authority_ttl_ms: 5000
   default_telemetry_rate_hz: 5
   min_telemetry_rate_hz: 1
+  report_log_file: "/tmp/swarmkit-agent-1-reports.jsonl"
   vehicle_profile:
     profile_id: "generic-quad"
     cruise_speed_mps: 4.0
     climb_speed_mps: 1.5
     descent_speed_mps: 1.0
+    max_altitude_m: 120.0
+    min_battery_percent: 20.0
+    battery_reserve_percent: 15.0
+    tracking_tolerance_m: 2.0
     goal_margin_ms: 15000
+    takeoff_timeout_margin_ms: 20000
+    land_timeout_margin_ms: 30000
     max_goal_timeout_ms: 300000
+    min_gps_fix_type: 3
+    min_satellites_visible: 6
+    max_gps_hdop: 2.5
   security:
     transport_security: "mtls"
     root_ca_cert_path: "certs/ca.pem"

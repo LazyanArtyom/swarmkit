@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -39,6 +40,9 @@ struct ReportWatchToken {
 
 class ReportHub {
    public:
+    ReportHub() = default;
+    explicit ReportHub(std::string report_log_file);
+
     [[nodiscard]] ReportWatchToken Watch(std::string drone_id, std::uint64_t after_sequence,
                                          const std::shared_ptr<ReportQueue>& queue);
     void Unwatch(ReportWatchToken token);
@@ -56,6 +60,7 @@ class ReportHub {
     std::mutex mutex_;
     std::unordered_map<std::uint64_t, Watcher> watchers_;
     std::deque<swarmkit::v1::AgentReport> backlog_;
+    std::ofstream report_log_;
     std::uint64_t next_watch_id_{0};
     std::uint64_t next_sequence_{0};
 };
