@@ -10,6 +10,7 @@
 #include <mutex>
 #include <ranges>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "swarmkit/client/client.h"
@@ -72,6 +73,63 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK(capabilities.supports_velocity_control);
     CHECK_FALSE(capabilities.supports_payload_control);
     CHECK(std::ranges::contains(capabilities.supported_modes, "guided"));
+}
+
+TEST_CASE("Client verified command helpers use agent health and telemetry",
+          "[client][integration][commands]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    swarmkit::agent::BackendHealth armed_health;
+    armed_health.ready = true;
+    armed_health.message = "armed";
+    armed_health.last_heartbeat_unix_ms = 1;
+    armed_health.last_telemetry_unix_ms = 1;
+    armed_health.armed = true;
+    armed_health.landed = false;
+    harness.Backend().SetHealth(armed_health);
+
+    CommandWaitOptions options;
+    options.timeout_ms = 500;
+    options.poll_interval_ms = 10;
+    options.telemetry_rate_hz = 10;
+
+    const CommandResult kArm = client.ArmAndWait("drone-1", options);
+    REQUIRE(kArm.ok);
+    CHECK(kArm.message.find("verified") != std::string::npos);
+    CHECK(harness.Backend().ExecuteCallCount() == 0);
+
+    harness.Backend().SetHealth({});
+    std::atomic<bool> done{false};
+    std::atomic<bool> stream_started{false};
+    std::thread emitter([&] {
+        stream_started.store(testsupport::WaitUntil(
+                                 [&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                 kWaitTimeout),
+                             std::memory_order_relaxed);
+        if (!stream_started.load(std::memory_order_relaxed)) {
+            return;
+        }
+        core::TelemetryFrame frame;
+        frame.drone_id = "drone-1";
+        frame.unix_time_ms = 123;
+        frame.armed = true;
+        frame.landed = false;
+        frame.rel_alt_m = 5.1F;
+        while (!done.load(std::memory_order_relaxed)) {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            std::this_thread::sleep_for(std::chrono::milliseconds{20});
+        }
+    });
+
+    const CommandResult kTakeoff = client.TakeoffAndWait("drone-1", 5.0, options);
+    done.store(true, std::memory_order_relaxed);
+    emitter.join();
+
+    REQUIRE(stream_started.load(std::memory_order_relaxed));
+    REQUIRE(kTakeoff.ok);
+    CHECK(kTakeoff.message.find("takeoff verified") != std::string::npos);
+    CHECK(harness.Backend().ExecuteCallCount() == 1);
 }
 
 TEST_CASE("Client authority session auto releases lock and emits watch events",

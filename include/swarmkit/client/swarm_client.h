@@ -149,6 +149,9 @@ class SwarmClient {
      * higher-priority client holds authority over the target drone.
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
+    [[nodiscard]] CommandResult SendCommandAndWait(
+        const commands::CommandEnvelope& envelope,
+        const CommandWaitOptions& options = {}) const;
 
     /// @brief Query agent health/readiness for one registered drone.
     [[nodiscard]] HealthStatus GetHealth(const std::string& drone_id) const;
@@ -167,6 +170,9 @@ class SwarmClient {
      */
     [[nodiscard]] std::unordered_map<std::string, CommandResult> BroadcastCommand(
         const commands::Command& command, const commands::CommandContext& context) const;
+    [[nodiscard]] std::unordered_map<std::string, CommandResult> BroadcastCommandAndWait(
+        const commands::Command& command, const commands::CommandContext& context,
+        const CommandWaitOptions& options = {}) const;
 
     /// @}
 

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "swarmkit/agent/arbiter.h"
+#include "swarmkit/client/command_verifier.h"
 #include "swarmkit/commands.h"
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/security.h"
@@ -616,6 +617,18 @@ class Client {
      * client currently holds authority over the target drone.
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
+    [[nodiscard]] CommandResult SendCommandAndWait(
+        const commands::CommandEnvelope& envelope,
+        const CommandWaitOptions& options = {}) const;
+    [[nodiscard]] CommandResult ArmAndWait(const std::string& drone_id,
+                                           const CommandWaitOptions& options = {}) const;
+    [[nodiscard]] CommandResult TakeoffAndWait(const std::string& drone_id, double alt_m,
+                                               const CommandWaitOptions& options = {}) const;
+    [[nodiscard]] CommandResult GotoAndWait(const std::string& drone_id, double lat_deg,
+                                            double lon_deg, double alt_m, float speed_mps = 0.0F,
+                                            const CommandWaitOptions& options = {}) const;
+    [[nodiscard]] CommandResult LandAndWait(const std::string& drone_id,
+                                            const CommandWaitOptions& options = {}) const;
 
     /// @brief Set or replace the agent-supervised active goal for a drone.
     [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoal& goal) const;

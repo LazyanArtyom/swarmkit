@@ -86,6 +86,7 @@ struct SequenceStep {
     bool continue_on_error{false};
     bool verify{false};
     int delay_ms{0};
+    int timeout_ms{0};
     int retries{0};
     int retry_delay_ms{1000};
 };
@@ -464,55 +465,6 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
     return !step.args.empty() && step.args.front() == "emergency";
 }
 
-[[nodiscard]] std::optional<WaitCondition> MakeVerificationCondition(const SequenceStep& step) {
-    if (!step.verify || step.args.empty()) {
-        return std::nullopt;
-    }
-    const std::string& action = step.args.front();
-    WaitCondition condition;
-    if (action == "takeoff") {
-        const auto alt_iter = std::ranges::find(step.args, "--alt");
-        condition.target_alt_m =
-            alt_iter != step.args.end() && std::next(alt_iter) != step.args.end()
-                ? std::stof(*std::next(alt_iter))
-                : std::stof(std::string(kDefaultTakeoffAlt));
-        condition.timeout_ms = 45000;
-        return condition;
-    }
-    if (action == "goto" || action == "waypoint") {
-        const auto read_value = [&](std::string_view key) -> std::optional<std::string> {
-            const auto iter = std::ranges::find(step.args, std::string(key));
-            if (iter == step.args.end() || std::next(iter) == step.args.end()) {
-                return std::nullopt;
-            }
-            return *std::next(iter);
-        };
-        const auto lat = read_value("--lat");
-        const auto lon = read_value("--lon");
-        if (!lat.has_value() || !lon.has_value()) {
-            return std::nullopt;
-        }
-        condition.lat_deg = std::stod(*lat);
-        condition.lon_deg = std::stod(*lon);
-        if (const auto alt = read_value("--alt"); alt.has_value()) {
-            condition.target_alt_m = std::stof(*alt);
-        }
-        condition.timeout_ms = 60000;
-        return condition;
-    }
-    if (action == "land") {
-        condition.wait_landed = true;
-        condition.timeout_ms = 60000;
-        return condition;
-    }
-    if (action == "disarm") {
-        condition.armed = false;
-        condition.timeout_ms = 30000;
-        return condition;
-    }
-    return std::nullopt;
-}
-
 [[nodiscard]] std::expected<std::vector<SequenceStep>, std::string> LoadSequenceSteps(
     const std::string& path) {
     try {
@@ -537,6 +489,7 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
                 node["continue_on_error"] ? node["continue_on_error"].as<bool>() : false;
             step.verify = node["verify"] ? node["verify"].as<bool>() : false;
             step.delay_ms = node["delay_ms"] ? node["delay_ms"].as<int>() : 0;
+            step.timeout_ms = node["timeout_ms"] ? node["timeout_ms"].as<int>() : 0;
             step.retries = node["retries"] ? node["retries"].as<int>() : 0;
             step.retry_delay_ms =
                 node["retry_delay_ms"] ? node["retry_delay_ms"].as<int>() : step.retry_delay_ms;
@@ -559,6 +512,9 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
             if (step.retry_delay_ms < 0) {
                 return std::unexpected("sequence step retry_delay_ms must be >= 0");
             }
+            if (step.timeout_ms < 0) {
+                return std::unexpected("sequence step timeout_ms must be >= 0");
+            }
             out.push_back(std::move(step));
         }
         return out;
@@ -572,6 +528,33 @@ void DelaySequenceStep(const SequenceStep& step) {
         std::cout << "delay " << step.delay_ms << "ms\n";
         std::this_thread::sleep_for(std::chrono::milliseconds{step.delay_ms});
     }
+}
+
+[[nodiscard]] std::expected<swarmkit::client::CommandWaitOptions, std::string>
+ParseCommandWaitOptions(int argc, char** argv) {
+    swarmkit::client::CommandWaitOptions options;
+    const std::string timeout_value = common::GetOptionValue(argc, argv, "--timeout-ms");
+    if (!timeout_value.empty()) {
+        const auto timeout = ParseIntArg(timeout_value, "--timeout-ms");
+        if (!timeout.has_value()) {
+            return std::unexpected(timeout.error());
+        }
+        if (*timeout <= 0) {
+            return std::unexpected("--timeout-ms must be > 0 when used for command verification");
+        }
+        options.timeout_ms = *timeout;
+    }
+    options.telemetry_rate_hz = kDefaultSequenceTelemetryRateHz;
+    return options;
+}
+
+[[nodiscard]] swarmkit::client::CommandWaitOptions StepWaitOptions(
+    const swarmkit::client::CommandWaitOptions& base, const SequenceStep& step) {
+    swarmkit::client::CommandWaitOptions options = base;
+    if (step.timeout_ms > 0) {
+        options.timeout_ms = step.timeout_ms;
+    }
+    return options;
 }
 
 [[nodiscard]] bool PrintCommandResult(std::string_view label,
@@ -717,9 +700,15 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
         std::cerr << steps.error() << "\n";
         return EXIT_FAILURE;
     }
+    const bool verify_commands = common::HasFlag(argc, argv, "--verify");
+    const auto wait_options = ParseCommandWaitOptions(argc, argv);
+    if (!wait_options.has_value()) {
+        std::cerr << wait_options.error() << "\n";
+        return EXIT_FAILURE;
+    }
 
     const bool needs_telemetry = std::ranges::any_of(*steps, [](const SequenceStep& step) {
-        return !step.wait_conditions.empty() || step.verify || IsDisarmAction(step);
+        return !step.wait_conditions.empty() || IsDisarmAction(step);
     });
     SequenceTelemetryMonitor monitor;
     if (needs_telemetry) {
@@ -767,8 +756,11 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
                     break;
                 }
             }
+            const auto envelope = MakeCommandEnvelope(drone_id, *command, priority);
+            const bool verify_step = verify_commands || step.verify;
             const auto result =
-                client.SendCommand(MakeCommandEnvelope(drone_id, *command, priority));
+                verify_step ? client.SendCommandAndWait(envelope, StepWaitOptions(*wait_options, step))
+                            : client.SendCommand(envelope);
             std::string label = "step " + std::to_string(index) + " drone=" + drone_id;
             if (attempts > 1) {
                 label += " attempt=" + std::to_string(attempt) + "/" + std::to_string(attempts);
@@ -788,14 +780,6 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
             continue;
         }
 
-        if (const auto verification = MakeVerificationCondition(step); verification.has_value()) {
-            if (!WaitForConditions(monitor, target_drones, {*verification}, index)) {
-                ++failed_steps;
-                if (!step.continue_on_error) {
-                    return EXIT_FAILURE;
-                }
-            }
-        }
     }
 
     if (failed_steps > 0) {
@@ -818,7 +802,15 @@ int RunCommand(Client& client, std::string_view drone_id, CommandPriority priori
         return EXIT_FAILURE;
     }
 
-    const auto kResult = client.SendCommand(MakeCommandEnvelope(drone_id, *kCommand, priority));
+    const auto envelope = MakeCommandEnvelope(drone_id, *kCommand, priority);
+    const bool verify = common::HasFlag(argc, argv, "--verify");
+    const auto wait_options = ParseCommandWaitOptions(argc, argv);
+    if (!wait_options.has_value()) {
+        std::cerr << wait_options.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    const auto kResult =
+        verify ? client.SendCommandAndWait(envelope, *wait_options) : client.SendCommand(envelope);
     if (!kResult.ok) {
         std::cerr << "Command FAILED: " << kResult.message;
         if (!kResult.correlation_id.empty()) {
@@ -1450,14 +1442,26 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
 [[nodiscard]] bool PrintSwarmResults(
     const std::unordered_map<std::string, swarmkit::client::CommandResult>& results) {
     bool all_ok = true;
+    int ok_count = 0;
+    int failed_count = 0;
     for (const auto& [drone_id, result] : results) {
         std::cout << drone_id << ": " << (result.ok ? "OK" : "FAILED");
         all_ok = all_ok && result.ok;
+        if (result.ok) {
+            ++ok_count;
+        } else {
+            ++failed_count;
+        }
         if (!result.message.empty()) {
             std::cout << " " << result.message;
         }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
         std::cout << "\n";
     }
+    std::cout << "summary: ok=" << ok_count << " failed=" << failed_count
+              << " total=" << results.size() << "\n";
     return all_ok;
 }
 
@@ -1615,6 +1619,12 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
         std::cerr << steps.error() << "\n";
         return EXIT_FAILURE;
     }
+    const bool verify_commands = common::HasFlag(argc, argv, "--verify");
+    const auto wait_options = ParseCommandWaitOptions(argc, argv);
+    if (!wait_options.has_value()) {
+        std::cerr << wait_options.error() << "\n";
+        return EXIT_FAILURE;
+    }
 
     const std::string default_drone_id = common::GetOptionValue(argc, argv, "--drone");
     if (!default_drone_id.empty() && !ContainsDrone(runtime.drone_ids, default_drone_id)) {
@@ -1623,7 +1633,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
     }
 
     const bool needs_telemetry = std::ranges::any_of(*steps, [](const SequenceStep& step) {
-        return !step.wait_conditions.empty() || step.verify || IsDisarmAction(step);
+        return !step.wait_conditions.empty() || IsDisarmAction(step);
     });
     SequenceTelemetryMonitor monitor;
     if (needs_telemetry) {
@@ -1708,10 +1718,20 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
                 swarmkit::commands::CommandContext context;
                 context.client_id = std::string(kCliClientId);
                 context.priority = priority;
-                step_ok = PrintSwarmResults(runtime.client->BroadcastCommand(*command, context));
+                const bool verify_step = verify_commands || step.verify;
+                step_ok = PrintSwarmResults(
+                    verify_step
+                        ? runtime.client->BroadcastCommandAndWait(
+                              *command, context, StepWaitOptions(*wait_options, step))
+                        : runtime.client->BroadcastCommand(*command, context));
             } else {
+                const auto envelope = MakeCommandEnvelope(drone_id, *command, priority);
+                const bool verify_step = verify_commands || step.verify;
                 const auto result =
-                    runtime.client->SendCommand(MakeCommandEnvelope(drone_id, *command, priority));
+                    verify_step
+                        ? runtime.client->SendCommandAndWait(
+                              envelope, StepWaitOptions(*wait_options, step))
+                        : runtime.client->SendCommand(envelope);
                 std::string label = "step " + std::to_string(index) + " drone=" + drone_id;
                 if (attempts > 1) {
                     label += " attempt=" + std::to_string(attempt) + "/" + std::to_string(attempts);
@@ -1733,14 +1753,6 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
             continue;
         }
 
-        if (const auto verification = MakeVerificationCondition(step); verification.has_value()) {
-            if (!WaitForConditions(monitor, target_drones, {*verification}, index)) {
-                ++failed_steps;
-                if (!step.continue_on_error) {
-                    return EXIT_FAILURE;
-                }
-            }
-        }
     }
 
     if (failed_steps > 0) {
@@ -1810,7 +1822,14 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
         }
         swarmkit::commands::CommandEnvelope envelope =
             MakeCommandEnvelope(drone_id, *built, client_cfg.priority);
-        const auto result = runtime->client->SendCommand(envelope);
+        const bool verify = common::HasFlag(argc, argv, "--verify");
+        const auto wait_options = ParseCommandWaitOptions(argc, argv);
+        if (!wait_options.has_value()) {
+            std::cerr << wait_options.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        const auto result = verify ? runtime->client->SendCommandAndWait(envelope, *wait_options)
+                                   : runtime->client->SendCommand(envelope);
         return PrintSwarmResults({{drone_id, result}}) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     if (actions[0] == "land-all") {
@@ -1836,8 +1855,16 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     swarmkit::commands::CommandContext context;
     context.client_id = std::string(kCliClientId);
     context.priority = client_cfg.priority;
-    return PrintSwarmResults(runtime->client->BroadcastCommand(command, context)) ? EXIT_SUCCESS
-                                                                                  : EXIT_FAILURE;
+    const bool verify = common::HasFlag(argc, argv, "--verify");
+    const auto wait_options = ParseCommandWaitOptions(argc, argv);
+    if (!wait_options.has_value()) {
+        std::cerr << wait_options.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    const auto results = verify ? runtime->client->BroadcastCommandAndWait(command, context,
+                                                                           *wait_options)
+                                : runtime->client->BroadcastCommand(command, context);
+    return PrintSwarmResults(results) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 }  // namespace

@@ -258,6 +258,21 @@ CommandResult SwarmClient::SendCommand(const commands::CommandEnvelope& envelope
     return client->SendCommand(envelope);
 }
 
+CommandResult SwarmClient::SendCommandAndWait(const commands::CommandEnvelope& envelope,
+                                              const CommandWaitOptions& options) const {
+    std::shared_ptr<Client> client;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        auto iter = impl_->clients.find(envelope.context.drone_id);
+        if (iter == impl_->clients.end()) {
+            return {.ok = false,
+                    .message = "drone '" + envelope.context.drone_id + "' not registered"};
+        }
+        client = iter->second;
+    }
+    return client->SendCommandAndWait(envelope, options);
+}
+
 HealthStatus SwarmClient::GetHealth(const std::string& drone_id) const {
     std::shared_ptr<Client> client;
     {
@@ -301,6 +316,21 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
         envelope.context.drone_id = drone_id;
         envelope.command = command;
         return client->SendCommand(envelope);
+    });
+}
+
+std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommandAndWait(
+    const commands::Command& command, const commands::CommandContext& context,
+    const CommandWaitOptions& options) const {
+    const auto kSnapshot = impl_->Snapshot();
+    return RunCommandTasks(kSnapshot, [&command, &context, &options](
+                                          const std::string& drone_id,
+                                          const std::shared_ptr<Client>& client) {
+        commands::CommandEnvelope envelope;
+        envelope.context = context;
+        envelope.context.drone_id = drone_id;
+        envelope.command = command;
+        return client->SendCommandAndWait(envelope, options);
     });
 }
 

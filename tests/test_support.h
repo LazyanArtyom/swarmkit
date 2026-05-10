@@ -134,6 +134,11 @@ class RecordingBackend final : public agent::IDroneBackend {
         execute_handler_ = std::move(handler);
     }
 
+    void SetHealth(agent::BackendHealth health) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        health_ = std::move(health);
+    }
+
     void EmitTelemetry(const std::string& drone_id, const core::TelemetryFrame& frame) {
         TelemetryCallback callback;
         {
@@ -191,6 +196,14 @@ class RecordingBackend final : public agent::IDroneBackend {
         };
     }
 
+    [[nodiscard]] agent::BackendHealth GetHealth() const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (health_.has_value()) {
+            return *health_;
+        }
+        return agent::IDroneBackend::GetHealth();
+    }
+
    private:
     struct TelemetryStream {
         int rate_hertz{0};
@@ -203,6 +216,7 @@ class RecordingBackend final : public agent::IDroneBackend {
     std::unordered_map<std::string, int> telemetry_start_count_;
     std::unordered_map<std::string, int> telemetry_stop_count_;
     ExecuteHandler execute_handler_;
+    std::optional<agent::BackendHealth> health_;
 };
 
 class AgentServerHarness {

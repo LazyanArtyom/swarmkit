@@ -11,8 +11,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -60,6 +62,7 @@ constexpr std::string_view kClientEnvClientPrivateKeyPath = "CLIENT_PRIVATE_KEY_
 constexpr std::string_view kClientEnvServerAuthorityOverride = "SERVER_AUTHORITY_OVERRIDE";
 constexpr std::string_view kClientEnvTransportSecurity = "TRANSPORT_SECURITY";
 constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
+constexpr double kEarthRadiusM = 6371000.0;
 
 [[nodiscard]] RpcStatusCode ToRpcStatusCode(const grpc::Status& status) {
     if (status.ok()) {
@@ -644,6 +647,26 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     frame.gps_hdop = proto_frame.gps_hdop();
     frame.link_quality_percent = proto_frame.link_quality_percent();
     return frame;
+}
+
+[[nodiscard]] double DegreesToRadians(double degrees) {
+    constexpr double kPi = 3.14159265358979323846;
+    return degrees * kPi / 180.0;
+}
+
+[[nodiscard]] double DistanceMetres(double lat_one, double lon_one, double lat_two,
+                                    double lon_two) {
+    const double dlat = DegreesToRadians(lat_two - lat_one);
+    const double dlon = DegreesToRadians(lon_two - lon_one);
+    const double rlat_one = DegreesToRadians(lat_one);
+    const double rlat_two = DegreesToRadians(lat_two);
+    const double sin_half_lat = std::sin(dlat / 2.0);
+    const double sin_half_lon = std::sin(dlon / 2.0);
+    const double a = std::clamp(sin_half_lat * sin_half_lat +
+                                    std::cos(rlat_one) * std::cos(rlat_two) * sin_half_lon *
+                                        sin_half_lon,
+                                0.0, 1.0);
+    return kEarthRadiusM * 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
 }
 
 [[nodiscard]] AuthorityEventInfo ToAuthorityEventInfo(
@@ -1666,6 +1689,212 @@ BackendCapabilities Client::GetCapabilities() const {
     return out;
 }
 
+namespace {
+
+enum class VerificationSource {
+    kNone,
+    kHealth,
+    kTelemetry,
+};
+
+struct VerificationSpec {
+    VerificationSource source{VerificationSource::kNone};
+    std::string label;
+    std::function<bool(const HealthStatus&)> health_predicate;
+    std::function<bool(const core::TelemetryFrame&)> telemetry_predicate;
+};
+
+[[nodiscard]] CommandResult MakeVerifiedResult(const CommandResult& command_result,
+                                               std::string_view label) {
+    CommandResult out = command_result;
+    out.ok = true;
+    out.error.code = RpcStatusCode::kOk;
+    out.error.user_message.clear();
+    out.error.debug_message.clear();
+    const std::string prefix = label.empty() ? "command" : std::string(label);
+    out.message = command_result.message.empty() ? prefix + " verified"
+                                                 : command_result.message + "; " + prefix +
+                                                       " verified";
+    return out;
+}
+
+[[nodiscard]] CommandResult MakeVerificationFailure(const CommandResult& command_result,
+                                                    RpcStatusCode code, std::string message) {
+    CommandResult out = command_result;
+    out.ok = false;
+    out.message = std::move(message);
+    out.error.code = code;
+    out.error.user_message = out.message;
+    out.error.debug_message = out.message;
+    return out;
+}
+
+[[nodiscard]] VerificationSpec BuildVerificationSpec(const Command& command,
+                                                     const CommandWaitOptions& options) {
+    return std::visit(
+        core::Overloaded{
+            [&](const FlightCmd& flight) {
+                return std::visit(
+                    core::Overloaded{
+                        [](const CmdArm&) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kHealth,
+                                .label = "arm",
+                                .health_predicate =
+                                    [](const HealthStatus& health) { return health.armed; },
+                            };
+                        },
+                        [](const CmdDisarm&) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kHealth,
+                                .label = "disarm",
+                                .health_predicate =
+                                    [](const HealthStatus& health) { return !health.armed; },
+                            };
+                        },
+                        [&](const CmdTakeoff& takeoff) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kTelemetry,
+                                .label = "takeoff",
+                                .telemetry_predicate =
+                                    [target_alt = static_cast<float>(takeoff.alt_m),
+                                     tolerance = options.altitude_tolerance_m](
+                                        const core::TelemetryFrame& frame) {
+                                        return frame.armed && !frame.landed &&
+                                               frame.rel_alt_m + tolerance >= target_alt;
+                                    },
+                            };
+                        },
+                        [](const CmdLand&) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kHealth,
+                                .label = "land",
+                                .health_predicate = [](const HealthStatus& health) {
+                                    return health.landed || !health.armed;
+                                },
+                            };
+                        },
+                        [](const auto&) { return VerificationSpec{}; },
+                    },
+                    flight);
+            },
+            [&](const NavCmd& nav) {
+                return std::visit(
+                    core::Overloaded{
+                        [&](const CmdSetWaypoint& waypoint) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kTelemetry,
+                                .label = "waypoint",
+                                .telemetry_predicate =
+                                    [waypoint, options](const core::TelemetryFrame& frame) {
+                                        return DistanceMetres(frame.lat_deg, frame.lon_deg,
+                                                              waypoint.lat_deg,
+                                                              waypoint.lon_deg) <=
+                                                   options.position_radius_m &&
+                                               std::abs(frame.rel_alt_m -
+                                                        static_cast<float>(waypoint.alt_m)) <=
+                                                   options.altitude_tolerance_m;
+                                    },
+                            };
+                        },
+                        [&](const CmdGoto& go_to) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kTelemetry,
+                                .label = "goto",
+                                .telemetry_predicate =
+                                    [go_to, options](const core::TelemetryFrame& frame) {
+                                        return DistanceMetres(frame.lat_deg, frame.lon_deg,
+                                                              go_to.lat_deg, go_to.lon_deg) <=
+                                                   options.position_radius_m &&
+                                               std::abs(frame.rel_alt_m -
+                                                        static_cast<float>(go_to.alt_m)) <=
+                                                   options.altitude_tolerance_m;
+                                    },
+                            };
+                        },
+                        [](const auto&) { return VerificationSpec{}; },
+                    },
+                    nav);
+            },
+            [](const auto&) { return VerificationSpec{}; },
+        },
+        command);
+}
+
+[[nodiscard]] CommandResult WaitForHealthVerification(const Client& client,
+                                                      const CommandResult& command_result,
+                                                      const CommandWaitOptions& options,
+                                                      const VerificationSpec& spec) {
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(std::max(1, options.timeout_ms));
+    const auto poll_interval = std::chrono::milliseconds(std::max(1, options.poll_interval_ms));
+    HealthStatus last_health;
+    do {
+        last_health = client.GetHealth();
+        if (last_health.ok && spec.health_predicate && spec.health_predicate(last_health)) {
+            return MakeVerifiedResult(command_result, spec.label);
+        }
+        std::this_thread::sleep_for(poll_interval);
+    } while (std::chrono::steady_clock::now() < deadline);
+
+    std::string detail = spec.label + " verification timed out";
+    if (!last_health.message.empty()) {
+        detail += ": " + last_health.message;
+    }
+    return MakeVerificationFailure(command_result, RpcStatusCode::kDeadlineExceeded,
+                                   std::move(detail));
+}
+
+[[nodiscard]] CommandResult WaitForTelemetryVerification(
+    swarmkit::v1::AgentService::Stub& stub, const std::string& drone_id,
+    const CommandResult& command_result, const CommandWaitOptions& options,
+    const VerificationSpec& spec) {
+    const std::string correlation_id =
+        command_result.correlation_id.empty() ? MakeCorrelationId("verify")
+                                              : command_result.correlation_id;
+    grpc::ClientContext context;
+    context.AddMetadata(std::string(kCorrelationMetadataKey), correlation_id);
+    context.set_deadline(std::chrono::system_clock::now() +
+                         std::chrono::milliseconds(std::max(1, options.timeout_ms)));
+
+    swarmkit::v1::TelemetryRequest request;
+    request.set_drone_id(drone_id);
+    request.set_rate_hz(std::max(1, options.telemetry_rate_hz));
+
+    auto reader = stub.StreamTelemetry(&context, request);
+    swarmkit::v1::TelemetryFrame proto_frame;
+    while (reader->Read(&proto_frame)) {
+        const core::TelemetryFrame frame = ToCoreTelemetryFrame(proto_frame);
+        if (spec.telemetry_predicate && spec.telemetry_predicate(frame)) {
+            context.TryCancel();
+            static_cast<void>(reader->Finish());
+            return MakeVerifiedResult(command_result, spec.label);
+        }
+    }
+
+    const grpc::Status status = reader->Finish();
+    if (!status.ok() && status.error_code() != grpc::StatusCode::DEADLINE_EXCEEDED &&
+        !status.error_message().empty()) {
+        return MakeVerificationFailure(
+            command_result, ToRpcStatusCode(status),
+            spec.label + " verification stream failed: " + status.error_message());
+    }
+    return MakeVerificationFailure(command_result, RpcStatusCode::kDeadlineExceeded,
+                                   spec.label + " verification timed out");
+}
+
+[[nodiscard]] CommandEnvelope MakeClientCommandEnvelope(const ClientConfig& config,
+                                                       std::string drone_id, Command command) {
+    CommandEnvelope envelope;
+    envelope.context.drone_id = std::move(drone_id);
+    envelope.context.client_id = config.client_id;
+    envelope.context.priority = config.priority;
+    envelope.command = std::move(command);
+    return envelope;
+}
+
+}  // namespace
+
 CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) const {
     CommandResult out;
 
@@ -1699,6 +1928,60 @@ CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) con
     out.error.correlation_id = out.correlation_id;
     out.error.attempt_count = attempt_count;
     return out;
+}
+
+CommandResult Client::SendCommandAndWait(const commands::CommandEnvelope& envelope,
+                                         const CommandWaitOptions& options) const {
+    const CommandResult command_result = SendCommand(envelope);
+    if (!command_result.ok) {
+        return command_result;
+    }
+
+    const VerificationSpec spec = BuildVerificationSpec(envelope.command, options);
+    switch (spec.source) {
+        case VerificationSource::kNone:
+            return command_result;
+        case VerificationSource::kHealth:
+            return WaitForHealthVerification(*this, command_result, options, spec);
+        case VerificationSource::kTelemetry:
+            return WaitForTelemetryVerification(*impl_->stub, envelope.context.drone_id,
+                                                command_result, options, spec);
+    }
+    return command_result;
+}
+
+CommandResult Client::ArmAndWait(const std::string& drone_id,
+                                 const CommandWaitOptions& options) const {
+    return SendCommandAndWait(
+        MakeClientCommandEnvelope(impl_->config, drone_id, FlightCmd{CmdArm{}}), options);
+}
+
+CommandResult Client::TakeoffAndWait(const std::string& drone_id, double alt_m,
+                                     const CommandWaitOptions& options) const {
+    return SendCommandAndWait(
+        MakeClientCommandEnvelope(impl_->config, drone_id, FlightCmd{CmdTakeoff{.alt_m = alt_m}}),
+        options);
+}
+
+CommandResult Client::GotoAndWait(const std::string& drone_id, double lat_deg, double lon_deg,
+                                  double alt_m, float speed_mps,
+                                  const CommandWaitOptions& options) const {
+    return SendCommandAndWait(
+        MakeClientCommandEnvelope(
+            impl_->config, drone_id,
+            NavCmd{CmdGoto{
+                .lat_deg = lat_deg,
+                .lon_deg = lon_deg,
+                .alt_m = alt_m,
+                .speed_mps = speed_mps,
+            }}),
+        options);
+}
+
+CommandResult Client::LandAndWait(const std::string& drone_id,
+                                  const CommandWaitOptions& options) const {
+    return SendCommandAndWait(
+        MakeClientCommandEnvelope(impl_->config, drone_id, FlightCmd{CmdLand{}}), options);
 }
 
 GoalResult Client::SetActiveGoal(const ActiveGoal& goal) const {
