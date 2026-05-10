@@ -7,6 +7,26 @@
 #include "mavlink_telemetry_decoder.h"
 
 namespace swarmkit::agent::mavlink {
+namespace {
+
+constexpr std::uint16_t kInvalidGpsEph = UINT16_MAX;
+
+[[nodiscard]] bool EstimateArdupilotEkfOk(std::uint16_t flags) {
+    constexpr auto required =
+        static_cast<std::uint16_t>(EKF_ATTITUDE | EKF_VELOCITY_HORIZ | EKF_POS_HORIZ_REL);
+    return (flags & required) == required &&
+           (flags & static_cast<std::uint16_t>(EKF_UNINITIALIZED | EKF_GPS_GLITCHING)) == 0U;
+}
+
+[[nodiscard]] bool EstimateCommonEstimatorOk(std::uint16_t flags) {
+    constexpr auto required = static_cast<std::uint16_t>(
+        ESTIMATOR_ATTITUDE | ESTIMATOR_VELOCITY_HORIZ | ESTIMATOR_POS_HORIZ_REL);
+    return (flags & required) == required &&
+           (flags & static_cast<std::uint16_t>(ESTIMATOR_GPS_GLITCH | ESTIMATOR_ACCEL_ERROR)) ==
+               0U;
+}
+
+}  // namespace
 
 MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
     const mavlink_message_t& message, TelemetryCache* telemetry_cache,
@@ -25,7 +45,6 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             telemetry_cache->failsafe = heartbeat.system_status == MAV_STATE_CRITICAL ||
                                         heartbeat.system_status == MAV_STATE_EMERGENCY ||
                                         heartbeat.system_status == MAV_STATE_FLIGHT_TERMINATION;
-            telemetry_cache->landed = heartbeat.system_status == MAV_STATE_STANDBY;
             state_cache->UpdateHeartbeat(message, heartbeat);
             result.should_publish = true;
             if (!message_intervals_requested_) {
@@ -46,7 +65,7 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             telemetry_cache->vx_mps = static_cast<float>(position.vx) / kCentimetresPerMetre;
             telemetry_cache->vy_mps = static_cast<float>(position.vy) / kCentimetresPerMetre;
             telemetry_cache->vz_mps = static_cast<float>(position.vz) / kCentimetresPerMetre;
-            state_cache->UpdateTelemetry(message);
+            state_cache->UpdateGlobalPosition(message, position);
             result.should_publish = true;
             break;
         }
@@ -56,7 +75,7 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             if (sys_status.battery_remaining >= 0) {
                 telemetry_cache->battery_percent = static_cast<float>(sys_status.battery_remaining);
             }
-            state_cache->UpdateTelemetry(message);
+            state_cache->UpdateSysStatus(message, sys_status);
             result.should_publish = true;
             break;
         }
@@ -75,8 +94,46 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             mavlink_msg_gps_raw_int_decode(&message, &gps);
             telemetry_cache->gps_fix_type = gps.fix_type;
             telemetry_cache->satellites_visible = gps.satellites_visible;
-            telemetry_cache->gps_hdop = static_cast<float>(gps.eph) / kCentimetresPerMetre;
-            state_cache->UpdateTelemetry(message);
+            telemetry_cache->gps_hdop =
+                gps.eph == kInvalidGpsEph ? 0.0F
+                                          : static_cast<float>(gps.eph) / kCentimetresPerMetre;
+            state_cache->UpdateGps(message, gps);
+            result.should_publish = true;
+            break;
+        }
+        case MAVLINK_MSG_ID_EXTENDED_SYS_STATE: {
+            mavlink_extended_sys_state_t sys_state{};
+            mavlink_msg_extended_sys_state_decode(&message, &sys_state);
+            switch (sys_state.landed_state) {
+                case MAV_LANDED_STATE_ON_GROUND:
+                    telemetry_cache->landed = true;
+                    break;
+                case MAV_LANDED_STATE_IN_AIR:
+                case MAV_LANDED_STATE_TAKEOFF:
+                case MAV_LANDED_STATE_LANDING:
+                    telemetry_cache->landed = false;
+                    break;
+                case MAV_LANDED_STATE_UNDEFINED:
+                default:
+                    break;
+            }
+            state_cache->UpdateExtendedSysState(message, sys_state);
+            result.should_publish = true;
+            break;
+        }
+        case MAVLINK_MSG_ID_ESTIMATOR_STATUS: {
+            mavlink_estimator_status_t estimator{};
+            mavlink_msg_estimator_status_decode(&message, &estimator);
+            telemetry_cache->ekf_ok = EstimateCommonEstimatorOk(estimator.flags);
+            state_cache->UpdateEstimatorStatus(message, estimator);
+            result.should_publish = true;
+            break;
+        }
+        case MAVLINK_MSG_ID_EKF_STATUS_REPORT: {
+            mavlink_ekf_status_report_t ekf{};
+            mavlink_msg_ekf_status_report_decode(&message, &ekf);
+            telemetry_cache->ekf_ok = EstimateArdupilotEkfOk(ekf.flags);
+            state_cache->UpdateEkfStatus(message, ekf);
             result.should_publish = true;
             break;
         }

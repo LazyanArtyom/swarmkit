@@ -37,6 +37,8 @@ struct BackendHealth {
     bool failsafe{false};
     bool gps_ok{false};
     bool ekf_ok{true};
+    bool has_relative_altitude{false};
+    float relative_alt_m{};
     float link_quality_percent{};
 };
 

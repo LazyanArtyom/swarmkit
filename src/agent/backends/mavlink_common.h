@@ -99,6 +99,17 @@ struct MavlinkVehicleState {
     bool armed{false};
     int custom_mode{-1};
     bool failsafe{false};
+    bool landed{false};
+    bool landed_known{false};
+    bool gps_seen{false};
+    bool gps_ok{false};
+    int gps_fix_type{};
+    int satellites_visible{};
+    float gps_hdop{};
+    bool ekf_seen{false};
+    bool ekf_ok{true};
+    bool has_relative_altitude{false};
+    float relative_alt_m{};
 };
 
 struct Px4Mode {

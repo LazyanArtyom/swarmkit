@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "active_goal_supervisor.h"
+#include "command_preconditions.h"
 #include "config_yaml.h"
 #include "env_utils.h"
 #include "report_hub.h"
@@ -902,6 +903,33 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status::OK;
         }
         envelope.command = std::move(convert_result.value());
+
+        const CommandPreconditionDecision kPrecondition =
+            EvaluateCommandPreconditions(envelope, backend_->GetHealth());
+        if (kPrecondition.action != CommandPreconditionAction::kExecute) {
+            reply->set_correlation_id(envelope.context.correlation_id);
+            reply->set_error_code(ToProtoErrorCode(kPrecondition.result.code));
+            reply->set_debug_message(kPrecondition.result.message);
+            if (kPrecondition.action == CommandPreconditionAction::kAlreadySatisfied) {
+                reply->set_status(swarmkit::v1::CommandReply::OK);
+                reply->set_message(kPrecondition.result.message);
+                core::Logger::InfoFmt(
+                    "rpc=SendCommand corr={} agent={} drone={} client={} result=already_satisfied "
+                    "detail={}",
+                    envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
+                    envelope.context.client_id, kPrecondition.result.message);
+            } else {
+                counters_.IncrementCommandRejected();
+                reply->set_status(swarmkit::v1::CommandReply::REJECTED);
+                reply->set_message(kPrecondition.result.message);
+                core::Logger::WarnFmt(
+                    "rpc=SendCommand corr={} agent={} drone={} client={} result=precondition_rejected "
+                    "detail={}",
+                    envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
+                    envelope.context.client_id, kPrecondition.result.message);
+            }
+            return grpc::Status::OK;
+        }
 
         const core::Result kExecResult = backend_->Execute(envelope);
         reply->set_correlation_id(envelope.context.correlation_id);
