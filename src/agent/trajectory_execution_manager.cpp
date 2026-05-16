@@ -11,8 +11,10 @@
 #include <cmath>
 #include <cstdio>
 #include <exception>
+#include <expected>
 #include <numbers>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "swarmkit/core/logger.h"
@@ -67,6 +69,10 @@ constexpr float kMinimumTrajectorySpeedMps = 0.1F;
     return point.has_position() || point.has_local_position();
 }
 
+[[nodiscard]] bool HasDispatchTarget(const swarmkit::v1::TrajectoryPoint& point) {
+    return HasPosition(point) || point.has_command();
+}
+
 [[nodiscard]] bool HasValidationError(const swarmkit::v1::ValidateTrajectoryResult& result) {
     return std::ranges::any_of(result.issues(), [](const auto& issue) {
         return issue.severity() == swarmkit::v1::VALIDATION_ERROR;
@@ -84,16 +90,15 @@ void AddIssue(swarmkit::v1::ValidateTrajectoryResult* result,
     issue->set_code(std::string(code));
     issue->set_message(std::string(message));
     issue->set_point_index(point_index);
-    if (severity == swarmkit::v1::VALIDATION_ERROR &&
-        result->first_failing_point_index() < 0) {
+    if (severity == swarmkit::v1::VALIDATION_ERROR && result->first_failing_point_index() < 0) {
         result->set_first_failing_point_index(point_index);
     }
 }
 
-[[nodiscard]] float EffectiveMaxHorizontalSpeed(const VehicleProfile& profile,
-                                                const swarmkit::v1::TrajectoryValidationPolicy& policy) {
+[[nodiscard]] float EffectiveMaxHorizontalSpeed(
+    const VehicleProfile& profile, const swarmkit::v1::TrajectoryValidationPolicy& policy) {
     return policy.max_horizontal_speed_mps() > 0.0F ? policy.max_horizontal_speed_mps()
-                                                     : profile.cruise_speed_mps;
+                                                    : profile.cruise_speed_mps;
 }
 
 [[nodiscard]] float EffectiveMaxClimbSpeed(const VehicleProfile& profile,
@@ -126,11 +131,98 @@ void AddIssue(swarmkit::v1::ValidateTrajectoryResult* result,
     if (!point.has_position()) {
         return 0.0;
     }
-    const double horizontal_m =
-        DistanceMeters(frame.lat_deg, frame.lon_deg, point.position().lat_deg(),
-                       point.position().lon_deg());
+    const double horizontal_m = DistanceMeters(
+        frame.lat_deg, frame.lon_deg, point.position().lat_deg(), point.position().lon_deg());
     const double vertical_m = static_cast<double>(frame.rel_alt_m) - point.position().alt_m();
     return std::sqrt((horizontal_m * horizontal_m) + (vertical_m * vertical_m));
+}
+
+[[nodiscard]] std::expected<commands::Command, core::Result> ConvertTimedProtoCommand(
+    const swarmkit::v1::Command& proto) {
+    switch (proto.kind_case()) {
+        case swarmkit::v1::Command::kArm:
+            return commands::FlightCmd{commands::CmdArm{}};
+        case swarmkit::v1::Command::kDisarm:
+            return commands::FlightCmd{commands::CmdDisarm{}};
+        case swarmkit::v1::Command::kLand:
+            return commands::FlightCmd{commands::CmdLand{}};
+        case swarmkit::v1::Command::kTakeoff:
+            return commands::FlightCmd{commands::CmdTakeoff{proto.takeoff().alt_m()}};
+        case swarmkit::v1::Command::kSetMode:
+            return commands::FlightCmd{commands::CmdSetMode{
+                .mode = proto.set_mode().mode(),
+                .custom_mode = proto.set_mode().custom_mode(),
+            }};
+        case swarmkit::v1::Command::kForceDisarm:
+            return commands::FlightCmd{commands::CmdForceDisarm{}};
+        case swarmkit::v1::Command::kFlightTerminate:
+            return commands::FlightCmd{commands::CmdFlightTerminate{}};
+        case swarmkit::v1::Command::kSetWaypoint:
+            return commands::NavCmd{commands::CmdSetWaypoint{
+                .lat_deg = proto.set_waypoint().lat_deg(),
+                .lon_deg = proto.set_waypoint().lon_deg(),
+                .alt_m = proto.set_waypoint().alt_m(),
+                .speed_mps = proto.set_waypoint().speed_mps(),
+            }};
+        case swarmkit::v1::Command::kReturnHome:
+            return commands::NavCmd{commands::CmdReturnHome{}};
+        case swarmkit::v1::Command::kHoldPosition:
+            return commands::NavCmd{commands::CmdHoldPosition{}};
+        case swarmkit::v1::Command::kSetSpeed:
+            return commands::NavCmd{commands::CmdSetSpeed{proto.set_speed().ground_mps()}};
+        case swarmkit::v1::Command::kGotoPosition:
+            return commands::NavCmd{commands::CmdGoto{
+                .lat_deg = proto.goto_position().lat_deg(),
+                .lon_deg = proto.goto_position().lon_deg(),
+                .alt_m = proto.goto_position().alt_m(),
+                .speed_mps = proto.goto_position().speed_mps(),
+                .yaw_deg = proto.goto_position().yaw_deg(),
+                .use_yaw = proto.goto_position().use_yaw(),
+            }};
+        case swarmkit::v1::Command::kPause:
+            return commands::NavCmd{commands::CmdPause{}};
+        case swarmkit::v1::Command::kResume:
+            return commands::NavCmd{commands::CmdResume{}};
+        case swarmkit::v1::Command::kSetYaw:
+            return commands::NavCmd{commands::CmdSetYaw{
+                .yaw_deg = proto.set_yaw().yaw_deg(),
+                .rate_deg_s = proto.set_yaw().rate_deg_s(),
+                .relative = proto.set_yaw().relative(),
+            }};
+        case swarmkit::v1::Command::kVelocity:
+            return commands::NavCmd{commands::CmdVelocity{
+                .vx_mps = proto.velocity().vx_mps(),
+                .vy_mps = proto.velocity().vy_mps(),
+                .vz_mps = proto.velocity().vz_mps(),
+                .duration_ms = proto.velocity().duration_ms(),
+                .body_frame = proto.velocity().body_frame(),
+            }};
+        case swarmkit::v1::Command::kSetHome:
+            return commands::NavCmd{commands::CmdSetHome{
+                .use_current = proto.set_home().use_current(),
+                .lat_deg = proto.set_home().lat_deg(),
+                .lon_deg = proto.set_home().lon_deg(),
+                .alt_m = proto.set_home().alt_m(),
+            }};
+        case swarmkit::v1::Command::KIND_NOT_SET:
+            return std::unexpected(core::Result::Rejected("timed command is not set"));
+        default:
+            return std::unexpected(
+                core::Result::Rejected("timed trajectory command kind is not supported"));
+    }
+}
+
+[[nodiscard]] commands::CommandPriority PriorityFromPlanLabels(
+    const google::protobuf::Map<std::string, std::string>& labels) {
+    const auto iter = labels.find("swarmkit.context.priority");
+    if (iter == labels.end()) {
+        return commands::CommandPriority::kSupervisor;
+    }
+    try {
+        return static_cast<commands::CommandPriority>(std::stoi(iter->second));
+    } catch (...) {
+        return commands::CommandPriority::kSupervisor;
+    }
 }
 
 }  // namespace
@@ -188,9 +280,9 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
     const float max_altitude = EffectiveMaxAltitude(profile, policy);
 
     std::optional<core::TelemetryFrame> telemetry = LatestTelemetry(plan.drone_id());
-    const float minimum_battery_percent =
-        policy.min_battery_percent() > 0.0F ? policy.min_battery_percent()
-                                            : profile.min_battery_percent;
+    const float minimum_battery_percent = policy.min_battery_percent() > 0.0F
+                                              ? policy.min_battery_percent()
+                                              : profile.min_battery_percent;
     if (policy.require_gps() &&
         (!telemetry.has_value() || telemetry->gps_fix_type < profile.min_gps_fix_type ||
          telemetry->satellites_visible < profile.min_satellites_visible ||
@@ -203,7 +295,8 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
                  "validation policy requires EKF healthy");
     }
     if (minimum_battery_percent > 0.0F && telemetry.has_value() &&
-        telemetry->battery_percent >= 0.0F && telemetry->battery_percent < minimum_battery_percent) {
+        telemetry->battery_percent >= 0.0F &&
+        telemetry->battery_percent < minimum_battery_percent) {
         AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "battery.min",
                  "battery is below trajectory minimum");
     }
@@ -211,9 +304,9 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
     std::int64_t previous_time_ms = -1;
     for (int index = 0; index < plan.points_size(); ++index) {
         const auto& point = plan.points(index);
-        if (!HasPosition(point)) {
-            AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "point.position_required",
-                     "trajectory point requires global or local position", index);
+        if (!HasDispatchTarget(point)) {
+            AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "point.dispatch_required",
+                     "trajectory point requires global/local position or timed command", index);
             continue;
         }
         const std::int64_t point_time =
@@ -241,12 +334,10 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
             }
             if (policy.has_geofence()) {
                 const auto& fence = policy.geofence();
-                const bool outside = pos.lat_deg() < fence.min_lat_deg() ||
-                                     pos.lat_deg() > fence.max_lat_deg() ||
-                                     pos.lon_deg() < fence.min_lon_deg() ||
-                                     pos.lon_deg() > fence.max_lon_deg() ||
-                                     pos.alt_m() < fence.min_alt_m() ||
-                                     pos.alt_m() > fence.max_alt_m();
+                const bool outside =
+                    pos.lat_deg() < fence.min_lat_deg() || pos.lat_deg() > fence.max_lat_deg() ||
+                    pos.lon_deg() < fence.min_lon_deg() || pos.lon_deg() > fence.max_lon_deg() ||
+                    pos.alt_m() < fence.min_alt_m() || pos.alt_m() > fence.max_alt_m();
                 if (outside) {
                     AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "geofence.outside",
                              "trajectory point is outside geofence", index);
@@ -258,6 +349,9 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
             continue;
         }
         const auto& previous = plan.points(index - 1);
+        if (!HasPosition(point) || !HasPosition(previous)) {
+            continue;
+        }
         const std::int64_t prev_time =
             previous.unix_time_ms() > 0 ? previous.unix_time_ms() : previous.time_offset_ms();
         const double dt_s = static_cast<double>(point_time - prev_time) / 1000.0;
@@ -268,9 +362,9 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
         const double horizontal_m =
             local_segment ? LocalDistanceMeters(previous.local_position(), point.local_position())
                           : DistanceMeters(previous.position(), point.position());
-        const double vertical_m = point.has_position()
-                                      ? point.position().alt_m() - previous.position().alt_m()
-                                      : point.local_position().z_m() - previous.local_position().z_m();
+        const double vertical_m =
+            point.has_position() ? point.position().alt_m() - previous.position().alt_m()
+                                 : point.local_position().z_m() - previous.local_position().z_m();
         const auto horizontal_speed = static_cast<float>(horizontal_m / dt_s);
         const auto climb_speed = static_cast<float>(std::max(0.0, vertical_m) / dt_s);
         const auto descent_speed = static_cast<float>(std::max(0.0, -vertical_m) / dt_s);
@@ -321,7 +415,8 @@ core::Result TrajectoryExecutionManager::Upload(
     runtime.handle.set_state(swarmkit::v1::EXECUTION_UPLOADED);
     runtime.handle.set_uploaded_unix_ms(NowUnixMs());
     runtime.handle.set_active_segment(0);
-    runtime.handle.set_message(validation.ok() ? "trajectory uploaded" : "trajectory uploaded with validation errors");
+    runtime.handle.set_message(validation.ok() ? "trajectory uploaded"
+                                               : "trajectory uploaded with validation errors");
 
     const std::string key = Key(runtime.plan.drone_id(), runtime.plan.execution_id());
     std::thread old_worker;
@@ -349,8 +444,8 @@ core::Result TrajectoryExecutionManager::Upload(
     const auto iter = executions_.find(key);
     if (iter != executions_.end()) {
         PublishReport(iter->second.plan, iter->second.handle, swarmkit::v1::TRAJECTORY_UPLOADED,
-                      validation.ok() ? swarmkit::v1::REPORT_INFO : swarmkit::v1::REPORT_WARNING,
-                      0, 0.0, 0.0, 0, iter->second.handle.message(), correlation_id);
+                      validation.ok() ? swarmkit::v1::REPORT_INFO : swarmkit::v1::REPORT_WARNING, 0,
+                      0.0, 0.0, 0, iter->second.handle.message(), correlation_id);
     }
     return core::Result::Success("trajectory uploaded");
 }
@@ -386,8 +481,8 @@ core::Result TrajectoryExecutionManager::Clear(const std::string& drone_id,
     if (out_handle != nullptr) {
         *out_handle = handle;
     }
-    PublishReport(plan, handle, swarmkit::v1::TRAJECTORY_ABORTED, swarmkit::v1::REPORT_INFO, 0,
-                  0.0, 0.0, 0, "trajectory cleared", correlation_id);
+    PublishReport(plan, handle, swarmkit::v1::TRAJECTORY_ABORTED, swarmkit::v1::REPORT_INFO, 0, 0.0,
+                  0.0, 0, "trajectory cleared", correlation_id);
     return core::Result::Success("trajectory cleared");
 }
 
@@ -411,8 +506,8 @@ core::Result TrajectoryExecutionManager::Prepare(
             *out_handle = iter->second.handle;
         }
         PublishReport(iter->second.plan, iter->second.handle, swarmkit::v1::TRAJECTORY_FAILED,
-                      swarmkit::v1::REPORT_ERROR, iter->second.handle.active_segment(), 0.0, 0.0,
-                      0, "trajectory validation failed", correlation_id);
+                      swarmkit::v1::REPORT_ERROR, iter->second.handle.active_segment(), 0.0, 0.0, 0,
+                      "trajectory validation failed", correlation_id);
         return core::Result::Rejected("trajectory validation failed");
     }
     iter->second.handle.set_state(swarmkit::v1::EXECUTION_READY);
@@ -422,8 +517,7 @@ core::Result TrajectoryExecutionManager::Prepare(
         *out_handle = iter->second.handle;
     }
     PublishReport(iter->second.plan, iter->second.handle, swarmkit::v1::TRAJECTORY_READY,
-                  swarmkit::v1::REPORT_INFO, 0, 0.0, 0.0, 0, "trajectory ready",
-                  correlation_id);
+                  swarmkit::v1::REPORT_INFO, 0, 0.0, 0.0, 0, "trajectory ready", correlation_id);
     return core::Result::Success("trajectory ready");
 }
 
@@ -554,7 +648,8 @@ core::Result TrajectoryExecutionManager::Abort(const std::string& drone_id,
 }
 
 std::optional<std::pair<swarmkit::v1::ExecutionHandle, swarmkit::v1::TrajectoryPlan>>
-TrajectoryExecutionManager::Get(const std::string& drone_id, const std::string& execution_id) const {
+TrajectoryExecutionManager::Get(const std::string& drone_id,
+                                const std::string& execution_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto iter = executions_.find(Key(drone_id, execution_id));
     if (iter == executions_.end()) {
@@ -619,15 +714,15 @@ std::optional<core::TelemetryFrame> TrajectoryExecutionManager::LatestTelemetry(
         return std::nullopt;
     }
     TelemetryLease lease;
-    if (const core::Result result =
-            telemetry_->AcquireLease(drone_id, std::max(1, config_->default_telemetry_rate_hz), &lease);
+    if (const core::Result result = telemetry_->AcquireLease(
+            drone_id, std::max(1, config_->default_telemetry_rate_hz), &lease);
         !result.IsOk()) {
         return std::nullopt;
     }
     core::TelemetryFrame frame;
     std::uint64_t sequence = 0;
-    const bool got_frame = TelemetryManager::WaitForFrame(lease, &sequence, &frame,
-                                                          std::chrono::milliseconds{50});
+    const bool got_frame =
+        TelemetryManager::WaitForFrame(lease, &sequence, &frame, std::chrono::milliseconds{50});
     telemetry_->ReleaseLease(lease);
     if (!got_frame) {
         return std::nullopt;
@@ -636,11 +731,10 @@ std::optional<core::TelemetryFrame> TrajectoryExecutionManager::LatestTelemetry(
 }
 
 void TrajectoryExecutionManager::PublishReport(
-    const swarmkit::v1::TrajectoryPlan& plan,
-    const swarmkit::v1::ExecutionHandle& /*unused*/,
+    const swarmkit::v1::TrajectoryPlan& plan, const swarmkit::v1::ExecutionHandle& /*unused*/,
     swarmkit::v1::TrajectoryReportStatus status, swarmkit::v1::ReportSeverity severity,
-    int active_segment, double distance_to_target_m, double drift_m,
-    std::int64_t schedule_error_ms, std::string_view message, std::string_view correlation_id) {
+    int active_segment, double distance_to_target_m, double drift_m, std::int64_t schedule_error_ms,
+    std::string_view message, std::string_view correlation_id) {
     if (reports_ == nullptr) {
         return;
     }
@@ -669,6 +763,24 @@ core::Result TrajectoryExecutionManager::SendTrajectoryPoint(
     if (backend_ == nullptr) {
         return core::Result::Failed("backend unavailable");
     }
+    if (point.has_command()) {
+        auto command = ConvertTimedProtoCommand(point.command());
+        if (!command.has_value()) {
+            return command.error();
+        }
+        commands::CommandEnvelope envelope;
+        envelope.context.drone_id = plan.drone_id();
+        if (const auto iter = plan.labels().find("swarmkit.context.client_id");
+            iter != plan.labels().end() && !iter->second.empty()) {
+            envelope.context.client_id = iter->second;
+        } else {
+            envelope.context.client_id = "swarmkit-agent-execution";
+        }
+        envelope.context.priority = PriorityFromPlanLabels(plan.labels());
+        envelope.context.correlation_id = std::string(correlation_id);
+        envelope.command = std::move(*command);
+        return backend_->Execute(envelope);
+    }
     if (point.use_local_position()) {
         return core::Result::Rejected("local trajectory execution requires backend-native support");
     }
@@ -681,9 +793,8 @@ core::Result TrajectoryExecutionManager::SendTrajectoryPoint(
         .lat_deg = point.position().lat_deg(),
         .lon_deg = point.position().lon_deg(),
         .alt_m = point.position().alt_m(),
-        .speed_mps = point.has_velocity()
-                         ? std::hypot(point.vx_mps(), point.vy_mps())
-                         : config_->vehicle_profile.cruise_speed_mps,
+        .speed_mps = point.has_velocity() ? std::hypot(point.vx_mps(), point.vy_mps())
+                                          : config_->vehicle_profile.cruise_speed_mps,
         .yaw_deg = point.yaw_deg(),
         .use_yaw = point.has_yaw(),
     }};
@@ -711,8 +822,7 @@ core::Result TrajectoryExecutionManager::SendPayloadAction(
     return backend_->Execute(envelope);
 }
 
-std::int64_t TrajectoryExecutionManager::ComputeTrajectoryReachTimeoutMs(
-    double distance_m) const {
+std::int64_t TrajectoryExecutionManager::ComputeTrajectoryReachTimeoutMs(double distance_m) const {
     if (config_ == nullptr) {
         return agent::kDefaultGoalMarginMs;
     }
@@ -741,9 +851,9 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
         }
         if (!plan_snapshot.drone_id().empty()) {
             telemetry_active =
-                telemetry_->AcquireLease(plan_snapshot.drone_id(),
-                                         std::max(1, config_->default_telemetry_rate_hz),
-                                         &lease)
+                telemetry_
+                    ->AcquireLease(plan_snapshot.drone_id(),
+                                   std::max(1, config_->default_telemetry_rate_hz), &lease)
                     .IsOk();
         }
     }
@@ -803,9 +913,9 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
                     iter->second.handle.set_active_segment(index);
                     iter->second.handle.set_message(send_result.message);
                     PublishReport(iter->second.plan, iter->second.handle,
-                                  swarmkit::v1::TRAJECTORY_FAILED,
-                                  swarmkit::v1::REPORT_ERROR, index, 0.0, 0.0,
-                                  schedule_error_ms, send_result.message, correlation_id);
+                                  swarmkit::v1::TRAJECTORY_FAILED, swarmkit::v1::REPORT_ERROR,
+                                  index, 0.0, 0.0, schedule_error_ms, send_result.message,
+                                  correlation_id);
                 }
                 completed = false;
                 break;
@@ -821,9 +931,9 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
 
             while (next_payload_index < static_cast<std::size_t>(plan.payload_timeline_size())) {
                 const auto& action = plan.payload_timeline(static_cast<int>(next_payload_index));
-                const std::int64_t due_ms =
-                    action.unix_time_ms() > 0 ? action.unix_time_ms()
-                                              : handle.start_unix_ms() + action.time_offset_ms();
+                const std::int64_t due_ms = action.unix_time_ms() > 0
+                                                ? action.unix_time_ms()
+                                                : handle.start_unix_ms() + action.time_offset_ms();
                 if (due_ms > NowUnixMs()) {
                     break;
                 }
@@ -842,29 +952,27 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
                             ? DistanceMeters(frame.lat_deg, frame.lon_deg,
                                              point.position().lat_deg(), point.position().lon_deg())
                             : 0.0;
-                    const float tolerance =
-                        plan.validation().tracking_tolerance_m() > 0.0F
-                            ? plan.validation().tracking_tolerance_m()
-                            : kDefaultTrackingToleranceM;
-                    PublishReport(plan, handle,
-                                  distance > tolerance ? swarmkit::v1::TRAJECTORY_DRIFTING
-                                                       : swarmkit::v1::TRAJECTORY_TRACKING,
-                                  distance > tolerance ? swarmkit::v1::REPORT_WARNING
-                                                       : swarmkit::v1::REPORT_INFO,
-                                  index, distance, distance, schedule_error_ms,
-                                  distance > tolerance ? "trajectory drifting"
-                                                       : "trajectory tracking",
-                                  correlation_id);
+                    const float tolerance = plan.validation().tracking_tolerance_m() > 0.0F
+                                                ? plan.validation().tracking_tolerance_m()
+                                                : kDefaultTrackingToleranceM;
+                    PublishReport(
+                        plan, handle,
+                        distance > tolerance ? swarmkit::v1::TRAJECTORY_DRIFTING
+                                             : swarmkit::v1::TRAJECTORY_TRACKING,
+                        distance > tolerance ? swarmkit::v1::REPORT_WARNING
+                                             : swarmkit::v1::REPORT_INFO,
+                        index, distance, distance, schedule_error_ms,
+                        distance > tolerance ? "trajectory drifting" : "trajectory tracking",
+                        correlation_id);
                 }
             }
         }
         if (completed && telemetry_active && plan.points_size() > 0 &&
             plan.points(plan.points_size() - 1).has_position()) {
             const auto& final_point = plan.points(plan.points_size() - 1);
-            const float tolerance =
-                plan.validation().tracking_tolerance_m() > 0.0F
-                    ? plan.validation().tracking_tolerance_m()
-                    : kDefaultTrackingToleranceM;
+            const float tolerance = plan.validation().tracking_tolerance_m() > 0.0F
+                                        ? plan.validation().tracking_tolerance_m()
+                                        : kDefaultTrackingToleranceM;
             bool reached = false;
             bool deadline_initialized = false;
             std::int64_t deadline_ms =
@@ -915,13 +1023,11 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
                 if (auto iter = executions_.find(key); iter != executions_.end()) {
                     iter->second.handle.set_state(swarmkit::v1::EXECUTION_FAILED);
                     iter->second.handle.set_message("trajectory final target not reached");
-                    PublishReport(iter->second.plan, iter->second.handle,
-                                  swarmkit::v1::TRAJECTORY_FAILED,
-                                  swarmkit::v1::REPORT_ERROR,
-                                  iter->second.handle.active_segment(), last_distance_m,
-                                  last_distance_m, 0,
-                                  "trajectory final target not reached before timeout",
-                                  correlation_id);
+                    PublishReport(
+                        iter->second.plan, iter->second.handle, swarmkit::v1::TRAJECTORY_FAILED,
+                        swarmkit::v1::REPORT_ERROR, iter->second.handle.active_segment(),
+                        last_distance_m, last_distance_m, 0,
+                        "trajectory final target not reached before timeout", correlation_id);
                 }
             }
         }

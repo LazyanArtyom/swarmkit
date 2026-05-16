@@ -371,6 +371,8 @@ struct TrajectoryPoint {
     std::int64_t unix_time_ms{};
     GeoPoint position;
     LocalPoint local_position;
+    bool has_position{true};
+    bool has_local_position{false};
     bool use_local_position{false};
     float vx_mps{};
     float vy_mps{};
@@ -379,6 +381,7 @@ struct TrajectoryPoint {
     float yaw_deg{};
     bool has_yaw{false};
     std::vector<TimedPayloadAction> payload_actions;
+    std::optional<commands::Command> command;
 };
 
 struct Geofence {
@@ -703,14 +706,25 @@ class Client {
     [[nodiscard]] ActiveGoalStatus GetActiveGoal(const std::string& drone_id) const;
 
     [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan) const;
+    [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan,
+                                                   const commands::CommandContext& context) const;
     [[nodiscard]] ExecutionResult ClearTrajectory(const std::string& drone_id,
                                                   const std::string& execution_id) const;
     [[nodiscard]] ExecutionResult ValidateTrajectory(const TrajectoryPlan& plan) const;
+    [[nodiscard]] ExecutionResult ValidateTrajectory(const TrajectoryPlan& plan,
+                                                     const commands::CommandContext& context) const;
     [[nodiscard]] ExecutionResult PrepareTrajectory(const std::string& drone_id,
                                                     const std::string& execution_id) const;
+    [[nodiscard]] ExecutionResult PrepareTrajectory(const std::string& drone_id,
+                                                    const std::string& execution_id,
+                                                    const commands::CommandContext& context) const;
     [[nodiscard]] ExecutionResult StartExecutionAt(const std::string& drone_id,
                                                    const std::string& execution_id,
                                                    std::int64_t unix_time_ms) const;
+    [[nodiscard]] ExecutionResult StartExecutionAt(const std::string& drone_id,
+                                                   const std::string& execution_id,
+                                                   std::int64_t unix_time_ms,
+                                                   const commands::CommandContext& context) const;
     [[nodiscard]] ExecutionResult PauseExecution(const std::string& drone_id,
                                                  const std::string& execution_id) const;
     [[nodiscard]] ExecutionResult ResumeExecution(const std::string& drone_id,

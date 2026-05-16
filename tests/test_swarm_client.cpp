@@ -195,6 +195,56 @@ TEST_CASE("SwarmClient applies partial failure hold policy", "[swarm][client][ma
         std::get<commands::NavCmd>(recovery_command)));
 }
 
+TEST_CASE("SwarmClient synchronized execution uses protocol start-at", "[swarm][client][manager]") {
+    testsupport::AgentServerHarness drone_one;
+    testsupport::AgentServerHarness drone_two;
+
+    SwarmClient swarm(MakeDefaultClientConfig());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
+
+    commands::CommandContext context;
+    context.client_id = "test-client";
+    context.priority = commands::CommandPriority::kSupervisor;
+    context.correlation_id = "show-takeoff-001";
+
+    SwarmExecutionOptions options;
+    options.synchronization = SwarmExecutionSynchronization::kProtocolStartAt;
+    options.start_delay = std::chrono::milliseconds{100};
+
+    const SwarmExecutionReport report = swarm.ExecuteSynchronizedCommand(
+        commands::FlightCmd{commands::CmdTakeoff{.alt_m = 5.0}}, context, options);
+    REQUIRE(report.ok);
+    REQUIRE(report.scheduled_start_unix_ms > 0);
+    REQUIRE(report.upload_results.size() == 2);
+    REQUIRE(report.prepare_results.size() == 2);
+    REQUIRE(report.start_results.size() == 2);
+    CHECK(report.start_results.at("drone-1").handle.start_unix_ms ==
+          report.scheduled_start_unix_ms);
+    CHECK(report.start_results.at("drone-2").handle.start_unix_ms ==
+          report.scheduled_start_unix_ms);
+    CHECK(report.readiness.at("drone-1").ready);
+    CHECK(report.readiness.at("drone-2").ready);
+    CHECK(report.time_sync_states.at("drone-1").synced);
+    CHECK(report.time_sync_states.at("drone-2").synced);
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            return drone_one.Backend().ExecuteCallCount() == 1 &&
+                   drone_two.Backend().ExecuteCallCount() == 1;
+        },
+        kWaitTimeout));
+
+    const auto command_one = drone_one.Backend().ExecuteCallAt(0).envelope.command;
+    const auto command_two = drone_two.Backend().ExecuteCallAt(0).envelope.command;
+    REQUIRE(std::holds_alternative<commands::FlightCmd>(command_one));
+    REQUIRE(std::holds_alternative<commands::FlightCmd>(command_two));
+    CHECK(std::holds_alternative<commands::CmdTakeoff>(std::get<commands::FlightCmd>(command_one)));
+    CHECK(std::holds_alternative<commands::CmdTakeoff>(std::get<commands::FlightCmd>(command_two)));
+    CHECK(drone_one.Backend().ExecuteCallAt(0).envelope.context.client_id == "test-client");
+    CHECK(drone_two.Backend().ExecuteCallAt(0).envelope.context.client_id == "test-client");
+}
+
 TEST_CASE("SwarmClient lock all and unlock all operate on every drone", "[swarm][client]") {
     testsupport::AgentServerHarness drone_one;
     testsupport::AgentServerHarness drone_two;

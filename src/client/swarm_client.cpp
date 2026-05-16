@@ -6,10 +6,11 @@
 
 #include "swarmkit/client/swarm_client.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
+#include <cstdlib>
 #include <exception>
 #include <expected>
 #include <mutex>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "swarmkit/core/logger.h"
+#include "swarmkit/core/overloaded.h"
 
 namespace swarmkit::client {
 
@@ -175,6 +177,171 @@ template <typename Result, typename TaskFn>
 
 [[nodiscard]] bool IsSwarmCommand(const commands::Command& command) {
     return std::holds_alternative<commands::SwarmCmd>(command);
+}
+
+[[nodiscard]] bool IsProtocolSchedulableCommand(const commands::Command& command) {
+    return std::holds_alternative<commands::FlightCmd>(command) ||
+           std::holds_alternative<commands::NavCmd>(command);
+}
+
+[[nodiscard]] std::int64_t NowUnixMs() {
+    using std::chrono::duration_cast;
+    using std::chrono::milliseconds;
+    using std::chrono::system_clock;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+[[nodiscard]] std::string MakeSwarmExecutionId(const commands::CommandContext& context) {
+    if (!context.correlation_id.empty()) {
+        return context.correlation_id;
+    }
+    return "swarm-sync-" + std::to_string(NowUnixMs());
+}
+
+[[nodiscard]] CommandResult CommandResultFromExecution(const ExecutionResult& execution,
+                                                       std::string success_message) {
+    CommandResult out;
+    out.ok = execution.ok;
+    out.message = execution.ok ? std::move(success_message) : execution.message;
+    out.correlation_id = execution.correlation_id;
+    out.error = execution.ok
+                    ? MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kOk, out.message)
+                    : execution.error;
+    return out;
+}
+
+[[nodiscard]] CommandResult LocalSwarmError(RpcStatusCode code, std::string message) {
+    CommandResult out;
+    out.ok = false;
+    out.message = std::move(message);
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, code, out.message);
+    return out;
+}
+
+[[nodiscard]] bool TimeSyncAcceptable(const TimeSyncState& state,
+                                      const SwarmExecutionOptions& options, std::string* detail) {
+    if (!options.require_time_sync) {
+        if (detail != nullptr) {
+            *detail = "time sync check disabled";
+        }
+        return true;
+    }
+    if (!state.synced) {
+        if (detail != nullptr) {
+            *detail = "time sync is not established";
+        }
+        return false;
+    }
+    if (state.stale) {
+        if (detail != nullptr) {
+            *detail = "time sync state is stale";
+        }
+        return false;
+    }
+    if (state.sync_quality_percent < options.min_time_sync_quality_percent) {
+        if (detail != nullptr) {
+            *detail = "time sync quality " + std::to_string(state.sync_quality_percent) +
+                      "% is below required " +
+                      std::to_string(options.min_time_sync_quality_percent) + "%";
+        }
+        return false;
+    }
+    if (std::chrono::milliseconds{std::llabs(state.clock_offset_ms)} > options.max_clock_offset) {
+        if (detail != nullptr) {
+            *detail = "clock offset " + std::to_string(state.clock_offset_ms) +
+                      "ms exceeds allowed " + std::to_string(options.max_clock_offset.count()) +
+                      "ms";
+        }
+        return false;
+    }
+    if (detail != nullptr) {
+        *detail = "time sync ready";
+    }
+    return true;
+}
+
+void PopulateTrajectoryPointFromCommand(const commands::Command& command, TrajectoryPoint* point) {
+    if (point == nullptr) {
+        return;
+    }
+    point->has_position = false;
+    point->has_local_position = false;
+    point->use_local_position = false;
+    point->command = command;
+
+    std::visit(core::Overloaded{
+                   [](const commands::FlightCmd&) {},
+                   [](const commands::MissionCmd&) {},
+                   [](const commands::PayloadCmd&) {},
+                   [](const commands::BackendCmd&) {},
+                   [](const commands::SwarmCmd&) {},
+                   [point](const commands::NavCmd& nav) {
+                       std::visit(core::Overloaded{
+                                      [point](const commands::CmdSetWaypoint& waypoint) {
+                                          point->has_position = true;
+                                          point->position = {
+                                              .lat_deg = waypoint.lat_deg,
+                                              .lon_deg = waypoint.lon_deg,
+                                              .alt_m = waypoint.alt_m,
+                                          };
+                                      },
+                                      [point](const commands::CmdGoto& go_to) {
+                                          point->has_position = true;
+                                          point->position = {
+                                              .lat_deg = go_to.lat_deg,
+                                              .lon_deg = go_to.lon_deg,
+                                              .alt_m = go_to.alt_m,
+                                          };
+                                          point->yaw_deg = go_to.yaw_deg;
+                                          point->has_yaw = go_to.use_yaw;
+                                      },
+                                      [](const auto&) {},
+                                  },
+                                  nav);
+                   },
+               },
+               command);
+}
+
+[[nodiscard]] std::expected<TrajectoryPlan, CommandResult> BuildTimedCommandPlan(
+    const std::string& drone_id, const commands::Command& command,
+    const commands::CommandContext& context, const SwarmExecutionOptions& options,
+    const std::string& execution_id) {
+    if (drone_id.empty()) {
+        return std::unexpected(LocalSwarmError(RpcStatusCode::kInvalidArgument,
+                                               "synchronized execution requires drone_id"));
+    }
+    if (IsSwarmCommand(command)) {
+        return std::unexpected(
+            LocalSwarmError(RpcStatusCode::kInvalidArgument,
+                            "logical swarm commands are manager state changes and cannot be "
+                            "scheduled as timed vehicle execution"));
+    }
+    if (!IsProtocolSchedulableCommand(command)) {
+        return std::unexpected(LocalSwarmError(
+            RpcStatusCode::kUnsupported,
+            "protocol synchronized execution currently supports flight and navigation commands"));
+    }
+
+    TrajectoryPlan plan;
+    plan.execution_id = execution_id;
+    plan.revision = 1;
+    plan.drone_id = drone_id;
+    plan.frame = "timed-command";
+    plan.validation.tracking_tolerance_m = options.max_drift_m;
+    plan.labels["swarmkit.execution_kind"] = "synchronized-command";
+    plan.labels["swarmkit.context.client_id"] = context.client_id;
+    plan.labels["swarmkit.context.priority"] = std::to_string(static_cast<int>(context.priority));
+    if (!context.correlation_id.empty()) {
+        plan.labels["swarmkit.context.correlation_id"] = context.correlation_id;
+    }
+    plan.labels["swarmkit.max_drift_m"] = std::to_string(options.max_drift_m);
+
+    TrajectoryPoint point;
+    point.time_offset_ms = 0;
+    PopulateTrajectoryPointFromCommand(command, &point);
+    plan.points.push_back(std::move(point));
+    return plan;
 }
 
 [[nodiscard]] double DegreesToRadians(double degrees) {
@@ -661,42 +828,174 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
     };
 
     std::unordered_map<std::string, CommandResult> command_results;
-    if (options.synchronization == SwarmExecutionSynchronization::kParallelFanout ||
-        target_clients.size() <= 1) {
+    if (options.synchronization == SwarmExecutionSynchronization::kParallelFanout) {
         command_results = RunCommandTasks(target_clients, dispatch);
     } else {
-        command_results.reserve(target_clients.size());
-        std::mutex result_mutex;
-        std::mutex barrier_mutex;
-        std::condition_variable barrier_cv;
-        std::size_t ready_count = 0;
-        bool release = false;
-        const auto start_at = std::chrono::steady_clock::now() + options.start_delay;
+        const std::string execution_id = MakeSwarmExecutionId(context);
+        std::unordered_map<std::string, TrajectoryPlan> plans_by_drone;
+        std::vector<std::pair<std::string, std::shared_ptr<Client>>> protocol_clients;
+        plans_by_drone.reserve(target_clients.size());
+        protocol_clients.reserve(target_clients.size());
 
-        std::vector<std::thread> workers;
-        workers.reserve(target_clients.size());
         for (const auto& [drone_id, client] : target_clients) {
-            workers.emplace_back([&, drone_id, client]() {
-                {
-                    std::unique_lock<std::mutex> lock(barrier_mutex);
-                    ++ready_count;
-                    if (ready_count == target_clients.size()) {
-                        release = true;
-                        barrier_cv.notify_all();
-                    } else {
-                        barrier_cv.wait(lock, [&release]() { return release; });
-                    }
-                }
-                if (options.start_delay.count() > 0) {
-                    std::this_thread::sleep_until(start_at);
-                }
-                CommandResult result = dispatch(drone_id, client);
-                std::lock_guard<std::mutex> lock(result_mutex);
-                command_results.emplace(drone_id, std::move(result));
-            });
+            const auto command_iter = planned_commands.find(drone_id);
+            if (command_iter == planned_commands.end()) {
+                command_results.emplace(drone_id,
+                                        LocalCommandResult(false, "no planned command for drone"));
+                continue;
+            }
+            if (IsSwarmCommand(command_iter->second)) {
+                commands::CommandEnvelope envelope;
+                envelope.context = context;
+                envelope.context.drone_id = drone_id;
+                envelope.command = command_iter->second;
+                command_results.emplace(drone_id, HandleSwarmCommand(envelope));
+                continue;
+            }
+
+            auto plan = BuildTimedCommandPlan(drone_id, command_iter->second, context, options,
+                                              execution_id);
+            if (!plan.has_value()) {
+                command_results.emplace(drone_id, std::move(plan.error()));
+                continue;
+            }
+            SwarmDroneReadiness readiness;
+            readiness.registered = true;
+            readiness.message = "registered";
+            report.readiness.emplace(drone_id, readiness);
+            plans_by_drone.emplace(drone_id, std::move(*plan));
+            protocol_clients.emplace_back(drone_id, client);
         }
-        for (auto& worker : workers) {
-            worker.join();
+
+        if (!protocol_clients.empty()) {
+            report.upload_results = RunClientTasks<ExecutionResult>(
+                protocol_clients,
+                [&plans_by_drone, &context](const std::string& drone_id,
+                                            const std::shared_ptr<Client>& client) {
+                    commands::CommandContext drone_context = context;
+                    drone_context.drone_id = drone_id;
+                    return client->UploadTrajectory(plans_by_drone.at(drone_id), drone_context);
+                });
+
+            std::unordered_set<std::string> uploaded_ids;
+            for (const auto& [drone_id, upload] : report.upload_results) {
+                auto& readiness = report.readiness[drone_id];
+                readiness.registered = true;
+                readiness.uploaded = upload.ok;
+                readiness.handle = upload.handle;
+                readiness.error = upload.error;
+                if (!upload.ok) {
+                    readiness.message = upload.message;
+                    command_results.emplace(
+                        drone_id,
+                        CommandResultFromExecution(upload, "synchronized execution uploaded"));
+                    continue;
+                }
+                readiness.message = "uploaded";
+                uploaded_ids.insert(drone_id);
+            }
+
+            const auto uploaded_clients = FilterClients(snapshot, uploaded_ids);
+            report.prepare_results = RunClientTasks<ExecutionResult>(
+                uploaded_clients, [&execution_id, &context](const std::string& drone_id,
+                                                            const std::shared_ptr<Client>& client) {
+                    commands::CommandContext drone_context = context;
+                    drone_context.drone_id = drone_id;
+                    return client->PrepareTrajectory(drone_id, execution_id, drone_context);
+                });
+
+            std::unordered_set<std::string> prepared_ids;
+            for (const auto& [drone_id, prepare] : report.prepare_results) {
+                auto& readiness = report.readiness[drone_id];
+                readiness.prepared = prepare.ok && prepare.handle.state == ExecutionState::kReady;
+                readiness.handle = prepare.handle;
+                readiness.error = prepare.error;
+                if (!readiness.prepared) {
+                    readiness.message = prepare.message.empty()
+                                            ? "trajectory did not reach ready state"
+                                            : prepare.message;
+                    command_results.emplace(
+                        drone_id,
+                        CommandResultFromExecution(prepare, "synchronized execution prepared"));
+                    continue;
+                }
+                readiness.message = "prepared";
+                prepared_ids.insert(drone_id);
+            }
+
+            const auto prepared_clients = FilterClients(snapshot, prepared_ids);
+            std::unordered_set<std::string> ready_ids;
+            for (const auto& [drone_id, client] : prepared_clients) {
+                TimeSyncState sync = client->GetTimeSyncState(drone_id);
+                report.time_sync_states.emplace(drone_id, sync);
+                auto& readiness = report.readiness[drone_id];
+                readiness.time_sync = sync;
+                std::string sync_detail;
+                readiness.time_sync_ok = TimeSyncAcceptable(sync, options, &sync_detail);
+                if (!readiness.time_sync_ok) {
+                    readiness.message = sync_detail;
+                    readiness.error = MakeLocalError(
+                        core::ErrorDomain::kSwarm, RpcStatusCode::kFailedPrecondition, sync_detail);
+                    command_results.emplace(
+                        drone_id, LocalSwarmError(RpcStatusCode::kFailedPrecondition, sync_detail));
+                    continue;
+                }
+                readiness.ready = true;
+                readiness.message = "ready for synchronized start";
+                ready_ids.insert(drone_id);
+            }
+
+            const std::size_t quorum =
+                options.quorum > 0 ? options.quorum : (report.requested / 2U) + 1U;
+            const bool existing_failure =
+                std::any_of(command_results.begin(), command_results.end(),
+                            [](const auto& entry) { return !entry.second.ok; }) ||
+                std::any_of(report.results.begin(), report.results.end(),
+                            [](const auto& entry) { return !entry.second.ok; });
+
+            bool may_start = !ready_ids.empty();
+            if (options.partial_failure_policy == SwarmPartialFailurePolicy::kAllOrAbort) {
+                may_start = !existing_failure && ready_ids.size() == protocol_clients.size();
+            } else if (options.partial_failure_policy == SwarmPartialFailurePolicy::kQuorum) {
+                may_start = ready_ids.size() >= quorum;
+            }
+
+            if (!may_start) {
+                const auto uploaded_for_cleanup = FilterClients(snapshot, uploaded_ids);
+                report.abort_results = RunClientTasks<ExecutionResult>(
+                    uploaded_for_cleanup, [&execution_id](const std::string& drone_id,
+                                                          const std::shared_ptr<Client>& client) {
+                        return client->AbortExecution(drone_id, execution_id);
+                    });
+                for (const std::string& drone_id : ready_ids) {
+                    command_results.emplace(
+                        drone_id, LocalSwarmError(RpcStatusCode::kRejected,
+                                                  "synchronized execution aborted before start "
+                                                  "because readiness policy was not satisfied"));
+                }
+            } else {
+                report.scheduled_start_unix_ms = NowUnixMs() + options.start_delay.count();
+                const auto ready_clients = FilterClients(snapshot, ready_ids);
+                report.start_results = RunClientTasks<ExecutionResult>(
+                    ready_clients,
+                    [&execution_id, &context, &report](const std::string& drone_id,
+                                                       const std::shared_ptr<Client>& client) {
+                        commands::CommandContext drone_context = context;
+                        drone_context.drone_id = drone_id;
+                        return client->StartExecutionAt(
+                            drone_id, execution_id, report.scheduled_start_unix_ms, drone_context);
+                    });
+                for (const auto& [drone_id, start] : report.start_results) {
+                    auto& readiness = report.readiness[drone_id];
+                    readiness.handle = start.handle;
+                    readiness.error = start.error;
+                    readiness.ready = readiness.ready && start.ok;
+                    readiness.message = start.ok ? "scheduled synchronized start" : start.message;
+                    command_results.emplace(
+                        drone_id,
+                        CommandResultFromExecution(start, "synchronized execution scheduled"));
+                }
+            }
         }
     }
 
@@ -777,6 +1076,9 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
     std::ostringstream message;
     message << "swarm execution requested=" << report.requested << " succeeded=" << report.succeeded
             << " failed=" << report.failed;
+    if (report.scheduled_start_unix_ms > 0) {
+        message << " scheduled_start_unix_ms=" << report.scheduled_start_unix_ms;
+    }
     if (options.partial_failure_policy == SwarmPartialFailurePolicy::kQuorum) {
         message << " quorum=" << quorum;
     }

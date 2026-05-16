@@ -1246,11 +1246,15 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     swarmkit::v1::TrajectoryPoint proto;
     proto.set_time_offset_ms(point.time_offset_ms);
     proto.set_unix_time_ms(point.unix_time_ms);
-    *proto.mutable_position() = ToProtoGeoPoint(point.position);
-    auto* local = proto.mutable_local_position();
-    local->set_x_m(point.local_position.x_m);
-    local->set_y_m(point.local_position.y_m);
-    local->set_z_m(point.local_position.z_m);
+    if (point.has_position) {
+        *proto.mutable_position() = ToProtoGeoPoint(point.position);
+    }
+    if (point.has_local_position || point.use_local_position) {
+        auto* local = proto.mutable_local_position();
+        local->set_x_m(point.local_position.x_m);
+        local->set_y_m(point.local_position.y_m);
+        local->set_z_m(point.local_position.z_m);
+    }
     proto.set_use_local_position(point.use_local_position);
     proto.set_vx_mps(point.vx_mps);
     proto.set_vy_mps(point.vy_mps);
@@ -1260,6 +1264,13 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     proto.set_has_yaw(point.has_yaw);
     for (const auto& action : point.payload_actions) {
         *proto.add_payload_actions() = ToProtoTimedPayloadAction(action);
+    }
+    if (point.command.has_value()) {
+        swarmkit::v1::CommandRequest request;
+        commands::CommandEnvelope envelope;
+        envelope.command = *point.command;
+        BuildProtoCommand(envelope, request);
+        *proto.mutable_command() = request.cmd();
     }
     return proto;
 }
@@ -1329,13 +1340,86 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     };
 }
 
+[[nodiscard]] std::optional<commands::Command> ToClientCommand(const swarmkit::v1::Command& proto) {
+    switch (proto.kind_case()) {
+        case swarmkit::v1::Command::kArm:
+            return commands::FlightCmd{commands::CmdArm{}};
+        case swarmkit::v1::Command::kDisarm:
+            return commands::FlightCmd{commands::CmdDisarm{}};
+        case swarmkit::v1::Command::kLand:
+            return commands::FlightCmd{commands::CmdLand{}};
+        case swarmkit::v1::Command::kTakeoff:
+            return commands::FlightCmd{commands::CmdTakeoff{proto.takeoff().alt_m()}};
+        case swarmkit::v1::Command::kSetMode:
+            return commands::FlightCmd{commands::CmdSetMode{
+                .mode = proto.set_mode().mode(),
+                .custom_mode = proto.set_mode().custom_mode(),
+            }};
+        case swarmkit::v1::Command::kForceDisarm:
+            return commands::FlightCmd{commands::CmdForceDisarm{}};
+        case swarmkit::v1::Command::kFlightTerminate:
+            return commands::FlightCmd{commands::CmdFlightTerminate{}};
+        case swarmkit::v1::Command::kSetWaypoint:
+            return commands::NavCmd{commands::CmdSetWaypoint{
+                .lat_deg = proto.set_waypoint().lat_deg(),
+                .lon_deg = proto.set_waypoint().lon_deg(),
+                .alt_m = proto.set_waypoint().alt_m(),
+                .speed_mps = proto.set_waypoint().speed_mps(),
+            }};
+        case swarmkit::v1::Command::kReturnHome:
+            return commands::NavCmd{commands::CmdReturnHome{}};
+        case swarmkit::v1::Command::kHoldPosition:
+            return commands::NavCmd{commands::CmdHoldPosition{}};
+        case swarmkit::v1::Command::kSetSpeed:
+            return commands::NavCmd{commands::CmdSetSpeed{proto.set_speed().ground_mps()}};
+        case swarmkit::v1::Command::kGotoPosition:
+            return commands::NavCmd{commands::CmdGoto{
+                .lat_deg = proto.goto_position().lat_deg(),
+                .lon_deg = proto.goto_position().lon_deg(),
+                .alt_m = proto.goto_position().alt_m(),
+                .speed_mps = proto.goto_position().speed_mps(),
+                .yaw_deg = proto.goto_position().yaw_deg(),
+                .use_yaw = proto.goto_position().use_yaw(),
+            }};
+        case swarmkit::v1::Command::kPause:
+            return commands::NavCmd{commands::CmdPause{}};
+        case swarmkit::v1::Command::kResume:
+            return commands::NavCmd{commands::CmdResume{}};
+        case swarmkit::v1::Command::kSetYaw:
+            return commands::NavCmd{commands::CmdSetYaw{
+                .yaw_deg = proto.set_yaw().yaw_deg(),
+                .rate_deg_s = proto.set_yaw().rate_deg_s(),
+                .relative = proto.set_yaw().relative(),
+            }};
+        case swarmkit::v1::Command::kVelocity:
+            return commands::NavCmd{commands::CmdVelocity{
+                .vx_mps = proto.velocity().vx_mps(),
+                .vy_mps = proto.velocity().vy_mps(),
+                .vz_mps = proto.velocity().vz_mps(),
+                .duration_ms = proto.velocity().duration_ms(),
+                .body_frame = proto.velocity().body_frame(),
+            }};
+        case swarmkit::v1::Command::kSetHome:
+            return commands::NavCmd{commands::CmdSetHome{
+                .use_current = proto.set_home().use_current(),
+                .lat_deg = proto.set_home().lat_deg(),
+                .lon_deg = proto.set_home().lon_deg(),
+                .alt_m = proto.set_home().alt_m(),
+            }};
+        default:
+            return std::nullopt;
+    }
+}
+
 [[nodiscard]] TrajectoryPoint ToTrajectoryPoint(const swarmkit::v1::TrajectoryPoint& proto) {
     TrajectoryPoint point;
     point.time_offset_ms = proto.time_offset_ms();
     point.unix_time_ms = proto.unix_time_ms();
+    point.has_position = proto.has_position();
     if (proto.has_position()) {
         point.position = ToGeoPoint(proto.position());
     }
+    point.has_local_position = proto.has_local_position();
     if (proto.has_local_position()) {
         point.local_position = LocalPoint{
             .x_m = proto.local_position().x_m(),
@@ -1352,6 +1436,9 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     point.has_yaw = proto.has_yaw();
     for (const auto& action : proto.payload_actions()) {
         point.payload_actions.push_back(ToTimedPayloadAction(action));
+    }
+    if (proto.has_command()) {
+        point.command = ToClientCommand(proto.command());
     }
     return point;
 }
@@ -2557,15 +2644,52 @@ ActiveGoalStatus Client::GetActiveGoal(const std::string& drone_id) const {
     return out;
 }
 
+namespace {
+
+[[nodiscard]] commands::CommandContext DefaultExecutionContext(const ClientConfig& config,
+                                                               std::string drone_id) {
+    commands::CommandContext context;
+    context.drone_id = std::move(drone_id);
+    context.client_id = config.client_id;
+    context.priority = config.priority;
+    return context;
+}
+
+void PopulateProtoCommandContext(const ClientConfig& config,
+                                 const commands::CommandContext& context,
+                                 std::string_view fallback_drone_id,
+                                 std::string_view correlation_id,
+                                 swarmkit::v1::CommandContext* proto_context) {
+    if (proto_context == nullptr) {
+        return;
+    }
+    proto_context->set_drone_id(context.drone_id.empty() ? std::string(fallback_drone_id)
+                                                         : context.drone_id);
+    proto_context->set_client_id(context.client_id.empty() ? config.client_id : context.client_id);
+    proto_context->set_priority(static_cast<std::int32_t>(context.priority));
+    proto_context->set_correlation_id(context.correlation_id.empty() ? std::string(correlation_id)
+                                                                     : context.correlation_id);
+    const auto epoch = std::chrono::system_clock::time_point{};
+    if (context.deadline != epoch) {
+        proto_context->set_deadline_unix_ms(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                context.deadline.time_since_epoch())
+                                                .count());
+    }
+}
+
+}  // namespace
+
 ExecutionResult Client::UploadTrajectory(const TrajectoryPlan& plan) const {
+    return UploadTrajectory(plan, DefaultExecutionContext(impl_->config, plan.drone_id));
+}
+
+ExecutionResult Client::UploadTrajectory(const TrajectoryPlan& plan,
+                                         const commands::CommandContext& context) const {
     ExecutionResult out;
     const std::string kCorrelationId = MakeCorrelationId("trajectory-upload");
     swarmkit::v1::UploadTrajectoryRequest req;
-    auto* ctx = req.mutable_ctx();
-    ctx->set_drone_id(plan.drone_id);
-    ctx->set_client_id(impl_->config.client_id);
-    ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
-    ctx->set_correlation_id(kCorrelationId);
+    PopulateProtoCommandContext(impl_->config, context, plan.drone_id, kCorrelationId,
+                                req.mutable_ctx());
     PopulateProtoTrajectoryPlan(plan, req.mutable_plan());
 
     swarmkit::v1::ExecutionReply rep;
@@ -2596,14 +2720,16 @@ ExecutionResult Client::UploadTrajectory(const TrajectoryPlan& plan) const {
 }
 
 ExecutionResult Client::ValidateTrajectory(const TrajectoryPlan& plan) const {
+    return ValidateTrajectory(plan, DefaultExecutionContext(impl_->config, plan.drone_id));
+}
+
+ExecutionResult Client::ValidateTrajectory(const TrajectoryPlan& plan,
+                                           const commands::CommandContext& context) const {
     ExecutionResult out;
     const std::string kCorrelationId = MakeCorrelationId("trajectory-validate");
     swarmkit::v1::ValidateTrajectoryRequest req;
-    auto* ctx = req.mutable_ctx();
-    ctx->set_drone_id(plan.drone_id);
-    ctx->set_client_id(impl_->config.client_id);
-    ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
-    ctx->set_correlation_id(kCorrelationId);
+    PopulateProtoCommandContext(impl_->config, context, plan.drone_id, kCorrelationId,
+                                req.mutable_ctx());
     PopulateProtoTrajectoryPlan(plan, req.mutable_plan());
 
     swarmkit::v1::ValidateTrajectoryReply rep;
@@ -2642,9 +2768,10 @@ template <typename Call>
     const std::string correlation_id = MakeCorrelationId(prefix);
     swarmkit::v1::ExecutionReply rep;
     int attempt_count = 0;
-    const grpc::Status status =
-        InvokeUnaryWithRetry(config, correlation_id, &attempt_count,
-                             [&](grpc::ClientContext* context) { return call(context, rep); });
+    const grpc::Status status = InvokeUnaryWithRetry(
+        config, correlation_id, &attempt_count, [&](grpc::ClientContext* context) {
+            return call(context, rep, std::string_view{correlation_id});
+        });
     out.correlation_id = correlation_id;
     if (!status.ok()) {
         PopulateTransportError(&out.error, status, correlation_id, attempt_count);
@@ -2674,12 +2801,12 @@ ExecutionResult Client::ClearTrajectory(const std::string& drone_id,
     return InvokeExecutionMutation(
         impl_->config, "trajectory-clear", drone_id, execution_id,
         [this, &drone_id, &execution_id](grpc::ClientContext* context,
-                                         swarmkit::v1::ExecutionReply& rep) {
+                                         swarmkit::v1::ExecutionReply& rep,
+                                         std::string_view correlation_id) {
             swarmkit::v1::ExecutionRequest req;
-            auto* ctx = req.mutable_ctx();
-            ctx->set_drone_id(drone_id);
-            ctx->set_client_id(impl_->config.client_id);
-            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            PopulateProtoCommandContext(impl_->config,
+                                        DefaultExecutionContext(impl_->config, drone_id), drone_id,
+                                        correlation_id, req.mutable_ctx());
             req.set_execution_id(execution_id);
             return impl_->stub->ClearTrajectory(context, req, &rep);
         });
@@ -2687,15 +2814,21 @@ ExecutionResult Client::ClearTrajectory(const std::string& drone_id,
 
 ExecutionResult Client::PrepareTrajectory(const std::string& drone_id,
                                           const std::string& execution_id) const {
+    return PrepareTrajectory(drone_id, execution_id,
+                             DefaultExecutionContext(impl_->config, drone_id));
+}
+
+ExecutionResult Client::PrepareTrajectory(const std::string& drone_id,
+                                          const std::string& execution_id,
+                                          const commands::CommandContext& command_context) const {
     return InvokeExecutionMutation(
         impl_->config, "trajectory-prepare", drone_id, execution_id,
-        [this, &drone_id, &execution_id](grpc::ClientContext* context,
-                                         swarmkit::v1::ExecutionReply& rep) {
+        [this, &drone_id, &execution_id, &command_context](grpc::ClientContext* context,
+                                                           swarmkit::v1::ExecutionReply& rep,
+                                                           std::string_view correlation_id) {
             swarmkit::v1::ExecutionRequest req;
-            auto* ctx = req.mutable_ctx();
-            ctx->set_drone_id(drone_id);
-            ctx->set_client_id(impl_->config.client_id);
-            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            PopulateProtoCommandContext(impl_->config, command_context, drone_id, correlation_id,
+                                        req.mutable_ctx());
             req.set_execution_id(execution_id);
             return impl_->stub->PrepareTrajectory(context, req, &rep);
         });
@@ -2704,15 +2837,21 @@ ExecutionResult Client::PrepareTrajectory(const std::string& drone_id,
 ExecutionResult Client::StartExecutionAt(const std::string& drone_id,
                                          const std::string& execution_id,
                                          std::int64_t unix_time_ms) const {
+    return StartExecutionAt(drone_id, execution_id, unix_time_ms,
+                            DefaultExecutionContext(impl_->config, drone_id));
+}
+
+ExecutionResult Client::StartExecutionAt(const std::string& drone_id,
+                                         const std::string& execution_id, std::int64_t unix_time_ms,
+                                         const commands::CommandContext& command_context) const {
     return InvokeExecutionMutation(
         impl_->config, "execution-start", drone_id, execution_id,
-        [this, &drone_id, &execution_id, unix_time_ms](grpc::ClientContext* context,
-                                                       swarmkit::v1::ExecutionReply& rep) {
+        [this, &drone_id, &execution_id, unix_time_ms, &command_context](
+            grpc::ClientContext* context, swarmkit::v1::ExecutionReply& rep,
+            std::string_view correlation_id) {
             swarmkit::v1::StartExecutionAtRequest req;
-            auto* ctx = req.mutable_ctx();
-            ctx->set_drone_id(drone_id);
-            ctx->set_client_id(impl_->config.client_id);
-            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            PopulateProtoCommandContext(impl_->config, command_context, drone_id, correlation_id,
+                                        req.mutable_ctx());
             req.set_execution_id(execution_id);
             req.set_unix_time_ms(unix_time_ms);
             return impl_->stub->StartExecutionAt(context, req, &rep);
@@ -2724,12 +2863,12 @@ ExecutionResult Client::PauseExecution(const std::string& drone_id,
     return InvokeExecutionMutation(
         impl_->config, "execution-pause", drone_id, execution_id,
         [this, &drone_id, &execution_id](grpc::ClientContext* context,
-                                         swarmkit::v1::ExecutionReply& rep) {
+                                         swarmkit::v1::ExecutionReply& rep,
+                                         std::string_view correlation_id) {
             swarmkit::v1::ExecutionRequest req;
-            auto* ctx = req.mutable_ctx();
-            ctx->set_drone_id(drone_id);
-            ctx->set_client_id(impl_->config.client_id);
-            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            PopulateProtoCommandContext(impl_->config,
+                                        DefaultExecutionContext(impl_->config, drone_id), drone_id,
+                                        correlation_id, req.mutable_ctx());
             req.set_execution_id(execution_id);
             return impl_->stub->PauseExecution(context, req, &rep);
         });
@@ -2740,12 +2879,12 @@ ExecutionResult Client::ResumeExecution(const std::string& drone_id,
     return InvokeExecutionMutation(
         impl_->config, "execution-resume", drone_id, execution_id,
         [this, &drone_id, &execution_id](grpc::ClientContext* context,
-                                         swarmkit::v1::ExecutionReply& rep) {
+                                         swarmkit::v1::ExecutionReply& rep,
+                                         std::string_view correlation_id) {
             swarmkit::v1::ExecutionRequest req;
-            auto* ctx = req.mutable_ctx();
-            ctx->set_drone_id(drone_id);
-            ctx->set_client_id(impl_->config.client_id);
-            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            PopulateProtoCommandContext(impl_->config,
+                                        DefaultExecutionContext(impl_->config, drone_id), drone_id,
+                                        correlation_id, req.mutable_ctx());
             req.set_execution_id(execution_id);
             return impl_->stub->ResumeExecution(context, req, &rep);
         });
@@ -2756,12 +2895,12 @@ ExecutionResult Client::AbortExecution(const std::string& drone_id,
     return InvokeExecutionMutation(
         impl_->config, "execution-abort", drone_id, execution_id,
         [this, &drone_id, &execution_id](grpc::ClientContext* context,
-                                         swarmkit::v1::ExecutionReply& rep) {
+                                         swarmkit::v1::ExecutionReply& rep,
+                                         std::string_view correlation_id) {
             swarmkit::v1::ExecutionRequest req;
-            auto* ctx = req.mutable_ctx();
-            ctx->set_drone_id(drone_id);
-            ctx->set_client_id(impl_->config.client_id);
-            ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+            PopulateProtoCommandContext(impl_->config,
+                                        DefaultExecutionContext(impl_->config, drone_id), drone_id,
+                                        correlation_id, req.mutable_ctx());
             req.set_execution_id(execution_id);
             return impl_->stub->AbortExecution(context, req, &rep);
         });

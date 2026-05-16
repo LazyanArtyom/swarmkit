@@ -22,8 +22,7 @@ namespace {
 
 [[nodiscard]] std::string Trim(std::string_view value) {
     const auto* begin = value.begin();
-    while (begin != value.end() &&
-           std::isspace(static_cast<unsigned char>(*begin)) != 0) {
+    while (begin != value.end() && std::isspace(static_cast<unsigned char>(*begin)) != 0) {
         ++begin;
     }
     const auto* end = value.end();
@@ -60,8 +59,7 @@ namespace {
 }
 
 template <typename T>
-void AssignIfPresent(const YAML::Node& node, std::initializer_list<std::string_view> keys,
-                     T* out) {
+void AssignIfPresent(const YAML::Node& node, std::initializer_list<std::string_view> keys, T* out) {
     if (YAML::Node value = FirstOf(node, keys)) {
         *out = value.as<T>();
     }
@@ -81,8 +79,7 @@ void AssignIfPresent(const YAML::Node& node, std::initializer_list<std::string_v
 
 [[nodiscard]] TimedPayloadAction ParseTimedPayloadActionNode(const YAML::Node& node) {
     TimedPayloadAction action;
-    AssignIfPresent(node, {"time_offset_ms", "t_ms", "time_ms", "t"},
-                    &action.time_offset_ms);
+    AssignIfPresent(node, {"time_offset_ms", "t_ms", "time_ms", "t"}, &action.time_offset_ms);
     AssignIfPresent(node, {"unix_time_ms", "unix_ms"}, &action.unix_time_ms);
     action.action = ParsePayloadActionNode(node["action"] ? node["action"] : node);
     return action;
@@ -131,13 +128,15 @@ void ApplyValidationNode(const YAML::Node& node, TrajectoryValidationPolicy* val
     AssignIfPresent(node, {"unix_time_ms", "unix_ms"}, &point.unix_time_ms);
     AssignIfPresent(node, {"use_local_position", "local"}, &point.use_local_position);
 
-    if (HasAny(node, {"lat", "latitude", "lat_deg", "lon", "longitude", "lon_deg", "alt",
-                     "alt_m"})) {
+    point.has_position =
+        HasAny(node, {"lat", "latitude", "lat_deg", "lon", "longitude", "lon_deg", "alt", "alt_m"});
+    if (point.has_position) {
         AssignIfPresent(node, {"lat", "latitude", "lat_deg"}, &point.position.lat_deg);
         AssignIfPresent(node, {"lon", "longitude", "lon_deg"}, &point.position.lon_deg);
         AssignIfPresent(node, {"alt", "alt_m"}, &point.position.alt_m);
     }
-    if (HasAny(node, {"x", "x_m", "y", "y_m", "z", "z_m"})) {
+    point.has_local_position = HasAny(node, {"x", "x_m", "y", "y_m", "z", "z_m"});
+    if (point.has_local_position) {
         AssignIfPresent(node, {"x", "x_m"}, &point.local_position.x_m);
         AssignIfPresent(node, {"y", "y_m"}, &point.local_position.y_m);
         AssignIfPresent(node, {"z", "z_m"}, &point.local_position.z_m);
@@ -180,8 +179,7 @@ void ApplyPlanMetadataNode(const YAML::Node& node, TrajectoryPlan* plan) {
             plan->labels[label.first.as<std::string>()] = label.second.as<std::string>();
         }
     }
-    if (const YAML::Node timeline = node["payload_timeline"];
-        timeline && timeline.IsSequence()) {
+    if (const YAML::Node timeline = node["payload_timeline"]; timeline && timeline.IsSequence()) {
         for (const auto& action : timeline) {
             plan->payload_timeline.push_back(ParseTimedPayloadActionNode(action));
         }
@@ -189,14 +187,13 @@ void ApplyPlanMetadataNode(const YAML::Node& node, TrajectoryPlan* plan) {
 }
 
 void SkipJsonWhitespace(std::string_view text, std::size_t* pos) {
-    while (*pos < text.size() &&
-           std::isspace(static_cast<unsigned char>(text[*pos])) != 0) {
+    while (*pos < text.size() && std::isspace(static_cast<unsigned char>(text[*pos])) != 0) {
         ++(*pos);
     }
 }
 
 [[nodiscard]] std::expected<std::string, std::string> ParseJsonString(std::string_view text,
-                                                                       std::size_t* pos) {
+                                                                      std::size_t* pos) {
     if (*pos >= text.size() || text[*pos] != '"') {
         return std::unexpected("expected JSON string");
     }
@@ -245,8 +242,8 @@ void SkipJsonWhitespace(std::string_view text, std::size_t* pos) {
     return std::unexpected("unterminated JSON string");
 }
 
-[[nodiscard]] std::expected<std::string, std::string> ParseJsonScalarValue(
-    std::string_view text, std::size_t* pos) {
+[[nodiscard]] std::expected<std::string, std::string> ParseJsonScalarValue(std::string_view text,
+                                                                           std::size_t* pos) {
     SkipJsonWhitespace(text, pos);
     if (*pos >= text.size()) {
         return std::unexpected("expected JSON value");
@@ -358,11 +355,33 @@ void ApplyCsvMetadata(const std::unordered_map<std::string, std::string>& record
                                        ": " + record.error());
             }
             ApplyCsvMetadata(*record, &plan);
-            if (CsvHasAny(*record, {"time_offset_ms", "t_ms", "time_ms", "t",
-                                    "unix_time_ms", "lat", "latitude", "lat_deg", "lon",
-                                    "longitude", "lon_deg", "alt", "alt_m", "x", "x_m",
-                                    "y", "y_m", "z", "z_m", "vx", "vx_mps", "vy",
-                                    "vy_mps", "vz", "vz_mps", "yaw", "yaw_deg"})) {
+            if (CsvHasAny(*record, {"time_offset_ms",
+                                    "t_ms",
+                                    "time_ms",
+                                    "t",
+                                    "unix_time_ms",
+                                    "lat",
+                                    "latitude",
+                                    "lat_deg",
+                                    "lon",
+                                    "longitude",
+                                    "lon_deg",
+                                    "alt",
+                                    "alt_m",
+                                    "x",
+                                    "x_m",
+                                    "y",
+                                    "y_m",
+                                    "z",
+                                    "z_m",
+                                    "vx",
+                                    "vx_mps",
+                                    "vy",
+                                    "vy_mps",
+                                    "vz",
+                                    "vz_mps",
+                                    "yaw",
+                                    "yaw_deg"})) {
                 plan.points.push_back(ParseCsvPoint(*record));
                 continue;
             }
@@ -434,9 +453,8 @@ void AssignCsv(const std::unordered_map<std::string, std::string>& record,
 
 [[nodiscard]] bool CsvHasAny(const std::unordered_map<std::string, std::string>& record,
                              std::initializer_list<std::string_view> keys) {
-    return std::ranges::any_of(keys, [&record](std::string_view key) {
-        return record.contains(std::string(key));
-    });
+    return std::ranges::any_of(
+        keys, [&record](std::string_view key) { return record.contains(std::string(key)); });
 }
 
 void ApplyCsvMetadata(const std::unordered_map<std::string, std::string>& record,
@@ -471,9 +489,8 @@ void ApplyCsvMetadata(const std::unordered_map<std::string, std::string>& record
     AssignCsv(record, {"max_altitude_m", "max_alt_m"}, &plan->validation.max_altitude_m);
     AssignCsv(record, {"tracking_tolerance_m", "tolerance_m"},
               &plan->validation.tracking_tolerance_m);
-    if (CsvHasAny(record, {"min_lat_deg", "min_lat", "max_lat_deg", "max_lat",
-                           "min_lon_deg", "min_lon", "max_lon_deg", "max_lon",
-                           "min_alt_m", "max_alt_m"})) {
+    if (CsvHasAny(record, {"min_lat_deg", "min_lat", "max_lat_deg", "max_lat", "min_lon_deg",
+                           "min_lon", "max_lon_deg", "max_lon", "min_alt_m", "max_alt_m"})) {
         Geofence fence = plan->validation.geofence.value_or(Geofence{});
         AssignCsv(record, {"min_lat_deg", "min_lat"}, &fence.min_lat_deg);
         AssignCsv(record, {"max_lat_deg", "max_lat"}, &fence.max_lat_deg);
@@ -490,10 +507,15 @@ void ApplyCsvMetadata(const std::unordered_map<std::string, std::string>& record
     TrajectoryPoint point;
     AssignCsv(record, {"time_offset_ms", "t_ms", "time_ms", "t"}, &point.time_offset_ms);
     AssignCsv(record, {"unix_time_ms", "unix_ms"}, &point.unix_time_ms);
-    AssignCsv(record, {"lat", "latitude", "lat_deg"}, &point.position.lat_deg);
-    AssignCsv(record, {"lon", "longitude", "lon_deg"}, &point.position.lon_deg);
-    AssignCsv(record, {"alt", "alt_m"}, &point.position.alt_m);
-    if (CsvHasAny(record, {"x", "x_m", "y", "y_m", "z", "z_m"})) {
+    point.has_position = CsvHasAny(
+        record, {"lat", "latitude", "lat_deg", "lon", "longitude", "lon_deg", "alt", "alt_m"});
+    if (point.has_position) {
+        AssignCsv(record, {"lat", "latitude", "lat_deg"}, &point.position.lat_deg);
+        AssignCsv(record, {"lon", "longitude", "lon_deg"}, &point.position.lon_deg);
+        AssignCsv(record, {"alt", "alt_m"}, &point.position.alt_m);
+    }
+    point.has_local_position = CsvHasAny(record, {"x", "x_m", "y", "y_m", "z", "z_m"});
+    if (point.has_local_position) {
         AssignCsv(record, {"x", "x_m"}, &point.local_position.x_m);
         AssignCsv(record, {"y", "y_m"}, &point.local_position.y_m);
         AssignCsv(record, {"z", "z_m"}, &point.local_position.z_m);

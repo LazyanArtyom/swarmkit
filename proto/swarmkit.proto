@@ -637,6 +637,7 @@ message TrajectoryPoint {
     float yaw_deg = 10;
     bool has_yaw = 11;
     repeated TimedPayloadAction payload_actions = 12;
+    Command command = 13;  // Optional typed command dispatched at this point's scheduled time.
 }
 
 message Geofence {

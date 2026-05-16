@@ -52,14 +52,18 @@ enum class SwarmPartialFailurePolicy : std::uint8_t {
 
 enum class SwarmExecutionSynchronization : std::uint8_t {
     kParallelFanout,
-    kLockStepBarrier,
+    kProtocolStartAt,
 };
 
 struct SwarmExecutionOptions {
     SwarmPartialFailurePolicy partial_failure_policy{SwarmPartialFailurePolicy::kAllOrAbort};
-    SwarmExecutionSynchronization synchronization{SwarmExecutionSynchronization::kLockStepBarrier};
+    SwarmExecutionSynchronization synchronization{SwarmExecutionSynchronization::kProtocolStartAt};
     std::size_t quorum{};
     std::chrono::milliseconds start_delay{200};
+    std::chrono::milliseconds max_clock_offset{50};
+    float min_time_sync_quality_percent{95.0F};
+    float max_drift_m{2.0F};
+    bool require_time_sync{true};
     bool verify{false};
     CommandWaitOptions wait_options{};
 };
@@ -93,6 +97,18 @@ struct SwarmFormationAssignment {
     int slot_index{};
 };
 
+struct SwarmDroneReadiness {
+    bool registered{false};
+    bool uploaded{false};
+    bool prepared{false};
+    bool time_sync_ok{false};
+    bool ready{false};
+    std::string message;
+    RpcError error;
+    ExecutionHandle handle;
+    TimeSyncState time_sync;
+};
+
 struct SwarmExecutionReport {
     bool ok{false};
     std::string message;
@@ -100,8 +116,15 @@ struct SwarmExecutionReport {
     std::size_t requested{};
     std::size_t succeeded{};
     std::size_t failed{};
+    std::int64_t scheduled_start_unix_ms{};
     std::unordered_map<std::string, CommandResult> results;
     std::unordered_map<std::string, CommandResult> recovery_results;
+    std::unordered_map<std::string, ExecutionResult> upload_results;
+    std::unordered_map<std::string, ExecutionResult> prepare_results;
+    std::unordered_map<std::string, ExecutionResult> start_results;
+    std::unordered_map<std::string, ExecutionResult> abort_results;
+    std::unordered_map<std::string, TimeSyncState> time_sync_states;
+    std::unordered_map<std::string, SwarmDroneReadiness> readiness;
     std::unordered_map<std::string, commands::Command> planned_commands;
 };
 
@@ -241,11 +264,14 @@ class SwarmClient {
         const CommandWaitOptions& options = {}) const;
 
     /**
-     * @brief Execute one concrete command across the fleet from a lock-step client barrier.
+     * @brief Execute one concrete command across the fleet from a synchronized protocol start.
      *
      * @details This is the production swarm path for commands such as takeoff
-     * and goto that should start together. Logical swarm commands are consumed
-     * by the manager and are not forwarded to vehicle backends.
+     * and goto that should start together. In kProtocolStartAt mode the manager
+     * uploads per-drone timed command plans, prepares them, validates time-sync
+     * quality/readiness, then sends one shared StartExecutionAt timestamp.
+     * Logical swarm commands are consumed by the manager and are not forwarded
+     * to vehicle backends.
      */
     [[nodiscard]] SwarmExecutionReport ExecuteSynchronizedCommand(
         const commands::Command& command, const commands::CommandContext& context,
