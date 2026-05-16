@@ -6,10 +6,12 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,6 +40,68 @@ struct SwarmConfig {
     std::vector<SwarmDroneConfig> drones;
 
     [[nodiscard]] core::Result Validate() const;
+};
+
+enum class SwarmPartialFailurePolicy : std::uint8_t {
+    kAllOrAbort,
+    kBestEffort,
+    kQuorum,
+    kLandFailed,
+    kHoldFailed,
+};
+
+enum class SwarmExecutionSynchronization : std::uint8_t {
+    kParallelFanout,
+    kLockStepBarrier,
+};
+
+struct SwarmExecutionOptions {
+    SwarmPartialFailurePolicy partial_failure_policy{SwarmPartialFailurePolicy::kAllOrAbort};
+    SwarmExecutionSynchronization synchronization{SwarmExecutionSynchronization::kLockStepBarrier};
+    std::size_t quorum{};
+    std::chrono::milliseconds start_delay{200};
+    bool verify{false};
+    CommandWaitOptions wait_options{};
+};
+
+struct SwarmFormationAnchor {
+    double lat_deg{};
+    double lon_deg{};
+    double alt_m{};
+};
+
+struct SwarmFormationSlot {
+    std::string drone_id;
+    double north_m{};
+    double east_m{};
+    double up_m{};
+    float speed_mps{};
+    float yaw_deg{};
+    bool use_yaw{false};
+    std::string role;
+};
+
+struct SwarmFormationPlan {
+    std::string formation_id;
+    SwarmFormationAnchor anchor;
+    std::vector<SwarmFormationSlot> slots;
+    float speed_mps{};
+};
+
+struct SwarmFormationAssignment {
+    std::string formation_id;
+    int slot_index{};
+};
+
+struct SwarmExecutionReport {
+    bool ok{false};
+    std::string message;
+    std::size_t requested{};
+    std::size_t succeeded{};
+    std::size_t failed{};
+    std::unordered_map<std::string, CommandResult> results;
+    std::unordered_map<std::string, CommandResult> recovery_results;
+    std::unordered_map<std::string, commands::Command> planned_commands;
 };
 
 /// @brief Load a swarm topology/configuration from a YAML file.
@@ -149,9 +213,8 @@ class SwarmClient {
      * higher-priority client holds authority over the target drone.
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
-    [[nodiscard]] CommandResult SendCommandAndWait(
-        const commands::CommandEnvelope& envelope,
-        const CommandWaitOptions& options = {}) const;
+    [[nodiscard]] CommandResult SendCommandAndWait(const commands::CommandEnvelope& envelope,
+                                                   const CommandWaitOptions& options = {}) const;
 
     /// @brief Query agent health/readiness for one registered drone.
     [[nodiscard]] HealthStatus GetHealth(const std::string& drone_id) const;
@@ -173,6 +236,42 @@ class SwarmClient {
     [[nodiscard]] std::unordered_map<std::string, CommandResult> BroadcastCommandAndWait(
         const commands::Command& command, const commands::CommandContext& context,
         const CommandWaitOptions& options = {}) const;
+
+    /**
+     * @brief Execute one concrete command across the fleet from a lock-step client barrier.
+     *
+     * @details This is the production swarm path for commands such as takeoff
+     * and goto that should start together. Logical swarm commands are consumed
+     * by the manager and are not forwarded to vehicle backends.
+     */
+    [[nodiscard]] SwarmExecutionReport ExecuteSynchronizedCommand(
+        const commands::Command& command, const commands::CommandContext& context,
+        const SwarmExecutionOptions& options = {}) const;
+
+    /**
+     * @brief Execute a planner-produced per-drone command plan.
+     *
+     * @details Higher-level path planners can translate their own route,
+     * velocity, or mission decisions into concrete per-drone commands and use
+     * this manager entry point for synchronized execution and failure policy.
+     */
+    [[nodiscard]] SwarmExecutionReport ExecutePlannedCommands(
+        const std::unordered_map<std::string, commands::Command>& planned_commands,
+        const commands::CommandContext& context, const SwarmExecutionOptions& options = {}) const;
+
+    /**
+     * @brief Translate a formation plan into per-drone goto commands and execute it.
+     */
+    [[nodiscard]] SwarmExecutionReport ApplyFormation(
+        const SwarmFormationPlan& plan, const commands::CommandContext& context,
+        const SwarmExecutionOptions& options = {}) const;
+
+    [[nodiscard]] CommandResult AssignRole(const std::string& drone_id, std::string role) const;
+    [[nodiscard]] CommandResult AssignFormationSlot(const std::string& drone_id,
+                                                    std::string formation_id, int slot_index) const;
+    [[nodiscard]] std::optional<std::string> GetDroneRole(const std::string& drone_id) const;
+    [[nodiscard]] std::optional<SwarmFormationAssignment> GetFormationAssignment(
+        const std::string& drone_id) const;
 
     /// @}
 
@@ -282,6 +381,7 @@ class SwarmClient {
 
    private:
     struct Impl;
+    [[nodiscard]] CommandResult HandleSwarmCommand(const commands::CommandEnvelope& envelope) const;
     std::unique_ptr<Impl> impl_;
 };
 
