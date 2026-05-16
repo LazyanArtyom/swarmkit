@@ -233,24 +233,23 @@ void PopulateTransportError(RpcError* error, const grpc::Status& status,
     error->attempt_count = attempt_count;
 }
 
-[[nodiscard]] agent::AuthorityEvent::Kind ToAuthorityEventKind(
-    swarmkit::v1::AuthorityEvent::Kind kind) {
+[[nodiscard]] AuthorityEventKind ToAuthorityEventKind(swarmkit::v1::AuthorityEvent::Kind kind) {
     using ProtoKind = swarmkit::v1::AuthorityEvent::Kind;
     switch (kind) {
         case ProtoKind::AuthorityEvent_Kind_AuthorityEvent_Kind_INT_MIN_SENTINEL_DO_NOT_USE_:
         case ProtoKind::AuthorityEvent_Kind_AuthorityEvent_Kind_INT_MAX_SENTINEL_DO_NOT_USE_:
-            return agent::AuthorityEvent::Kind::kExpired;
+            return AuthorityEventKind::kExpired;
         case ProtoKind::AuthorityEvent_Kind_GRANTED:
-            return agent::AuthorityEvent::Kind::kGranted;
+            return AuthorityEventKind::kGranted;
         case ProtoKind::AuthorityEvent_Kind_PREEMPTED:
-            return agent::AuthorityEvent::Kind::kPreempted;
+            return AuthorityEventKind::kPreempted;
         case ProtoKind::AuthorityEvent_Kind_RESUMED:
-            return agent::AuthorityEvent::Kind::kResumed;
+            return AuthorityEventKind::kResumed;
         case ProtoKind::AuthorityEvent_Kind_EXPIRED:
         case ProtoKind::AuthorityEvent_Kind_KIND_UNSPECIFIED:
-            return agent::AuthorityEvent::Kind::kExpired;
+            return AuthorityEventKind::kExpired;
     }
-    return agent::AuthorityEvent::Kind::kExpired;
+    return AuthorityEventKind::kExpired;
 }
 
 /// @brief Serialise a CommandEnvelope into a CommandRequest proto.

@@ -16,7 +16,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "swarmkit/agent/arbiter.h"
 #include "swarmkit/client/command_verifier.h"
 #include "swarmkit/commands.h"
 #include "swarmkit/core/result.h"
@@ -227,8 +226,16 @@ struct AuthoritySubscription {
     commands::CommandPriority priority{commands::CommandPriority::kOperator};
 };
 
+/// @brief Client-facing authority stream event kind.
+enum class AuthorityEventKind : std::uint8_t {
+    kGranted,
+    kPreempted,
+    kResumed,
+    kExpired,
+};
+
 struct AuthorityEventInfo {
-    agent::AuthorityEvent::Kind kind{agent::AuthorityEvent::Kind::kGranted};
+    AuthorityEventKind kind{AuthorityEventKind::kGranted};
     std::string drone_id;
     std::string holder_client_id;
     commands::CommandPriority holder_priority{commands::CommandPriority::kOperator};
