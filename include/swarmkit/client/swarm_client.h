@@ -105,6 +105,8 @@ struct SwarmExecutionReport {
     std::unordered_map<std::string, commands::Command> planned_commands;
 };
 
+using SwarmSubscriptionResults = std::unordered_map<std::string, SubscriptionResult>;
+
 /// @brief Load a swarm topology/configuration from a YAML file.
 ///
 /// Expected shape:
@@ -139,8 +141,8 @@ struct SwarmExecutionReport {
  *   swarm.AddDrone("uav-2", "192.168.1.102:50061");
  *   swarm.AddDrone("uav-3", "192.168.1.103:50061");
  *
- *   // Subscribe to telemetry from every drone at 5 Hz
- *   swarm.SubscribeAllTelemetry(5, [](const core::TelemetryFrame& frame) {
+ *   // Start telemetry from every drone at 5 Hz
+ *   auto telemetry = swarm.StartAllTelemetry(5, [](const core::TelemetryFrame& frame) {
  *       // frame.drone_id identifies the source drone
  *   });
  *
@@ -332,38 +334,44 @@ class SwarmClient {
     /// @{
 
     /**
-     * @brief Subscribe to telemetry from a specific drone.
+     * @brief Start telemetry from a specific drone.
      *
-     * @details Logs a warning and does nothing if the drone is not registered.
-     * If a subscription is already active for that drone it is replaced.
+     * @returns A RAII Subscription handle on success, or a typed error if the
+     *          drone is not registered or the subscription cannot start.
      */
-    void SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
-                            TelemetryErrorHandler on_error = {});
+    [[nodiscard]] SubscriptionResult StartTelemetry(TelemetrySubscription subscription,
+                                                    TelemetryHandler on_frame,
+                                                    TelemetryErrorHandler on_error = {},
+                                                    SubscriptionEventHandler on_event = {},
+                                                    SubscriptionOptions options = {});
 
     /// @brief Stop the telemetry subscription for @p drone_id.  No-op if idle.
     void StopTelemetry(const std::string& drone_id);
 
     /**
-     * @brief Subscribe to telemetry from all currently registered drones.
+     * @brief Start telemetry from all currently registered drones.
      *
      * @param rate_hertz Requested frame rate in Hz for each drone stream.
      * @param on_frame   Callback invoked for every received TelemetryFrame.
      * @param on_error   Callback invoked once per drone when a stream ends
      *                   due to an error.
      *
-     * @details Starts one background stream per drone at @p rate_hertz.
-     * Frames from all drones funnel into the same @p on_frame callback — use
-     * @c TelemetryFrame::drone_id to distinguish sources.
+     * @details Starts one background stream per drone at @p rate_hertz and
+     * returns a per-drone result map. Frames from all drones funnel into the
+     * same @p on_frame callback; use @c TelemetryFrame::drone_id to distinguish
+     * sources.
      *
      * @note Drones added after this call are not automatically subscribed.
-     *       Call SubscribeAllTelemetry() again or SubscribeTelemetry() for
-     *       the new drone explicitly.
+     *       Call StartAllTelemetry() again or StartTelemetry() for the new
+     *       drone explicitly.
      *
      * @note @p on_frame may be called concurrently from multiple drone
      *       threads.  Ensure the callback is thread-safe.
      */
-    void SubscribeAllTelemetry(int rate_hertz, const TelemetryHandler& on_frame,
-                               const TelemetryErrorHandler& on_error = {});
+    [[nodiscard]] SwarmSubscriptionResults StartAllTelemetry(
+        int rate_hertz, const TelemetryHandler& on_frame,
+        const TelemetryErrorHandler& on_error = {}, const SubscriptionEventHandler& on_event = {},
+        SubscriptionOptions options = {});
 
     /// @brief Stop telemetry subscriptions for all registered drones.
     void StopAllTelemetry();
@@ -373,9 +381,10 @@ class SwarmClient {
     /// @name Reports
     /// @{
 
-    void SubscribeAllReports(const AgentReportHandler& on_report,
-                             const TelemetryErrorHandler& on_error = {},
-                             std::uint64_t after_sequence = 0);
+    [[nodiscard]] SwarmSubscriptionResults StartAllReports(
+        const AgentReportHandler& on_report, const TelemetryErrorHandler& on_error = {},
+        std::uint64_t after_sequence = 0, const SubscriptionEventHandler& on_event = {},
+        SubscriptionOptions options = {});
     void StopAllReports();
 
     /// @}

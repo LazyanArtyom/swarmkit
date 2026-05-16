@@ -12,7 +12,10 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
+#include <exception>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -20,6 +23,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 
@@ -183,8 +187,7 @@ void ApplyUnaryClientContext(const ClientConfig& config, grpc::ClientContext* co
     context->AddMetadata(std::string(kCorrelationMetadataKey), std::string(correlation_id));
 }
 
-[[nodiscard]] swarmkit::v1::MissionItemType ToProtoMissionItemType(
-    commands::MissionItemType type) {
+[[nodiscard]] swarmkit::v1::MissionItemType ToProtoMissionItemType(commands::MissionItemType type) {
     using commands::MissionItemType;
     switch (type) {
         case MissionItemType::kWaypoint:
@@ -617,17 +620,18 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
             },
 
             [&](const commands::BackendCmd& backend) {
-                std::visit(core::Overloaded{
-                               [&](const commands::CmdBackendCommand& command) {
-                                   auto* proto = proto_cmd->mutable_backend_command();
-                                   proto->set_backend_namespace(command.backend_namespace);
-                                   proto->set_name(command.name);
-                                   for (const auto& [key, value] : command.params) {
-                                       (*proto->mutable_params())[key] = value;
-                                   }
-                               },
-                           },
-                           backend);
+                std::visit(
+                    core::Overloaded{
+                        [&](const commands::CmdBackendCommand& command) {
+                            auto* proto = proto_cmd->mutable_backend_command();
+                            proto->set_backend_namespace(command.backend_namespace);
+                            proto->set_name(command.name);
+                            for (const auto& [key, value] : command.params) {
+                                (*proto->mutable_params())[key] = value;
+                            }
+                        },
+                    },
+                    backend);
             },
 
         },
@@ -640,8 +644,30 @@ struct StreamState {
     std::mutex mutex;
     std::unique_ptr<grpc::ClientContext> context;
     std::thread worker;
+    std::thread callback_worker;
     std::atomic<bool> active{false};
     std::atomic<bool> stop_requested{false};
+    std::atomic<std::uint64_t> generation{0};
+
+    std::mutex callback_mutex;
+    std::condition_variable callback_cv;
+    std::deque<std::function<void()>> callback_queue;
+    bool callback_shutdown{false};
+    std::size_t dropped_callbacks{0};
+
+    SubscriptionKind kind{SubscriptionKind::kTelemetry};
+    std::string drone_id;
+    std::string correlation_id;
+    SubscriptionOptions options{};
+    TelemetryErrorHandler on_error;
+    SubscriptionEventHandler on_event;
+};
+
+struct Subscription::State {
+    std::weak_ptr<StreamState> stream;
+    SubscriptionKind kind{SubscriptionKind::kTelemetry};
+    std::uint64_t generation{};
+    std::atomic<bool> stopped{false};
 };
 
 /// @brief Holds the gRPC channel, stub, and streaming state.
@@ -649,9 +675,9 @@ struct Client::Impl {
     ClientConfig config;
     std::shared_ptr<grpc::Channel> channel;
     std::unique_ptr<swarmkit::v1::AgentService::Stub> stub;
-    StreamState telemetry;
-    StreamState authority;
-    StreamState reports;
+    std::shared_ptr<StreamState> telemetry{std::make_shared<StreamState>()};
+    std::shared_ptr<StreamState> authority{std::make_shared<StreamState>()};
+    std::shared_ptr<StreamState> reports{std::make_shared<StreamState>()};
 
     explicit Impl(ClientConfig cfg)
         : config(std::move(cfg)),
@@ -696,12 +722,194 @@ void ResetStreamContext(StreamState& stream_state) {
     stream_state.context.reset();
 }
 
-void CancelAndJoinStream(StreamState& stream_state) {
-    if (!stream_state.active.load(std::memory_order_relaxed) && !stream_state.worker.joinable()) {
+[[nodiscard]] core::ErrorDomain DomainForSubscriptionKind(SubscriptionKind kind) {
+    switch (kind) {
+        case SubscriptionKind::kTelemetry:
+            return core::ErrorDomain::kTelemetry;
+        case SubscriptionKind::kAuthority:
+            return core::ErrorDomain::kAuthority;
+        case SubscriptionKind::kReports:
+            return core::ErrorDomain::kInternal;
+    }
+    return core::ErrorDomain::kInternal;
+}
+
+[[nodiscard]] std::string_view ToString(SubscriptionKind kind) {
+    switch (kind) {
+        case SubscriptionKind::kTelemetry:
+            return "telemetry";
+        case SubscriptionKind::kAuthority:
+            return "authority";
+        case SubscriptionKind::kReports:
+            return "reports";
+    }
+    return "stream";
+}
+
+void SafeNotifyStreamError(const TelemetryErrorHandler& on_error, std::string message) {
+    if (!on_error) {
+        return;
+    }
+    try {
+        on_error(message);
+    } catch (const std::exception& exc) {
+        core::Logger::WarnFmt("Client stream error callback threw: {}", exc.what());
+    } catch (...) {
+        core::Logger::Warn("Client stream error callback threw an unknown exception");
+    }
+}
+
+void SafeNotifySubscriptionEvent(const SubscriptionEventHandler& on_event,
+                                 const SubscriptionEvent& event) {
+    if (!on_event) {
+        return;
+    }
+    try {
+        on_event(event);
+    } catch (const std::exception& exc) {
+        core::Logger::WarnFmt("Client subscription event callback threw: {}", exc.what());
+    } catch (...) {
+        core::Logger::Warn("Client subscription event callback threw an unknown exception");
+    }
+}
+
+void HandleCallbackException(StreamState& stream_state, std::string_view callback_name,
+                             std::string message) {
+    const std::string detail = std::string(ToString(stream_state.kind)) + " " +
+                               std::string(callback_name) + " callback threw: " + message;
+    core::Logger::WarnFmt("Client stream callback exception: {}", detail);
+
+    RpcError error = core::SwarmError::Make(
+        DomainForSubscriptionKind(stream_state.kind), RpcStatusCode::kInternal, detail,
+        core::ErrorSeverity::kError, core::ErrorRetryability::kAfterRemediation,
+        "Catch exceptions inside subscription callbacks");
+    error.correlation_id = stream_state.correlation_id;
+
+    SafeNotifySubscriptionEvent(stream_state.on_event,
+                                SubscriptionEvent{
+                                    .kind = stream_state.kind,
+                                    .state = SubscriptionLifecycleState::kCallbackError,
+                                    .drone_id = stream_state.drone_id,
+                                    .correlation_id = stream_state.correlation_id,
+                                    .error = error,
+                                    .message = detail,
+                                    .dropped_callbacks = stream_state.dropped_callbacks,
+                                });
+    SafeNotifyStreamError(stream_state.on_error, detail);
+}
+
+void ResetCallbackQueue(StreamState& stream_state) {
+    std::lock_guard<std::mutex> lock(stream_state.callback_mutex);
+    stream_state.callback_queue.clear();
+    stream_state.callback_shutdown = false;
+    stream_state.dropped_callbacks = 0;
+}
+
+void ShutdownCallbackQueue(StreamState& stream_state) {
+    {
+        std::lock_guard<std::mutex> lock(stream_state.callback_mutex);
+        stream_state.callback_shutdown = true;
+    }
+    stream_state.callback_cv.notify_all();
+}
+
+[[nodiscard]] bool EnqueueCallback(StreamState& stream_state, std::function<void()> callback,
+                                   bool force = false) {
+    const std::size_t max_pending =
+        std::max<std::size_t>(1, stream_state.options.backpressure.max_pending_callbacks);
+
+    std::unique_lock<std::mutex> lock(stream_state.callback_mutex);
+    if (!force && stream_state.options.backpressure.policy == StreamBackpressurePolicy::kBlock) {
+        stream_state.callback_cv.wait(lock, [&] {
+            return stream_state.callback_shutdown ||
+                   stream_state.callback_queue.size() < max_pending ||
+                   stream_state.stop_requested.load(std::memory_order_relaxed);
+        });
+    }
+
+    if (stream_state.callback_shutdown ||
+        stream_state.stop_requested.load(std::memory_order_relaxed)) {
+        return false;
+    }
+
+    if (!force && stream_state.callback_queue.size() >= max_pending) {
+        if (stream_state.options.backpressure.policy == StreamBackpressurePolicy::kDropNewest) {
+            ++stream_state.dropped_callbacks;
+            return false;
+        }
+        if (stream_state.options.backpressure.policy == StreamBackpressurePolicy::kDropOldest) {
+            stream_state.callback_queue.pop_front();
+            ++stream_state.dropped_callbacks;
+        }
+    }
+
+    stream_state.callback_queue.push_back(std::move(callback));
+    lock.unlock();
+    stream_state.callback_cv.notify_one();
+    return true;
+}
+
+void RunCallbackDispatcher(StreamState& stream_state) {
+    while (true) {
+        std::function<void()> callback;
+        {
+            std::unique_lock<std::mutex> lock(stream_state.callback_mutex);
+            stream_state.callback_cv.wait(lock, [&] {
+                return stream_state.callback_shutdown || !stream_state.callback_queue.empty();
+            });
+            if (stream_state.callback_queue.empty() && stream_state.callback_shutdown) {
+                return;
+            }
+            callback = std::move(stream_state.callback_queue.front());
+            stream_state.callback_queue.pop_front();
+        }
+        stream_state.callback_cv.notify_all();
+
+        try {
+            callback();
+        } catch (const std::exception& exc) {
+            HandleCallbackException(stream_state, "application", exc.what());
+        } catch (...) {
+            HandleCallbackException(stream_state, "application", "unknown exception");
+        }
+    }
+}
+
+void EmitSubscriptionEvent(StreamState& stream_state, SubscriptionLifecycleState state,
+                           std::string message, int attempt_number = 0, RpcError error = {}) {
+    error.correlation_id =
+        error.correlation_id.empty() ? stream_state.correlation_id : error.correlation_id;
+    SubscriptionEvent event{
+        .kind = stream_state.kind,
+        .state = state,
+        .drone_id = stream_state.drone_id,
+        .correlation_id = stream_state.correlation_id,
+        .attempt_number = attempt_number,
+        .error = std::move(error),
+        .message = std::move(message),
+        .dropped_callbacks = stream_state.dropped_callbacks,
+    };
+    static_cast<void>(EnqueueCallback(
+        stream_state,
+        [handler = stream_state.on_event, event = std::move(event)]() {
+            SafeNotifySubscriptionEvent(handler, event);
+        },
+        true));
+}
+
+void CancelAndJoinStream(StreamState& stream_state,
+                         std::optional<std::uint64_t> generation = std::nullopt) {
+    if (generation.has_value() &&
+        stream_state.generation.load(std::memory_order_relaxed) != *generation) {
+        return;
+    }
+    if (!stream_state.active.load(std::memory_order_relaxed) && !stream_state.worker.joinable() &&
+        !stream_state.callback_worker.joinable()) {
         return;
     }
 
     stream_state.stop_requested.store(true, std::memory_order_relaxed);
+    stream_state.callback_cv.notify_all();
     {
         std::lock_guard<std::mutex> lock(stream_state.mutex);
         if (stream_state.context) {
@@ -713,8 +921,61 @@ void CancelAndJoinStream(StreamState& stream_state) {
         stream_state.worker.join();
     }
 
+    ShutdownCallbackQueue(stream_state);
+    if (stream_state.callback_worker.joinable()) {
+        if (stream_state.callback_worker.get_id() == std::this_thread::get_id()) {
+            stream_state.callback_worker.detach();
+        } else {
+            stream_state.callback_worker.join();
+        }
+    }
+
     ResetStreamContext(stream_state);
     stream_state.active.store(false, std::memory_order_relaxed);
+}
+
+Subscription::~Subscription() {
+    Stop();
+}
+
+Subscription::Subscription(Subscription&&) noexcept = default;
+
+Subscription& Subscription::operator=(Subscription&& other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+    Stop();
+    state_ = std::move(other.state_);
+    return *this;
+}
+
+void Subscription::Stop() noexcept {
+    if (!state_) {
+        return;
+    }
+    if (state_->stopped.exchange(true, std::memory_order_relaxed)) {
+        return;
+    }
+    if (auto stream = state_->stream.lock()) {
+        CancelAndJoinStream(*stream, state_->generation);
+    }
+}
+
+bool Subscription::IsActive() const noexcept {
+    if (!state_ || state_->stopped.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    const auto stream = state_->stream.lock();
+    return stream && stream->generation.load(std::memory_order_relaxed) == state_->generation &&
+           stream->active.load(std::memory_order_relaxed);
+}
+
+SubscriptionKind Subscription::Kind() const noexcept {
+    return state_ ? state_->kind : SubscriptionKind::kTelemetry;
+}
+
+std::uint64_t Subscription::Id() const noexcept {
+    return state_ ? state_->generation : 0;
 }
 
 [[nodiscard]] bool ShouldRetryStream(const StreamReconnectPolicy& policy, int attempt_number,
@@ -735,9 +996,14 @@ void SleepBeforeNextRetry(const StreamReconnectPolicy& policy, int* backoff_ms) 
     *backoff_ms = std::min(policy.max_backoff_ms, *backoff_ms * 2);
 }
 
-void MaybeReportStreamFailure(const TelemetryErrorHandler& on_error, const grpc::Status& status) {
-    if (on_error && !status.ok()) {
-        on_error(status.error_message());
+void MaybeReportStreamFailure(StreamState& stream_state, const grpc::Status& status) {
+    if (stream_state.on_error && !status.ok()) {
+        static_cast<void>(EnqueueCallback(
+            stream_state,
+            [on_error = stream_state.on_error, message = status.error_message()]() {
+                SafeNotifyStreamError(on_error, message);
+            },
+            true));
     }
 }
 
@@ -807,10 +1073,10 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     const double rlat_two = DegreesToRadians(lat_two);
     const double sin_half_lat = std::sin(dlat / 2.0);
     const double sin_half_lon = std::sin(dlon / 2.0);
-    const double a = std::clamp(sin_half_lat * sin_half_lat +
-                                    std::cos(rlat_one) * std::cos(rlat_two) * sin_half_lon *
-                                        sin_half_lon,
-                                0.0, 1.0);
+    const double a =
+        std::clamp(sin_half_lat * sin_half_lat +
+                       std::cos(rlat_one) * std::cos(rlat_two) * sin_half_lon * sin_half_lon,
+                   0.0, 1.0);
     return kEarthRadiusM * 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
 }
 
@@ -976,8 +1242,7 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     return proto;
 }
 
-[[nodiscard]] swarmkit::v1::TrajectoryPoint ToProtoTrajectoryPoint(
-    const TrajectoryPoint& point) {
+[[nodiscard]] swarmkit::v1::TrajectoryPoint ToProtoTrajectoryPoint(const TrajectoryPoint& point) {
     swarmkit::v1::TrajectoryPoint proto;
     proto.set_time_offset_ms(point.time_offset_ms);
     proto.set_unix_time_ms(point.unix_time_ms);
@@ -1132,8 +1397,7 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     return plan;
 }
 
-[[nodiscard]] ValidationSeverity ToValidationSeverity(
-    swarmkit::v1::ValidationSeverity severity) {
+[[nodiscard]] ValidationSeverity ToValidationSeverity(swarmkit::v1::ValidationSeverity severity) {
     switch (severity) {
         case swarmkit::v1::VALIDATION_ERROR:
             return ValidationSeverity::kError;
@@ -1233,8 +1497,7 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     }
 }
 
-[[nodiscard]] TrajectoryReport ToTrajectoryReport(
-    const swarmkit::v1::TrajectoryReport& proto) {
+[[nodiscard]] TrajectoryReport ToTrajectoryReport(const swarmkit::v1::TrajectoryReport& proto) {
     return {
         .drone_id = proto.drone_id(),
         .execution_id = proto.execution_id(),
@@ -1295,6 +1558,8 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     request.set_rate_hz(subscription.rate_hertz);
 
     auto reader = runtime.stub.StreamTelemetry(context, request);
+    EmitSubscriptionEvent(telemetry_stream, SubscriptionLifecycleState::kConnected,
+                          "telemetry stream connected");
     swarmkit::v1::TelemetryFrame proto_frame;
     while (reader->Read(&proto_frame)) {
         if (IsStopRequested(telemetry_stream)) {
@@ -1302,7 +1567,9 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
         }
 
         if (on_frame) {
-            on_frame(ToCoreTelemetryFrame(proto_frame));
+            auto frame = ToCoreTelemetryFrame(proto_frame);
+            static_cast<void>(EnqueueCallback(
+                telemetry_stream, [on_frame, frame = std::move(frame)]() { on_frame(frame); }));
         }
     }
 
@@ -1323,6 +1590,8 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     request.set_after_sequence(subscription.after_sequence);
 
     auto reader = runtime.stub.SubscribeReports(context, request);
+    EmitSubscriptionEvent(report_stream, SubscriptionLifecycleState::kConnected,
+                          "report stream connected");
     swarmkit::v1::AgentReport proto_report;
     while (reader->Read(&proto_report)) {
         if (IsStopRequested(report_stream)) {
@@ -1330,7 +1599,9 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
         }
 
         if (on_report) {
-            on_report(ToAgentReport(proto_report));
+            auto report = ToAgentReport(proto_report);
+            static_cast<void>(EnqueueCallback(
+                report_stream, [on_report, report = std::move(report)]() { on_report(report); }));
         }
     }
 
@@ -1352,6 +1623,8 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     request.set_priority(static_cast<std::int32_t>(subscription.priority));
 
     auto reader = runtime.stub.WatchAuthority(context, request);
+    EmitSubscriptionEvent(authority_stream, SubscriptionLifecycleState::kConnected,
+                          "authority watch connected");
     swarmkit::v1::AuthorityEvent proto_event;
     while (reader->Read(&proto_event)) {
         if (IsStopRequested(authority_stream)) {
@@ -1359,7 +1632,9 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
         }
 
         if (on_event) {
-            on_event(ToAuthorityEventInfo(proto_event));
+            auto event = ToAuthorityEventInfo(proto_event);
+            static_cast<void>(EnqueueCallback(
+                authority_stream, [on_event, event = std::move(event)]() { on_event(event); }));
         }
     }
 
@@ -1368,9 +1643,17 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     return kFinalStatus;
 }
 
+[[nodiscard]] RpcError MakeStreamError(const grpc::Status& status, std::string_view correlation_id,
+                                       int attempt_number) {
+    RpcError error;
+    PopulateTransportError(&error, status, correlation_id, attempt_number);
+    return error;
+}
+
 void RunTelemetryLoop(ClientRuntime runtime, StreamState& telemetry_stream,
                       const TelemetrySubscription& subscription, const TelemetryHandler& on_frame,
                       const TelemetryErrorHandler& on_error) {
+    static_cast<void>(on_error);
     StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
 
     while (!IsStopRequested(telemetry_stream)) {
@@ -1385,22 +1668,40 @@ void RunTelemetryLoop(ClientRuntime runtime, StreamState& telemetry_stream,
 
         LogStreamFailure("telemetry", subscription.drone_id, kStreamId, kFinalStatus,
                          retry_state.attempt_number);
+        if (kFinalStatus.ok()) {
+            EmitSubscriptionEvent(telemetry_stream, SubscriptionLifecycleState::kStopped,
+                                  "telemetry stream ended");
+            break;
+        }
         if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
                                kFinalStatus)) {
-            MaybeReportStreamFailure(on_error, kFinalStatus);
+            EmitSubscriptionEvent(
+                telemetry_stream, SubscriptionLifecycleState::kFailed, kFinalStatus.error_message(),
+                retry_state.attempt_number,
+                MakeStreamError(kFinalStatus, kStreamId, retry_state.attempt_number));
+            MaybeReportStreamFailure(telemetry_stream, kFinalStatus);
             break;
         }
 
+        EmitSubscriptionEvent(telemetry_stream, SubscriptionLifecycleState::kReconnecting,
+                              kFinalStatus.error_message(), retry_state.attempt_number,
+                              MakeStreamError(kFinalStatus, kStreamId, retry_state.attempt_number));
         SleepBeforeNextRetry(runtime.config.stream_reconnect_policy, &retry_state.backoff_ms);
     }
 
+    if (IsStopRequested(telemetry_stream)) {
+        EmitSubscriptionEvent(telemetry_stream, SubscriptionLifecycleState::kStopped,
+                              "telemetry stream stopped");
+    }
     telemetry_stream.active.store(false, std::memory_order_relaxed);
+    ShutdownCallbackQueue(telemetry_stream);
 }
 
 void RunAuthorityLoop(ClientRuntime runtime, StreamState& authority_stream,
                       const AuthoritySubscription& subscription,
                       const AuthorityEventHandler& on_event,
                       const TelemetryErrorHandler& on_error) {
+    static_cast<void>(on_error);
     StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
 
     while (!IsStopRequested(authority_stream)) {
@@ -1415,21 +1716,39 @@ void RunAuthorityLoop(ClientRuntime runtime, StreamState& authority_stream,
 
         LogStreamFailure("authority watch", subscription.drone_id, kStreamId, kFinalStatus,
                          retry_state.attempt_number);
+        if (kFinalStatus.ok()) {
+            EmitSubscriptionEvent(authority_stream, SubscriptionLifecycleState::kStopped,
+                                  "authority watch ended");
+            break;
+        }
         if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
                                kFinalStatus)) {
-            MaybeReportStreamFailure(on_error, kFinalStatus);
+            EmitSubscriptionEvent(
+                authority_stream, SubscriptionLifecycleState::kFailed, kFinalStatus.error_message(),
+                retry_state.attempt_number,
+                MakeStreamError(kFinalStatus, kStreamId, retry_state.attempt_number));
+            MaybeReportStreamFailure(authority_stream, kFinalStatus);
             break;
         }
 
+        EmitSubscriptionEvent(authority_stream, SubscriptionLifecycleState::kReconnecting,
+                              kFinalStatus.error_message(), retry_state.attempt_number,
+                              MakeStreamError(kFinalStatus, kStreamId, retry_state.attempt_number));
         SleepBeforeNextRetry(runtime.config.stream_reconnect_policy, &retry_state.backoff_ms);
     }
 
+    if (IsStopRequested(authority_stream)) {
+        EmitSubscriptionEvent(authority_stream, SubscriptionLifecycleState::kStopped,
+                              "authority watch stopped");
+    }
     authority_stream.active.store(false, std::memory_order_relaxed);
+    ShutdownCallbackQueue(authority_stream);
 }
 
 void RunReportLoop(ClientRuntime runtime, StreamState& report_stream,
                    const ReportSubscription& subscription, const AgentReportHandler& on_report,
                    const TelemetryErrorHandler& on_error) {
+    static_cast<void>(on_error);
     StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
 
     while (!IsStopRequested(report_stream)) {
@@ -1444,16 +1763,33 @@ void RunReportLoop(ClientRuntime runtime, StreamState& report_stream,
 
         LogStreamFailure("reports", subscription.drone_id, kStreamId, kFinalStatus,
                          retry_state.attempt_number);
+        if (kFinalStatus.ok()) {
+            EmitSubscriptionEvent(report_stream, SubscriptionLifecycleState::kStopped,
+                                  "report stream ended");
+            break;
+        }
         if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
                                kFinalStatus)) {
-            MaybeReportStreamFailure(on_error, kFinalStatus);
+            EmitSubscriptionEvent(
+                report_stream, SubscriptionLifecycleState::kFailed, kFinalStatus.error_message(),
+                retry_state.attempt_number,
+                MakeStreamError(kFinalStatus, kStreamId, retry_state.attempt_number));
+            MaybeReportStreamFailure(report_stream, kFinalStatus);
             break;
         }
 
+        EmitSubscriptionEvent(report_stream, SubscriptionLifecycleState::kReconnecting,
+                              kFinalStatus.error_message(), retry_state.attempt_number,
+                              MakeStreamError(kFinalStatus, kStreamId, retry_state.attempt_number));
         SleepBeforeNextRetry(runtime.config.stream_reconnect_policy, &retry_state.backoff_ms);
     }
 
+    if (IsStopRequested(report_stream)) {
+        EmitSubscriptionEvent(report_stream, SubscriptionLifecycleState::kStopped,
+                              "report stream stopped");
+    }
     report_stream.active.store(false, std::memory_order_relaxed);
+    ShutdownCallbackQueue(report_stream);
 }
 
 core::TransportSecurityMode ClientSecurityConfig::EffectiveTransportSecurity() const {
@@ -1848,9 +2184,9 @@ struct VerificationSpec {
     PopulateSuccessError(&out.error, command_result.correlation_id,
                          command_result.error.attempt_count);
     const std::string prefix = label.empty() ? "command" : std::string(label);
-    out.message = command_result.message.empty() ? prefix + " verified"
-                                                 : command_result.message + "; " + prefix +
-                                                       " verified";
+    out.message = command_result.message.empty()
+                      ? prefix + " verified"
+                      : command_result.message + "; " + prefix + " verified";
     return out;
 }
 
@@ -1904,9 +2240,10 @@ struct VerificationSpec {
                             return VerificationSpec{
                                 .source = VerificationSource::kHealth,
                                 .label = "land",
-                                .health_predicate = [](const HealthStatus& health) {
-                                    return health.landed || !health.armed;
-                                },
+                                .health_predicate =
+                                    [](const HealthStatus& health) {
+                                        return health.landed || !health.armed;
+                                    },
                             };
                         },
                         [](const auto&) { return VerificationSpec{}; },
@@ -1923,8 +2260,7 @@ struct VerificationSpec {
                                 .telemetry_predicate =
                                     [waypoint, options](const core::TelemetryFrame& frame) {
                                         return DistanceMetres(frame.lat_deg, frame.lon_deg,
-                                                              waypoint.lat_deg,
-                                                              waypoint.lon_deg) <=
+                                                              waypoint.lat_deg, waypoint.lon_deg) <=
                                                    options.position_radius_m &&
                                                std::abs(frame.rel_alt_m -
                                                         static_cast<float>(waypoint.alt_m)) <=
@@ -1980,13 +2316,14 @@ struct VerificationSpec {
                                    std::move(detail));
 }
 
-[[nodiscard]] CommandResult WaitForTelemetryVerification(
-    swarmkit::v1::AgentService::Stub& stub, const std::string& drone_id,
-    const CommandResult& command_result, const CommandWaitOptions& options,
-    const VerificationSpec& spec) {
-    const std::string correlation_id =
-        command_result.correlation_id.empty() ? MakeCorrelationId("verify")
-                                              : command_result.correlation_id;
+[[nodiscard]] CommandResult WaitForTelemetryVerification(swarmkit::v1::AgentService::Stub& stub,
+                                                         const std::string& drone_id,
+                                                         const CommandResult& command_result,
+                                                         const CommandWaitOptions& options,
+                                                         const VerificationSpec& spec) {
+    const std::string correlation_id = command_result.correlation_id.empty()
+                                           ? MakeCorrelationId("verify")
+                                           : command_result.correlation_id;
     grpc::ClientContext context;
     context.AddMetadata(std::string(kCorrelationMetadataKey), correlation_id);
     context.set_deadline(std::chrono::system_clock::now() +
@@ -2019,7 +2356,7 @@ struct VerificationSpec {
 }
 
 [[nodiscard]] CommandEnvelope MakeClientCommandEnvelope(const ClientConfig& config,
-                                                       std::string drone_id, Command command) {
+                                                        std::string drone_id, Command command) {
     CommandEnvelope envelope;
     envelope.context.drone_id = std::move(drone_id);
     envelope.context.client_id = config.client_id;
@@ -2098,16 +2435,14 @@ CommandResult Client::TakeoffAndWait(const std::string& drone_id, double alt_m,
 CommandResult Client::GotoAndWait(const std::string& drone_id, double lat_deg, double lon_deg,
                                   double alt_m, float speed_mps,
                                   const CommandWaitOptions& options) const {
-    return SendCommandAndWait(
-        MakeClientCommandEnvelope(
-            impl_->config, drone_id,
-            NavCmd{CmdGoto{
-                .lat_deg = lat_deg,
-                .lon_deg = lon_deg,
-                .alt_m = alt_m,
-                .speed_mps = speed_mps,
-            }}),
-        options);
+    return SendCommandAndWait(MakeClientCommandEnvelope(impl_->config, drone_id,
+                                                        NavCmd{CmdGoto{
+                                                            .lat_deg = lat_deg,
+                                                            .lon_deg = lon_deg,
+                                                            .alt_m = alt_m,
+                                                            .speed_mps = speed_mps,
+                                                        }}),
+                              options);
 }
 
 CommandResult Client::LandAndWait(const std::string& drone_id,
@@ -2288,8 +2623,7 @@ ExecutionResult Client::ValidateTrajectory(const TrajectoryPlan& plan) const {
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
     PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
-                       out.correlation_id, attempt_count,
-                       core::ErrorDomain::kValidation);
+                       out.correlation_id, attempt_count, core::ErrorDomain::kValidation);
     if (rep.has_validation()) {
         out.validation = ToValidateTrajectoryResult(rep.validation());
     }
@@ -2512,23 +2846,211 @@ TimeSyncState Client::GetTimeSyncState(const std::string& drone_id) const {
     return ToTimeSyncState(rep);
 }
 
-void Client::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
-                                TelemetryErrorHandler on_error) {
-    StopTelemetry();
+namespace {
 
-    impl_->telemetry.stop_requested.store(false, std::memory_order_relaxed);
-    impl_->telemetry.active.store(true, std::memory_order_relaxed);
+[[nodiscard]] RpcError MakeSubscriptionStartError(SubscriptionKind kind, RpcStatusCode code,
+                                                  std::string message) {
+    RpcError error = core::SwarmError::Make(DomainForSubscriptionKind(kind), code,
+                                            std::move(message), SeverityForCode(code),
+                                            RetryabilityForCode(code), RemediationForCode(code));
+    error.debug_message = error.user_message;
+    return error;
+}
 
-    impl_->telemetry.worker =
-        std::thread([this, subscription = std::move(subscription), on_frame = std::move(on_frame),
-                     on_error = std::move(on_error)]() mutable {
-            RunTelemetryLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
-                             impl_->telemetry, subscription, on_frame, on_error);
-        });
+[[nodiscard]] std::expected<std::uint64_t, RpcError> PrepareSubscriptionStart(
+    const std::shared_ptr<StreamState>& stream, SubscriptionKind kind, std::string drone_id,
+    TelemetryErrorHandler on_error, SubscriptionEventHandler on_event,
+    SubscriptionOptions options) {
+    if (options.backpressure.max_pending_callbacks == 0) {
+        return std::unexpected(MakeSubscriptionStartError(
+            kind, RpcStatusCode::kInvalidArgument,
+            "subscription max_pending_callbacks must be greater than zero"));
+    }
+
+    if (!options.replace_existing &&
+        (stream->active.load(std::memory_order_relaxed) || stream->worker.joinable() ||
+         stream->callback_worker.joinable())) {
+        return std::unexpected(MakeSubscriptionStartError(kind, RpcStatusCode::kAlreadyExists,
+                                                          "subscription already active"));
+    }
+
+    CancelAndJoinStream(*stream);
+    ResetCallbackQueue(*stream);
+
+    stream->kind = kind;
+    stream->drone_id = std::move(drone_id);
+    stream->correlation_id = MakeCorrelationId(std::string(ToString(kind)));
+    stream->options = options;
+    stream->on_error = std::move(on_error);
+    stream->on_event = std::move(on_event);
+    stream->stop_requested.store(false, std::memory_order_relaxed);
+    stream->active.store(true, std::memory_order_relaxed);
+    const std::uint64_t generation =
+        stream->generation.fetch_add(1, std::memory_order_relaxed) + 1U;
+
+    try {
+        stream->callback_worker = std::thread([stream] { RunCallbackDispatcher(*stream); });
+    } catch (const std::system_error& exc) {
+        stream->active.store(false, std::memory_order_relaxed);
+        return std::unexpected(MakeSubscriptionStartError(
+            kind, RpcStatusCode::kInternal,
+            "failed to start subscription callback dispatcher: " + std::string(exc.what())));
+    }
+
+    EmitSubscriptionEvent(*stream, SubscriptionLifecycleState::kStarting,
+                          std::string(ToString(kind)) + " subscription starting");
+
+    return generation;
+}
+
+}  // namespace
+
+std::expected<Subscription, RpcError> Client::StartTelemetry(TelemetrySubscription subscription,
+                                                             TelemetryHandler on_frame,
+                                                             TelemetryErrorHandler on_error,
+                                                             SubscriptionEventHandler on_event,
+                                                             SubscriptionOptions options) {
+    if (subscription.drone_id.empty()) {
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kTelemetry, RpcStatusCode::kInvalidArgument,
+            "telemetry subscription drone_id must not be empty"));
+    }
+    if (subscription.rate_hertz <= 0) {
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kTelemetry, RpcStatusCode::kInvalidArgument,
+            "telemetry subscription rate_hertz must be greater than zero"));
+    }
+    if (!on_frame) {
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kTelemetry, RpcStatusCode::kInvalidArgument,
+            "telemetry subscription frame callback must not be empty"));
+    }
+
+    auto generation = PrepareSubscriptionStart(impl_->telemetry, SubscriptionKind::kTelemetry,
+                                               subscription.drone_id, on_error, on_event, options);
+    if (!generation.has_value()) {
+        return std::unexpected(std::move(generation.error()));
+    }
+
+    try {
+        const auto stream = impl_->telemetry;
+        stream->worker =
+            std::thread([this, stream, subscription = std::move(subscription),
+                         on_frame = std::move(on_frame), on_error = stream->on_error]() mutable {
+                RunTelemetryLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
+                                 *stream, subscription, on_frame, on_error);
+            });
+    } catch (const std::system_error& exc) {
+        CancelAndJoinStream(*impl_->telemetry);
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kTelemetry, RpcStatusCode::kInternal,
+            "failed to start telemetry subscription worker: " + std::string(exc.what())));
+    }
+
+    auto state = std::make_shared<Subscription::State>();
+    state->stream = impl_->telemetry;
+    state->kind = SubscriptionKind::kTelemetry;
+    state->generation = *generation;
+    return Subscription(std::move(state));
 }
 
 void Client::StopTelemetry() {
-    CancelAndJoinStream(impl_->telemetry);
+    CancelAndJoinStream(*impl_->telemetry);
+}
+
+std::expected<Subscription, RpcError> Client::StartAuthorityWatch(
+    AuthoritySubscription subscription, AuthorityEventHandler on_event,
+    TelemetryErrorHandler on_error, SubscriptionEventHandler on_state,
+    SubscriptionOptions options) {
+    if (subscription.drone_id.empty()) {
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kAuthority, RpcStatusCode::kInvalidArgument,
+            "authority subscription drone_id must not be empty"));
+    }
+    if (!on_event) {
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kAuthority, RpcStatusCode::kInvalidArgument,
+            "authority subscription event callback must not be empty"));
+    }
+
+    auto generation = PrepareSubscriptionStart(impl_->authority, SubscriptionKind::kAuthority,
+                                               subscription.drone_id, on_error, on_state, options);
+    if (!generation.has_value()) {
+        return std::unexpected(std::move(generation.error()));
+    }
+
+    try {
+        const auto stream = impl_->authority;
+        stream->worker =
+            std::thread([this, stream, subscription = std::move(subscription),
+                         on_event = std::move(on_event), on_error = stream->on_error]() mutable {
+                RunAuthorityLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
+                                 *stream, subscription, on_event, on_error);
+            });
+    } catch (const std::system_error& exc) {
+        CancelAndJoinStream(*impl_->authority);
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kAuthority, RpcStatusCode::kInternal,
+            "failed to start authority subscription worker: " + std::string(exc.what())));
+    }
+
+    auto state = std::make_shared<Subscription::State>();
+    state->stream = impl_->authority;
+    state->kind = SubscriptionKind::kAuthority;
+    state->generation = *generation;
+    return Subscription(std::move(state));
+}
+
+void Client::StopAuthorityWatch() {
+    CancelAndJoinStream(*impl_->authority);
+}
+
+std::expected<Subscription, RpcError> Client::StartReports(ReportSubscription subscription,
+                                                           AgentReportHandler on_report,
+                                                           TelemetryErrorHandler on_error,
+                                                           SubscriptionEventHandler on_event,
+                                                           SubscriptionOptions options) {
+    if (subscription.drone_id.empty()) {
+        return std::unexpected(
+            MakeSubscriptionStartError(SubscriptionKind::kReports, RpcStatusCode::kInvalidArgument,
+                                       "report subscription drone_id must not be empty"));
+    }
+    if (!on_report) {
+        return std::unexpected(
+            MakeSubscriptionStartError(SubscriptionKind::kReports, RpcStatusCode::kInvalidArgument,
+                                       "report subscription callback must not be empty"));
+    }
+
+    auto generation = PrepareSubscriptionStart(impl_->reports, SubscriptionKind::kReports,
+                                               subscription.drone_id, on_error, on_event, options);
+    if (!generation.has_value()) {
+        return std::unexpected(std::move(generation.error()));
+    }
+
+    try {
+        const auto stream = impl_->reports;
+        stream->worker =
+            std::thread([this, stream, subscription = std::move(subscription),
+                         on_report = std::move(on_report), on_error = stream->on_error]() mutable {
+                RunReportLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub}, *stream,
+                              subscription, on_report, on_error);
+            });
+    } catch (const std::system_error& exc) {
+        CancelAndJoinStream(*impl_->reports);
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kReports, RpcStatusCode::kInternal,
+            "failed to start report subscription worker: " + std::string(exc.what())));
+    }
+
+    auto state = std::make_shared<Subscription::State>();
+    state->stream = impl_->reports;
+    state->kind = SubscriptionKind::kReports;
+    state->generation = *generation;
+    return Subscription(std::move(state));
+}
+
+void Client::StopReports() {
+    CancelAndJoinStream(*impl_->reports);
 }
 
 CommandResult Client::LockAuthority(const std::string& drone_id, std::int64_t ttl_ms) const {
@@ -2595,44 +3117,6 @@ void Client::ReleaseAuthority(const std::string& drone_id) const {
             "Client::ReleaseAuthority failed: drone={} corr={} attempts={} err={}", drone_id,
             kCorrelationId, attempt_count, kStatus.error_message());
     }
-}
-
-void Client::WatchAuthority(AuthoritySubscription subscription, AuthorityEventHandler on_event,
-                            TelemetryErrorHandler on_error) {
-    StopAuthorityWatch();
-
-    impl_->authority.stop_requested.store(false, std::memory_order_relaxed);
-    impl_->authority.active.store(true, std::memory_order_relaxed);
-
-    impl_->authority.worker =
-        std::thread([this, subscription = std::move(subscription), on_event = std::move(on_event),
-                     on_error = std::move(on_error)]() mutable {
-            RunAuthorityLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
-                             impl_->authority, subscription, on_event, on_error);
-        });
-}
-
-void Client::StopAuthorityWatch() {
-    CancelAndJoinStream(impl_->authority);
-}
-
-void Client::SubscribeReports(ReportSubscription subscription, AgentReportHandler on_report,
-                              TelemetryErrorHandler on_error) {
-    StopReports();
-
-    impl_->reports.stop_requested.store(false, std::memory_order_relaxed);
-    impl_->reports.active.store(true, std::memory_order_relaxed);
-
-    impl_->reports.worker =
-        std::thread([this, subscription = std::move(subscription), on_report = std::move(on_report),
-                     on_error = std::move(on_error)]() mutable {
-            RunReportLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
-                          impl_->reports, subscription, on_report, on_error);
-        });
-}
-
-void Client::StopReports() {
-    CancelAndJoinStream(impl_->reports);
 }
 
 }  // namespace swarmkit::client

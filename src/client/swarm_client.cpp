@@ -11,6 +11,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <exception>
+#include <expected>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -151,8 +152,7 @@ template <typename Result, typename TaskFn>
     ExecutionResult out;
     out.ok = false;
     out.message = "drone '" + drone_id + "' not registered";
-    out.error =
-        MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
     return out;
 }
 
@@ -235,7 +235,7 @@ struct SwarmClient::Impl {
     /// @brief Returns a snapshot of all drone_id / Client pairs.
     ///
     /// Shared ownership means a concurrent RemoveDrone() cannot destroy a
-    /// Client while a broadcast or SubscribeAllTelemetry is still using it.
+    /// Client while a broadcast or StartAllTelemetry is still using it.
     [[nodiscard]] std::vector<std::pair<std::string, std::shared_ptr<Client>>> Snapshot() const {
         std::lock_guard<std::mutex> lock(mutex);
         std::vector<std::pair<std::string, std::shared_ptr<Client>>> out;
@@ -617,9 +617,8 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
     report.requested = planned_commands.size();
     if (planned_commands.empty()) {
         report.message = "no planned swarm commands";
-        report.error =
-            MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInvalidArgument,
-                           report.message);
+        report.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInvalidArgument,
+                                      report.message);
         return report;
     }
 
@@ -784,8 +783,7 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
     report.message = message.str();
     report.error =
         MakeLocalError(core::ErrorDomain::kSwarm,
-                       report.ok ? RpcStatusCode::kOk : RpcStatusCode::kRejected,
-                       report.message);
+                       report.ok ? RpcStatusCode::kOk : RpcStatusCode::kRejected, report.message);
     return report;
 }
 
@@ -881,20 +879,24 @@ std::unordered_map<std::string, std::vector<ExecutionHandle>> SwarmClient::ListA
         });
 }
 
-void SwarmClient::SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
-                                     TelemetryErrorHandler on_error) {
+SubscriptionResult SwarmClient::StartTelemetry(TelemetrySubscription subscription,
+                                               TelemetryHandler on_frame,
+                                               TelemetryErrorHandler on_error,
+                                               SubscriptionEventHandler on_event,
+                                               SubscriptionOptions options) {
     std::shared_ptr<Client> client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(subscription.drone_id);
         if (iter == impl_->clients.end()) {
-            core::Logger::WarnFmt("SwarmClient::SubscribeTelemetry: drone '{}' not registered",
-                                  subscription.drone_id);
-            return;
+            return std::unexpected(
+                MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound,
+                               "drone '" + subscription.drone_id + "' is not registered"));
         }
         client = iter->second;
     }
-    client->SubscribeTelemetry(std::move(subscription), std::move(on_frame), std::move(on_error));
+    return client->StartTelemetry(std::move(subscription), std::move(on_frame), std::move(on_error),
+                                  std::move(on_event), options);
 }
 
 void SwarmClient::StopTelemetry(const std::string& drone_id) {
@@ -910,12 +912,20 @@ void SwarmClient::StopTelemetry(const std::string& drone_id) {
     client->StopTelemetry();
 }
 
-void SwarmClient::SubscribeAllTelemetry(int rate_hertz, const TelemetryHandler& on_frame,
-                                        const TelemetryErrorHandler& on_error) {
-    for (const auto& [drone_id, client] : impl_->Snapshot()) {
-        client->SubscribeTelemetry({.drone_id = drone_id, .rate_hertz = rate_hertz}, on_frame,
-                                   on_error);
+SwarmSubscriptionResults SwarmClient::StartAllTelemetry(int rate_hertz,
+                                                        const TelemetryHandler& on_frame,
+                                                        const TelemetryErrorHandler& on_error,
+                                                        const SubscriptionEventHandler& on_event,
+                                                        SubscriptionOptions options) {
+    SwarmSubscriptionResults results;
+    const auto clients = impl_->Snapshot();
+    results.reserve(clients.size());
+    for (const auto& [drone_id, client] : clients) {
+        results.emplace(drone_id,
+                        client->StartTelemetry({.drone_id = drone_id, .rate_hertz = rate_hertz},
+                                               on_frame, on_error, on_event, options));
     }
+    return results;
 }
 
 void SwarmClient::StopAllTelemetry() {
@@ -924,13 +934,20 @@ void SwarmClient::StopAllTelemetry() {
     }
 }
 
-void SwarmClient::SubscribeAllReports(const AgentReportHandler& on_report,
-                                      const TelemetryErrorHandler& on_error,
-                                      std::uint64_t after_sequence) {
-    for (const auto& [drone_id, client] : impl_->Snapshot()) {
-        client->SubscribeReports({.drone_id = drone_id, .after_sequence = after_sequence},
-                                 on_report, on_error);
+SwarmSubscriptionResults SwarmClient::StartAllReports(const AgentReportHandler& on_report,
+                                                      const TelemetryErrorHandler& on_error,
+                                                      std::uint64_t after_sequence,
+                                                      const SubscriptionEventHandler& on_event,
+                                                      SubscriptionOptions options) {
+    SwarmSubscriptionResults results;
+    const auto clients = impl_->Snapshot();
+    results.reserve(clients.size());
+    for (const auto& [drone_id, client] : clients) {
+        results.emplace(
+            drone_id, client->StartReports({.drone_id = drone_id, .after_sequence = after_sequence},
+                                           on_report, on_error, on_event, options));
     }
+    return results;
 }
 
 void SwarmClient::StopAllReports() {

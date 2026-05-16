@@ -221,10 +221,13 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
 
     std::mutex mutex;
     std::unordered_set<std::string> seen_drones;
-    swarm.SubscribeAllTelemetry(5, [&](const core::TelemetryFrame& frame) {
+    auto telemetry_streams = swarm.StartAllTelemetry(5, [&](const core::TelemetryFrame& frame) {
         std::lock_guard<std::mutex> lock(mutex);
         seen_drones.insert(frame.drone_id);
     });
+    REQUIRE(telemetry_streams.size() == 2);
+    REQUIRE(telemetry_streams.at("drone-1").has_value());
+    REQUIRE(telemetry_streams.at("drone-2").has_value());
 
     REQUIRE(testsupport::WaitUntil(
         [&] {
@@ -252,7 +255,9 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
         },
         kWaitTimeout, std::chrono::milliseconds{50}));
 
-    swarm.StopAllTelemetry();
+    for (auto& entry : telemetry_streams) {
+        entry.second->Stop();
+    }
 }
 
 }  // namespace

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
@@ -196,8 +197,8 @@ struct BackendCapabilities {
  * @brief Parameters for a telemetry subscription.
  *
  * @details Using a dedicated struct (rather than individual arguments) keeps the
- * SubscribeTelemetry() signature stable as new options are added in the
- * future (e.g. compression, field filters, max_gap_ms).
+ * StartTelemetry() signature stable as new options are added in the future
+ * (e.g. compression, field filters, max_gap_ms).
  */
 struct TelemetrySubscription {
     /// Drone identifier to subscribe to.
@@ -477,7 +478,6 @@ struct TrajectoryStatus {
     RpcError error;
 };
 
-
 struct GoalResult {
     bool ok{false};
     std::string message;
@@ -502,10 +502,10 @@ struct ReportSubscription {
 };
 
 /**
- * @brief Callback types used by SubscribeTelemetry().
+ * @brief Callback types used by streaming subscriptions.
  *
- * @details Both are invoked from a background thread — they must be thread-safe and
- * must return quickly without blocking.
+ * @details Application callbacks are dispatched asynchronously by the
+ * subscription dispatcher. They must be thread-safe and should return quickly.
  */
 /// @{
 using TelemetryHandler = std::function<void(const swarmkit::core::TelemetryFrame&)>;
@@ -513,6 +513,76 @@ using TelemetryErrorHandler = std::function<void(const std::string&)>;
 using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
 using AgentReportHandler = std::function<void(const AgentReport&)>;
 /// @}
+
+enum class SubscriptionKind : std::uint8_t {
+    kTelemetry,
+    kAuthority,
+    kReports,
+};
+
+enum class SubscriptionLifecycleState : std::uint8_t {
+    kStarting,
+    kConnected,
+    kReconnecting,
+    kStopped,
+    kFailed,
+    kCallbackError,
+};
+
+enum class StreamBackpressurePolicy : std::uint8_t {
+    kBlock,
+    kDropNewest,
+    kDropOldest,
+};
+
+struct StreamBackpressureOptions {
+    std::size_t max_pending_callbacks{1024};
+    StreamBackpressurePolicy policy{StreamBackpressurePolicy::kDropOldest};
+};
+
+struct SubscriptionOptions {
+    StreamBackpressureOptions backpressure{};
+    bool replace_existing{true};
+};
+
+struct SubscriptionEvent {
+    SubscriptionKind kind{SubscriptionKind::kTelemetry};
+    SubscriptionLifecycleState state{SubscriptionLifecycleState::kStarting};
+    std::string drone_id;
+    std::string correlation_id;
+    int attempt_number{};
+    RpcError error;
+    std::string message;
+    std::size_t dropped_callbacks{};
+};
+
+using SubscriptionEventHandler = std::function<void(const SubscriptionEvent&)>;
+
+class Subscription {
+   public:
+    Subscription() = default;
+    ~Subscription();
+
+    Subscription(const Subscription&) = delete;
+    Subscription& operator=(const Subscription&) = delete;
+    Subscription(Subscription&&) noexcept;
+    Subscription& operator=(Subscription&&) noexcept;
+
+    void Stop() noexcept;
+    [[nodiscard]] bool IsActive() const noexcept;
+    [[nodiscard]] SubscriptionKind Kind() const noexcept;
+    [[nodiscard]] std::uint64_t Id() const noexcept;
+
+   private:
+    friend class Client;
+    struct State;
+
+    explicit Subscription(std::shared_ptr<State> state) : state_(std::move(state)) {}
+
+    std::shared_ptr<State> state_;
+};
+
+using SubscriptionResult = std::expected<Subscription, RpcError>;
 
 /**
  * @brief RAII authority lease for a single drone.
@@ -562,16 +632,16 @@ class AuthoritySession {
  *
  *   auto result = client.Ping();
  *
- *   client.SubscribeTelemetry({"uav-1", 5}, on_frame, on_error);
+ *   auto telemetry = client.StartTelemetry({"uav-1", 5}, on_frame, on_error);
  *   // ... do work ...
- *   client.StopTelemetry();
+ *   if (telemetry) telemetry->Stop();
  * @endcode
  *
  * @par Thread safety
  *   Unary RPCs such as Ping(), SendCommand(), GetHealth(), and GetRuntimeStats()
  *   are thread-safe.
- *   Stream lifecycle pairs SubscribeTelemetry()/StopTelemetry() and
- *   WatchAuthority()/StopAuthorityWatch() must not be called concurrently with
+ *   Stream lifecycle pairs StartTelemetry()/StopTelemetry() and
+ *   StartAuthorityWatch()/StopAuthorityWatch() must not be called concurrently with
  *   themselves, but may be used concurrently with unary RPCs.
  */
 class Client {
@@ -610,9 +680,8 @@ class Client {
      * client currently holds authority over the target drone.
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
-    [[nodiscard]] CommandResult SendCommandAndWait(
-        const commands::CommandEnvelope& envelope,
-        const CommandWaitOptions& options = {}) const;
+    [[nodiscard]] CommandResult SendCommandAndWait(const commands::CommandEnvelope& envelope,
+                                                   const CommandWaitOptions& options = {}) const;
     [[nodiscard]] CommandResult ArmAndWait(const std::string& drone_id,
                                            const CommandWaitOptions& options = {}) const;
     [[nodiscard]] CommandResult TakeoffAndWait(const std::string& drone_id, double alt_m,
@@ -694,11 +763,15 @@ class Client {
      *                     not called on a clean StopTelemetry() cancellation.
      *
      * @details If a subscription is already active it is stopped first.
-     * Returns immediately; frames arrive via @p on_frame until StopTelemetry()
-     * is called or the server closes the connection.
+     * StartTelemetry() returns a RAII Subscription handle and typed start errors;
+     * callbacks are dispatched through a bounded queue so slow application code
+     * does not block the gRPC reader unless configured to do so.
      */
-    void SubscribeTelemetry(TelemetrySubscription subscription, TelemetryHandler on_frame,
-                            TelemetryErrorHandler on_error = {});
+    [[nodiscard]] SubscriptionResult StartTelemetry(TelemetrySubscription subscription,
+                                                    TelemetryHandler on_frame,
+                                                    TelemetryErrorHandler on_error = {},
+                                                    SubscriptionEventHandler on_event = {},
+                                                    SubscriptionOptions options = {});
 
     /**
      * @brief Cancel the active telemetry subscription (if any) and block
@@ -714,15 +787,21 @@ class Client {
      * @details If a watch is already active it is stopped first. Events may be
      * auto-reconnected according to ClientConfig::stream_reconnect_policy.
      */
-    void WatchAuthority(AuthoritySubscription subscription, AuthorityEventHandler on_event,
-                        TelemetryErrorHandler on_error = {});
+    [[nodiscard]] SubscriptionResult StartAuthorityWatch(AuthoritySubscription subscription,
+                                                         AuthorityEventHandler on_event,
+                                                         TelemetryErrorHandler on_error = {},
+                                                         SubscriptionEventHandler on_state = {},
+                                                         SubscriptionOptions options = {});
 
     /// @brief Cancel the active authority watch stream (if any).
     void StopAuthorityWatch();
 
-    /// @brief Subscribe to typed agent reports for goal/health/authority workflows.
-    void SubscribeReports(ReportSubscription subscription, AgentReportHandler on_report,
-                          TelemetryErrorHandler on_error = {});
+    /// @brief Start typed agent reports for goal/health/authority workflows.
+    [[nodiscard]] SubscriptionResult StartReports(ReportSubscription subscription,
+                                                  AgentReportHandler on_report,
+                                                  TelemetryErrorHandler on_error = {},
+                                                  SubscriptionEventHandler on_event = {},
+                                                  SubscriptionOptions options = {});
 
     /// @brief Cancel the active report stream (if any).
     void StopReports();

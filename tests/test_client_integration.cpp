@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <ranges>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -106,10 +107,10 @@ TEST_CASE("Client verified command helpers use agent health and telemetry",
     std::atomic<bool> done{false};
     std::atomic<bool> stream_started{false};
     std::thread emitter([&] {
-        stream_started.store(testsupport::WaitUntil(
-                                 [&] { return harness.Backend().HasTelemetryStream("drone-1"); },
-                                 kWaitTimeout),
-                             std::memory_order_relaxed);
+        stream_started.store(
+            testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout),
+            std::memory_order_relaxed);
         if (!stream_started.load(std::memory_order_relaxed)) {
             return;
         }
@@ -143,12 +144,13 @@ TEST_CASE("Client authority session auto releases lock and emits watch events",
 
     std::mutex events_mutex;
     std::vector<AuthorityEventInfo> operator_events;
-    operator_client.WatchAuthority(
+    auto authority_watch = operator_client.StartAuthorityWatch(
         {.drone_id = "drone-1", .priority = commands::CommandPriority::kOperator},
         [&](const AuthorityEventInfo& event) {
             std::lock_guard<std::mutex> lock(events_mutex);
             operator_events.push_back(event);
         });
+    REQUIRE(authority_watch.has_value());
 
     {
         const auto kSession = operator_client.AcquireAuthoritySession("drone-1", 500);
@@ -165,7 +167,7 @@ TEST_CASE("Client authority session auto releases lock and emits watch events",
         },
         kWaitTimeout));
 
-    operator_client.StopAuthorityWatch();
+    authority_watch->Stop();
 }
 
 TEST_CASE("Agent validates already-satisfied commands before granting authority",
@@ -209,9 +211,8 @@ TEST_CASE("Agent validates already-satisfied commands before granting authority"
     satisfied_ctx->set_priority(static_cast<std::int32_t>(commands::CommandPriority::kOverride));
     satisfied_request.mutable_cmd()->mutable_arm();
     swarmkit::v1::CommandReply satisfied_reply;
-    REQUIRE(agent_service
-                ->SendCommand(&satisfied_context, &satisfied_request, &satisfied_reply)
-                .ok());
+    REQUIRE(
+        agent_service->SendCommand(&satisfied_context, &satisfied_request, &satisfied_reply).ok());
     REQUIRE(satisfied_reply.status() == swarmkit::v1::CommandReply::OK);
     CHECK(satisfied_reply.message().find("already satisfied") != std::string::npos);
     CHECK(backend_ptr->ExecuteCallCount() == 0);
@@ -235,12 +236,13 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
     Client client = MakeClient(harness.Address());
 
     std::atomic<int> frame_count{0};
-    client.SubscribeTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
-                              [&](const core::TelemetryFrame& frame) {
-                                  if (frame.drone_id == "drone-1") {
-                                      frame_count.fetch_add(1, std::memory_order_relaxed);
-                                  }
-                              });
+    auto telemetry_stream = client.StartTelemetry(
+        {.drone_id = "drone-1", .rate_hertz = 5}, [&](const core::TelemetryFrame& frame) {
+            if (frame.drone_id == "drone-1") {
+                frame_count.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    REQUIRE(telemetry_stream.has_value());
 
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
@@ -261,9 +263,60 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
         },
         kWaitTimeout, std::chrono::milliseconds{50}));
 
-    client.StopTelemetry();
+    telemetry_stream->Stop();
     REQUIRE(testsupport::WaitUntil([&] { return !harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
+}
+
+TEST_CASE("Client telemetry subscription handle contains callback exceptions",
+          "[client][integration][telemetry]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    auto invalid_subscription = client.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 0},
+                                                      [](const core::TelemetryFrame&) {});
+    REQUIRE_FALSE(invalid_subscription.has_value());
+    CHECK(invalid_subscription.error().code == RpcStatusCode::kInvalidArgument);
+
+    std::atomic<bool> callback_error_seen{false};
+    std::atomic<bool> connected_seen{false};
+
+    SubscriptionOptions options;
+    options.backpressure.max_pending_callbacks = 4;
+    options.backpressure.policy = StreamBackpressurePolicy::kDropOldest;
+
+    auto subscription = client.StartTelemetry(
+        {.drone_id = "drone-1", .rate_hertz = 5},
+        [](const core::TelemetryFrame&) { throw std::runtime_error("boom"); },
+        [&](const std::string& message) {
+            if (message.find("boom") != std::string::npos) {
+                callback_error_seen.store(true, std::memory_order_relaxed);
+            }
+        },
+        [&](const SubscriptionEvent& event) {
+            if (event.state == SubscriptionLifecycleState::kConnected) {
+                connected_seen.store(true, std::memory_order_relaxed);
+            }
+        },
+        options);
+
+    REQUIRE(subscription.has_value());
+    REQUIRE(subscription->IsActive());
+    REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
+
+    core::TelemetryFrame frame;
+    frame.drone_id = "drone-1";
+    frame.unix_time_ms = 456;
+    harness.Backend().EmitTelemetry("drone-1", frame);
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] { return callback_error_seen.load(std::memory_order_relaxed); }, kWaitTimeout));
+    REQUIRE(testsupport::WaitUntil([&] { return connected_seen.load(std::memory_order_relaxed); },
+                                   kWaitTimeout));
+
+    subscription->Stop();
+    CHECK_FALSE(subscription->IsActive());
 }
 
 TEST_CASE("Client active goal emits active and reached reports", "[client][integration][goal]") {
@@ -272,10 +325,12 @@ TEST_CASE("Client active goal emits active and reached reports", "[client][integ
 
     std::mutex reports_mutex;
     std::vector<AgentReport> reports;
-    client.SubscribeReports({.drone_id = "drone-1"}, [&](const AgentReport& report) {
-        std::lock_guard<std::mutex> lock(reports_mutex);
-        reports.push_back(report);
-    });
+    auto reports_stream =
+        client.StartReports({.drone_id = "drone-1"}, [&](const AgentReport& report) {
+            std::lock_guard<std::mutex> lock(reports_mutex);
+            reports.push_back(report);
+        });
+    REQUIRE(reports_stream.has_value());
 
     ActiveGoal goal;
     goal.drone_id = "drone-1";
@@ -307,8 +362,7 @@ TEST_CASE("Client active goal emits active and reached reports", "[client][integ
             harness.Backend().EmitTelemetry("drone-1", frame);
             std::lock_guard<std::mutex> lock(reports_mutex);
             return std::ranges::any_of(reports, [](const AgentReport& report) {
-                return report.goal.has_value() &&
-                       report.goal->status == GoalStatus::kReached &&
+                return report.goal.has_value() && report.goal->status == GoalStatus::kReached &&
                        report.goal->goal_id == "goal-reached";
             });
         },
@@ -318,7 +372,7 @@ TEST_CASE("Client active goal emits active and reached reports", "[client][integ
     REQUIRE(status.has_goal);
     CHECK(status.status == GoalStatus::kReached);
 
-    client.StopReports();
+    reports_stream->Stop();
 }
 
 TEST_CASE("Client can cancel active goal and receive cancellation report",
@@ -328,10 +382,12 @@ TEST_CASE("Client can cancel active goal and receive cancellation report",
 
     std::mutex reports_mutex;
     std::vector<AgentReport> reports;
-    client.SubscribeReports({.drone_id = "drone-1"}, [&](const AgentReport& report) {
-        std::lock_guard<std::mutex> lock(reports_mutex);
-        reports.push_back(report);
-    });
+    auto reports_stream =
+        client.StartReports({.drone_id = "drone-1"}, [&](const AgentReport& report) {
+            std::lock_guard<std::mutex> lock(reports_mutex);
+            reports.push_back(report);
+        });
+    REQUIRE(reports_stream.has_value());
 
     ActiveGoal goal;
     goal.drone_id = "drone-1";
@@ -354,8 +410,7 @@ TEST_CASE("Client can cancel active goal and receive cancellation report",
         [&] {
             std::lock_guard<std::mutex> lock(reports_mutex);
             return std::ranges::any_of(reports, [](const AgentReport& report) {
-                return report.goal.has_value() &&
-                       report.goal->status == GoalStatus::kCancelled &&
+                return report.goal.has_value() && report.goal->status == GoalStatus::kCancelled &&
                        report.goal->goal_id == "goal-cancel";
             });
         },
@@ -364,7 +419,7 @@ TEST_CASE("Client can cancel active goal and receive cancellation report",
     const ActiveGoalStatus status = client.GetActiveGoal("drone-1");
     CHECK_FALSE(status.has_goal);
 
-    client.StopReports();
+    reports_stream->Stop();
 }
 
 TEST_CASE("Client reports backend execution failure and telemetry counters",

@@ -509,7 +509,7 @@ int main(int argc, char** argv) {
 
     constexpr int kTelemetryRateHz = 2;
 
-    swarm.SubscribeAllTelemetry(
+    auto telemetry_streams = swarm.StartAllTelemetry(
         kTelemetryRateHz,
         [&file_mutex, &telemetry_file](const cor::TelemetryFrame& frame) {
             std::lock_guard<std::mutex> lock(file_mutex);
@@ -523,6 +523,12 @@ int main(int argc, char** argv) {
         [](const std::string& error_msg) {
             cor::Logger::ErrorFmt("[TEL] stream error: {}", error_msg);
         });
+    for (const auto& [drone_id, result] : telemetry_streams) {
+        if (!result.has_value()) {
+            cor::Logger::ErrorFmt("[TEL] failed to start stream for {}: {}", drone_id,
+                                  result.error().user_message);
+        }
+    }
 
     std::string line;
     while (!IsStopRequested()) {
@@ -537,7 +543,11 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "\nShutting down...\n";
-    swarm.StopAllTelemetry();
+    for (auto& entry : telemetry_streams) {
+        if (entry.second.has_value()) {
+            entry.second->Stop();
+        }
+    }
     telemetry_file.close();
     return EXIT_SUCCESS;
 }
