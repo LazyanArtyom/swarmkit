@@ -12,6 +12,7 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -55,9 +56,22 @@ enum class SwarmExecutionSynchronization : std::uint8_t {
     kProtocolStartAt,
 };
 
+struct SwarmFanoutOptions {
+    /// Maximum worker threads used for one swarm fanout. 0 uses the SDK default.
+    std::size_t max_parallelism{};
+
+    /// Optional caller-owned stop token. Cancellation stops dispatching work that has not started
+    /// yet.
+    std::stop_token cancellation;
+
+    /// Request cancellation of queued work after the first failed task result.
+    bool cancel_remaining_on_failure{false};
+};
+
 struct SwarmExecutionOptions {
     SwarmPartialFailurePolicy partial_failure_policy{SwarmPartialFailurePolicy::kAllOrAbort};
     SwarmExecutionSynchronization synchronization{SwarmExecutionSynchronization::kProtocolStartAt};
+    SwarmFanoutOptions fanout{};
     std::size_t quorum{};
     std::chrono::milliseconds start_delay{200};
     std::chrono::milliseconds max_clock_offset{50};
@@ -258,10 +272,12 @@ class SwarmClient {
      * @returns Map of drone_id to CommandResult for each registered drone.
      */
     [[nodiscard]] std::unordered_map<std::string, CommandResult> BroadcastCommand(
-        const commands::Command& command, const commands::CommandContext& context) const;
+        const commands::Command& command, const commands::CommandContext& context,
+        const SwarmFanoutOptions& fanout_options = {}) const;
     [[nodiscard]] std::unordered_map<std::string, CommandResult> BroadcastCommandAndWait(
         const commands::Command& command, const commands::CommandContext& context,
-        const CommandWaitOptions& options = {}) const;
+        const CommandWaitOptions& options = {},
+        const SwarmFanoutOptions& fanout_options = {}) const;
 
     /**
      * @brief Execute one concrete command across the fleet from a synchronized protocol start.
@@ -309,17 +325,20 @@ class SwarmClient {
 
     [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan) const;
     [[nodiscard]] std::unordered_map<std::string, ExecutionResult> UploadTrajectories(
-        const std::vector<TrajectoryPlan>& plans) const;
+        const std::vector<TrajectoryPlan>& plans,
+        const SwarmFanoutOptions& fanout_options = {}) const;
     [[nodiscard]] std::unordered_map<std::string, ExecutionResult> ValidateTrajectories(
-        const std::vector<TrajectoryPlan>& plans) const;
+        const std::vector<TrajectoryPlan>& plans,
+        const SwarmFanoutOptions& fanout_options = {}) const;
     [[nodiscard]] std::unordered_map<std::string, ExecutionResult> PrepareAll(
-        const std::string& execution_id) const;
+        const std::string& execution_id, const SwarmFanoutOptions& fanout_options = {}) const;
     [[nodiscard]] std::unordered_map<std::string, ExecutionResult> StartAllAt(
-        const std::string& execution_id, std::int64_t unix_time_ms) const;
+        const std::string& execution_id, std::int64_t unix_time_ms,
+        const SwarmFanoutOptions& fanout_options = {}) const;
     [[nodiscard]] std::unordered_map<std::string, ExecutionResult> AbortAll(
-        const std::string& execution_id) const;
-    [[nodiscard]] std::unordered_map<std::string, std::vector<ExecutionHandle>> ListAllExecutions()
-        const;
+        const std::string& execution_id, const SwarmFanoutOptions& fanout_options = {}) const;
+    [[nodiscard]] std::unordered_map<std::string, std::vector<ExecutionHandle>> ListAllExecutions(
+        const SwarmFanoutOptions& fanout_options = {}) const;
 
     /// @}
 
@@ -349,7 +368,7 @@ class SwarmClient {
      * @returns Map of drone_id to CommandResult.
      */
     [[nodiscard]] std::unordered_map<std::string, CommandResult> LockAll(
-        std::int64_t ttl_ms = 0) const;
+        std::int64_t ttl_ms = 0, const SwarmFanoutOptions& fanout_options = {}) const;
 
     /// @brief Release authority for all registered drones.
     void UnlockAll() const;

@@ -32,96 +32,55 @@ using namespace swarmkit::commands;  // NOLINT(google-build-using-namespace)
 
 namespace {
 
-constexpr std::size_t kFallbackParallelism = 4;
+constexpr std::size_t kFallbackParallelism = 8;
+constexpr std::size_t kDefaultFanoutParallelism = 32;
+constexpr std::size_t kMaxDefaultFanoutParallelism = 64;
 constexpr double kEarthRadiusMeters = 6378137.0;
 constexpr double kPi = 3.14159265358979323846;
 
-[[nodiscard]] std::size_t ComputeParallelism(std::size_t task_count) {
+[[nodiscard]] std::size_t ComputeParallelism(std::size_t task_count,
+                                             const SwarmFanoutOptions& options) {
     if (task_count == 0) {
         return 0;
+    }
+    if (options.max_parallelism > 0) {
+        return std::min(task_count, options.max_parallelism);
     }
 
     const std::size_t kHardwareThreads =
         std::max<std::size_t>(1, std::thread::hardware_concurrency());
-    const std::size_t kUpperBound = std::max(kFallbackParallelism, kHardwareThreads);
+    const std::size_t kUpperBound = std::min(
+        kMaxDefaultFanoutParallelism,
+        std::max(kFallbackParallelism, std::max(kDefaultFanoutParallelism, kHardwareThreads * 2U)));
     return std::min(task_count, kUpperBound);
 }
 
-template <typename TaskFn>
-[[nodiscard]] std::unordered_map<std::string, CommandResult> RunCommandTasks(
-    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients, TaskFn&& task_fn) {
-    std::unordered_map<std::string, CommandResult> results;
-    results.reserve(clients.size());
-    if (clients.empty()) {
-        return results;
+class BoundedFanoutExecutor final {
+   public:
+    BoundedFanoutExecutor(const SwarmFanoutOptions& options, std::size_t task_count)
+        : options_(options), parallelism_(ComputeParallelism(task_count, options)) {}
+
+    [[nodiscard]] std::size_t Parallelism() const noexcept {
+        return parallelism_;
     }
 
-    const std::size_t kParallelism = ComputeParallelism(clients.size());
-    std::atomic<std::size_t> next_index{0};
-    std::mutex results_mutex;
-    std::vector<std::thread> workers;
-    workers.reserve(kParallelism);
-
-    for (std::size_t index = 0; index < kParallelism; ++index) {
-        workers.emplace_back([&clients, &next_index, &results, &results_mutex, &task_fn]() {
-            while (true) {
-                const std::size_t kTaskIndex = next_index.fetch_add(1, std::memory_order_relaxed);
-                if (kTaskIndex >= clients.size()) {
-                    return;
-                }
-
-                const auto& [drone_id, client] = clients[kTaskIndex];
-                CommandResult result = task_fn(drone_id, client);
-
-                std::lock_guard<std::mutex> lock(results_mutex);
-                results.emplace(drone_id, std::move(result));
-            }
-        });
+    [[nodiscard]] bool IsCancellationRequested() const noexcept {
+        return options_.cancellation.stop_requested() || internal_stop_.stop_requested();
     }
 
-    for (auto& worker : workers) {
-        worker.join();
+    [[nodiscard]] bool CancelRemainingOnFailure() const noexcept {
+        return options_.cancel_remaining_on_failure;
     }
 
-    return results;
-}
-
-template <typename Result, typename TaskFn>
-[[nodiscard]] std::unordered_map<std::string, Result> RunClientTasks(
-    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients, TaskFn&& task_fn) {
-    std::unordered_map<std::string, Result> results;
-    results.reserve(clients.size());
-    if (clients.empty()) {
-        return results;
+    void RequestCancel() noexcept {
+        internal_stop_.request_stop();
     }
 
-    const std::size_t kParallelism = ComputeParallelism(clients.size());
-    std::atomic<std::size_t> next_index{0};
-    std::mutex results_mutex;
-    std::vector<std::thread> workers;
-    workers.reserve(kParallelism);
-
-    for (std::size_t index = 0; index < kParallelism; ++index) {
-        workers.emplace_back([&clients, &next_index, &results, &results_mutex, &task_fn]() {
-            while (true) {
-                const std::size_t task_index = next_index.fetch_add(1, std::memory_order_relaxed);
-                if (task_index >= clients.size()) {
-                    return;
-                }
-                const auto& [drone_id, client] = clients[task_index];
-                Result result = task_fn(drone_id, client);
-                std::lock_guard<std::mutex> lock(results_mutex);
-                results.emplace(drone_id, std::move(result));
-            }
-        });
-    }
-
-    for (auto& worker : workers) {
-        worker.join();
-    }
-
-    return results;
-}
+   private:
+    SwarmFanoutOptions options_;
+    std::stop_source internal_stop_;
+    std::size_t parallelism_{};
+};
 
 [[nodiscard]] RpcError MakeLocalError(core::ErrorDomain domain, RpcStatusCode code,
                                       std::string message) {
@@ -216,6 +175,145 @@ template <typename Result, typename TaskFn>
     out.message = std::move(message);
     out.error = MakeLocalError(core::ErrorDomain::kSwarm, code, out.message);
     return out;
+}
+
+[[nodiscard]] CommandResult CancelledCommandResult(const std::string& drone_id) {
+    return LocalSwarmError(RpcStatusCode::kCancelled,
+                           "swarm fanout cancelled before dispatch for drone '" + drone_id + "'");
+}
+
+[[nodiscard]] CommandResult ExceptionCommandResult(const std::string& drone_id,
+                                                   const std::string& detail) {
+    return LocalSwarmError(RpcStatusCode::kInternal,
+                           "swarm fanout task failed for drone '" + drone_id + "': " + detail);
+}
+
+[[nodiscard]] ExecutionResult CancelledExecutionResult(const std::string& drone_id) {
+    ExecutionResult out;
+    out.ok = false;
+    out.message = "swarm fanout cancelled before dispatch for drone '" + drone_id + "'";
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kCancelled, out.message);
+    out.handle.drone_id = drone_id;
+    return out;
+}
+
+[[nodiscard]] ExecutionResult ExceptionExecutionResult(const std::string& drone_id,
+                                                       const std::string& detail) {
+    ExecutionResult out;
+    out.ok = false;
+    out.message = "swarm fanout task failed for drone '" + drone_id + "': " + detail;
+    out.error = MakeLocalError(core::ErrorDomain::kInternal, RpcStatusCode::kInternal, out.message);
+    out.handle.drone_id = drone_id;
+    return out;
+}
+
+template <typename Result, typename TaskFn, typename CancelledFn, typename ExceptionFn,
+          typename ResultOkFn>
+[[nodiscard]] std::unordered_map<std::string, Result> RunBoundedClientTasks(
+    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients,
+    const SwarmFanoutOptions& fanout_options, TaskFn&& task_fn, CancelledFn&& make_cancelled_result,
+    ExceptionFn&& make_exception_result, ResultOkFn&& result_ok) {
+    std::unordered_map<std::string, Result> results;
+    results.reserve(clients.size());
+    if (clients.empty()) {
+        return results;
+    }
+
+    BoundedFanoutExecutor executor(fanout_options, clients.size());
+    if (executor.Parallelism() == 0) {
+        return results;
+    }
+
+    std::atomic<std::size_t> next_index{0};
+    std::mutex results_mutex;
+    std::vector<std::thread> workers;
+    workers.reserve(executor.Parallelism());
+
+    const auto store_result = [&results, &results_mutex](const std::string& drone_id,
+                                                         Result result) {
+        std::lock_guard<std::mutex> lock(results_mutex);
+        results.emplace(drone_id, std::move(result));
+    };
+
+    for (std::size_t index = 0; index < executor.Parallelism(); ++index) {
+        workers.emplace_back([&clients, &executor, &make_exception_result, &next_index, &result_ok,
+                              &store_result, &task_fn]() {
+            while (true) {
+                if (executor.IsCancellationRequested()) {
+                    return;
+                }
+                const std::size_t task_index = next_index.fetch_add(1, std::memory_order_relaxed);
+                if (task_index >= clients.size()) {
+                    return;
+                }
+                if (executor.IsCancellationRequested()) {
+                    return;
+                }
+
+                const auto& [drone_id, client] = clients[task_index];
+                Result result;
+                try {
+                    result = task_fn(drone_id, client);
+                } catch (const std::exception& error) {
+                    result = make_exception_result(drone_id, error.what());
+                } catch (...) {
+                    result = make_exception_result(drone_id, "unknown exception");
+                }
+
+                const bool task_ok = result_ok(result);
+                store_result(drone_id, std::move(result));
+                if (!task_ok && executor.CancelRemainingOnFailure()) {
+                    executor.RequestCancel();
+                }
+            }
+        });
+    }
+
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    for (const auto& [drone_id, client] : clients) {
+        static_cast<void>(client);
+        if (!results.contains(drone_id)) {
+            results.emplace(drone_id, make_cancelled_result(drone_id));
+        }
+    }
+
+    return results;
+}
+
+template <typename TaskFn>
+[[nodiscard]] std::unordered_map<std::string, CommandResult> RunCommandTasks(
+    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients,
+    const SwarmFanoutOptions& fanout_options, TaskFn&& task_fn) {
+    return RunBoundedClientTasks<CommandResult>(
+        clients, fanout_options, std::forward<TaskFn>(task_fn), CancelledCommandResult,
+        ExceptionCommandResult, [](const CommandResult& result) { return result.ok; });
+}
+
+template <typename TaskFn>
+[[nodiscard]] std::unordered_map<std::string, ExecutionResult> RunExecutionTasks(
+    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients,
+    const SwarmFanoutOptions& fanout_options, TaskFn&& task_fn) {
+    return RunBoundedClientTasks<ExecutionResult>(
+        clients, fanout_options, std::forward<TaskFn>(task_fn), CancelledExecutionResult,
+        ExceptionExecutionResult, [](const ExecutionResult& result) { return result.ok; });
+}
+
+template <typename TaskFn>
+[[nodiscard]] std::unordered_map<std::string, std::vector<ExecutionHandle>> RunExecutionListTasks(
+    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients,
+    const SwarmFanoutOptions& fanout_options, TaskFn&& task_fn) {
+    return RunBoundedClientTasks<std::vector<ExecutionHandle>>(
+        clients, fanout_options, std::forward<TaskFn>(task_fn),
+        [](const std::string&) { return std::vector<ExecutionHandle>{}; },
+        [](const std::string& drone_id, const std::string& detail) {
+            core::Logger::WarnFmt("swarm fanout list task failed for drone '{}': {}", drone_id,
+                                  detail);
+            return std::vector<ExecutionHandle>{};
+        },
+        [](const std::vector<ExecutionHandle>&) { return true; });
 }
 
 [[nodiscard]] bool TimeSyncAcceptable(const TimeSyncState& state,
@@ -582,10 +680,11 @@ RuntimeStats SwarmClient::GetRuntimeStats(const std::string& drone_id) const {
 }
 
 std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
-    const commands::Command& command, const commands::CommandContext& context) const {
+    const commands::Command& command, const commands::CommandContext& context,
+    const SwarmFanoutOptions& fanout_options) const {
     if (IsSwarmCommand(command)) {
         const auto kSnapshot = impl_->Snapshot();
-        return RunCommandTasks(kSnapshot,
+        return RunCommandTasks(kSnapshot, fanout_options,
                                [this, &command, &context](const std::string& drone_id,
                                                           const std::shared_ptr<Client>& client) {
                                    static_cast<void>(client);
@@ -598,22 +697,23 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
     }
 
     const auto kSnapshot = impl_->Snapshot();
-    return RunCommandTasks(kSnapshot, [&command, &context](const std::string& drone_id,
-                                                           const std::shared_ptr<Client>& client) {
-        commands::CommandEnvelope envelope;
-        envelope.context = context;
-        envelope.context.drone_id = drone_id;
-        envelope.command = command;
-        return client->SendCommand(envelope);
-    });
+    return RunCommandTasks(
+        kSnapshot, fanout_options,
+        [&command, &context](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            commands::CommandEnvelope envelope;
+            envelope.context = context;
+            envelope.context.drone_id = drone_id;
+            envelope.command = command;
+            return client->SendCommand(envelope);
+        });
 }
 
 std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommandAndWait(
     const commands::Command& command, const commands::CommandContext& context,
-    const CommandWaitOptions& options) const {
+    const CommandWaitOptions& options, const SwarmFanoutOptions& fanout_options) const {
     if (IsSwarmCommand(command)) {
         const auto kSnapshot = impl_->Snapshot();
-        return RunCommandTasks(kSnapshot,
+        return RunCommandTasks(kSnapshot, fanout_options,
                                [this, &command, &context](const std::string& drone_id,
                                                           const std::shared_ptr<Client>& client) {
                                    static_cast<void>(client);
@@ -626,7 +726,7 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommandAndW
     }
 
     const auto kSnapshot = impl_->Snapshot();
-    return RunCommandTasks(kSnapshot,
+    return RunCommandTasks(kSnapshot, fanout_options,
                            [&command, &context, &options](const std::string& drone_id,
                                                           const std::shared_ptr<Client>& client) {
                                commands::CommandEnvelope envelope;
@@ -829,7 +929,7 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
 
     std::unordered_map<std::string, CommandResult> command_results;
     if (options.synchronization == SwarmExecutionSynchronization::kParallelFanout) {
-        command_results = RunCommandTasks(target_clients, dispatch);
+        command_results = RunCommandTasks(target_clients, options.fanout, dispatch);
     } else {
         const std::string execution_id = MakeSwarmExecutionId(context);
         std::unordered_map<std::string, TrajectoryPlan> plans_by_drone;
@@ -868,8 +968,8 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
         }
 
         if (!protocol_clients.empty()) {
-            report.upload_results = RunClientTasks<ExecutionResult>(
-                protocol_clients,
+            report.upload_results = RunExecutionTasks(
+                protocol_clients, options.fanout,
                 [&plans_by_drone, &context](const std::string& drone_id,
                                             const std::shared_ptr<Client>& client) {
                     commands::CommandContext drone_context = context;
@@ -896,9 +996,10 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
             }
 
             const auto uploaded_clients = FilterClients(snapshot, uploaded_ids);
-            report.prepare_results = RunClientTasks<ExecutionResult>(
-                uploaded_clients, [&execution_id, &context](const std::string& drone_id,
-                                                            const std::shared_ptr<Client>& client) {
+            report.prepare_results = RunExecutionTasks(
+                uploaded_clients, options.fanout,
+                [&execution_id, &context](const std::string& drone_id,
+                                          const std::shared_ptr<Client>& client) {
                     commands::CommandContext drone_context = context;
                     drone_context.drone_id = drone_id;
                     return client->PrepareTrajectory(drone_id, execution_id, drone_context);
@@ -962,11 +1063,12 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
 
             if (!may_start) {
                 const auto uploaded_for_cleanup = FilterClients(snapshot, uploaded_ids);
-                report.abort_results = RunClientTasks<ExecutionResult>(
-                    uploaded_for_cleanup, [&execution_id](const std::string& drone_id,
-                                                          const std::shared_ptr<Client>& client) {
-                        return client->AbortExecution(drone_id, execution_id);
-                    });
+                report.abort_results =
+                    RunExecutionTasks(uploaded_for_cleanup, options.fanout,
+                                      [&execution_id](const std::string& drone_id,
+                                                      const std::shared_ptr<Client>& client) {
+                                          return client->AbortExecution(drone_id, execution_id);
+                                      });
                 for (const std::string& drone_id : ready_ids) {
                     command_results.emplace(
                         drone_id, LocalSwarmError(RpcStatusCode::kRejected,
@@ -976,8 +1078,8 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
             } else {
                 report.scheduled_start_unix_ms = NowUnixMs() + options.start_delay.count();
                 const auto ready_clients = FilterClients(snapshot, ready_ids);
-                report.start_results = RunClientTasks<ExecutionResult>(
-                    ready_clients,
+                report.start_results = RunExecutionTasks(
+                    ready_clients, options.fanout,
                     [&execution_id, &context, &report](const std::string& drone_id,
                                                        const std::shared_ptr<Client>& client) {
                         commands::CommandContext drone_context = context;
@@ -1016,15 +1118,16 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
     auto send_recovery = [&](const std::unordered_set<std::string>& target_ids,
                              const commands::Command& recovery_command) {
         const auto recovery_clients = FilterClients(snapshot, target_ids);
-        auto recovery = RunCommandTasks(
-            recovery_clients, [&context, &recovery_command](const std::string& drone_id,
-                                                            const std::shared_ptr<Client>& client) {
-                commands::CommandEnvelope envelope;
-                envelope.context = context;
-                envelope.context.drone_id = drone_id;
-                envelope.command = recovery_command;
-                return client->SendCommand(envelope);
-            });
+        auto recovery =
+            RunCommandTasks(recovery_clients, options.fanout,
+                            [&context, &recovery_command](const std::string& drone_id,
+                                                          const std::shared_ptr<Client>& client) {
+                                commands::CommandEnvelope envelope;
+                                envelope.context = context;
+                                envelope.context.drone_id = drone_id;
+                                envelope.command = recovery_command;
+                                return client->SendCommand(envelope);
+                            });
         for (auto& [drone_id, result] : recovery) {
             report.recovery_results.emplace(std::move(drone_id), std::move(result));
         }
@@ -1103,14 +1206,15 @@ ExecutionResult SwarmClient::UploadTrajectory(const TrajectoryPlan& plan) const 
 }
 
 std::unordered_map<std::string, ExecutionResult> SwarmClient::UploadTrajectories(
-    const std::vector<TrajectoryPlan>& plans) const {
+    const std::vector<TrajectoryPlan>& plans, const SwarmFanoutOptions& fanout_options) const {
     std::unordered_map<std::string, TrajectoryPlan> by_drone;
     for (const auto& plan : plans) {
         by_drone.emplace(plan.drone_id, plan);
     }
     const auto snapshot = impl_->Snapshot();
-    return RunClientTasks<ExecutionResult>(
-        snapshot, [&by_drone](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+    return RunExecutionTasks(
+        snapshot, fanout_options,
+        [&by_drone](const std::string& drone_id, const std::shared_ptr<Client>& client) {
             const auto iter = by_drone.find(drone_id);
             if (iter == by_drone.end()) {
                 ExecutionResult out;
@@ -1125,14 +1229,15 @@ std::unordered_map<std::string, ExecutionResult> SwarmClient::UploadTrajectories
 }
 
 std::unordered_map<std::string, ExecutionResult> SwarmClient::ValidateTrajectories(
-    const std::vector<TrajectoryPlan>& plans) const {
+    const std::vector<TrajectoryPlan>& plans, const SwarmFanoutOptions& fanout_options) const {
     std::unordered_map<std::string, TrajectoryPlan> by_drone;
     for (const auto& plan : plans) {
         by_drone.emplace(plan.drone_id, plan);
     }
     const auto snapshot = impl_->Snapshot();
-    return RunClientTasks<ExecutionResult>(
-        snapshot, [&by_drone](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+    return RunExecutionTasks(
+        snapshot, fanout_options,
+        [&by_drone](const std::string& drone_id, const std::shared_ptr<Client>& client) {
             const auto iter = by_drone.find(drone_id);
             if (iter == by_drone.end()) {
                 ExecutionResult out;
@@ -1147,36 +1252,39 @@ std::unordered_map<std::string, ExecutionResult> SwarmClient::ValidateTrajectori
 }
 
 std::unordered_map<std::string, ExecutionResult> SwarmClient::PrepareAll(
-    const std::string& execution_id) const {
-    return RunClientTasks<ExecutionResult>(
-        impl_->Snapshot(),
+    const std::string& execution_id, const SwarmFanoutOptions& fanout_options) const {
+    return RunExecutionTasks(
+        impl_->Snapshot(), fanout_options,
         [&execution_id](const std::string& drone_id, const std::shared_ptr<Client>& client) {
             return client->PrepareTrajectory(drone_id, execution_id);
         });
 }
 
 std::unordered_map<std::string, ExecutionResult> SwarmClient::StartAllAt(
-    const std::string& execution_id, std::int64_t unix_time_ms) const {
-    return RunClientTasks<ExecutionResult>(
-        impl_->Snapshot(), [&execution_id, unix_time_ms](const std::string& drone_id,
-                                                         const std::shared_ptr<Client>& client) {
-            return client->StartExecutionAt(drone_id, execution_id, unix_time_ms);
-        });
+    const std::string& execution_id, std::int64_t unix_time_ms,
+    const SwarmFanoutOptions& fanout_options) const {
+    return RunExecutionTasks(impl_->Snapshot(), fanout_options,
+                             [&execution_id, unix_time_ms](const std::string& drone_id,
+                                                           const std::shared_ptr<Client>& client) {
+                                 return client->StartExecutionAt(drone_id, execution_id,
+                                                                 unix_time_ms);
+                             });
 }
 
 std::unordered_map<std::string, ExecutionResult> SwarmClient::AbortAll(
-    const std::string& execution_id) const {
-    return RunClientTasks<ExecutionResult>(
-        impl_->Snapshot(),
+    const std::string& execution_id, const SwarmFanoutOptions& fanout_options) const {
+    return RunExecutionTasks(
+        impl_->Snapshot(), fanout_options,
         [&execution_id](const std::string& drone_id, const std::shared_ptr<Client>& client) {
             return client->AbortExecution(drone_id, execution_id);
         });
 }
 
-std::unordered_map<std::string, std::vector<ExecutionHandle>> SwarmClient::ListAllExecutions()
-    const {
-    return RunClientTasks<std::vector<ExecutionHandle>>(
-        impl_->Snapshot(), [](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+std::unordered_map<std::string, std::vector<ExecutionHandle>> SwarmClient::ListAllExecutions(
+    const SwarmFanoutOptions& fanout_options) const {
+    return RunExecutionListTasks(
+        impl_->Snapshot(), fanout_options,
+        [](const std::string& drone_id, const std::shared_ptr<Client>& client) {
             return client->ListExecutions(drone_id);
         });
 }
@@ -1284,10 +1392,12 @@ void SwarmClient::UnlockDrone(const std::string& drone_id) const {
     client->ReleaseAuthority(drone_id);
 }
 
-std::unordered_map<std::string, CommandResult> SwarmClient::LockAll(std::int64_t ttl_ms) const {
+std::unordered_map<std::string, CommandResult> SwarmClient::LockAll(
+    std::int64_t ttl_ms, const SwarmFanoutOptions& fanout_options) const {
     const auto kSnapshot = impl_->Snapshot();
     return RunCommandTasks(
-        kSnapshot, [ttl_ms](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+        kSnapshot, fanout_options,
+        [ttl_ms](const std::string& drone_id, const std::shared_ptr<Client>& client) {
             return client->LockAuthority(drone_id, ttl_ms);
         });
 }

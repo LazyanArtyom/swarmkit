@@ -7,7 +7,9 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <stop_token>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <variant>
 
@@ -243,6 +245,79 @@ TEST_CASE("SwarmClient synchronized execution uses protocol start-at", "[swarm][
     CHECK(std::holds_alternative<commands::CmdTakeoff>(std::get<commands::FlightCmd>(command_two)));
     CHECK(drone_one.Backend().ExecuteCallAt(0).envelope.context.client_id == "test-client");
     CHECK(drone_two.Backend().ExecuteCallAt(0).envelope.context.client_id == "test-client");
+}
+
+TEST_CASE("SwarmClient synchronized fanout supports caller cancellation",
+          "[swarm][client][manager]") {
+    testsupport::AgentServerHarness drone_one;
+    testsupport::AgentServerHarness drone_two;
+
+    SwarmClient swarm(MakeDefaultClientConfig());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
+
+    std::stop_source stop_source;
+    REQUIRE(stop_source.request_stop());
+
+    commands::CommandContext context;
+    context.client_id = "test-client";
+    context.priority = commands::CommandPriority::kSupervisor;
+    SwarmExecutionOptions options;
+    options.synchronization = SwarmExecutionSynchronization::kParallelFanout;
+    options.fanout.max_parallelism = 1;
+    options.fanout.cancellation = stop_source.get_token();
+
+    const SwarmExecutionReport report =
+        swarm.ExecuteSynchronizedCommand(commands::FlightCmd{commands::CmdArm{}}, context, options);
+
+    REQUIRE_FALSE(report.ok);
+    CHECK(report.succeeded == 0);
+    CHECK(report.failed == 2);
+    REQUIRE(report.results.size() == 2);
+    CHECK(report.results.at("drone-1").error.code == RpcStatusCode::kCancelled);
+    CHECK(report.results.at("drone-2").error.code == RpcStatusCode::kCancelled);
+    CHECK(drone_one.Backend().ExecuteCallCount() == 0);
+    CHECK(drone_two.Backend().ExecuteCallCount() == 0);
+}
+
+TEST_CASE("SwarmClient synchronized fanout respects max parallelism", "[swarm][client][manager]") {
+    testsupport::AgentServerHarness drone_one;
+    testsupport::AgentServerHarness drone_two;
+
+    std::atomic<int> active_handlers{0};
+    std::atomic<int> max_active_handlers{0};
+    auto handler = [&active_handlers,
+                    &max_active_handlers](const commands::CommandEnvelope&) -> core::Result {
+        const int active = active_handlers.fetch_add(1) + 1;
+        int observed = max_active_handlers.load();
+        while (observed < active && !max_active_handlers.compare_exchange_weak(observed, active)) {
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{30});
+        active_handlers.fetch_sub(1);
+        return core::Result::Success("executed");
+    };
+    drone_one.Backend().SetExecuteHandler(handler);
+    drone_two.Backend().SetExecuteHandler(handler);
+
+    SwarmClient swarm(MakeDefaultClientConfig());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
+
+    commands::CommandContext context;
+    context.client_id = "test-client";
+    context.priority = commands::CommandPriority::kSupervisor;
+    SwarmExecutionOptions options;
+    options.synchronization = SwarmExecutionSynchronization::kParallelFanout;
+    options.fanout.max_parallelism = 1;
+
+    const SwarmExecutionReport report =
+        swarm.ExecuteSynchronizedCommand(commands::FlightCmd{commands::CmdArm{}}, context, options);
+
+    REQUIRE(report.ok);
+    CHECK(report.succeeded == 2);
+    CHECK(max_active_handlers.load() == 1);
+    CHECK(drone_one.Backend().ExecuteCallCount() == 1);
+    CHECK(drone_two.Backend().ExecuteCallCount() == 1);
 }
 
 TEST_CASE("SwarmClient lock all and unlock all operate on every drone", "[swarm][client]") {
