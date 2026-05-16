@@ -860,6 +860,46 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         const std::string kCmdName = ProtoCommandName(req->cmd());
 
+        auto convert_result = ConvertProtoCommand(req->cmd());
+        if (!convert_result.has_value()) {
+            const auto& error = convert_result.error();
+            counters_.IncrementCommandFailed();
+            reply->set_status(swarmkit::v1::CommandReply::FAILED);
+            reply->set_message("invalid command payload");
+            reply->set_correlation_id(envelope.context.correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+            reply->set_debug_message(error.message);
+            return grpc::Status::OK;
+        }
+        envelope.command = std::move(convert_result.value());
+
+        const CommandPreconditionDecision kPrecondition =
+            EvaluateCommandPreconditions(envelope, backend_->GetHealth());
+        if (kPrecondition.action != CommandPreconditionAction::kExecute) {
+            reply->set_correlation_id(envelope.context.correlation_id);
+            reply->set_error_code(ToProtoErrorCode(kPrecondition.result.code));
+            reply->set_debug_message(kPrecondition.result.message);
+            if (kPrecondition.action == CommandPreconditionAction::kAlreadySatisfied) {
+                reply->set_status(swarmkit::v1::CommandReply::OK);
+                reply->set_message(kPrecondition.result.message);
+                core::Logger::InfoFmt(
+                    "rpc=SendCommand corr={} agent={} drone={} client={} command={} "
+                    "result=already_satisfied detail={}",
+                    envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
+                    envelope.context.client_id, kCmdName, kPrecondition.result.message);
+            } else {
+                counters_.IncrementCommandRejected();
+                reply->set_status(swarmkit::v1::CommandReply::REJECTED);
+                reply->set_message(kPrecondition.result.message);
+                core::Logger::WarnFmt(
+                    "rpc=SendCommand corr={} agent={} drone={} client={} command={} "
+                    "result=precondition_rejected detail={}",
+                    envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
+                    envelope.context.client_id, kCmdName, kPrecondition.result.message);
+            }
+            return grpc::Status::OK;
+        }
+
         std::chrono::milliseconds ttl{config_.default_authority_ttl_ms};
         const auto kEpoch = std::chrono::system_clock::time_point{};
         if (envelope.context.deadline != kEpoch) {
@@ -892,46 +932,6 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
             envelope.context.client_id, static_cast<int>(envelope.context.priority), ctx->peer(),
             kCmdName);
-
-        auto convert_result = ConvertProtoCommand(req->cmd());
-        if (!convert_result.has_value()) {
-            const auto& error = convert_result.error();
-            counters_.IncrementCommandFailed();
-            reply->set_status(swarmkit::v1::CommandReply::FAILED);
-            reply->set_message("invalid command payload");
-            reply->set_correlation_id(envelope.context.correlation_id);
-            reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
-            reply->set_debug_message(error.message);
-            return grpc::Status::OK;
-        }
-        envelope.command = std::move(convert_result.value());
-
-        const CommandPreconditionDecision kPrecondition =
-            EvaluateCommandPreconditions(envelope, backend_->GetHealth());
-        if (kPrecondition.action != CommandPreconditionAction::kExecute) {
-            reply->set_correlation_id(envelope.context.correlation_id);
-            reply->set_error_code(ToProtoErrorCode(kPrecondition.result.code));
-            reply->set_debug_message(kPrecondition.result.message);
-            if (kPrecondition.action == CommandPreconditionAction::kAlreadySatisfied) {
-                reply->set_status(swarmkit::v1::CommandReply::OK);
-                reply->set_message(kPrecondition.result.message);
-                core::Logger::InfoFmt(
-                    "rpc=SendCommand corr={} agent={} drone={} client={} result=already_satisfied "
-                    "detail={}",
-                    envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
-                    envelope.context.client_id, kPrecondition.result.message);
-            } else {
-                counters_.IncrementCommandRejected();
-                reply->set_status(swarmkit::v1::CommandReply::REJECTED);
-                reply->set_message(kPrecondition.result.message);
-                core::Logger::WarnFmt(
-                    "rpc=SendCommand corr={} agent={} drone={} client={} result=precondition_rejected "
-                    "detail={}",
-                    envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
-                    envelope.context.client_id, kPrecondition.result.message);
-            }
-            return grpc::Status::OK;
-        }
 
         const core::Result kExecResult = backend_->Execute(envelope);
         reply->set_correlation_id(envelope.context.correlation_id);

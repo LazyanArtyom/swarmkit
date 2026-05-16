@@ -7,6 +7,8 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <cstdint>
+#include <memory>
 #include <mutex>
 #include <ranges>
 #include <string>
@@ -15,6 +17,7 @@
 
 #include "swarmkit/client/client.h"
 #include "swarmkit/commands.h"
+#include "swarmkit/v1/swarmkit.grpc.pb.h"
 #include "test_support.h"
 
 namespace swarmkit::client {
@@ -163,6 +166,67 @@ TEST_CASE("Client authority session auto releases lock and emits watch events",
         kWaitTimeout));
 
     operator_client.StopAuthorityWatch();
+}
+
+TEST_CASE("Agent validates already-satisfied commands before granting authority",
+          "[agent][authority][commands]") {
+    auto backend = std::make_unique<testsupport::RecordingBackend>();
+    testsupport::RecordingBackend* backend_ptr = backend.get();
+
+    swarmkit::agent::AgentConfig config;
+    config.agent_id = "test-agent";
+    config.security.transport_security = core::TransportSecurityMode::kInsecure;
+
+    auto service =
+        swarmkit::agent::internal::MakeAgentServiceForTesting(config, std::move(backend));
+    auto* agent_service = dynamic_cast<swarmkit::v1::AgentService::Service*>(service.get());
+    REQUIRE(agent_service != nullptr);
+
+    grpc::ServerContext lock_context;
+    swarmkit::v1::LockAuthorityRequest lock_request;
+    auto* lock_ctx = lock_request.mutable_ctx();
+    lock_ctx->set_drone_id("drone-1");
+    lock_ctx->set_client_id("operator-client");
+    lock_ctx->set_priority(static_cast<std::int32_t>(commands::CommandPriority::kOperator));
+    lock_request.set_ttl_ms(5000);
+    swarmkit::v1::LockAuthorityReply lock_reply;
+    REQUIRE(agent_service->LockAuthority(&lock_context, &lock_request, &lock_reply).ok());
+    REQUIRE(lock_reply.ok());
+
+    swarmkit::agent::BackendHealth armed_health;
+    armed_health.ready = true;
+    armed_health.last_heartbeat_unix_ms = 1;
+    armed_health.last_telemetry_unix_ms = 1;
+    armed_health.armed = true;
+    armed_health.landed = false;
+    backend_ptr->SetHealth(armed_health);
+
+    grpc::ServerContext satisfied_context;
+    swarmkit::v1::CommandRequest satisfied_request;
+    auto* satisfied_ctx = satisfied_request.mutable_ctx();
+    satisfied_ctx->set_drone_id("drone-1");
+    satisfied_ctx->set_client_id("override-client");
+    satisfied_ctx->set_priority(static_cast<std::int32_t>(commands::CommandPriority::kOverride));
+    satisfied_request.mutable_cmd()->mutable_arm();
+    swarmkit::v1::CommandReply satisfied_reply;
+    REQUIRE(agent_service
+                ->SendCommand(&satisfied_context, &satisfied_request, &satisfied_reply)
+                .ok());
+    REQUIRE(satisfied_reply.status() == swarmkit::v1::CommandReply::OK);
+    CHECK(satisfied_reply.message().find("already satisfied") != std::string::npos);
+    CHECK(backend_ptr->ExecuteCallCount() == 0);
+
+    grpc::ServerContext execute_context;
+    swarmkit::v1::CommandRequest execute_request;
+    auto* execute_ctx = execute_request.mutable_ctx();
+    execute_ctx->set_drone_id("drone-1");
+    execute_ctx->set_client_id("operator-client");
+    execute_ctx->set_priority(static_cast<std::int32_t>(commands::CommandPriority::kOperator));
+    execute_request.mutable_cmd()->mutable_set_mode()->set_mode("guided");
+    swarmkit::v1::CommandReply execute_reply;
+    REQUIRE(agent_service->SendCommand(&execute_context, &execute_request, &execute_reply).ok());
+    REQUIRE(execute_reply.status() == swarmkit::v1::CommandReply::OK);
+    CHECK(backend_ptr->ExecuteCallCount() == 1);
 }
 
 TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
