@@ -320,7 +320,11 @@ TEST_CASE("Client reports backend execution failure and telemetry counters",
 
     const CommandResult kCommand = client.SendCommand(envelope);
     CHECK_FALSE(kCommand.ok);
-    CHECK(kCommand.error.code == RpcStatusCode::kInternal);
+    CHECK(kCommand.error.domain == core::ErrorDomain::kBackend);
+    CHECK(kCommand.error.code == RpcStatusCode::kBackendFailure);
+    CHECK(kCommand.error.severity == core::ErrorSeverity::kError);
+    CHECK(kCommand.error.retryability == core::ErrorRetryability::kUnknown);
+    CHECK(kCommand.error.remediation.find("backend") != std::string::npos);
 
     const RuntimeStats kStats = client.GetRuntimeStats();
     REQUIRE(kStats.ok);

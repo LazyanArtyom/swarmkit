@@ -72,8 +72,16 @@ constexpr double kEarthRadiusM = 6371000.0;
     switch (status.error_code()) {
         case grpc::StatusCode::INVALID_ARGUMENT:
             return RpcStatusCode::kInvalidArgument;
+        case grpc::StatusCode::PERMISSION_DENIED:
+            return RpcStatusCode::kPermissionDenied;
+        case grpc::StatusCode::NOT_FOUND:
+            return RpcStatusCode::kNotFound;
+        case grpc::StatusCode::ALREADY_EXISTS:
+            return RpcStatusCode::kAlreadyExists;
         case grpc::StatusCode::FAILED_PRECONDITION:
-            return RpcStatusCode::kRejected;
+            return RpcStatusCode::kFailedPrecondition;
+        case grpc::StatusCode::UNIMPLEMENTED:
+            return RpcStatusCode::kUnsupported;
         case grpc::StatusCode::UNAVAILABLE:
             return RpcStatusCode::kUnavailable;
         case grpc::StatusCode::DEADLINE_EXCEEDED:
@@ -137,8 +145,9 @@ constexpr double kEarthRadiusM = 6371000.0;
         case ProtoCode::ERROR_CODE_CANCELLED:
             return RpcStatusCode::kCancelled;
         case ProtoCode::ERROR_CODE_INTERNAL:
-        case ProtoCode::ERROR_CODE_BACKEND_FAILURE:
             return RpcStatusCode::kInternal;
+        case ProtoCode::ERROR_CODE_BACKEND_FAILURE:
+            return RpcStatusCode::kBackendFailure;
         case ProtoCode::ERROR_CODE_UNSPECIFIED:
             return RpcStatusCode::kUnknown;
     }
@@ -220,17 +229,154 @@ grpc::Status InvokeUnaryWithRetry(const ClientConfig& config, std::string_view c
     }
 }
 
+[[nodiscard]] core::ErrorSeverity SeverityForCode(RpcStatusCode code);
+[[nodiscard]] core::ErrorRetryability RetryabilityForCode(RpcStatusCode code);
+[[nodiscard]] std::string RemediationForCode(RpcStatusCode code);
+
 void PopulateTransportError(RpcError* error, const grpc::Status& status,
                             std::string_view correlation_id, int attempt_count) {
     if (error == nullptr) {
         return;
     }
 
-    error->code = ToRpcStatusCode(status);
-    error->user_message = status.error_message();
+    const RpcStatusCode code = ToRpcStatusCode(status);
+    *error = core::SwarmError::Make(core::ErrorDomain::kTransport, code, status.error_message(),
+                                    SeverityForCode(code), RetryabilityForCode(code),
+                                    RemediationForCode(code));
     error->debug_message = status.error_details();
     error->correlation_id = std::string(correlation_id);
     error->attempt_count = attempt_count;
+    error->details["grpc_status_code"] = std::to_string(static_cast<int>(status.error_code()));
+}
+
+[[nodiscard]] core::ErrorSeverity SeverityForCode(RpcStatusCode code) {
+    switch (code) {
+        case RpcStatusCode::kOk:
+            return core::ErrorSeverity::kInfo;
+        case RpcStatusCode::kInvalidArgument:
+        case RpcStatusCode::kRejected:
+        case RpcStatusCode::kPermissionDenied:
+        case RpcStatusCode::kNotFound:
+        case RpcStatusCode::kAlreadyExists:
+        case RpcStatusCode::kFailedPrecondition:
+        case RpcStatusCode::kUnsupported:
+            return core::ErrorSeverity::kWarning;
+        case RpcStatusCode::kUnavailable:
+        case RpcStatusCode::kDeadlineExceeded:
+        case RpcStatusCode::kCancelled:
+        case RpcStatusCode::kBackendFailure:
+            return core::ErrorSeverity::kError;
+        case RpcStatusCode::kInternal:
+        case RpcStatusCode::kUnknown:
+            return core::ErrorSeverity::kCritical;
+    }
+    return core::ErrorSeverity::kError;
+}
+
+[[nodiscard]] core::ErrorRetryability RetryabilityForCode(RpcStatusCode code) {
+    switch (code) {
+        case RpcStatusCode::kUnavailable:
+        case RpcStatusCode::kDeadlineExceeded:
+        case RpcStatusCode::kCancelled:
+            return core::ErrorRetryability::kAfterBackoff;
+        case RpcStatusCode::kInvalidArgument:
+        case RpcStatusCode::kRejected:
+        case RpcStatusCode::kPermissionDenied:
+        case RpcStatusCode::kNotFound:
+        case RpcStatusCode::kAlreadyExists:
+        case RpcStatusCode::kFailedPrecondition:
+        case RpcStatusCode::kUnsupported:
+            return core::ErrorRetryability::kAfterRemediation;
+        case RpcStatusCode::kInternal:
+        case RpcStatusCode::kBackendFailure:
+        case RpcStatusCode::kUnknown:
+            return core::ErrorRetryability::kUnknown;
+        case RpcStatusCode::kOk:
+            return core::ErrorRetryability::kNever;
+    }
+    return core::ErrorRetryability::kUnknown;
+}
+
+[[nodiscard]] std::string RemediationForCode(RpcStatusCode code) {
+    switch (code) {
+        case RpcStatusCode::kInvalidArgument:
+            return "Fix the request parameters before retrying";
+        case RpcStatusCode::kRejected:
+        case RpcStatusCode::kFailedPrecondition:
+            return "Check authority, vehicle state, and command preconditions";
+        case RpcStatusCode::kPermissionDenied:
+            return "Check client identity, certificates, and allowed_client_ids";
+        case RpcStatusCode::kNotFound:
+            return "Verify the drone, goal, or execution identifier";
+        case RpcStatusCode::kAlreadyExists:
+            return "Use a unique identifier or update the existing resource";
+        case RpcStatusCode::kUnsupported:
+            return "Check backend capabilities before sending this operation";
+        case RpcStatusCode::kUnavailable:
+            return "Check agent/backend availability and retry with backoff";
+        case RpcStatusCode::kDeadlineExceeded:
+            return "Increase the deadline or retry when the vehicle is responsive";
+        case RpcStatusCode::kCancelled:
+            return "Retry if the operation was not intentionally cancelled";
+        case RpcStatusCode::kBackendFailure:
+            return "Inspect backend/autopilot diagnostics before retrying";
+        case RpcStatusCode::kInternal:
+        case RpcStatusCode::kUnknown:
+            return "Inspect logs with the correlation ID and report the failure";
+        case RpcStatusCode::kOk:
+            return {};
+    }
+    return {};
+}
+
+[[nodiscard]] core::ErrorDomain DomainForReply(RpcStatusCode code,
+                                               core::ErrorDomain requested_domain) {
+    if (code == RpcStatusCode::kOk) {
+        return core::ErrorDomain::kNone;
+    }
+    if (code == RpcStatusCode::kBackendFailure) {
+        return core::ErrorDomain::kBackend;
+    }
+    if (code == RpcStatusCode::kInvalidArgument) {
+        return core::ErrorDomain::kValidation;
+    }
+    return requested_domain;
+}
+
+void PopulateSuccessError(RpcError* error, std::string_view correlation_id, int attempt_count) {
+    if (error == nullptr) {
+        return;
+    }
+    *error = core::SwarmError::Ok();
+    error->correlation_id = std::string(correlation_id);
+    error->attempt_count = attempt_count;
+}
+
+void PopulateTypedError(RpcError* error, core::ErrorDomain domain, RpcStatusCode code,
+                        std::string user_message, std::string debug_message,
+                        std::string_view correlation_id, int attempt_count) {
+    if (error == nullptr) {
+        return;
+    }
+    if (code == RpcStatusCode::kOk) {
+        PopulateSuccessError(error, correlation_id, attempt_count);
+        return;
+    }
+
+    *error = core::SwarmError::Make(domain, code, std::move(user_message), SeverityForCode(code),
+                                    RetryabilityForCode(code), RemediationForCode(code));
+    error->debug_message = std::move(debug_message);
+    error->correlation_id = std::string(correlation_id);
+    error->attempt_count = attempt_count;
+}
+
+void PopulateReplyError(RpcError* error, swarmkit::v1::ErrorCode proto_code,
+                        std::string user_message, std::string debug_message,
+                        std::string_view correlation_id, int attempt_count,
+                        core::ErrorDomain domain = core::ErrorDomain::kCommand) {
+    const RpcStatusCode code = ToRpcStatusCode(proto_code);
+    PopulateTypedError(error, DomainForReply(code, domain), code, std::move(user_message),
+                       std::move(debug_message), correlation_id, attempt_count);
 }
 
 [[nodiscard]] AuthorityEventKind ToAuthorityEventKind(swarmkit::v1::AuthorityEvent::Kind kind) {
@@ -1536,9 +1682,7 @@ PingResult Client::Ping() const {
     out.version = rep.version();
     out.unix_time_ms = rep.unix_time_ms();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.error.code = RpcStatusCode::kOk;
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
 }
 
@@ -1579,9 +1723,7 @@ HealthStatus Client::GetHealth() const {
     out.gps_ok = rep.gps_ok();
     out.ekf_ok = rep.ekf_ok();
     out.link_quality_percent = rep.link_quality_percent();
-    out.error.code = RpcStatusCode::kOk;
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
 }
 
@@ -1622,9 +1764,7 @@ RuntimeStats Client::GetRuntimeStats() const {
     out.telemetry_frames_sent_total = rep.telemetry_frames_sent_total();
     out.backend_failures_total = rep.backend_failures_total();
     out.ready = rep.ready();
-    out.error.code = RpcStatusCode::kOk;
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
 }
 
@@ -1682,9 +1822,7 @@ BackendCapabilities Client::GetCapabilities() const {
     out.max_climb_speed_mps = rep.max_climb_speed_mps();
     out.max_descent_speed_mps = rep.max_descent_speed_mps();
     out.max_altitude_m = rep.max_altitude_m();
-    out.error.code = RpcStatusCode::kOk;
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
 }
 
@@ -1707,9 +1845,8 @@ struct VerificationSpec {
                                                std::string_view label) {
     CommandResult out = command_result;
     out.ok = true;
-    out.error.code = RpcStatusCode::kOk;
-    out.error.user_message.clear();
-    out.error.debug_message.clear();
+    PopulateSuccessError(&out.error, command_result.correlation_id,
+                         command_result.error.attempt_count);
     const std::string prefix = label.empty() ? "command" : std::string(label);
     out.message = command_result.message.empty() ? prefix + " verified"
                                                  : command_result.message + "; " + prefix +
@@ -1722,9 +1859,8 @@ struct VerificationSpec {
     CommandResult out = command_result;
     out.ok = false;
     out.message = std::move(message);
-    out.error.code = code;
-    out.error.user_message = out.message;
-    out.error.debug_message = out.message;
+    PopulateTypedError(&out.error, core::ErrorDomain::kCommand, code, out.message, out.message,
+                       command_result.correlation_id, command_result.error.attempt_count);
     return out;
 }
 
@@ -1921,11 +2057,8 @@ CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) con
     out.ok = (rep.status() == swarmkit::v1::CommandReply::OK);
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.error.code = ToRpcStatusCode(rep.error_code());
-    out.error.user_message = rep.message();
-    out.error.debug_message = rep.debug_message();
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count);
     return out;
 }
 
@@ -2013,11 +2146,8 @@ GoalResult Client::SetActiveGoal(const ActiveGoal& goal) const {
     out.ok = rep.ok();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.error.code = ToRpcStatusCode(rep.error_code());
-    out.error.user_message = rep.message();
-    out.error.debug_message = rep.debug_message();
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count);
     if (rep.has_goal()) {
         out.goal = ToActiveGoal(rep.goal());
     }
@@ -2055,11 +2185,8 @@ CommandResult Client::CancelGoal(const std::string& drone_id, const std::string&
     out.ok = rep.ok();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.error.code = ToRpcStatusCode(rep.error_code());
-    out.error.user_message = rep.message();
-    out.error.debug_message = rep.debug_message();
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count);
     return out;
 }
 
@@ -2091,9 +2218,7 @@ ActiveGoalStatus Client::GetActiveGoal(const std::string& drone_id) const {
     out.status = ToGoalStatus(rep.status());
     out.computed_timeout_ms = rep.computed_timeout_ms();
     out.message = rep.message();
-    out.error.code = RpcStatusCode::kOk;
-    out.error.correlation_id = kCorrelationId;
-    out.error.attempt_count = attempt_count;
+    PopulateSuccessError(&out.error, kCorrelationId, attempt_count);
     return out;
 }
 
@@ -2124,11 +2249,8 @@ ExecutionResult Client::UploadTrajectory(const TrajectoryPlan& plan) const {
     out.ok = rep.ok();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.error.code = ToRpcStatusCode(rep.error_code());
-    out.error.user_message = rep.message();
-    out.error.debug_message = rep.debug_message();
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count);
     if (rep.has_handle()) {
         out.handle = ToExecutionHandle(rep.handle());
     }
@@ -2165,11 +2287,9 @@ ExecutionResult Client::ValidateTrajectory(const TrajectoryPlan& plan) const {
     out.ok = rep.ok();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.error.code = ToRpcStatusCode(rep.error_code());
-    out.error.user_message = rep.message();
-    out.error.debug_message = rep.debug_message();
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count,
+                       core::ErrorDomain::kValidation);
     if (rep.has_validation()) {
         out.validation = ToValidateTrajectoryResult(rep.validation());
     }
@@ -2202,11 +2322,8 @@ template <typename Call>
     out.ok = rep.ok();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
-    out.error.code = ToRpcStatusCode(rep.error_code());
-    out.error.user_message = rep.message();
-    out.error.debug_message = rep.debug_message();
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count);
     if (rep.has_handle()) {
         out.handle = ToExecutionHandle(rep.handle());
     }
@@ -2343,9 +2460,7 @@ TrajectoryStatus Client::GetExecution(const std::string& drone_id,
     if (rep.has_plan()) {
         out.plan = ToTrajectoryPlan(rep.plan());
     }
-    out.error.code = RpcStatusCode::kOk;
-    out.error.correlation_id = correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateSuccessError(&out.error, correlation_id, attempt_count);
     return out;
 }
 
@@ -2446,11 +2561,8 @@ CommandResult Client::LockAuthority(const std::string& drone_id, std::int64_t tt
     out.ok = rep.ok();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.error.code = ToRpcStatusCode(rep.error_code());
-    out.error.user_message = rep.message();
-    out.error.debug_message = rep.debug_message();
-    out.error.correlation_id = out.correlation_id;
-    out.error.attempt_count = attempt_count;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kAuthority);
     return out;
 }
 

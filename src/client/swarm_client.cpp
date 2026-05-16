@@ -120,12 +120,39 @@ template <typename Result, typename TaskFn>
     return results;
 }
 
+[[nodiscard]] RpcError MakeLocalError(core::ErrorDomain domain, RpcStatusCode code,
+                                      std::string message) {
+    if (code == RpcStatusCode::kOk) {
+        RpcError error = core::SwarmError::Ok();
+        error.user_message = std::move(message);
+        return error;
+    }
+
+    core::ErrorRetryability retryability = core::ErrorRetryability::kAfterRemediation;
+    if (code == RpcStatusCode::kUnavailable || code == RpcStatusCode::kDeadlineExceeded ||
+        code == RpcStatusCode::kCancelled) {
+        retryability = core::ErrorRetryability::kAfterBackoff;
+    } else if (code == RpcStatusCode::kInternal || code == RpcStatusCode::kBackendFailure ||
+               code == RpcStatusCode::kUnknown) {
+        retryability = core::ErrorRetryability::kUnknown;
+    }
+
+    const core::ErrorSeverity severity =
+        code == RpcStatusCode::kInternal || code == RpcStatusCode::kUnknown
+            ? core::ErrorSeverity::kCritical
+            : core::ErrorSeverity::kWarning;
+    RpcError error =
+        core::SwarmError::Make(domain, code, std::move(message), severity, retryability);
+    error.debug_message = error.user_message;
+    return error;
+}
+
 [[nodiscard]] ExecutionResult UnregisteredExecutionResult(const std::string& drone_id) {
     ExecutionResult out;
     out.ok = false;
     out.message = "drone '" + drone_id + "' not registered";
-    out.error.code = RpcStatusCode::kInvalidArgument;
-    out.error.user_message = out.message;
+    out.error =
+        MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
     return out;
 }
 
@@ -133,8 +160,16 @@ template <typename Result, typename TaskFn>
     CommandResult out;
     out.ok = ok;
     out.message = std::move(message);
-    out.error.code = ok ? RpcStatusCode::kOk : RpcStatusCode::kRejected;
-    out.error.user_message = out.message;
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm,
+                               ok ? RpcStatusCode::kOk : RpcStatusCode::kRejected, out.message);
+    return out;
+}
+
+[[nodiscard]] CommandResult UnregisteredCommandResult(const std::string& drone_id) {
+    CommandResult out;
+    out.ok = false;
+    out.message = "drone '" + drone_id + "' not registered";
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
     return out;
 }
 
@@ -320,8 +355,7 @@ CommandResult SwarmClient::SendCommand(const commands::CommandEnvelope& envelope
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(envelope.context.drone_id);
         if (iter == impl_->clients.end()) {
-            return {.ok = false,
-                    .message = "drone '" + envelope.context.drone_id + "' not registered"};
+            return UnregisteredCommandResult(envelope.context.drone_id);
         }
         client = iter->second;
     }
@@ -340,8 +374,7 @@ CommandResult SwarmClient::SendCommandAndWait(const commands::CommandEnvelope& e
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(envelope.context.drone_id);
         if (iter == impl_->clients.end()) {
-            return {.ok = false,
-                    .message = "drone '" + envelope.context.drone_id + "' not registered"};
+            return UnregisteredCommandResult(envelope.context.drone_id);
         }
         client = iter->second;
     }
@@ -356,8 +389,8 @@ HealthStatus SwarmClient::GetHealth(const std::string& drone_id) const {
         if (iter == impl_->clients.end()) {
             HealthStatus out;
             out.message = "drone '" + drone_id + "' not registered";
-            out.error.code = RpcStatusCode::kInvalidArgument;
-            out.error.user_message = out.message;
+            out.error =
+                MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
             return out;
         }
         client = iter->second;
@@ -372,8 +405,8 @@ RuntimeStats SwarmClient::GetRuntimeStats(const std::string& drone_id) const {
         auto iter = impl_->clients.find(drone_id);
         if (iter == impl_->clients.end()) {
             RuntimeStats out;
-            out.error.code = RpcStatusCode::kInvalidArgument;
-            out.error.user_message = "drone '" + drone_id + "' not registered";
+            out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound,
+                                       "drone '" + drone_id + "' not registered");
             return out;
         }
         client = iter->second;
@@ -456,10 +489,14 @@ SwarmExecutionReport SwarmClient::ApplyFormation(const SwarmFormationPlan& plan,
     SwarmExecutionReport report;
     if (plan.formation_id.empty()) {
         report.message = "formation_id is required";
+        report.error = MakeLocalError(core::ErrorDomain::kValidation,
+                                      RpcStatusCode::kInvalidArgument, report.message);
         return report;
     }
     if (plan.slots.empty()) {
         report.message = "formation requires at least one slot";
+        report.error = MakeLocalError(core::ErrorDomain::kValidation,
+                                      RpcStatusCode::kInvalidArgument, report.message);
         return report;
     }
 
@@ -580,6 +617,9 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
     report.requested = planned_commands.size();
     if (planned_commands.empty()) {
         report.message = "no planned swarm commands";
+        report.error =
+            MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInvalidArgument,
+                           report.message);
         return report;
     }
 
@@ -742,6 +782,10 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
         message << " quorum=" << quorum;
     }
     report.message = message.str();
+    report.error =
+        MakeLocalError(core::ErrorDomain::kSwarm,
+                       report.ok ? RpcStatusCode::kOk : RpcStatusCode::kRejected,
+                       report.message);
     return report;
 }
 
@@ -772,8 +816,8 @@ std::unordered_map<std::string, ExecutionResult> SwarmClient::UploadTrajectories
                 ExecutionResult out;
                 out.ok = false;
                 out.message = "no trajectory plan supplied for drone";
-                out.error.code = RpcStatusCode::kInvalidArgument;
-                out.error.user_message = out.message;
+                out.error = MakeLocalError(core::ErrorDomain::kValidation,
+                                           RpcStatusCode::kInvalidArgument, out.message);
                 return out;
             }
             return client->UploadTrajectory(iter->second);
@@ -794,8 +838,8 @@ std::unordered_map<std::string, ExecutionResult> SwarmClient::ValidateTrajectori
                 ExecutionResult out;
                 out.ok = false;
                 out.message = "no trajectory plan supplied for drone";
-                out.error.code = RpcStatusCode::kInvalidArgument;
-                out.error.user_message = out.message;
+                out.error = MakeLocalError(core::ErrorDomain::kValidation,
+                                           RpcStatusCode::kInvalidArgument, out.message);
                 return out;
             }
             return client->ValidateTrajectory(iter->second);
@@ -901,7 +945,7 @@ CommandResult SwarmClient::LockDrone(const std::string& drone_id, std::int64_t t
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(drone_id);
         if (iter == impl_->clients.end()) {
-            return {.ok = false, .message = "drone '" + drone_id + "' not registered"};
+            return UnregisteredCommandResult(drone_id);
         }
         client = iter->second;
     }

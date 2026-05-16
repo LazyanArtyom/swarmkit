@@ -96,6 +96,7 @@ struct SwarmFormationAssignment {
 struct SwarmExecutionReport {
     bool ok{false};
     std::string message;
+    RpcError error;
     std::size_t requested{};
     std::size_t succeeded{};
     std::size_t failed{};

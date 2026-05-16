@@ -75,6 +75,10 @@ TEST_CASE("SwarmClient broadcasts commands and reports unknown drones", "[swarm]
     const CommandResult kMissing = swarm.SendCommand(envelope);
     CHECK_FALSE(kMissing.ok);
     CHECK(kMissing.message.find("not registered") != std::string::npos);
+    CHECK(kMissing.error.domain == core::ErrorDomain::kSwarm);
+    CHECK(kMissing.error.code == RpcStatusCode::kNotFound);
+    CHECK(kMissing.error.severity == core::ErrorSeverity::kWarning);
+    CHECK(kMissing.error.retryability == core::ErrorRetryability::kAfterRemediation);
 }
 
 TEST_CASE("SwarmClient consumes logical swarm commands without backend dispatch",
@@ -179,6 +183,7 @@ TEST_CASE("SwarmClient applies partial failure hold policy", "[swarm][client][ma
     const SwarmExecutionReport report = swarm.ExecuteSynchronizedCommand(
         commands::FlightCmd{commands::CmdTakeoff{.alt_m = 5.0}}, context, options);
     REQUIRE(report.ok);
+    CHECK(report.error.code == RpcStatusCode::kOk);
     CHECK(report.succeeded == 1);
     CHECK(report.failed == 1);
     REQUIRE(report.recovery_results.contains("drone-2"));

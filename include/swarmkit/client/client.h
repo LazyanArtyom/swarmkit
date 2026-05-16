@@ -35,24 +35,10 @@ inline constexpr int kDefaultStreamReconnectInitialBackoffMs = 500;
 inline constexpr int kDefaultStreamReconnectMaxBackoffMs = 5000;
 inline constexpr int kUnlimitedStreamReconnectAttempts = 0;
 inline constexpr int kDefaultTelemetryRateHertz = 1;
-enum class RpcStatusCode : std::uint8_t {
-    kOk,
-    kInvalidArgument,
-    kRejected,
-    kUnavailable,
-    kDeadlineExceeded,
-    kCancelled,
-    kInternal,
-    kUnknown,
-};
 
-struct RpcError {
-    RpcStatusCode code{RpcStatusCode::kOk};
-    std::string user_message;
-    std::string debug_message;
-    std::string correlation_id;
-    int attempt_count{0};
-};
+/// @brief Backward-compatible names for the unified SDK error model.
+using RpcStatusCode = core::ErrorCode;
+using RpcError = core::SwarmError;
 
 struct RetryPolicy {
     int max_attempts{kDefaultRetryMaxAttempts};
