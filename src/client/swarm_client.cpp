@@ -14,7 +14,9 @@
 #include <exception>
 #include <expected>
 #include <mutex>
+#include <numbers>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -36,7 +38,7 @@ constexpr std::size_t kFallbackParallelism = 8;
 constexpr std::size_t kDefaultFanoutParallelism = 32;
 constexpr std::size_t kMaxDefaultFanoutParallelism = 64;
 constexpr double kEarthRadiusMeters = 6378137.0;
-constexpr double kPi = 3.14159265358979323846;
+constexpr double kPi = std::numbers::pi;
 
 [[nodiscard]] std::size_t ComputeParallelism(std::size_t task_count,
                                              const SwarmFanoutOptions& options) {
@@ -51,7 +53,7 @@ constexpr double kPi = 3.14159265358979323846;
         std::max<std::size_t>(1, std::thread::hardware_concurrency());
     const std::size_t kUpperBound = std::min(
         kMaxDefaultFanoutParallelism,
-        std::max(kFallbackParallelism, std::max(kDefaultFanoutParallelism, kHardwareThreads * 2U)));
+        std::max({kFallbackParallelism, kDefaultFanoutParallelism, kHardwareThreads * 2U}));
     return std::min(task_count, kUpperBound);
 }
 
@@ -117,12 +119,13 @@ class BoundedFanoutExecutor final {
     return out;
 }
 
-[[nodiscard]] CommandResult LocalCommandResult(bool ok, std::string message) {
+[[nodiscard]] CommandResult LocalCommandResult(bool success, std::string message) {
     CommandResult out;
-    out.ok = ok;
+    out.ok = success;
     out.message = std::move(message);
     out.error = MakeLocalError(core::ErrorDomain::kSwarm,
-                               ok ? RpcStatusCode::kOk : RpcStatusCode::kRejected, out.message);
+                               success ? RpcStatusCode::kOk : RpcStatusCode::kRejected,
+                               out.message);
     return out;
 }
 
@@ -134,10 +137,10 @@ class BoundedFanoutExecutor final {
     return out;
 }
 
-[[nodiscard]] ReleaseAuthorityResult LocalReleaseAuthorityResult(bool ok, std::string message,
+[[nodiscard]] ReleaseAuthorityResult LocalReleaseAuthorityResult(bool success, std::string message,
                                                                  RpcStatusCode code) {
     ReleaseAuthorityResult out;
-    out.ok = ok;
+    out.ok = success;
     out.message = std::move(message);
     out.error = MakeLocalError(core::ErrorDomain::kSwarm, code, out.message);
     return out;
@@ -173,10 +176,10 @@ class BoundedFanoutExecutor final {
 }
 
 [[nodiscard]] CommandResult CommandResultFromExecution(const ExecutionResult& execution,
-                                                       std::string success_message) {
+                                                       const std::string& success_message) {
     CommandResult out;
     out.ok = execution.ok;
-    out.message = execution.ok ? std::move(success_message) : execution.message;
+    out.message = execution.ok ? success_message : execution.message;
     out.correlation_id = execution.correlation_id;
     out.error = execution.ok
                     ? MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kOk, out.message)
@@ -834,7 +837,7 @@ SwarmExecutionReport SwarmClient::ApplyFormation(const SwarmFormationPlan& plan,
 
     SwarmExecutionReport execution_report = ExecutePlannedCommands(planned, context, options);
     for (auto& [drone_id, result] : report.results) {
-        execution_report.results.emplace(std::move(drone_id), std::move(result));
+        execution_report.results.emplace(drone_id, std::move(result));
     }
     execution_report.requested = execution_report.results.size();
     execution_report.succeeded = CountSucceeded(execution_report.results);
@@ -1087,10 +1090,10 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
             const std::size_t quorum =
                 options.quorum > 0 ? options.quorum : (report.requested / 2U) + 1U;
             const bool existing_failure =
-                std::any_of(command_results.begin(), command_results.end(),
-                            [](const auto& entry) { return !entry.second.ok; }) ||
-                std::any_of(report.results.begin(), report.results.end(),
-                            [](const auto& entry) { return !entry.second.ok; });
+                std::ranges::any_of(command_results,
+                                    [](const auto& entry) { return !entry.second.ok; }) ||
+                std::ranges::any_of(report.results,
+                                    [](const auto& entry) { return !entry.second.ok; });
 
             bool may_start = !ready_ids.empty();
             if (options.partial_failure_policy == SwarmPartialFailurePolicy::kAllOrAbort) {
@@ -1140,7 +1143,7 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
     }
 
     for (auto& [drone_id, result] : command_results) {
-        report.results.emplace(std::move(drone_id), std::move(result));
+        report.results.emplace(drone_id, std::move(result));
     }
 
     std::unordered_set<std::string> failed_ids;
@@ -1167,7 +1170,7 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
                                 return client->SendCommand(envelope);
                             });
         for (auto& [drone_id, result] : recovery) {
-            report.recovery_results.emplace(std::move(drone_id), std::move(result));
+            report.recovery_results.emplace(drone_id, std::move(result));
         }
     };
 

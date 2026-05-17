@@ -576,8 +576,8 @@ class Subscription {
 
     Subscription(const Subscription&) = delete;
     Subscription& operator=(const Subscription&) = delete;
-    Subscription(Subscription&&) noexcept;
-    Subscription& operator=(Subscription&&) noexcept;
+    Subscription(Subscription&& other) noexcept;
+    Subscription& operator=(Subscription&& other) noexcept;
 
     void Stop() noexcept;
     [[nodiscard]] bool IsActive() const noexcept;

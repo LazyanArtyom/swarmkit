@@ -6,12 +6,14 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "swarmkit/agent/backend.h"
 #include "swarmkit/core/result.h"
 
 namespace swarmkit::agent {
 
-enum class CommandPreconditionAction {
+enum class CommandPreconditionAction : std::uint8_t {
     kExecute,
     kAlreadySatisfied,
     kReject,

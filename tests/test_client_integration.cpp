@@ -309,15 +309,16 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
     {
         std::lock_guard<std::mutex> lock(received_mutex);
         REQUIRE(received_frame.has_value());
-        CHECK(received_frame->HasPosition());
-        CHECK(received_frame->source_unix_time_ms == 100);
-        CHECK(received_frame->position_frame == core::CoordinateFrame::kWgs84);
-        CHECK(received_frame->gps_quality == core::GpsQuality::kFix3D);
-        CHECK(received_frame->accuracy.horizontal_position_valid);
-        CHECK(received_frame->accuracy.horizontal_position_m == 1.5F);
-        CHECK(received_frame->estimator_state == core::EstimatorState::kHealthy);
-        CHECK(received_frame->active_goal_id == "goal-123");
-        CHECK(received_frame->correlation_id == "corr-123");
+        const core::TelemetryFrame frame = received_frame.value_or(core::TelemetryFrame{});
+        CHECK(frame.HasPosition());
+        CHECK(frame.source_unix_time_ms == 100);
+        CHECK(frame.position_frame == core::CoordinateFrame::kWgs84);
+        CHECK(frame.gps_quality == core::GpsQuality::kFix3D);
+        CHECK(frame.accuracy.horizontal_position_valid);
+        CHECK(frame.accuracy.horizontal_position_m == 1.5F);
+        CHECK(frame.estimator_state == core::EstimatorState::kHealthy);
+        CHECK(frame.active_goal_id == "goal-123");
+        CHECK(frame.correlation_id == "corr-123");
     }
 
     telemetry_stream->Stop();

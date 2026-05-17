@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -802,7 +803,7 @@ void ResetStreamContext(StreamState& stream_state) {
     return "stream";
 }
 
-void SafeNotifyStreamError(const TelemetryErrorHandler& on_error, std::string message) {
+void SafeNotifyStreamError(const TelemetryErrorHandler& on_error, const std::string& message) {
     if (!on_error) {
         return;
     }
@@ -830,7 +831,7 @@ void SafeNotifySubscriptionEvent(const SubscriptionEventHandler& on_event,
 }
 
 void HandleCallbackException(StreamState& stream_state, std::string_view callback_name,
-                             std::string message) {
+                             const std::string& message) {
     const std::string detail = std::string(ToString(stream_state.kind)) + " " +
                                std::string(callback_name) + " callback threw: " + message;
     core::Logger::WarnFmt("Client stream callback exception: {}", detail);
@@ -1188,8 +1189,7 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
 }
 
 [[nodiscard]] double DegreesToRadians(double degrees) {
-    constexpr double kPi = 3.14159265358979323846;
-    return degrees * kPi / 180.0;
+    return degrees * std::numbers::pi / 180.0;
 }
 
 [[nodiscard]] double DistanceMetres(double lat_one, double lon_one, double lat_two,
@@ -1200,11 +1200,12 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     const double rlat_two = DegreesToRadians(lat_two);
     const double sin_half_lat = std::sin(dlat / 2.0);
     const double sin_half_lon = std::sin(dlon / 2.0);
-    const double a =
-        std::clamp(sin_half_lat * sin_half_lat +
-                       std::cos(rlat_one) * std::cos(rlat_two) * sin_half_lon * sin_half_lon,
+    const double haversine =
+        std::clamp((sin_half_lat * sin_half_lat) +
+                       (std::cos(rlat_one) * std::cos(rlat_two) * sin_half_lon * sin_half_lon),
                    0.0, 1.0);
-    return kEarthRadiusM * 2.0 * std::atan2(std::sqrt(a), std::sqrt(1.0 - a));
+    return kEarthRadiusM * 2.0 *
+           std::atan2(std::sqrt(haversine), std::sqrt(1.0 - haversine));
 }
 
 [[nodiscard]] AuthorityEventInfo ToAuthorityEventInfo(
@@ -2402,7 +2403,7 @@ BackendCapabilities Client::GetCapabilities() const {
 
 namespace {
 
-enum class VerificationSource {
+enum class VerificationSource : std::uint8_t {
     kNone,
     kHealth,
     kTelemetry,
@@ -2642,7 +2643,7 @@ CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) con
 
 CommandResult Client::SendCommandAndWait(const commands::CommandEnvelope& envelope,
                                          const CommandWaitOptions& options) const {
-    const CommandResult command_result = SendCommand(envelope);
+    CommandResult command_result = SendCommand(envelope);
     if (!command_result.ok) {
         return command_result;
     }
@@ -3220,7 +3221,8 @@ std::expected<Subscription, RpcError> Client::StartTelemetry(TelemetrySubscripti
     }
 
     auto generation = PrepareSubscriptionStart(impl_->telemetry, SubscriptionKind::kTelemetry,
-                                               subscription.drone_id, on_error, on_event, options);
+                                               subscription.drone_id, std::move(on_error),
+                                               std::move(on_event), options);
     if (!generation.has_value()) {
         return std::unexpected(std::move(generation.error()));
     }
@@ -3267,7 +3269,8 @@ std::expected<Subscription, RpcError> Client::StartAuthorityWatch(
     }
 
     auto generation = PrepareSubscriptionStart(impl_->authority, SubscriptionKind::kAuthority,
-                                               subscription.drone_id, on_error, on_state, options);
+                                               subscription.drone_id, std::move(on_error),
+                                               std::move(on_state), options);
     if (!generation.has_value()) {
         return std::unexpected(std::move(generation.error()));
     }
@@ -3315,7 +3318,8 @@ std::expected<Subscription, RpcError> Client::StartReports(ReportSubscription su
     }
 
     auto generation = PrepareSubscriptionStart(impl_->reports, SubscriptionKind::kReports,
-                                               subscription.drone_id, on_error, on_event, options);
+                                               subscription.drone_id, std::move(on_error),
+                                               std::move(on_event), options);
     if (!generation.has_value()) {
         return std::unexpected(std::move(generation.error()));
     }

@@ -97,8 +97,9 @@ TEST_CASE("SwarmClient consumes logical swarm commands without backend dispatch"
 
     const CommandResult role_result = swarm.SendCommand(role_envelope);
     REQUIRE(role_result.ok);
-    REQUIRE(swarm.GetDroneRole("drone-1").has_value());
-    CHECK(*swarm.GetDroneRole("drone-1") == "leader");
+    const auto assigned_role = swarm.GetDroneRole("drone-1");
+    REQUIRE(assigned_role.has_value());
+    CHECK(assigned_role.value_or("") == "leader");
     CHECK(drone_one.Backend().ExecuteCallCount() == 0);
 
     commands::CommandEnvelope formation_envelope;
@@ -111,8 +112,9 @@ TEST_CASE("SwarmClient consumes logical swarm commands without backend dispatch"
     REQUIRE(formation_result.ok);
     const auto assignment = swarm.GetFormationAssignment("drone-1");
     REQUIRE(assignment.has_value());
-    CHECK(assignment->formation_id == "line-a");
-    CHECK(assignment->slot_index == 2);
+    const SwarmFormationAssignment assigned_slot = assignment.value_or(SwarmFormationAssignment{});
+    CHECK(assigned_slot.formation_id == "line-a");
+    CHECK(assigned_slot.slot_index == 2);
     CHECK(drone_one.Backend().ExecuteCallCount() == 0);
 }
 
@@ -156,8 +158,12 @@ TEST_CASE("SwarmClient translates formation plans into per-drone goto commands",
     CHECK(goto_two.lon_deg > 44.0);
     CHECK(goto_one.speed_mps == 3.0F);
     CHECK(goto_two.speed_mps == 3.0F);
-    CHECK(*swarm.GetDroneRole("drone-1") == "left");
-    CHECK(*swarm.GetDroneRole("drone-2") == "right");
+    const auto role_one = swarm.GetDroneRole("drone-1");
+    const auto role_two = swarm.GetDroneRole("drone-2");
+    REQUIRE(role_one.has_value());
+    REQUIRE(role_two.has_value());
+    CHECK(role_one.value_or("") == "left");
+    CHECK(role_two.value_or("") == "right");
 }
 
 TEST_CASE("SwarmClient applies partial failure hold policy", "[swarm][client][manager]") {

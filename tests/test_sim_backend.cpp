@@ -63,15 +63,16 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
     {
         std::lock_guard<std::mutex> lock(frame_mutex);
         REQUIRE(first_frame.has_value());
-        CHECK(first_frame->HasPosition());
-        CHECK(first_frame->HasRelativeAltitude());
-        CHECK(first_frame->HasGpsQuality());
-        CHECK(first_frame->position_frame == core::CoordinateFrame::kWgs84);
-        CHECK(first_frame->velocity_frame == core::CoordinateFrame::kLocalNed);
-        CHECK(first_frame->gps_quality == core::GpsQuality::kFix3D);
-        CHECK(first_frame->estimator_state == core::EstimatorState::kHealthy);
-        CHECK(first_frame->accuracy.horizontal_position_valid);
-        CHECK(first_frame->validity.home_origin);
+        const core::TelemetryFrame frame = first_frame.value_or(core::TelemetryFrame{});
+        CHECK(frame.HasPosition());
+        CHECK(frame.HasRelativeAltitude());
+        CHECK(frame.HasGpsQuality());
+        CHECK(frame.position_frame == core::CoordinateFrame::kWgs84);
+        CHECK(frame.velocity_frame == core::CoordinateFrame::kLocalNed);
+        CHECK(frame.gps_quality == core::GpsQuality::kFix3D);
+        CHECK(frame.estimator_state == core::EstimatorState::kHealthy);
+        CHECK(frame.accuracy.horizontal_position_valid);
+        CHECK(frame.validity.home_origin);
     }
 
     CHECK(backend->StartTelemetry("drone-1", 5, [](const core::TelemetryFrame&) {}).code ==
