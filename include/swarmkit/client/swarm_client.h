@@ -166,31 +166,36 @@ using SwarmSubscriptionResults = std::unordered_map<std::string, SubscriptionRes
  *
  * @par Typical usage (ground-control server side)
  * @code
- *   ClientConfig cfg;
+ *   swarmkit::client::ClientConfig cfg;
  *   cfg.client_id  = "gcs-server";
  *   cfg.deadline_ms = 3000;
  *   cfg.security.root_ca_cert_path = "/etc/swarmkit/ca.pem";
  *   cfg.security.cert_chain_path = "/etc/swarmkit/clients/gcs.pem";
  *   cfg.security.private_key_path = "/etc/swarmkit/clients/gcs.key";
- *   SwarmClient swarm(cfg);
+ *   swarmkit::client::SwarmClient swarm(cfg);
  *
  *   swarm.AddDrone("uav-1", "192.168.1.101:50061");
  *   swarm.AddDrone("uav-2", "192.168.1.102:50061");
  *   swarm.AddDrone("uav-3", "192.168.1.103:50061");
  *
  *   // Start telemetry from every drone at 5 Hz
- *   auto telemetry = swarm.StartAllTelemetry(5, [](const core::TelemetryFrame& frame) {
+ *   auto telemetry = swarm.StartAllTelemetry(5, [](const swarmkit::core::TelemetryFrame& frame) {
  *       // frame.drone_id identifies the source drone
  *   });
  *
  *   // Send a waypoint to one drone
- *   swarm.SendCommand({
- *       {.drone_id = "uav-1"},
- *       agent::NavCmd{agent::CmdSetWaypoint{40.18, 44.51, 30.0}},
- *   });
+ *   swarmkit::commands::CommandEnvelope waypoint{
+ *       .context = {.drone_id = "uav-1"},
+ *       .command = swarmkit::commands::NavCmd{
+ *           swarmkit::commands::CmdSetWaypoint{40.18, 44.51, 30.0}},
+ *   };
+ *   swarm.SendCommand(waypoint);
  *
- *   // Arm all drones simultaneously
- *   swarm.BroadcastCommand(agent::FlightCmd{agent::CmdArm{}}, {});
+ *   // Arm all drones through the synchronized swarm execution path
+ *   swarmkit::commands::CommandContext swarm_context;
+ *   swarm_context.priority = swarmkit::commands::CommandPriority::kSupervisor;
+ *   swarm.ExecuteSynchronizedCommand(
+ *       swarmkit::commands::FlightCmd{swarmkit::commands::CmdArm{}}, swarm_context);
  * @endcode
  */
 class SwarmClient {
