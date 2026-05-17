@@ -613,6 +613,19 @@ ParseCommandWaitOptions(int argc, char** argv) {
     return result.ok;
 }
 
+[[nodiscard]] bool PrintReleaseAuthorityResult(
+    std::string_view label, const swarmkit::client::ReleaseAuthorityResult& result) {
+    std::cout << label << ": " << (result.ok ? "OK" : "FAILED");
+    if (!result.message.empty()) {
+        std::cout << " " << result.message;
+    }
+    if (!result.correlation_id.empty()) {
+        std::cout << " [corr=" << result.correlation_id << "]";
+    }
+    std::cout << "\n";
+    return result.ok;
+}
+
 [[nodiscard]] std::expected<swarmkit::client::ActiveGoal, std::string> ParseActiveGoal(
     std::string_view drone_id, int argc, char** argv) {
     const std::string goal_id = common::GetOptionValue(argc, argv, "--goal-id");
@@ -1427,9 +1440,8 @@ int RunLock(Client& client, std::string_view drone_id, int argc, char** argv) {
 }
 
 int RunUnlock(Client& client, std::string_view drone_id) {
-    client.ReleaseAuthority(std::string(drone_id));
-    std::cout << "Unlock OK\n";
-    return EXIT_SUCCESS;
+    const auto result = client.ReleaseAuthority(std::string(drone_id));
+    return PrintReleaseAuthorityResult("Unlock", result) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority priority) {
@@ -1550,6 +1562,31 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
     std::cout << "summary: sent=" << summary.sent << " accepted=" << summary.accepted
               << " already_satisfied=" << summary.already_satisfied << " failed=" << summary.failed
               << "\n";
+    return SwarmResultAccepted(summary, policy);
+}
+
+[[nodiscard]] bool PrintSwarmReleaseResults(
+    const std::unordered_map<std::string, swarmkit::client::ReleaseAuthorityResult>& results,
+    const SwarmResultPolicy& policy) {
+    SwarmResultSummary summary;
+    summary.sent = static_cast<int>(results.size());
+    for (const auto& [drone_id, result] : results) {
+        std::cout << drone_id << ": " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        if (result.ok) {
+            ++summary.accepted;
+        } else {
+            ++summary.failed;
+        }
+    }
+    std::cout << "summary: sent=" << summary.sent << " released=" << summary.accepted
+              << " failed=" << summary.failed << "\n";
     return SwarmResultAccepted(summary, policy);
 }
 
@@ -1921,9 +1958,8 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
                                                                                    : EXIT_FAILURE;
     }
     if (actions[0] == "unlock-all") {
-        runtime->client->UnlockAll();
-        std::cout << "Unlock all OK\n";
-        return EXIT_SUCCESS;
+        return PrintSwarmReleaseResults(runtime->client->UnlockAll(), result_policy) ? EXIT_SUCCESS
+                                                                                     : EXIT_FAILURE;
     }
     if (actions[0] == "command") {
         const std::string drone_id = common::GetOptionValue(argc, argv, "--drone");

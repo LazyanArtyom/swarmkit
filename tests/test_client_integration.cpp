@@ -160,6 +160,11 @@ TEST_CASE("Client authority session auto releases lock and emits watch events",
     const CommandResult kRelock = override_client.LockAuthority("drone-1", 500);
     REQUIRE(kRelock.ok);
 
+    const ReleaseAuthorityResult kRelease = override_client.ReleaseAuthority("drone-1");
+    REQUIRE(kRelease.ok);
+    CHECK_FALSE(kRelease.correlation_id.empty());
+    CHECK(kRelease.error.code == RpcStatusCode::kOk);
+
     REQUIRE(testsupport::WaitUntil(
         [&] {
             std::lock_guard<std::mutex> lock(events_mutex);
@@ -168,6 +173,22 @@ TEST_CASE("Client authority session auto releases lock and emits watch events",
         kWaitTimeout));
 
     authority_watch->Stop();
+}
+
+TEST_CASE("Client release authority returns checked transport failures",
+          "[client][integration][authority]") {
+    ClientConfig config = testsupport::MakeMtlsClientConfig("127.0.0.1:1");
+    config.deadline_ms = 100;
+    config.retry_policy.max_attempts = 1;
+    Client client(std::move(config));
+
+    const ReleaseAuthorityResult result = client.ReleaseAuthority("drone-1");
+
+    CHECK_FALSE(result.ok);
+    CHECK_FALSE(result.correlation_id.empty());
+    CHECK(result.error.domain == core::ErrorDomain::kTransport);
+    CHECK(result.error.code != RpcStatusCode::kOk);
+    CHECK_FALSE(result.message.empty());
 }
 
 TEST_CASE("Agent validates already-satisfied commands before granting authority",

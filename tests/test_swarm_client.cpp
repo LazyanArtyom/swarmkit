@@ -333,7 +333,10 @@ TEST_CASE("SwarmClient lock all and unlock all operate on every drone", "[swarm]
     CHECK(kLockResults.at("drone-1").ok);
     CHECK(kLockResults.at("drone-2").ok);
 
-    swarm.UnlockAll();
+    const auto kUnlockResults = swarm.UnlockAll();
+    REQUIRE(kUnlockResults.size() == 2);
+    CHECK(kUnlockResults.at("drone-1").ok);
+    CHECK(kUnlockResults.at("drone-2").ok);
 }
 
 TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client][telemetry]") {

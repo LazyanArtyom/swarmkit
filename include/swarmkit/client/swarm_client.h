@@ -350,7 +350,8 @@ class SwarmClient {
      *
      * @param drone_id Identifier of the drone to lock.
      * @param ttl_ms   Authority time-to-live in milliseconds.
-     *                 0 (default) = no expiry; caller MUST call UnlockDrone().
+     *                 0 (default) = no expiry; caller MUST call UnlockDrone()
+     *                 and inspect the returned ReleaseAuthorityResult.
      *
      * @returns A failed CommandResult if the drone is not registered or if a
      *          higher-priority client holds authority.
@@ -358,8 +359,8 @@ class SwarmClient {
     [[nodiscard]] CommandResult LockDrone(const std::string& drone_id,
                                           std::int64_t ttl_ms = 0) const;
 
-    /// @brief Release command authority for @p drone_id.  No-op if not locked.
-    void UnlockDrone(const std::string& drone_id) const;
+    /// @brief Release command authority for @p drone_id and report cleanup status.
+    [[nodiscard]] ReleaseAuthorityResult UnlockDrone(const std::string& drone_id) const;
 
     /**
      * @brief Acquire authority for every registered drone with bounded parallelism.
@@ -370,8 +371,9 @@ class SwarmClient {
     [[nodiscard]] std::unordered_map<std::string, CommandResult> LockAll(
         std::int64_t ttl_ms = 0, const SwarmFanoutOptions& fanout_options = {}) const;
 
-    /// @brief Release authority for all registered drones.
-    void UnlockAll() const;
+    /// @brief Release authority for all registered drones with bounded parallelism.
+    [[nodiscard]] std::unordered_map<std::string, ReleaseAuthorityResult> UnlockAll(
+        const SwarmFanoutOptions& fanout_options = {}) const;
 
     /// @}
 

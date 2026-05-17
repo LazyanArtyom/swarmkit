@@ -318,6 +318,12 @@ void PrintAuthorityResultLine(std::string_view target_id, std::string_view actio
               << (result.ok ? "OK" : ("REJECTED -- " + result.message)) << "\n";
 }
 
+void PrintAuthorityResultLine(std::string_view target_id, std::string_view action,
+                              const sc::ReleaseAuthorityResult& result) {
+    std::cout << "  [" << target_id << "] " << action << ": "
+              << (result.ok ? "OK" : ("FAILED -- " + result.message)) << "\n";
+}
+
 void HandleAuthorityForAll(sc::SwarmClient& swarm, std::string_view action) {
     if (action == kLockAction) {
         const auto kResults = swarm.LockAll();
@@ -327,8 +333,10 @@ void HandleAuthorityForAll(sc::SwarmClient& swarm, std::string_view action) {
         return;
     }
 
-    swarm.UnlockAll();
-    std::cout << "  [all] UNLOCK: OK\n";
+    const auto kResults = swarm.UnlockAll();
+    for (const auto& [drone_id, result] : kResults) {
+        PrintAuthorityResultLine(drone_id, "UNLOCK", result);
+    }
 }
 
 void HandleAuthorityForDrone(sc::SwarmClient& swarm, const std::string& target_id,
@@ -339,8 +347,8 @@ void HandleAuthorityForDrone(sc::SwarmClient& swarm, const std::string& target_i
         return;
     }
 
-    swarm.UnlockDrone(target_id);
-    std::cout << "  [" << target_id << "] UNLOCK: OK\n";
+    const sc::ReleaseAuthorityResult kResult = swarm.UnlockDrone(target_id);
+    PrintAuthorityResultLine(target_id, "UNLOCK", kResult);
 }
 
 void HandleAuthorityAction(sc::SwarmClient& swarm, const std::string& target_id,

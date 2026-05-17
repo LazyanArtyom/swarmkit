@@ -117,6 +117,14 @@ struct CommandResult {
     RpcError error;
 };
 
+/// @brief Result of explicitly releasing command authority.
+struct ReleaseAuthorityResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+};
+
 struct HealthStatus {
     bool ok{false};
     bool ready{false};
@@ -591,7 +599,8 @@ using SubscriptionResult = std::expected<Subscription, RpcError>;
  * @brief RAII authority lease for a single drone.
  *
  * @details Created via Client::AcquireAuthoritySession(). Releasing the object
- * automatically calls ReleaseAuthority() if the lease is still active.
+ * automatically attempts a best-effort authority release if the lease is still active.
+ * Call Release() when the application needs a checked release result.
  */
 class AuthoritySession {
    public:
@@ -609,6 +618,7 @@ class AuthoritySession {
     [[nodiscard]] const std::string& DroneId() const {
         return drone_id_;
     }
+    [[nodiscard]] ReleaseAuthorityResult Release();
     void Reset() noexcept;
 
    private:
@@ -742,7 +752,8 @@ class Client {
      *
      * @param drone_id Identifier of the drone to lock.
      * @param ttl_ms   Authority time-to-live in milliseconds.
-     *                 0 = no automatic expiry; caller MUST call ReleaseAuthority().
+     *                 0 = no automatic expiry; caller MUST call ReleaseAuthority()
+     *                 and inspect the returned ReleaseAuthorityResult.
      *                 >0 = authority expires after @p ttl_ms milliseconds.
      *
      * @details Uses ClientConfig::priority and ClientConfig::client_id.
@@ -762,11 +773,11 @@ class Client {
         const std::string& drone_id, std::int64_t ttl_ms = 0) const;
 
     /**
-     * @brief Explicitly release authority for @p drone_id.
+     * @brief Explicitly release authority for @p drone_id and report cleanup status.
      *
      * @details No-op if this client does not currently hold authority.
      */
-    void ReleaseAuthority(const std::string& drone_id) const;
+    [[nodiscard]] ReleaseAuthorityResult ReleaseAuthority(const std::string& drone_id) const;
 
     /**
      * @brief Start a background gRPC streaming telemetry subscription.

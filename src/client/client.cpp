@@ -2059,13 +2059,37 @@ AuthoritySession& AuthoritySession::operator=(AuthoritySession&& other) noexcept
     return *this;
 }
 
+ReleaseAuthorityResult AuthoritySession::Release() {
+    const std::string correlation_id = MakeCorrelationId("unlock");
+    if (client_ == nullptr) {
+        ReleaseAuthorityResult out;
+        out.ok = true;
+        out.message = "authority session already inactive";
+        out.correlation_id = correlation_id;
+        PopulateSuccessError(&out.error, correlation_id, 0);
+        return out;
+    }
+
+    ReleaseAuthorityResult result = client_->ReleaseAuthority(drone_id_);
+    if (result.ok) {
+        client_ = nullptr;
+        drone_id_.clear();
+    }
+    return result;
+}
+
 void AuthoritySession::Reset() noexcept {
     if (client_ == nullptr) {
         return;
     }
 
     try {
-        client_->ReleaseAuthority(drone_id_);
+        const ReleaseAuthorityResult result = client_->ReleaseAuthority(drone_id_);
+        if (!result.ok) {
+            core::Logger::WarnFmt(
+                "AuthoritySession::Reset release failed for drone={} corr={} err={}", drone_id_,
+                result.correlation_id, result.message);
+        }
     } catch (const std::exception& exc) {
         core::Logger::WarnFmt("AuthoritySession::Reset failed for drone={}: {}", drone_id_,
                               exc.what());
@@ -3236,7 +3260,8 @@ std::expected<AuthoritySession, CommandResult> Client::AcquireAuthoritySession(
     return AuthoritySession(this, drone_id);
 }
 
-void Client::ReleaseAuthority(const std::string& drone_id) const {
+ReleaseAuthorityResult Client::ReleaseAuthority(const std::string& drone_id) const {
+    ReleaseAuthorityResult out;
     const std::string kCorrelationId = MakeCorrelationId("unlock");
 
     swarmkit::v1::ReleaseAuthorityRequest req;
@@ -3251,11 +3276,19 @@ void Client::ReleaseAuthority(const std::string& drone_id) const {
                                  return impl_->stub->ReleaseAuthority(context, req, &rep);
                              });
 
+    out.correlation_id = kCorrelationId;
     if (!kStatus.ok()) {
+        PopulateTransportError(&out.error, kStatus, kCorrelationId, attempt_count);
+        out.message = out.error.user_message;
         core::Logger::WarnFmt(
             "Client::ReleaseAuthority failed: drone={} corr={} attempts={} err={}", drone_id,
-            kCorrelationId, attempt_count, kStatus.error_message());
+            kCorrelationId, attempt_count, out.message);
+        return out;
     }
+    out.ok = true;
+    out.message = "authority release acknowledged";
+    PopulateSuccessError(&out.error, kCorrelationId, attempt_count);
+    return out;
 }
 
 }  // namespace swarmkit::client

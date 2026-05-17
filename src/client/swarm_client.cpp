@@ -134,6 +134,21 @@ class BoundedFanoutExecutor final {
     return out;
 }
 
+[[nodiscard]] ReleaseAuthorityResult LocalReleaseAuthorityResult(bool ok, std::string message,
+                                                                 RpcStatusCode code) {
+    ReleaseAuthorityResult out;
+    out.ok = ok;
+    out.message = std::move(message);
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, code, out.message);
+    return out;
+}
+
+[[nodiscard]] ReleaseAuthorityResult UnregisteredReleaseAuthorityResult(
+    const std::string& drone_id) {
+    return LocalReleaseAuthorityResult(false, "drone '" + drone_id + "' not registered",
+                                       RpcStatusCode::kNotFound);
+}
+
 [[nodiscard]] bool IsSwarmCommand(const commands::Command& command) {
     return std::holds_alternative<commands::SwarmCmd>(command);
 }
@@ -186,6 +201,19 @@ class BoundedFanoutExecutor final {
                                                    const std::string& detail) {
     return LocalSwarmError(RpcStatusCode::kInternal,
                            "swarm fanout task failed for drone '" + drone_id + "': " + detail);
+}
+
+[[nodiscard]] ReleaseAuthorityResult CancelledReleaseAuthorityResult(const std::string& drone_id) {
+    return LocalReleaseAuthorityResult(
+        false, "swarm fanout cancelled before authority release for drone '" + drone_id + "'",
+        RpcStatusCode::kCancelled);
+}
+
+[[nodiscard]] ReleaseAuthorityResult ExceptionReleaseAuthorityResult(const std::string& drone_id,
+                                                                     const std::string& detail) {
+    return LocalReleaseAuthorityResult(
+        false, "swarm authority release task failed for drone '" + drone_id + "': " + detail,
+        RpcStatusCode::kInternal);
 }
 
 [[nodiscard]] ExecutionResult CancelledExecutionResult(const std::string& drone_id) {
@@ -299,6 +327,16 @@ template <typename TaskFn>
     return RunBoundedClientTasks<ExecutionResult>(
         clients, fanout_options, std::forward<TaskFn>(task_fn), CancelledExecutionResult,
         ExceptionExecutionResult, [](const ExecutionResult& result) { return result.ok; });
+}
+
+template <typename TaskFn>
+[[nodiscard]] std::unordered_map<std::string, ReleaseAuthorityResult> RunReleaseAuthorityTasks(
+    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients,
+    const SwarmFanoutOptions& fanout_options, TaskFn&& task_fn) {
+    return RunBoundedClientTasks<ReleaseAuthorityResult>(
+        clients, fanout_options, std::forward<TaskFn>(task_fn), CancelledReleaseAuthorityResult,
+        ExceptionReleaseAuthorityResult,
+        [](const ReleaseAuthorityResult& result) { return result.ok; });
 }
 
 template <typename TaskFn>
@@ -1379,17 +1417,17 @@ CommandResult SwarmClient::LockDrone(const std::string& drone_id, std::int64_t t
     return client->LockAuthority(drone_id, ttl_ms);
 }
 
-void SwarmClient::UnlockDrone(const std::string& drone_id) const {
+ReleaseAuthorityResult SwarmClient::UnlockDrone(const std::string& drone_id) const {
     std::shared_ptr<Client> client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         auto iter = impl_->clients.find(drone_id);
         if (iter == impl_->clients.end()) {
-            return;
+            return UnregisteredReleaseAuthorityResult(drone_id);
         }
         client = iter->second;
     }
-    client->ReleaseAuthority(drone_id);
+    return client->ReleaseAuthority(drone_id);
 }
 
 std::unordered_map<std::string, CommandResult> SwarmClient::LockAll(
@@ -1402,10 +1440,14 @@ std::unordered_map<std::string, CommandResult> SwarmClient::LockAll(
         });
 }
 
-void SwarmClient::UnlockAll() const {
-    for (const auto& [drone_id, client] : impl_->Snapshot()) {
-        client->ReleaseAuthority(drone_id);
-    }
+std::unordered_map<std::string, ReleaseAuthorityResult> SwarmClient::UnlockAll(
+    const SwarmFanoutOptions& fanout_options) const {
+    const auto kSnapshot = impl_->Snapshot();
+    return RunReleaseAuthorityTasks(
+        kSnapshot, fanout_options,
+        [](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            return client->ReleaseAuthority(drone_id);
+        });
 }
 
 }  // namespace swarmkit::client
