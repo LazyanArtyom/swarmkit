@@ -31,6 +31,20 @@ constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
     return config;
 }
 
+[[nodiscard]] agent::BackendTimeSyncState MakeTrustedTimeSyncState(std::string drone_id) {
+    return {
+        .drone_id = std::move(drone_id),
+        .agent_unix_time_ms = 1779028800000,
+        .vehicle_unix_time_ms = 1779028800004,
+        .clock_offset_ms = 4,
+        .sync_quality_percent = 99.0F,
+        .synced = true,
+        .stale = false,
+        .source = "test-vehicle-clock",
+        .message = "time sync healthy",
+    };
+}
+
 TEST_CASE("SwarmClient apply config supports prefer local addresses", "[swarm][client]") {
     testsupport::AgentServerHarness drone_one;
     testsupport::AgentServerHarness drone_two;
@@ -203,9 +217,49 @@ TEST_CASE("SwarmClient applies partial failure hold policy", "[swarm][client][ma
         std::get<commands::NavCmd>(recovery_command)));
 }
 
+TEST_CASE("SwarmClient protocol start-at rejects unproven time sync by default",
+          "[swarm][client][manager]") {
+    testsupport::AgentServerHarness drone_one;
+    testsupport::AgentServerHarness drone_two;
+
+    SwarmClient swarm(MakeDefaultClientConfig());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
+
+    commands::CommandContext context;
+    context.client_id = "test-client";
+    context.priority = commands::CommandPriority::kSupervisor;
+
+    SwarmExecutionOptions options;
+    options.synchronization = SwarmExecutionSynchronization::kProtocolStartAt;
+
+    const SwarmExecutionReport report = swarm.ExecuteSynchronizedCommand(
+        commands::FlightCmd{commands::CmdTakeoff{.alt_m = 5.0}}, context, options);
+
+    REQUIRE_FALSE(report.ok);
+    CHECK(report.succeeded == 0);
+    CHECK(report.failed == 2);
+    CHECK(report.start_results.empty());
+    CHECK(report.scheduled_start_unix_ms == 0);
+    REQUIRE(report.time_sync_states.contains("drone-1"));
+    REQUIRE(report.time_sync_states.contains("drone-2"));
+    CHECK_FALSE(report.time_sync_states.at("drone-1").synced);
+    CHECK(report.time_sync_states.at("drone-1").stale);
+    CHECK(report.time_sync_states.at("drone-1").sync_quality_percent == 0.0F);
+    CHECK(report.time_sync_states.at("drone-1").source == "agent-clock-fallback");
+    CHECK(report.readiness.at("drone-1").message.find("agent clock is not sufficient") !=
+          std::string::npos);
+    CHECK(drone_one.Backend().ExecuteCallCount() == 0);
+    CHECK(drone_two.Backend().ExecuteCallCount() == 0);
+}
+
 TEST_CASE("SwarmClient synchronized execution uses protocol start-at", "[swarm][client][manager]") {
     testsupport::AgentServerHarness drone_one;
     testsupport::AgentServerHarness drone_two;
+    drone_one.Backend().SetSupportsTimeSync(true);
+    drone_one.Backend().SetTimeSyncState(MakeTrustedTimeSyncState("drone-1"));
+    drone_two.Backend().SetSupportsTimeSync(true);
+    drone_two.Backend().SetTimeSyncState(MakeTrustedTimeSyncState("drone-2"));
 
     SwarmClient swarm(MakeDefaultClientConfig());
     swarm.AddDrone("drone-1", drone_one.Address());

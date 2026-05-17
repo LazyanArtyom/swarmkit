@@ -139,6 +139,16 @@ class RecordingBackend final : public agent::IDroneBackend {
         health_ = std::move(health);
     }
 
+    void SetSupportsTimeSync(bool supported) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        supports_time_sync_ = supported;
+    }
+
+    void SetTimeSyncState(agent::BackendTimeSyncState state) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        time_sync_state_ = std::move(state);
+    }
+
     void EmitTelemetry(const std::string& drone_id, const core::TelemetryFrame& frame) {
         TelemetryCallback callback;
         {
@@ -186,11 +196,13 @@ class RecordingBackend final : public agent::IDroneBackend {
     }
 
     [[nodiscard]] agent::BackendCapabilities GetCapabilities() const override {
+        std::lock_guard<std::mutex> lock(mutex_);
         return {
             .supports_mission_upload = true,
             .supports_payload_control = false,
             .supports_velocity_control = true,
             .supports_flight_termination = false,
+            .supports_time_sync = supports_time_sync_,
             .autopilot_type = "recording",
             .supported_modes = {"guided", "loiter"},
         };
@@ -202,6 +214,19 @@ class RecordingBackend final : public agent::IDroneBackend {
             return *health_;
         }
         return agent::IDroneBackend::GetHealth();
+    }
+
+    [[nodiscard]] agent::BackendTimeSyncState GetTimeSyncState(
+        const std::string& drone_id) const override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!time_sync_state_.has_value()) {
+            return agent::IDroneBackend::GetTimeSyncState(drone_id);
+        }
+        agent::BackendTimeSyncState state = *time_sync_state_;
+        if (state.drone_id.empty()) {
+            state.drone_id = drone_id.empty() ? "default" : drone_id;
+        }
+        return state;
     }
 
    private:
@@ -217,6 +242,8 @@ class RecordingBackend final : public agent::IDroneBackend {
     std::unordered_map<std::string, int> telemetry_stop_count_;
     ExecuteHandler execute_handler_;
     std::optional<agent::BackendHealth> health_;
+    std::optional<agent::BackendTimeSyncState> time_sync_state_;
+    bool supports_time_sync_{false};
 };
 
 class AgentServerHarness {

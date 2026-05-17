@@ -74,6 +74,18 @@ struct BackendCapabilities {
     BackendNumericLimits limits;
 };
 
+struct BackendTimeSyncState {
+    std::string drone_id;
+    std::int64_t agent_unix_time_ms{};
+    std::int64_t vehicle_unix_time_ms{};
+    std::int64_t clock_offset_ms{};
+    float sync_quality_percent{};
+    bool synced{false};
+    bool stale{true};
+    std::string source{"unavailable"};
+    std::string message{"backend time synchronization unavailable"};
+};
+
 struct BackendFactoryRequest {
     std::string backend_name;
     std::unordered_map<std::string, std::string> options;
@@ -129,6 +141,17 @@ class IDroneBackend {
     /// @brief Report backend/autopilot capabilities exposed to SDK clients.
     [[nodiscard]] virtual BackendCapabilities GetCapabilities() const {
         return {};
+    }
+
+    /// @brief Report proven clock synchronization with the vehicle/autopilot.
+    ///
+    /// Backends must only return synced=true when clock source, offset, drift,
+    /// and freshness are known. Agent wall-clock fallback is intentionally not
+    /// considered synchronized vehicle time.
+    [[nodiscard]] virtual BackendTimeSyncState GetTimeSyncState(const std::string& drone_id) const {
+        BackendTimeSyncState state;
+        state.drone_id = drone_id.empty() ? "default" : drone_id;
+        return state;
     }
 };
 

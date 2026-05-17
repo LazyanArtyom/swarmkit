@@ -28,6 +28,8 @@ constexpr auto kFinalTargetReportInterval = std::chrono::seconds{1};
 constexpr std::int64_t kLateThresholdMs = 250;
 constexpr float kDefaultTrackingToleranceM = 2.0F;
 constexpr float kMinimumTrajectorySpeedMps = 0.1F;
+constexpr float kMinimumSyncQualityPercent = 0.0F;
+constexpr float kMaximumSyncQualityPercent = 100.0F;
 
 [[nodiscard]] std::int64_t NowUnixMs() {
     using std::chrono::duration_cast;
@@ -38,6 +40,61 @@ constexpr float kMinimumTrajectorySpeedMps = 0.1F;
 
 [[nodiscard]] double DegToRad(double degrees) {
     return degrees * std::numbers::pi / 180.0;
+}
+
+[[nodiscard]] std::string ResolvedDroneId(std::string_view drone_id) {
+    return drone_id.empty() ? "default" : std::string(drone_id);
+}
+
+[[nodiscard]] swarmkit::v1::TimeSyncState MakeDegradedTimeSyncState(
+    std::string_view drone_id, std::string_view source, std::string_view message) {
+    swarmkit::v1::TimeSyncState state;
+    state.set_drone_id(ResolvedDroneId(drone_id));
+    state.set_agent_unix_time_ms(NowUnixMs());
+    state.set_vehicle_unix_time_ms(0);
+    state.set_clock_offset_ms(0);
+    state.set_sync_quality_percent(0.0F);
+    state.set_synced(false);
+    state.set_stale(true);
+    state.set_source(std::string(source));
+    state.set_message(std::string(message));
+    return state;
+}
+
+[[nodiscard]] swarmkit::v1::TimeSyncState ToProtoTimeSyncState(
+    const BackendTimeSyncState& backend_state) {
+    swarmkit::v1::TimeSyncState state;
+    state.set_drone_id(ResolvedDroneId(backend_state.drone_id));
+    state.set_agent_unix_time_ms(backend_state.agent_unix_time_ms > 0
+                                     ? backend_state.agent_unix_time_ms
+                                     : NowUnixMs());
+    state.set_vehicle_unix_time_ms(backend_state.vehicle_unix_time_ms);
+    state.set_clock_offset_ms(backend_state.clock_offset_ms);
+
+    float quality = std::clamp(backend_state.sync_quality_percent, kMinimumSyncQualityPercent,
+                               kMaximumSyncQualityPercent);
+    bool synced = backend_state.synced;
+    bool stale = backend_state.stale;
+    std::string source = backend_state.source.empty() ? "backend" : backend_state.source;
+    std::string message = backend_state.message;
+
+    if (synced && backend_state.vehicle_unix_time_ms <= 0) {
+        synced = false;
+        stale = true;
+        quality = 0.0F;
+        message = "vehicle clock timestamp unavailable; synchronized execution requires "
+                  "proven vehicle time";
+    }
+    if (!synced && message.empty()) {
+        message = "vehicle time synchronization is not established";
+    }
+
+    state.set_sync_quality_percent(quality);
+    state.set_synced(synced);
+    state.set_stale(stale);
+    state.set_source(std::move(source));
+    state.set_message(std::move(message));
+    return state;
 }
 
 [[nodiscard]] double DistanceMeters(double lat_a_deg, double lon_a_deg, double lat_b_deg,
@@ -677,18 +734,26 @@ std::vector<swarmkit::v1::ExecutionHandle> TrajectoryExecutionManager::List(
 }
 
 swarmkit::v1::TimeSyncState TrajectoryExecutionManager::GetTimeSyncState(
-    const std::string& drone_id) {
-    swarmkit::v1::TimeSyncState state;
-    state.set_drone_id(drone_id.empty() ? "default" : drone_id);
-    state.set_agent_unix_time_ms(NowUnixMs());
-    state.set_vehicle_unix_time_ms(0);
-    state.set_clock_offset_ms(0);
-    state.set_sync_quality_percent(100.0F);
-    state.set_synced(true);
-    state.set_stale(false);
-    state.set_source("agent-clock");
-    state.set_message("vehicle time unavailable; using agent clock");
-    return state;
+    const std::string& drone_id) const {
+    if (backend_ == nullptr) {
+        return MakeDegradedTimeSyncState(drone_id, "backend-unavailable",
+                                         "backend is unavailable; time synchronization cannot be "
+                                         "verified");
+    }
+
+    const BackendCapabilities capabilities = backend_->GetCapabilities();
+    if (!capabilities.supports_time_sync) {
+        return MakeDegradedTimeSyncState(
+            drone_id, "agent-clock-fallback",
+            "backend does not support vehicle time synchronization; agent clock is not sufficient "
+            "for synchronized execution");
+    }
+
+    BackendTimeSyncState state = backend_->GetTimeSyncState(drone_id);
+    if (state.drone_id.empty()) {
+        state.drone_id = ResolvedDroneId(drone_id);
+    }
+    return ToProtoTimeSyncState(state);
 }
 
 void TrajectoryExecutionManager::Shutdown() {

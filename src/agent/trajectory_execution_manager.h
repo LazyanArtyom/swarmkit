@@ -73,8 +73,8 @@ class TrajectoryExecutionManager {
     Get(const std::string& drone_id, const std::string& execution_id) const;
     [[nodiscard]] std::vector<swarmkit::v1::ExecutionHandle> List(
         const std::string& drone_id) const;
-    [[nodiscard]] static swarmkit::v1::TimeSyncState GetTimeSyncState(
-        const std::string& drone_id);
+    [[nodiscard]] swarmkit::v1::TimeSyncState GetTimeSyncState(
+        const std::string& drone_id) const;
 
     void Shutdown();
 

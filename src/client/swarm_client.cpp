@@ -367,13 +367,15 @@ template <typename TaskFn>
     }
     if (!state.synced) {
         if (detail != nullptr) {
-            *detail = "time sync is not established";
+            *detail = state.message.empty() ? "time sync is not established"
+                                            : "time sync is not established: " + state.message;
         }
         return false;
     }
     if (state.stale) {
         if (detail != nullptr) {
-            *detail = "time sync state is stale";
+            *detail = state.message.empty() ? "time sync state is stale"
+                                            : "time sync state is stale: " + state.message;
         }
         return false;
     }

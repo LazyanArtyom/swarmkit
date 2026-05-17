@@ -1495,8 +1495,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             !auth_result.IsOk()) {
             return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
         }
-        *reply = internal::TrajectoryExecutionManager::GetTimeSyncState(
-            req == nullptr ? "default" : req->drone_id());
+        *reply = executions_.GetTimeSyncState(req == nullptr ? "default" : req->drone_id());
         return grpc::Status::OK;
     }
 
