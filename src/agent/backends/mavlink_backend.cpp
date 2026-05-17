@@ -284,7 +284,8 @@ class MavlinkBackend final : public IDroneBackend {
         mav::MavlinkTelemetryDecodeResult decode_result;
         {
             std::lock_guard<std::mutex> lock(telemetry_mutex_);
-            decode_result = telemetry_decoder_.Decode(message, &telemetry_cache_, &state_cache_);
+            decode_result = telemetry_decoder_.Decode(message, &telemetry_cache_, &state_cache_,
+                                                       config_.autopilot_profile);
         }
 
         if (decode_result.should_publish) {

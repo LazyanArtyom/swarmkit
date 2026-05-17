@@ -27,6 +27,86 @@ constexpr int kPx4SubModeAutoMission = 4;
 constexpr int kPx4SubModeAutoRtl = 5;
 constexpr int kPx4SubModeAutoLand = 6;
 
+[[nodiscard]] std::string CustomModeFallback(std::string_view backend, std::uint32_t custom_mode) {
+    return std::string(backend) + "(custom=" + std::to_string(custom_mode) + ")";
+}
+
+[[nodiscard]] std::optional<std::string_view> ArduCopterModeName(std::uint32_t custom_mode) {
+    static const std::unordered_map<std::uint32_t, std::string_view> kModeMap{
+        {0, "STABILIZE"}, {1, "ACRO"},          {2, "ALT_HOLD"},     {3, "AUTO"},
+        {4, "GUIDED"},    {5, "LOITER"},        {6, "RTL"},          {7, "CIRCLE"},
+        {9, "LAND"},      {11, "DRIFT"},        {13, "SPORT"},       {14, "FLIP"},
+        {15, "AUTOTUNE"}, {16, "POSHOLD"},      {17, "BRAKE"},       {18, "THROW"},
+        {19, "AVOID_ADSB"},
+        {20, "GUIDED_NOGPS"},
+        {21, "SMART_RTL"},
+        {22, "FLOWHOLD"},
+        {23, "FOLLOW"},
+        {24, "ZIGZAG"},
+        {25, "SYSTEMID"},
+        {26, "AUTOROTATE"},
+        {27, "AUTO_RTL"},
+        {28, "TURTLE"},
+    };
+    const auto iter = kModeMap.find(custom_mode);
+    if (iter == kModeMap.end()) {
+        return std::nullopt;
+    }
+    return iter->second;
+}
+
+[[nodiscard]] std::optional<std::string_view> ArduPlaneModeName(std::uint32_t custom_mode) {
+    static const std::unordered_map<std::uint32_t, std::string_view> kModeMap{
+        {0, "MANUAL"},      {1, "CIRCLE"},     {2, "STABILIZE"}, {3, "TRAINING"},
+        {4, "ACRO"},        {5, "FBWA"},       {6, "FBWB"},      {7, "CRUISE"},
+        {8, "AUTOTUNE"},    {10, "AUTO"},      {11, "RTL"},      {12, "LOITER"},
+        {13, "TAKEOFF"},    {14, "AVOID_ADSB"},
+        {15, "GUIDED"},     {16, "INITIALISING"},
+        {17, "QSTABILIZE"}, {18, "QHOVER"},    {19, "QLOITER"},  {20, "QLAND"},
+        {21, "QRTL"},       {22, "QAUTOTUNE"}, {23, "QACRO"},    {24, "THERMAL"},
+        {25, "LOITERALTQLAND"},
+    };
+    const auto iter = kModeMap.find(custom_mode);
+    if (iter == kModeMap.end()) {
+        return std::nullopt;
+    }
+    return iter->second;
+}
+
+[[nodiscard]] std::string Px4ModeName(std::uint32_t custom_mode) {
+    const int main_mode = static_cast<int>((custom_mode >> 16U) & 0xFFU);
+    const int sub_mode = static_cast<int>((custom_mode >> 24U) & 0xFFU);
+
+    switch (main_mode) {
+        case kPx4MainModeManual:
+            return "MANUAL";
+        case kPx4MainModeAltctl:
+            return "ALTCTL";
+        case kPx4MainModePosctl:
+            return "POSCTL";
+        case kPx4MainModeOffboard:
+            return "OFFBOARD";
+        case kPx4MainModeAuto:
+            switch (sub_mode) {
+                case kPx4SubModeAutoTakeoff:
+                    return "TAKEOFF";
+                case kPx4SubModeAutoLoiter:
+                    return "LOITER";
+                case kPx4SubModeAutoMission:
+                    return "MISSION";
+                case kPx4SubModeAutoRtl:
+                    return "RTL";
+                case kPx4SubModeAutoLand:
+                    return "LAND";
+                default:
+                    return "AUTO(sub=" + std::to_string(sub_mode) + ")";
+            }
+        default:
+            return "PX4(main=" + std::to_string(main_mode) + ",sub=" + std::to_string(sub_mode) +
+                   ",custom=" + std::to_string(custom_mode) + ")";
+    }
+}
+
 }  // namespace
 
 std::int64_t NowUnixMs() {
@@ -62,15 +142,22 @@ std::optional<std::pair<std::string, std::uint16_t>> SplitHostPort(const std::st
     }
 }
 
-std::string ModeString(const mavlink_heartbeat_t& heartbeat) {
-    std::string mode = "MAVLINK";
-    if ((heartbeat.base_mode & MAV_MODE_FLAG_SAFETY_ARMED) != 0U) {
-        mode += ":ARMED";
-    } else {
-        mode += ":DISARMED";
+std::string ModeString(const mavlink_heartbeat_t& heartbeat, MavlinkAutopilotProfile profile) {
+    switch (profile) {
+        case MavlinkAutopilotProfile::kArdupilotCopter:
+            if (const auto mode = ArduCopterModeName(heartbeat.custom_mode); mode.has_value()) {
+                return std::string(*mode);
+            }
+            return CustomModeFallback("ARDUPILOT_COPTER", heartbeat.custom_mode);
+        case MavlinkAutopilotProfile::kArdupilotPlane:
+            if (const auto mode = ArduPlaneModeName(heartbeat.custom_mode); mode.has_value()) {
+                return std::string(*mode);
+            }
+            return CustomModeFallback("ARDUPILOT_PLANE", heartbeat.custom_mode);
+        case MavlinkAutopilotProfile::kPx4:
+            return Px4ModeName(heartbeat.custom_mode);
     }
-    mode += ":custom=" + std::to_string(heartbeat.custom_mode);
-    return mode;
+    return CustomModeFallback("MAVLINK", heartbeat.custom_mode);
 }
 
 std::optional<int> ArduCopterModeFromName(std::string mode) {

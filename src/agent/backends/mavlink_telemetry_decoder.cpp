@@ -149,7 +149,7 @@ void ApplyArdupilotEkfState(std::uint16_t flags, TelemetryCache* telemetry_cache
 
 MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
     const mavlink_message_t& message, TelemetryCache* telemetry_cache,
-    MavlinkStateCache* state_cache) {
+    MavlinkStateCache* state_cache, MavlinkAutopilotProfile profile) {
     MavlinkTelemetryDecodeResult result;
     if (telemetry_cache == nullptr || state_cache == nullptr) {
         return result;
@@ -159,7 +159,7 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
         case MAVLINK_MSG_ID_HEARTBEAT: {
             mavlink_heartbeat_t heartbeat{};
             mavlink_msg_heartbeat_decode(&message, &heartbeat);
-            telemetry_cache->mode = ModeString(heartbeat);
+            telemetry_cache->mode = ModeString(heartbeat, profile);
             telemetry_cache->armed = (heartbeat.base_mode & MAV_MODE_FLAG_SAFETY_ARMED) != 0U;
             telemetry_cache->failsafe = heartbeat.system_status == MAV_STATE_CRITICAL ||
                                         heartbeat.system_status == MAV_STATE_EMERGENCY ||

@@ -34,7 +34,7 @@ constexpr float kTakeoffAltitudeToleranceM = 0.5F;
     return health.last_heartbeat_unix_ms != 0 || health.last_telemetry_unix_ms != 0;
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdArm&,
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdArm& /*unused*/,
                                                                 const BackendHealth& health) {
     if (health.armed) {
         return AlreadySatisfied("arm already satisfied: vehicle is already armed");
@@ -42,7 +42,7 @@ constexpr float kTakeoffAltitudeToleranceM = 0.5F;
     return Execute();
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdDisarm&,
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdDisarm& /*unused*/,
                                                                 const BackendHealth& health) {
     if (!health.armed) {
         return AlreadySatisfied("disarm already satisfied: vehicle is already disarmed");
@@ -68,7 +68,7 @@ constexpr float kTakeoffAltitudeToleranceM = 0.5F;
     return Execute();
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdLand&,
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdLand& /*unused*/,
                                                                 const BackendHealth& health) {
     if (!health.armed) {
         return AlreadySatisfied("land already satisfied: vehicle is disarmed");
@@ -79,18 +79,18 @@ constexpr float kTakeoffAltitudeToleranceM = 0.5F;
     return Execute();
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdForceDisarm&,
-                                                                const BackendHealth&) {
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
+    const commands::CmdForceDisarm& /*unused*/, const BackendHealth& /*unused*/) {
     return Execute();
 }
 
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
-    const commands::CmdFlightTerminate&, const BackendHealth&) {
+    const commands::CmdFlightTerminate& /*unused*/, const BackendHealth& /*unused*/) {
     return Execute();
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdSetMode&,
-                                                                const BackendHealth&) {
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
+    const commands::CmdSetMode& /*unused*/, const BackendHealth& /*unused*/) {
     return Execute();
 }
 

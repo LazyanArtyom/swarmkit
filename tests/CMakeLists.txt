@@ -12,8 +12,17 @@ add_executable(swarmkit_tests
     test_logger.cpp
     test_report_hub.cpp
     test_sim_backend.cpp
+    test_mavlink_common.cpp
     test_swarm_client.cpp
     test_trajectory_io.cpp
+)
+
+target_include_directories(swarmkit_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/agent/backends
+)
+
+target_include_directories(swarmkit_tests SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/mavlink_c_library_v2
 )
 
 target_link_libraries(swarmkit_tests PRIVATE

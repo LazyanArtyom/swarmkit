@@ -135,7 +135,8 @@ struct Px4Mode {
 [[nodiscard]] std::string ToLower(std::string value);
 [[nodiscard]] std::optional<std::pair<std::string, std::uint16_t>> SplitHostPort(
     const std::string& value);
-[[nodiscard]] std::string ModeString(const mavlink_heartbeat_t& heartbeat);
+[[nodiscard]] std::string ModeString(const mavlink_heartbeat_t& heartbeat,
+                                     MavlinkAutopilotProfile profile);
 [[nodiscard]] std::string MavResultName(std::uint8_t result);
 [[nodiscard]] std::string MissionResultName(std::uint8_t result);
 [[nodiscard]] std::optional<int> ArduCopterModeFromName(std::string mode);

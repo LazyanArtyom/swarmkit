@@ -20,7 +20,8 @@ class MavlinkTelemetryDecoder {
    public:
     [[nodiscard]] MavlinkTelemetryDecodeResult Decode(const mavlink_message_t& message,
                                                       TelemetryCache* telemetry_cache,
-                                                      MavlinkStateCache* state_cache);
+                                                      MavlinkStateCache* state_cache,
+                                                      MavlinkAutopilotProfile profile);
 
    private:
     bool message_intervals_requested_{false};
