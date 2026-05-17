@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <fstream>
@@ -16,10 +17,22 @@
 #include <queue>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "swarmkit/v1/swarmkit.pb.h"
 
 namespace swarmkit::agent::internal {
+
+struct ReportHubOptions {
+    std::string report_log_file;
+    std::string sequence_state_file;
+    std::size_t max_in_memory_backlog{1000};
+    std::size_t max_log_file_size_bytes{10 * 1024 * 1024};
+    int max_log_files{5};
+    bool flush_each_write{true};
+    bool fsync_each_write{false};
+    bool replay_from_log{true};
+};
 
 class ReportQueue {
    public:
@@ -40,8 +53,9 @@ struct ReportWatchToken {
 
 class ReportHub {
    public:
-    ReportHub() = default;
+    ReportHub();
     explicit ReportHub(std::string report_log_file);
+    explicit ReportHub(ReportHubOptions options);
 
     [[nodiscard]] ReportWatchToken Watch(std::string drone_id, std::uint64_t after_sequence,
                                          const std::shared_ptr<ReportQueue>& queue);
@@ -56,11 +70,23 @@ class ReportHub {
 
     [[nodiscard]] static bool Matches(const Watcher& watcher,
                                       const swarmkit::v1::AgentReport& report);
+    [[nodiscard]] std::vector<swarmkit::v1::AgentReport> LoadReplay(
+        const Watcher& watcher, std::uint64_t after_sequence) const;
+    void InitializePersistence();
+    void OpenReportLog(bool append);
+    void RotateReportLogIfNeeded(std::size_t pending_bytes);
+    void WriteReportLogLine(const swarmkit::v1::AgentReport& report);
+    void PersistSequenceState(std::uint64_t sequence);
+    [[nodiscard]] std::uint64_t LoadSequenceState() const;
+    [[nodiscard]] std::uint64_t LoadMaxSequenceFromLogs() const;
+    [[nodiscard]] std::vector<std::string> ReportLogReadPaths() const;
 
     std::mutex mutex_;
     std::unordered_map<std::uint64_t, Watcher> watchers_;
     std::deque<swarmkit::v1::AgentReport> backlog_;
     std::ofstream report_log_;
+    ReportHubOptions options_;
+    std::size_t report_log_bytes_{0};
     std::uint64_t next_watch_id_{0};
     std::uint64_t next_sequence_{0};
 };

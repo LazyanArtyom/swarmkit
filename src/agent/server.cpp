@@ -56,6 +56,13 @@ constexpr std::string_view kAgentEnvDefaultAuthorityTtlMs = "DEFAULT_AUTHORITY_T
 constexpr std::string_view kAgentEnvDefaultTelemetryRateHz = "DEFAULT_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvMinTelemetryRateHz = "MIN_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvReportLogFile = "REPORT_LOG_FILE";
+constexpr std::string_view kAgentEnvReportSequenceStateFile = "REPORT_SEQUENCE_STATE_FILE";
+constexpr std::string_view kAgentEnvReportBacklogSize = "REPORT_BACKLOG_SIZE";
+constexpr std::string_view kAgentEnvReportLogMaxFileSizeBytes = "REPORT_LOG_MAX_FILE_SIZE_BYTES";
+constexpr std::string_view kAgentEnvReportLogMaxFiles = "REPORT_LOG_MAX_FILES";
+constexpr std::string_view kAgentEnvReportFlushEachWrite = "REPORT_FLUSH_EACH_WRITE";
+constexpr std::string_view kAgentEnvReportFsyncEachWrite = "REPORT_FSYNC_EACH_WRITE";
+constexpr std::string_view kAgentEnvReportReplayFromLog = "REPORT_REPLAY_FROM_LOG";
 constexpr std::string_view kAgentEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
 constexpr std::string_view kAgentEnvCertChainPath = "CERT_CHAIN_PATH";
 constexpr std::string_view kAgentEnvPrivateKeyPath = "PRIVATE_KEY_PATH";
@@ -74,6 +81,20 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     using std::chrono::milliseconds;
     using std::chrono::system_clock;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+[[nodiscard]] internal::ReportHubOptions MakeReportHubOptions(
+    const ReportPersistenceConfig& config) {
+    return {
+        .report_log_file = config.log_file,
+        .sequence_state_file = config.sequence_state_file,
+        .max_in_memory_backlog = static_cast<std::size_t>(config.backlog_size),
+        .max_log_file_size_bytes = static_cast<std::size_t>(config.max_log_file_size_bytes),
+        .max_log_files = config.max_log_files,
+        .flush_each_write = config.flush_each_write,
+        .fsync_each_write = config.fsync_each_write,
+        .replay_from_log = config.replay_from_log,
+    };
 }
 
 /// @}
@@ -645,7 +666,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
           backend_(std::move(backend)),
           telemetry_(backend_.get(), config_.default_telemetry_rate_hz,
                      config_.min_telemetry_rate_hz),
-          reports_(config_.report_log_file),
+          reports_(MakeReportHubOptions(config_.reports)),
           goals_(&telemetry_, &reports_, &config_),
           executions_(backend_.get(), &telemetry_, &reports_, &config_) {
         if (const core::Result start_result = backend_->Start(); !start_result.IsOk()) {
@@ -1835,6 +1856,19 @@ core::Result AgentSecurityConfig::Validate() const {
     return core::Result::Success();
 }
 
+core::Result ReportPersistenceConfig::Validate() const {
+    if (backlog_size < 0) {
+        return core::Result::Rejected("reports.backlog_size must be >= 0");
+    }
+    if (max_log_file_size_bytes < 0) {
+        return core::Result::Rejected("reports.max_log_file_size_bytes must be >= 0");
+    }
+    if (max_log_files < 0) {
+        return core::Result::Rejected("reports.max_log_files must be >= 0");
+    }
+    return core::Result::Success();
+}
+
 core::Result AgentConfig::Validate() const {
     if (agent_id.empty()) {
         return core::Result::Rejected("agent_id must not be empty");
@@ -1857,10 +1891,14 @@ core::Result AgentConfig::Validate() const {
     if (const core::Result vehicle_result = vehicle_profile.Validate(); !vehicle_result.IsOk()) {
         return vehicle_result;
     }
+    if (const core::Result report_result = reports.Validate(); !report_result.IsOk()) {
+        return report_result;
+    }
     return security.Validate();
 }
 
 void AgentConfig::ApplyEnvironment(std::string_view prefix) {
+    using core::internal::ApplyBoolEnv;
     using core::internal::ApplyIntEnv;
     using core::internal::ApplyStringEnv;
 
@@ -1869,7 +1907,14 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyIntEnv(prefix, kAgentEnvDefaultAuthorityTtlMs, &default_authority_ttl_ms);
     ApplyIntEnv(prefix, kAgentEnvDefaultTelemetryRateHz, &default_telemetry_rate_hz);
     ApplyIntEnv(prefix, kAgentEnvMinTelemetryRateHz, &min_telemetry_rate_hz);
-    ApplyStringEnv(prefix, kAgentEnvReportLogFile, &report_log_file);
+    ApplyStringEnv(prefix, kAgentEnvReportLogFile, &reports.log_file);
+    ApplyStringEnv(prefix, kAgentEnvReportSequenceStateFile, &reports.sequence_state_file);
+    ApplyIntEnv(prefix, kAgentEnvReportBacklogSize, &reports.backlog_size);
+    ApplyIntEnv(prefix, kAgentEnvReportLogMaxFileSizeBytes, &reports.max_log_file_size_bytes);
+    ApplyIntEnv(prefix, kAgentEnvReportLogMaxFiles, &reports.max_log_files);
+    ApplyBoolEnv(prefix, kAgentEnvReportFlushEachWrite, &reports.flush_each_write);
+    ApplyBoolEnv(prefix, kAgentEnvReportFsyncEachWrite, &reports.fsync_each_write);
+    ApplyBoolEnv(prefix, kAgentEnvReportReplayFromLog, &reports.replay_from_log);
 
     ApplyStringEnv(prefix, kAgentEnvRootCaCertPath, &security.root_ca_cert_path);
     ApplyStringEnv(prefix, kAgentEnvCertChainPath, &security.cert_chain_path);
@@ -1952,7 +1997,94 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         return std::unexpected(report_log_file.error());
     }
     if (report_log_file->has_value()) {
-        config.report_log_file = report_log_file->value_or(config.report_log_file);
+        config.reports.log_file = report_log_file->value_or(config.reports.log_file);
+    }
+
+    const YAML::Node report_persistence =
+        root["report_persistence"] ? root["report_persistence"] : root["reports"];
+    if (report_persistence) {
+        if (!report_persistence.IsMap()) {
+            return std::unexpected(
+                core::Result::Rejected("agent.report_persistence must be a map"));
+        }
+
+        const auto log_file =
+            core::yaml::ReadOptionalScalar<std::string>(report_persistence, "log_file");
+        if (!log_file.has_value()) {
+            return std::unexpected(log_file.error());
+        }
+        if (log_file->has_value()) {
+            config.reports.log_file = log_file->value_or(config.reports.log_file);
+        }
+
+        const auto sequence_state_file = core::yaml::ReadOptionalScalar<std::string>(
+            report_persistence, "sequence_state_file");
+        if (!sequence_state_file.has_value()) {
+            return std::unexpected(sequence_state_file.error());
+        }
+        if (sequence_state_file->has_value()) {
+            config.reports.sequence_state_file =
+                sequence_state_file->value_or(config.reports.sequence_state_file);
+        }
+
+        const auto backlog_size =
+            core::yaml::ReadOptionalScalar<int>(report_persistence, "backlog_size");
+        if (!backlog_size.has_value()) {
+            return std::unexpected(backlog_size.error());
+        }
+        if (backlog_size->has_value()) {
+            config.reports.backlog_size = backlog_size->value_or(config.reports.backlog_size);
+        }
+
+        const auto max_log_file_size_bytes = core::yaml::ReadOptionalScalar<int>(
+            report_persistence, "max_log_file_size_bytes");
+        if (!max_log_file_size_bytes.has_value()) {
+            return std::unexpected(max_log_file_size_bytes.error());
+        }
+        if (max_log_file_size_bytes->has_value()) {
+            config.reports.max_log_file_size_bytes =
+                max_log_file_size_bytes->value_or(config.reports.max_log_file_size_bytes);
+        }
+
+        const auto max_log_files =
+            core::yaml::ReadOptionalScalar<int>(report_persistence, "max_log_files");
+        if (!max_log_files.has_value()) {
+            return std::unexpected(max_log_files.error());
+        }
+        if (max_log_files->has_value()) {
+            config.reports.max_log_files =
+                max_log_files->value_or(config.reports.max_log_files);
+        }
+
+        const auto flush_each_write =
+            core::yaml::ReadOptionalScalar<bool>(report_persistence, "flush_each_write");
+        if (!flush_each_write.has_value()) {
+            return std::unexpected(flush_each_write.error());
+        }
+        if (flush_each_write->has_value()) {
+            config.reports.flush_each_write =
+                flush_each_write->value_or(config.reports.flush_each_write);
+        }
+
+        const auto fsync_each_write =
+            core::yaml::ReadOptionalScalar<bool>(report_persistence, "fsync_each_write");
+        if (!fsync_each_write.has_value()) {
+            return std::unexpected(fsync_each_write.error());
+        }
+        if (fsync_each_write->has_value()) {
+            config.reports.fsync_each_write =
+                fsync_each_write->value_or(config.reports.fsync_each_write);
+        }
+
+        const auto replay_from_log =
+            core::yaml::ReadOptionalScalar<bool>(report_persistence, "replay_from_log");
+        if (!replay_from_log.has_value()) {
+            return std::unexpected(replay_from_log.error());
+        }
+        if (replay_from_log->has_value()) {
+            config.reports.replay_from_log =
+                replay_from_log->value_or(config.reports.replay_from_log);
+        }
     }
 
     if (const YAML::Node vehicle_profile = root["vehicle_profile"]; vehicle_profile) {

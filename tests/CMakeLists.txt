@@ -10,6 +10,7 @@ add_executable(swarmkit_tests
     test_client_integration.cpp
     test_config.cpp
     test_logger.cpp
+    test_report_hub.cpp
     test_sim_backend.cpp
     test_swarm_client.cpp
     test_trajectory_io.cpp

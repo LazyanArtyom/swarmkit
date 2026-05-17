@@ -33,6 +33,9 @@ inline constexpr float kDefaultTrackingToleranceM = 2.0F;
 inline constexpr int kDefaultMinGpsFixType = 3;
 inline constexpr int kDefaultMinSatellitesVisible = 6;
 inline constexpr float kDefaultMaxGpsHdop = 2.5F;
+inline constexpr int kDefaultReportBacklogSize = 1000;
+inline constexpr int kDefaultReportLogMaxFileSizeBytes = 10 * 1024 * 1024;
+inline constexpr int kDefaultReportLogMaxFiles = 5;
 
 struct VehicleProfile {
     std::string profile_id{"generic-quad"};
@@ -65,6 +68,19 @@ struct AgentSecurityConfig {
     [[nodiscard]] core::Result Validate() const;
 };
 
+struct ReportPersistenceConfig {
+    std::string log_file;
+    std::string sequence_state_file;
+    int backlog_size{kDefaultReportBacklogSize};
+    int max_log_file_size_bytes{kDefaultReportLogMaxFileSizeBytes};
+    int max_log_files{kDefaultReportLogMaxFiles};
+    bool flush_each_write{true};
+    bool fsync_each_write{false};
+    bool replay_from_log{true};
+
+    [[nodiscard]] core::Result Validate() const;
+};
+
 /// ---------------------------------------------------------------------------
 /// AgentConfig -- startup parameters for the gRPC agent server.
 /// ---------------------------------------------------------------------------
@@ -74,7 +90,7 @@ struct AgentConfig {
     int default_authority_ttl_ms{kDefaultAuthorityTtlMs};
     int default_telemetry_rate_hz{kDefaultTelemetryRateHz};
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};
-    std::string report_log_file;
+    ReportPersistenceConfig reports{};
     VehicleProfile vehicle_profile{};
     AgentSecurityConfig security{};
 

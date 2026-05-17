@@ -826,7 +826,7 @@ message ListExecutionsReply {
 message ReportSubscription {
     string drone_id = 1;       // Empty or "all" subscribes to every drone.
     string client_id = 2;
-    uint64 after_sequence = 3;  // Reserved for reconnect/resume; 0 = live only.
+    uint64 after_sequence = 3;  // Replay retained reports with sequence > this cursor.
 }
 
 // ---------------------------------------------------------------------------

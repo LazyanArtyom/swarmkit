@@ -128,7 +128,7 @@ Report categories include:
 - authority-related state changes;
 - health and execution state events.
 
-Reports can be persisted on the agent as JSONL through `report_log_file` or `--report-log-file`. This is useful for real-drone tests because the flight-side agent keeps an auditable event trail even if the client disconnects or a remote supervisor is restarted.
+Reports can be persisted on the agent as rotated JSONL through `report_log_file`, `report_persistence.log_file`, or `--report-log-file`. The agent also persists the report sequence cursor, so monitoring tools can reconnect with `after_sequence` and replay retained reports instead of losing context after a restart.
 
 For dynamic planners, reports provide a clean feedback loop. A user algorithm can send an active goal or trajectory segment, subscribe to reports, and then decide whether to continue, correct, cancel, or override based on `active`, `tracking`, `drifting`, `reached`, `failed`, `cancelled`, or `completed` states.
 

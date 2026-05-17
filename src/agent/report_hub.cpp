@@ -8,10 +8,19 @@
 
 #include <google/protobuf/util/json_util.h>
 
+#include <algorithm>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
+
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "swarmkit/core/logger.h"
 
@@ -68,6 +77,66 @@ namespace {
            R"("})";
 }
 
+[[nodiscard]] bool ParseReportJson(std::string_view line, swarmkit::v1::AgentReport* report) {
+    if (report == nullptr || line.empty()) {
+        return false;
+    }
+    google::protobuf::util::JsonParseOptions options;
+    options.ignore_unknown_fields = true;
+    return google::protobuf::util::JsonStringToMessage(std::string(line), report, options).ok();
+}
+
+[[nodiscard]] std::string DefaultSequenceStateFile(const std::string& report_log_file) {
+    if (report_log_file.empty()) {
+        return {};
+    }
+    return report_log_file + ".seq";
+}
+
+[[nodiscard]] std::string RotatedLogPath(const std::string& report_log_file, int index) {
+    return report_log_file + "." + std::to_string(index);
+}
+
+[[nodiscard]] std::uint64_t ParseSequenceStateValue(const std::string& value) {
+    try {
+        return static_cast<std::uint64_t>(std::stoull(value));
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
+[[nodiscard]] bool SyncFileToDisk(const std::string& path) {
+    if (path.empty()) {
+        return true;
+    }
+#ifdef _WIN32
+    static_cast<void>(path);
+    return true;
+#else
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return false;
+    }
+    const bool ok = ::fsync(fd) == 0;
+    static_cast<void>(::close(fd));
+    return ok;
+#endif
+}
+
+void RenameIfExists(const std::string& from, const std::string& to) {
+    std::error_code error;
+    if (!std::filesystem::exists(from, error)) {
+        return;
+    }
+    std::filesystem::remove(to, error);
+    error.clear();
+    std::filesystem::rename(from, to, error);
+    if (error) {
+        core::Logger::WarnFmt("ReportHub: failed to rotate report log '{}' -> '{}': {}", from, to,
+                              error.message());
+    }
+}
+
 }  // namespace
 
 void ReportQueue::Push(swarmkit::v1::AgentReport report) {
@@ -86,8 +155,7 @@ bool ReportQueue::Pop(swarmkit::v1::AgentReport* out, std::chrono::milliseconds 
         return false;
     }
     std::unique_lock<std::mutex> lock(mutex_);
-    const bool ready =
-        cv_.wait_for(lock, timeout, [this] { return !queue_.empty() || shutdown_; });
+    const bool ready = cv_.wait_for(lock, timeout, [this] { return !queue_.empty() || shutdown_; });
     if (!ready || queue_.empty()) {
         return false;
     }
@@ -104,21 +172,21 @@ void ReportQueue::Shutdown() {
     cv_.notify_all();
 }
 
-ReportHub::ReportHub(std::string report_log_file) {
-    if (report_log_file.empty()) {
-        return;
+ReportHub::ReportHub() : ReportHub(ReportHubOptions{}) {}
+
+ReportHub::ReportHub(std::string report_log_file)
+    : ReportHub(ReportHubOptions{.report_log_file = std::move(report_log_file)}) {}
+
+ReportHub::ReportHub(ReportHubOptions options) : options_(std::move(options)) {
+    if (options_.sequence_state_file.empty()) {
+        options_.sequence_state_file = DefaultSequenceStateFile(options_.report_log_file);
     }
-    report_log_.open(report_log_file, std::ios::app);
-    if (!report_log_.is_open()) {
-        core::Logger::WarnFmt("ReportHub: failed to open report_log_file '{}'", report_log_file);
-        return;
-    }
-    core::Logger::InfoFmt("ReportHub: JSONL report logging enabled at '{}'", report_log_file);
+    InitializePersistence();
 }
 
 ReportWatchToken ReportHub::Watch(std::string drone_id, std::uint64_t after_sequence,
                                   const std::shared_ptr<ReportQueue>& queue) {
-    std::vector<swarmkit::v1::AgentReport> backlog;
+    std::vector<swarmkit::v1::AgentReport> replay;
     ReportWatchToken token;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -127,13 +195,21 @@ ReportWatchToken ReportHub::Watch(std::string drone_id, std::uint64_t after_sequ
                                               .drone_id = std::move(drone_id),
                                               .queue = queue,
                                           });
+        std::uint64_t max_replayed_sequence = after_sequence;
+        if (after_sequence > 0 || options_.replay_from_log) {
+            replay = LoadReplay(watchers_.at(token.watch_id), after_sequence);
+            for (const auto& report : replay) {
+                max_replayed_sequence = std::max(max_replayed_sequence, report.sequence());
+            }
+        }
         for (const auto& report : backlog_) {
-            if (report.sequence() > after_sequence && Matches(watchers_.at(token.watch_id), report)) {
-                backlog.push_back(report);
+            if (report.sequence() > max_replayed_sequence &&
+                Matches(watchers_.at(token.watch_id), report)) {
+                replay.push_back(report);
             }
         }
     }
-    for (auto& report : backlog) {
+    for (auto& report : replay) {
         if (queue) {
             queue->Push(std::move(report));
         }
@@ -155,8 +231,7 @@ void ReportHub::Publish(swarmkit::v1::AgentReport report) {
         report.set_unix_time_ms(NowUnixMs());
         finalized_report = report;
         backlog_.push_back(report);
-        constexpr std::size_t kMaxBacklog = 1000;
-        while (backlog_.size() > kMaxBacklog) {
+        while (backlog_.size() > options_.max_in_memory_backlog) {
             backlog_.pop_front();
         }
         for (auto iter = watchers_.begin(); iter != watchers_.end();) {
@@ -169,14 +244,205 @@ void ReportHub::Publish(swarmkit::v1::AgentReport report) {
                 iter = watchers_.erase(iter);
             }
         }
-        if (report_log_.is_open()) {
-            report_log_ << ReportToJson(finalized_report) << '\n';
-            report_log_.flush();
-        }
+        WriteReportLogLine(finalized_report);
+        PersistSequenceState(finalized_report.sequence());
     }
     for (const auto& queue : queues) {
         queue->Push(finalized_report);
     }
+}
+
+std::vector<swarmkit::v1::AgentReport> ReportHub::LoadReplay(const Watcher& watcher,
+                                                             std::uint64_t after_sequence) const {
+    std::vector<swarmkit::v1::AgentReport> reports;
+    if (!options_.replay_from_log || options_.report_log_file.empty()) {
+        return reports;
+    }
+
+    for (const std::string& path : ReportLogReadPaths()) {
+        std::ifstream input(path);
+        if (!input.is_open()) {
+            continue;
+        }
+        std::string line;
+        while (std::getline(input, line)) {
+            swarmkit::v1::AgentReport report;
+            if (!ParseReportJson(line, &report)) {
+                core::Logger::WarnFmt("ReportHub: skipped malformed report log line in '{}'", path);
+                continue;
+            }
+            if (report.sequence() > after_sequence && Matches(watcher, report)) {
+                reports.push_back(std::move(report));
+            }
+        }
+    }
+    return reports;
+}
+
+void ReportHub::InitializePersistence() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const std::uint64_t sequence_state = LoadSequenceState();
+    const std::uint64_t log_sequence = LoadMaxSequenceFromLogs();
+    next_sequence_ = std::max(sequence_state, log_sequence);
+    OpenReportLog(true);
+    if (next_sequence_ > 0) {
+        PersistSequenceState(next_sequence_);
+    }
+}
+
+void ReportHub::OpenReportLog(bool append) {
+    if (options_.report_log_file.empty()) {
+        return;
+    }
+    report_log_.open(options_.report_log_file, append ? std::ios::app : std::ios::trunc);
+    if (!report_log_.is_open()) {
+        core::Logger::WarnFmt("ReportHub: failed to open report_log_file '{}'",
+                              options_.report_log_file);
+        report_log_bytes_ = 0;
+        return;
+    }
+    std::error_code error;
+    report_log_bytes_ = std::filesystem::exists(options_.report_log_file, error)
+                            ? std::filesystem::file_size(options_.report_log_file, error)
+                            : 0;
+    if (error) {
+        report_log_bytes_ = 0;
+    }
+    core::Logger::InfoFmt("ReportHub: JSONL report logging enabled at '{}'",
+                          options_.report_log_file);
+}
+
+void ReportHub::RotateReportLogIfNeeded(std::size_t pending_bytes) {
+    if (!report_log_.is_open() || options_.max_log_file_size_bytes == 0 || report_log_bytes_ == 0 ||
+        report_log_bytes_ + pending_bytes <= options_.max_log_file_size_bytes) {
+        return;
+    }
+
+    report_log_.flush();
+    report_log_.close();
+    if (options_.max_log_files <= 0) {
+        std::error_code error;
+        std::filesystem::remove(options_.report_log_file, error);
+        OpenReportLog(false);
+        return;
+    }
+
+    const std::string oldest_path =
+        RotatedLogPath(options_.report_log_file, options_.max_log_files);
+    std::error_code error;
+    std::filesystem::remove(oldest_path, error);
+    for (int index = options_.max_log_files - 1; index >= 1; --index) {
+        RenameIfExists(RotatedLogPath(options_.report_log_file, index),
+                       RotatedLogPath(options_.report_log_file, index + 1));
+    }
+    RenameIfExists(options_.report_log_file, RotatedLogPath(options_.report_log_file, 1));
+    OpenReportLog(false);
+}
+
+void ReportHub::WriteReportLogLine(const swarmkit::v1::AgentReport& report) {
+    if (!report_log_.is_open()) {
+        return;
+    }
+    const std::string line = ReportToJson(report);
+    const std::size_t bytes_to_write = line.size() + 1U;
+    RotateReportLogIfNeeded(bytes_to_write);
+    if (!report_log_.is_open()) {
+        return;
+    }
+    report_log_ << line << '\n';
+    report_log_bytes_ += bytes_to_write;
+    if (options_.flush_each_write || options_.fsync_each_write) {
+        report_log_.flush();
+    }
+    if (options_.fsync_each_write && !SyncFileToDisk(options_.report_log_file)) {
+        core::Logger::WarnFmt("ReportHub: fsync failed for report log '{}'",
+                              options_.report_log_file);
+    }
+}
+
+void ReportHub::PersistSequenceState(std::uint64_t sequence) {
+    if (options_.sequence_state_file.empty()) {
+        return;
+    }
+    const std::string temp_path = options_.sequence_state_file + ".tmp";
+    {
+        std::ofstream output(temp_path, std::ios::trunc);
+        if (!output.is_open()) {
+            core::Logger::WarnFmt("ReportHub: failed to open sequence state file '{}'", temp_path);
+            return;
+        }
+        output << sequence << '\n';
+        output.flush();
+    }
+    if (options_.fsync_each_write && !SyncFileToDisk(temp_path)) {
+        core::Logger::WarnFmt("ReportHub: fsync failed for sequence state '{}'", temp_path);
+    }
+
+    std::error_code error;
+    std::filesystem::rename(temp_path, options_.sequence_state_file, error);
+    if (error) {
+        std::filesystem::remove(options_.sequence_state_file, error);
+        error.clear();
+        std::filesystem::rename(temp_path, options_.sequence_state_file, error);
+    }
+    if (error) {
+        core::Logger::WarnFmt("ReportHub: failed to persist sequence state '{}': {}",
+                              options_.sequence_state_file, error.message());
+    }
+}
+
+std::uint64_t ReportHub::LoadSequenceState() const {
+    if (options_.sequence_state_file.empty()) {
+        return 0;
+    }
+    std::ifstream input(options_.sequence_state_file);
+    if (!input.is_open()) {
+        return 0;
+    }
+    std::string value;
+    std::getline(input, value);
+    return ParseSequenceStateValue(value);
+}
+
+std::uint64_t ReportHub::LoadMaxSequenceFromLogs() const {
+    std::uint64_t max_sequence = 0;
+    if (!options_.replay_from_log || options_.report_log_file.empty()) {
+        return max_sequence;
+    }
+
+    for (const std::string& path : ReportLogReadPaths()) {
+        std::ifstream input(path);
+        if (!input.is_open()) {
+            continue;
+        }
+        std::string line;
+        while (std::getline(input, line)) {
+            swarmkit::v1::AgentReport report;
+            if (ParseReportJson(line, &report)) {
+                max_sequence = std::max(max_sequence, report.sequence());
+            }
+        }
+    }
+    return max_sequence;
+}
+
+std::vector<std::string> ReportHub::ReportLogReadPaths() const {
+    std::vector<std::string> paths;
+    if (options_.report_log_file.empty()) {
+        return paths;
+    }
+    std::error_code error;
+    for (int index = options_.max_log_files; index >= 1; --index) {
+        const std::string rotated_path = RotatedLogPath(options_.report_log_file, index);
+        if (std::filesystem::exists(rotated_path, error)) {
+            paths.push_back(rotated_path);
+        }
+        error.clear();
+    }
+    if (std::filesystem::exists(options_.report_log_file, error)) {
+        paths.push_back(options_.report_log_file);
+    }
+    return paths;
 }
 
 bool ReportHub::Matches(const Watcher& watcher, const swarmkit::v1::AgentReport& report) {

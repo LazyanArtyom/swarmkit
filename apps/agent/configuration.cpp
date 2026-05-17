@@ -148,8 +148,7 @@ void PopulateMavlinkFactoryOptions(const swarmkit::agent::MavlinkBackendConfig& 
     PutOption(options, "peer_discovery_timeout_ms",
               std::to_string(mavlink.peer_discovery_timeout_ms));
     PutOption(options, "command_ack_timeout_ms", std::to_string(mavlink.command_ack_timeout_ms));
-    PutOption(options, "set_guided_before_arm",
-              mavlink.set_guided_before_arm ? "true" : "false");
+    PutOption(options, "set_guided_before_arm", mavlink.set_guided_before_arm ? "true" : "false");
     PutOption(options, "set_guided_before_takeoff",
               mavlink.set_guided_before_takeoff ? "true" : "false");
     PutOption(options, "guided_mode", std::to_string(mavlink.guided_mode));
@@ -240,7 +239,12 @@ void ReadBackendOptionsYaml(const YAML::Node& node,
     }
     if (const std::string report_log_file = common::GetOptionValue(argc, argv, "--report-log-file");
         !report_log_file.empty()) {
-        agent_cfg.report_log_file = report_log_file;
+        agent_cfg.reports.log_file = report_log_file;
+    }
+    if (const std::string sequence_state_file =
+            common::GetOptionValue(argc, argv, "--report-sequence-state-file");
+        !sequence_state_file.empty()) {
+        agent_cfg.reports.sequence_state_file = sequence_state_file;
     }
     if (const std::string kRootCaCert = common::GetOptionValue(argc, argv, "--ca-cert");
         !kRootCaCert.empty()) {

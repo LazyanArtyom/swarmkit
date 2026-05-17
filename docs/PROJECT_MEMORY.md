@@ -77,7 +77,9 @@ Current development setup:
 - MAVLink health decoding now feeds real validation policy:
   - GPS fix type, visible satellites, HDOP, relative altitude, landed state, EKF status, and failsafe-ish indicators are decoded when present.
   - Agent-side preconditions treat idempotent command states cleanly, including already armed, already airborne for takeoff, already landed for land, and safe disarm checks before normal disarm.
-- Agent reports can be persisted as JSONL through `report_log_file` or `--report-log-file`, while the CLI remains a client-side reference sink through `--report-file`.
+- Agent reports can be persisted as rotated JSONL through `report_log_file`,
+  `report_persistence.log_file`, or `--report-log-file`; the agent persists report sequence
+  state so clients can reconnect with `after_sequence` and replay retained reports.
 - Vehicle profile configuration is becoming the source of real-drone policy, including cruise/climb/descent limits, altitude limits, tracking tolerance, battery reserve, GPS fix/satellite/HDOP requirements, and takeoff/land timeout margins.
 
 ## MAVLink Configs
