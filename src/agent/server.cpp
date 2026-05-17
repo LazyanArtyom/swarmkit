@@ -97,6 +97,158 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     };
 }
 
+[[nodiscard]] swarmkit::v1::TelemetryCoordinateFrame ToProtoCoordinateFrame(
+    core::CoordinateFrame frame) {
+    switch (frame) {
+        case core::CoordinateFrame::kWgs84:
+            return swarmkit::v1::TELEMETRY_COORDINATE_FRAME_WGS84;
+        case core::CoordinateFrame::kLocalNed:
+            return swarmkit::v1::TELEMETRY_COORDINATE_FRAME_LOCAL_NED;
+        case core::CoordinateFrame::kBodyNed:
+            return swarmkit::v1::TELEMETRY_COORDINATE_FRAME_BODY_NED;
+        case core::CoordinateFrame::kUnknown:
+        default:
+            return swarmkit::v1::TELEMETRY_COORDINATE_FRAME_UNSPECIFIED;
+    }
+}
+
+[[nodiscard]] swarmkit::v1::TelemetryGpsQuality ToProtoGpsQuality(core::GpsQuality quality) {
+    switch (quality) {
+        case core::GpsQuality::kNoFix:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_NO_FIX;
+        case core::GpsQuality::kFix2D:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_2D_FIX;
+        case core::GpsQuality::kFix3D:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_3D_FIX;
+        case core::GpsQuality::kDgps:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_DGPS;
+        case core::GpsQuality::kRtkFloat:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_RTK_FLOAT;
+        case core::GpsQuality::kRtkFixed:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_RTK_FIXED;
+        case core::GpsQuality::kStatic:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_STATIC;
+        case core::GpsQuality::kPpp:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_PPP;
+        case core::GpsQuality::kUnknown:
+        default:
+            return swarmkit::v1::TELEMETRY_GPS_QUALITY_UNSPECIFIED;
+    }
+}
+
+[[nodiscard]] swarmkit::v1::TelemetryEstimatorState ToProtoEstimatorState(
+    core::EstimatorState state) {
+    switch (state) {
+        case core::EstimatorState::kInitializing:
+            return swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_INITIALIZING;
+        case core::EstimatorState::kHealthy:
+            return swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_HEALTHY;
+        case core::EstimatorState::kDegraded:
+            return swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_DEGRADED;
+        case core::EstimatorState::kFault:
+            return swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_FAULT;
+        case core::EstimatorState::kUnknown:
+        default:
+            return swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_UNSPECIFIED;
+    }
+}
+
+void PopulateTelemetryProto(const core::TelemetryFrame& frame,
+                            swarmkit::v1::TelemetryFrame* out) {
+    if (out == nullptr) {
+        return;
+    }
+    out->set_drone_id(frame.drone_id);
+    out->set_unix_time_ms(frame.unix_time_ms);
+    out->set_lat_deg(frame.lat_deg);
+    out->set_lon_deg(frame.lon_deg);
+    out->set_rel_alt_m(frame.rel_alt_m);
+    out->set_abs_alt_m(frame.abs_alt_m);
+    out->set_vx_mps(frame.vx_mps);
+    out->set_vy_mps(frame.vy_mps);
+    out->set_vz_mps(frame.vz_mps);
+    out->set_roll_deg(frame.roll_deg);
+    out->set_pitch_deg(frame.pitch_deg);
+    out->set_yaw_deg(frame.yaw_deg);
+    out->set_battery_percent(frame.battery_percent);
+    out->set_mode(frame.mode);
+    out->set_armed(frame.armed);
+    out->set_landed(frame.landed);
+    out->set_failsafe(frame.failsafe);
+    out->set_ekf_ok(frame.ekf_ok);
+    out->set_gps_fix_type(frame.gps_fix_type);
+    out->set_satellites_visible(frame.satellites_visible);
+    out->set_gps_hdop(frame.gps_hdop);
+    out->set_link_quality_percent(frame.link_quality_percent);
+    out->set_source_unix_time_ms(frame.source_unix_time_ms);
+    out->set_source_time_boot_ms(frame.source_time_boot_ms);
+    out->set_position_frame(ToProtoCoordinateFrame(frame.position_frame));
+    out->set_velocity_frame(ToProtoCoordinateFrame(frame.velocity_frame));
+
+    auto* validity = out->mutable_validity();
+    validity->set_position(frame.validity.position);
+    validity->set_relative_altitude(frame.validity.relative_altitude);
+    validity->set_absolute_altitude(frame.validity.absolute_altitude);
+    validity->set_velocity(frame.validity.velocity);
+    validity->set_attitude(frame.validity.attitude);
+    validity->set_battery(frame.validity.battery);
+    validity->set_mode(frame.validity.mode);
+    validity->set_armed(frame.validity.armed);
+    validity->set_landed(frame.validity.landed);
+    validity->set_failsafe(frame.validity.failsafe);
+    validity->set_gps(frame.validity.gps);
+    validity->set_gps_hdop(frame.validity.gps_hdop);
+    validity->set_link_quality(frame.validity.link_quality);
+    validity->set_estimator(frame.validity.estimator);
+    validity->set_home_origin(frame.validity.home_origin);
+
+    auto* accuracy = out->mutable_accuracy();
+    accuracy->set_horizontal_position_valid(frame.accuracy.horizontal_position_valid);
+    accuracy->set_horizontal_position_m(frame.accuracy.horizontal_position_m);
+    accuracy->set_vertical_position_valid(frame.accuracy.vertical_position_valid);
+    accuracy->set_vertical_position_m(frame.accuracy.vertical_position_m);
+    accuracy->set_velocity_valid(frame.accuracy.velocity_valid);
+    accuracy->set_velocity_mps(frame.accuracy.velocity_mps);
+    accuracy->set_heading_valid(frame.accuracy.heading_valid);
+    accuracy->set_heading_deg(frame.accuracy.heading_deg);
+    accuracy->set_attitude_valid(frame.accuracy.attitude_valid);
+    accuracy->set_attitude_deg(frame.accuracy.attitude_deg);
+    accuracy->set_position_covariance_valid(frame.accuracy.position_covariance_valid);
+    if (frame.accuracy.position_covariance_valid) {
+        for (float value : frame.accuracy.position_covariance) {
+            accuracy->add_position_covariance(value);
+        }
+    }
+    accuracy->set_velocity_covariance_valid(frame.accuracy.velocity_covariance_valid);
+    if (frame.accuracy.velocity_covariance_valid) {
+        for (float value : frame.accuracy.velocity_covariance) {
+            accuracy->add_velocity_covariance(value);
+        }
+    }
+
+    if (frame.validity.home_origin) {
+        auto* home = out->mutable_home_origin();
+        home->set_frame(ToProtoCoordinateFrame(frame.home_origin.frame));
+        home->set_lat_deg(frame.home_origin.lat_deg);
+        home->set_lon_deg(frame.home_origin.lon_deg);
+        home->set_alt_m(frame.home_origin.alt_m);
+        home->set_north_m(frame.home_origin.north_m);
+        home->set_east_m(frame.home_origin.east_m);
+        home->set_down_m(frame.home_origin.down_m);
+    }
+
+    out->set_gps_quality(ToProtoGpsQuality(frame.gps_quality));
+    out->set_estimator_state(ToProtoEstimatorState(frame.estimator_state));
+    out->set_estimator_flags(frame.estimator_flags);
+    out->set_estimator_position_ok(frame.estimator_position_ok);
+    out->set_estimator_velocity_ok(frame.estimator_velocity_ok);
+    out->set_estimator_attitude_ok(frame.estimator_attitude_ok);
+    out->set_active_command_id(frame.active_command_id);
+    out->set_active_goal_id(frame.active_goal_id);
+    out->set_active_execution_id(frame.active_execution_id);
+    out->set_correlation_id(frame.correlation_id);
+}
+
 /// @}
 
 /// @name Correlation ID resolution
@@ -1491,30 +1643,16 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 continue;
             }
 
+            if (frame.active_goal_id.empty()) {
+                const auto active_goal = goals_.GetGoal(frame.drone_id, nullptr);
+                if (active_goal.has_value()) {
+                    frame.active_goal_id = active_goal->first.goal_id();
+                }
+            }
+
             swarmkit::v1::TelemetryFrame out;
-            out.set_drone_id(frame.drone_id);
-            out.set_unix_time_ms(frame.unix_time_ms);
-            out.set_lat_deg(frame.lat_deg);
-            out.set_lon_deg(frame.lon_deg);
-            out.set_rel_alt_m(frame.rel_alt_m);
-            out.set_abs_alt_m(frame.abs_alt_m);
-            out.set_vx_mps(frame.vx_mps);
-            out.set_vy_mps(frame.vy_mps);
-            out.set_vz_mps(frame.vz_mps);
-            out.set_roll_deg(frame.roll_deg);
-            out.set_pitch_deg(frame.pitch_deg);
-            out.set_yaw_deg(frame.yaw_deg);
-            out.set_battery_percent(frame.battery_percent);
-            out.set_mode(frame.mode);
+            PopulateTelemetryProto(frame, &out);
             out.set_stream_id(kStreamId);
-            out.set_armed(frame.armed);
-            out.set_landed(frame.landed);
-            out.set_failsafe(frame.failsafe);
-            out.set_ekf_ok(frame.ekf_ok);
-            out.set_gps_fix_type(frame.gps_fix_type);
-            out.set_satellites_visible(frame.satellites_visible);
-            out.set_gps_hdop(frame.gps_hdop);
-            out.set_link_quality_percent(frame.link_quality_percent);
 
             if (!writer->Write(out)) {
                 break;

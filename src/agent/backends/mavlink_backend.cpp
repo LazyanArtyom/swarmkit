@@ -316,6 +316,8 @@ class MavlinkBackend final : public IDroneBackend {
         core::TelemetryFrame frame;
         frame.drone_id = drone_id;
         frame.unix_time_ms = mav::NowUnixMs();
+        frame.source_unix_time_ms = cache.source_unix_time_ms;
+        frame.source_time_boot_ms = cache.source_time_boot_ms;
         frame.lat_deg = cache.lat_deg;
         frame.lon_deg = cache.lon_deg;
         frame.rel_alt_m = cache.rel_alt_m;
@@ -335,6 +337,17 @@ class MavlinkBackend final : public IDroneBackend {
         frame.satellites_visible = cache.satellites_visible;
         frame.gps_hdop = cache.gps_hdop;
         frame.link_quality_percent = cache.link_quality_percent;
+        frame.position_frame = cache.position_frame;
+        frame.velocity_frame = cache.velocity_frame;
+        frame.validity = cache.validity;
+        frame.accuracy = cache.accuracy;
+        frame.home_origin = cache.home_origin;
+        frame.gps_quality = cache.gps_quality;
+        frame.estimator_state = cache.estimator_state;
+        frame.estimator_flags = cache.estimator_flags;
+        frame.estimator_position_ok = cache.estimator_position_ok;
+        frame.estimator_velocity_ok = cache.estimator_velocity_ok;
+        frame.estimator_attitude_ok = cache.estimator_attitude_ok;
         frame.mode = cache.mode;
         callback(frame);
     }
@@ -360,6 +373,7 @@ class MavlinkBackend final : public IDroneBackend {
         request_interval(MAVLINK_MSG_ID_BATTERY_STATUS);
         request_interval(MAVLINK_MSG_ID_GPS_RAW_INT);
         request_interval(MAVLINK_MSG_ID_ATTITUDE);
+        request_interval(MAVLINK_MSG_ID_HOME_POSITION);
     }
 
     [[nodiscard]] core::Result ExecuteFlightCommand(const FlightCmd& flight,

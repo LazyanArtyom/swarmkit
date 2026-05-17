@@ -197,6 +197,11 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv)
     if (condition.wait_heartbeat && frame.unix_time_ms <= 0) {
         return false;
     }
+    if ((condition.alt_min_m.has_value() || condition.alt_max_m.has_value() ||
+         condition.target_alt_m.has_value()) &&
+        !frame.HasRelativeAltitude()) {
+        return false;
+    }
     if (condition.alt_min_m.has_value() && frame.rel_alt_m < *condition.alt_min_m) {
         return false;
     }
@@ -208,8 +213,16 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv)
         return false;
     }
     if (condition.lat_deg.has_value() && condition.lon_deg.has_value() &&
+        !frame.HasPosition()) {
+        return false;
+    }
+    if (condition.lat_deg.has_value() && condition.lon_deg.has_value() &&
         DistanceMeters(frame.lat_deg, frame.lon_deg, *condition.lat_deg, *condition.lon_deg) >
             condition.position_radius_m) {
+        return false;
+    }
+    if (condition.battery_min_percent.has_value() &&
+        !frame.HasBattery()) {
         return false;
     }
     if (condition.battery_min_percent.has_value() &&
@@ -230,7 +243,8 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv)
             return false;
         }
     }
-    if (condition.wait_landed && std::abs(frame.rel_alt_m) > condition.landed_alt_m) {
+    if (condition.wait_landed &&
+        (!frame.HasRelativeAltitude() || std::abs(frame.rel_alt_m) > condition.landed_alt_m)) {
         return false;
     }
     return true;

@@ -902,6 +902,78 @@ message TelemetryRequest {
     int32 rate_hz = 2;  /// 0 => server default.
 }
 
+enum TelemetryCoordinateFrame {
+    TELEMETRY_COORDINATE_FRAME_UNSPECIFIED = 0;
+    TELEMETRY_COORDINATE_FRAME_WGS84 = 1;
+    TELEMETRY_COORDINATE_FRAME_LOCAL_NED = 2;
+    TELEMETRY_COORDINATE_FRAME_BODY_NED = 3;
+}
+
+enum TelemetryGpsQuality {
+    TELEMETRY_GPS_QUALITY_UNSPECIFIED = 0;
+    TELEMETRY_GPS_QUALITY_NO_FIX = 1;
+    TELEMETRY_GPS_QUALITY_2D_FIX = 2;
+    TELEMETRY_GPS_QUALITY_3D_FIX = 3;
+    TELEMETRY_GPS_QUALITY_DGPS = 4;
+    TELEMETRY_GPS_QUALITY_RTK_FLOAT = 5;
+    TELEMETRY_GPS_QUALITY_RTK_FIXED = 6;
+    TELEMETRY_GPS_QUALITY_STATIC = 7;
+    TELEMETRY_GPS_QUALITY_PPP = 8;
+}
+
+enum TelemetryEstimatorState {
+    TELEMETRY_ESTIMATOR_STATE_UNSPECIFIED = 0;
+    TELEMETRY_ESTIMATOR_STATE_INITIALIZING = 1;
+    TELEMETRY_ESTIMATOR_STATE_HEALTHY = 2;
+    TELEMETRY_ESTIMATOR_STATE_DEGRADED = 3;
+    TELEMETRY_ESTIMATOR_STATE_FAULT = 4;
+}
+
+message TelemetryValidityFlags {
+    bool position = 1;
+    bool relative_altitude = 2;
+    bool absolute_altitude = 3;
+    bool velocity = 4;
+    bool attitude = 5;
+    bool battery = 6;
+    bool mode = 7;
+    bool armed = 8;
+    bool landed = 9;
+    bool failsafe = 10;
+    bool gps = 11;
+    bool gps_hdop = 12;
+    bool link_quality = 13;
+    bool estimator = 14;
+    bool home_origin = 15;
+}
+
+message TelemetryAccuracy {
+    bool horizontal_position_valid = 1;
+    float horizontal_position_m = 2;
+    bool vertical_position_valid = 3;
+    float vertical_position_m = 4;
+    bool velocity_valid = 5;
+    float velocity_mps = 6;
+    bool heading_valid = 7;
+    float heading_deg = 8;
+    bool attitude_valid = 9;
+    float attitude_deg = 10;
+    bool position_covariance_valid = 11;
+    repeated float position_covariance = 12;
+    bool velocity_covariance_valid = 13;
+    repeated float velocity_covariance = 14;
+}
+
+message TelemetryHomeOrigin {
+    TelemetryCoordinateFrame frame = 1;
+    double lat_deg = 2;
+    double lon_deg = 3;
+    float alt_m = 4;
+    float north_m = 5;
+    float east_m = 6;
+    float down_m = 7;
+}
+
 message TelemetryFrame {
     string drone_id = 1;
     int64 unix_time_ms = 2;
@@ -926,4 +998,21 @@ message TelemetryFrame {
     int32 satellites_visible = 21;
     float gps_hdop = 22;
     float link_quality_percent = 23;
+    int64 source_unix_time_ms = 24;
+    int64 source_time_boot_ms = 25;
+    TelemetryCoordinateFrame position_frame = 26;
+    TelemetryCoordinateFrame velocity_frame = 27;
+    TelemetryValidityFlags validity = 28;
+    TelemetryAccuracy accuracy = 29;
+    TelemetryHomeOrigin home_origin = 30;
+    TelemetryGpsQuality gps_quality = 31;
+    TelemetryEstimatorState estimator_state = 32;
+    uint32 estimator_flags = 33;
+    bool estimator_position_ok = 34;
+    bool estimator_velocity_ok = 35;
+    bool estimator_attitude_ok = 36;
+    string active_command_id = 37;
+    string active_goal_id = 38;
+    string active_execution_id = 39;
+    string correlation_id = 40;
 }

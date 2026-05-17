@@ -162,7 +162,7 @@ Current implemented capabilities include:
 - MAVLink SITL validation with three ArduCopter instances;
 - command ACK handling;
 - goto fallback from `MAV_CMD_DO_REPOSITION` to `SET_POSITION_TARGET_GLOBAL_INT`;
-- MAVLink GPS, HDOP, relative-altitude, landed-state, EKF, and selected failsafe health decoding;
+- MAVLink GPS quality, HDOP, source timestamp, home-origin, relative-altitude, landed-state, estimator, accuracy, and selected failsafe telemetry decoding with explicit field validity;
 - telemetry subscription;
 - swarm client fanout;
 - verified command helpers in the client SDK;

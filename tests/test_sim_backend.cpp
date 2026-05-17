@@ -7,6 +7,8 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <mutex>
+#include <optional>
 #include <thread>
 
 #include "swarmkit/agent/sim_backend.h"
@@ -24,11 +26,18 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
 
     std::atomic<int> drone_one_frames{0};
     std::atomic<int> drone_two_frames{0};
+    std::mutex frame_mutex;
+    std::optional<core::TelemetryFrame> first_frame;
 
     REQUIRE(backend
                 ->StartTelemetry("drone-1", 5,
-                                 [&drone_one_frames](const core::TelemetryFrame& frame) {
+                                 [&drone_one_frames, &frame_mutex,
+                                  &first_frame](const core::TelemetryFrame& frame) {
                                      if (frame.drone_id == "drone-1") {
+                                         std::lock_guard<std::mutex> lock(frame_mutex);
+                                         if (!first_frame.has_value()) {
+                                             first_frame = frame;
+                                         }
                                          drone_one_frames.fetch_add(1, std::memory_order_relaxed);
                                      }
                                  })
@@ -51,6 +60,19 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
 
     CHECK(drone_one_frames.load(std::memory_order_relaxed) >= 2);
     CHECK(drone_two_frames.load(std::memory_order_relaxed) >= 2);
+    {
+        std::lock_guard<std::mutex> lock(frame_mutex);
+        REQUIRE(first_frame.has_value());
+        CHECK(first_frame->HasPosition());
+        CHECK(first_frame->HasRelativeAltitude());
+        CHECK(first_frame->HasGpsQuality());
+        CHECK(first_frame->position_frame == core::CoordinateFrame::kWgs84);
+        CHECK(first_frame->velocity_frame == core::CoordinateFrame::kLocalNed);
+        CHECK(first_frame->gps_quality == core::GpsQuality::kFix3D);
+        CHECK(first_frame->estimator_state == core::EstimatorState::kHealthy);
+        CHECK(first_frame->accuracy.horizontal_position_valid);
+        CHECK(first_frame->validity.home_origin);
+    }
 
     CHECK(backend->StartTelemetry("drone-1", 5, [](const core::TelemetryFrame&) {}).code ==
           core::StatusCode::kRejected);

@@ -75,7 +75,8 @@ Current development setup:
 - Timed trajectory execution now waits for telemetry to prove final target reach before reporting completion.
 - Validation `ok` now reflects actual error issues.
 - MAVLink health decoding now feeds real validation policy:
-  - GPS fix type, visible satellites, HDOP, relative altitude, landed state, EKF status, and failsafe-ish indicators are decoded when present.
+  - GPS fix type and normalized quality, visible satellites, HDOP, relative altitude, landed state, estimator status, selected accuracy data, source timestamps, home origin, and failsafe-ish indicators are decoded when present.
+  - Telemetry frames now include explicit validity flags so production clients can distinguish real zero values from unknown measurements.
   - Agent-side preconditions treat idempotent command states cleanly, including already armed, already airborne for takeoff, already landed for land, and safe disarm checks before normal disarm.
 - Agent reports can be persisted as rotated JSONL through `report_log_file`,
   `report_persistence.log_file`, or `--report-log-file`; the agent persists report sequence

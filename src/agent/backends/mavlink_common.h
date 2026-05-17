@@ -16,6 +16,7 @@
 
 #include "swarmkit/agent/mavlink_backend.h"
 #include "swarmkit/core/result.h"
+#include "swarmkit/core/telemetry.h"
 
 extern "C" {
 #include "ardupilotmega/mavlink.h"
@@ -38,6 +39,8 @@ inline constexpr int kHeartbeatStaleTimeoutMs = 3000;
 inline constexpr int kTelemetryStaleTimeoutMs = 5000;
 
 struct TelemetryCache {
+    std::int64_t source_unix_time_ms{};
+    std::int64_t source_time_boot_ms{};
     double lat_deg{};
     double lon_deg{};
     float rel_alt_m{};
@@ -57,6 +60,17 @@ struct TelemetryCache {
     int satellites_visible{};
     float gps_hdop{};
     float link_quality_percent{};
+    core::CoordinateFrame position_frame{core::CoordinateFrame::kUnknown};
+    core::CoordinateFrame velocity_frame{core::CoordinateFrame::kUnknown};
+    core::TelemetryValidityFlags validity;
+    core::TelemetryAccuracy accuracy;
+    core::HomeOrigin home_origin;
+    core::GpsQuality gps_quality{core::GpsQuality::kUnknown};
+    core::EstimatorState estimator_state{core::EstimatorState::kUnknown};
+    std::uint32_t estimator_flags{};
+    bool estimator_position_ok{false};
+    bool estimator_velocity_ok{false};
+    bool estimator_attitude_ok{false};
     std::string mode{"MAVLINK"};
 };
 

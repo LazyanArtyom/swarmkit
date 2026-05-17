@@ -91,7 +91,7 @@ struct LocalPointMeters {
         return goal.timeout_ms();
     }
     double travel_seconds = 30.0;
-    if (frame.has_value()) {
+    if (frame.has_value() && frame->HasPosition() && frame->HasRelativeAltitude()) {
         const double distance_m =
             DistanceMeters(frame->lat_deg, frame->lon_deg, goal.target().lat_deg(),
                            goal.target().lon_deg());
@@ -348,6 +348,16 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
                 PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR,
                                   0.0, 0.0, 0.0, timeout_ms, started_ms,
                                   "goal timed out without fresh telemetry", correlation_id);
+                SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_TIMEOUT);
+                break;
+            }
+            continue;
+        }
+        if (!frame.HasPosition() || !frame.HasRelativeAltitude()) {
+            if (NowUnixMs() - started_ms >= timeout_ms) {
+                PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR,
+                                  0.0, 0.0, 0.0, timeout_ms, started_ms,
+                                  "goal timed out without valid position telemetry", correlation_id);
                 SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_TIMEOUT);
                 break;
             }

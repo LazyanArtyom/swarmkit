@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <exception>
 #include <expected>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -130,6 +131,9 @@ void AddIssue(swarmkit::v1::ValidateTrajectoryResult* result,
                                            const swarmkit::v1::TrajectoryPoint& point) {
     if (!point.has_position()) {
         return 0.0;
+    }
+    if (!frame.HasPosition() || !frame.HasRelativeAltitude()) {
+        return std::numeric_limits<double>::infinity();
     }
     const double horizontal_m = DistanceMeters(
         frame.lat_deg, frame.lon_deg, point.position().lat_deg(), point.position().lon_deg());
@@ -284,18 +288,20 @@ swarmkit::v1::ValidateTrajectoryResult TrajectoryExecutionManager::ValidatePlan(
                                               ? policy.min_battery_percent()
                                               : profile.min_battery_percent;
     if (policy.require_gps() &&
-        (!telemetry.has_value() || telemetry->gps_fix_type < profile.min_gps_fix_type ||
+        (!telemetry.has_value() || !telemetry->HasGpsQuality() ||
+         telemetry->gps_fix_type < profile.min_gps_fix_type ||
          telemetry->satellites_visible < profile.min_satellites_visible ||
-         telemetry->gps_hdop <= 0.0F || telemetry->gps_hdop > profile.max_gps_hdop)) {
+         !telemetry->validity.gps_hdop || telemetry->gps_hdop > profile.max_gps_hdop)) {
         AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "health.gps_required",
                  "validation policy requires GPS health within vehicle profile limits");
     }
-    if (policy.require_ekf_ok() && telemetry.has_value() && !telemetry->ekf_ok) {
+    if (policy.require_ekf_ok() &&
+        (!telemetry.has_value() || !telemetry->HasEstimatorState() || !telemetry->ekf_ok)) {
         AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "health.ekf_required",
                  "validation policy requires EKF healthy");
     }
     if (minimum_battery_percent > 0.0F && telemetry.has_value() &&
-        telemetry->battery_percent >= 0.0F &&
+        telemetry->HasBattery() &&
         telemetry->battery_percent < minimum_battery_percent) {
         AddIssue(&result, swarmkit::v1::VALIDATION_ERROR, "battery.min",
                  "battery is below trajectory minimum");
@@ -948,7 +954,7 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
                 if (TelemetryManager::WaitForFrame(lease, &last_sequence, &frame,
                                                    kTelemetryWaitTimeout)) {
                     const double distance =
-                        point.has_position()
+                        point.has_position() && frame.HasPosition()
                             ? DistanceMeters(frame.lat_deg, frame.lon_deg,
                                              point.position().lat_deg(), point.position().lon_deg())
                             : 0.0;

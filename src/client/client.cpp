@@ -99,6 +99,62 @@ constexpr double kEarthRadiusM = 6371000.0;
     }
 }
 
+[[nodiscard]] core::CoordinateFrame ToCoreCoordinateFrame(
+    swarmkit::v1::TelemetryCoordinateFrame frame) {
+    switch (frame) {
+        case swarmkit::v1::TELEMETRY_COORDINATE_FRAME_WGS84:
+            return core::CoordinateFrame::kWgs84;
+        case swarmkit::v1::TELEMETRY_COORDINATE_FRAME_LOCAL_NED:
+            return core::CoordinateFrame::kLocalNed;
+        case swarmkit::v1::TELEMETRY_COORDINATE_FRAME_BODY_NED:
+            return core::CoordinateFrame::kBodyNed;
+        case swarmkit::v1::TELEMETRY_COORDINATE_FRAME_UNSPECIFIED:
+        default:
+            return core::CoordinateFrame::kUnknown;
+    }
+}
+
+[[nodiscard]] core::GpsQuality ToCoreGpsQuality(swarmkit::v1::TelemetryGpsQuality quality) {
+    switch (quality) {
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_NO_FIX:
+            return core::GpsQuality::kNoFix;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_2D_FIX:
+            return core::GpsQuality::kFix2D;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_3D_FIX:
+            return core::GpsQuality::kFix3D;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_DGPS:
+            return core::GpsQuality::kDgps;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_RTK_FLOAT:
+            return core::GpsQuality::kRtkFloat;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_RTK_FIXED:
+            return core::GpsQuality::kRtkFixed;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_STATIC:
+            return core::GpsQuality::kStatic;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_PPP:
+            return core::GpsQuality::kPpp;
+        case swarmkit::v1::TELEMETRY_GPS_QUALITY_UNSPECIFIED:
+        default:
+            return core::GpsQuality::kUnknown;
+    }
+}
+
+[[nodiscard]] core::EstimatorState ToCoreEstimatorState(
+    swarmkit::v1::TelemetryEstimatorState state) {
+    switch (state) {
+        case swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_INITIALIZING:
+            return core::EstimatorState::kInitializing;
+        case swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_HEALTHY:
+            return core::EstimatorState::kHealthy;
+        case swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_DEGRADED:
+            return core::EstimatorState::kDegraded;
+        case swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_FAULT:
+            return core::EstimatorState::kFault;
+        case swarmkit::v1::TELEMETRY_ESTIMATOR_STATE_UNSPECIFIED:
+        default:
+            return core::EstimatorState::kUnknown;
+    }
+}
+
 [[nodiscard]] std::shared_ptr<grpc::ChannelCredentials> MakeChannelCredentials(
     const ClientSecurityConfig& security) {
     const core::TransportSecurityMode mode = security.EffectiveTransportSecurity();
@@ -1037,6 +1093,8 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     core::TelemetryFrame frame;
     frame.drone_id = proto_frame.drone_id();
     frame.unix_time_ms = proto_frame.unix_time_ms();
+    frame.source_unix_time_ms = proto_frame.source_unix_time_ms();
+    frame.source_time_boot_ms = proto_frame.source_time_boot_ms();
     frame.lat_deg = proto_frame.lat_deg();
     frame.lon_deg = proto_frame.lon_deg();
     frame.rel_alt_m = proto_frame.rel_alt_m();
@@ -1057,6 +1115,75 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     frame.satellites_visible = proto_frame.satellites_visible();
     frame.gps_hdop = proto_frame.gps_hdop();
     frame.link_quality_percent = proto_frame.link_quality_percent();
+    frame.position_frame = ToCoreCoordinateFrame(proto_frame.position_frame());
+    frame.velocity_frame = ToCoreCoordinateFrame(proto_frame.velocity_frame());
+    if (proto_frame.has_validity()) {
+        const auto& validity = proto_frame.validity();
+        frame.validity.position = validity.position();
+        frame.validity.relative_altitude = validity.relative_altitude();
+        frame.validity.absolute_altitude = validity.absolute_altitude();
+        frame.validity.velocity = validity.velocity();
+        frame.validity.attitude = validity.attitude();
+        frame.validity.battery = validity.battery();
+        frame.validity.mode = validity.mode();
+        frame.validity.armed = validity.armed();
+        frame.validity.landed = validity.landed();
+        frame.validity.failsafe = validity.failsafe();
+        frame.validity.gps = validity.gps();
+        frame.validity.gps_hdop = validity.gps_hdop();
+        frame.validity.link_quality = validity.link_quality();
+        frame.validity.estimator = validity.estimator();
+        frame.validity.home_origin = validity.home_origin();
+    }
+    if (proto_frame.has_accuracy()) {
+        const auto& accuracy = proto_frame.accuracy();
+        frame.accuracy.horizontal_position_valid = accuracy.horizontal_position_valid();
+        frame.accuracy.horizontal_position_m = accuracy.horizontal_position_m();
+        frame.accuracy.vertical_position_valid = accuracy.vertical_position_valid();
+        frame.accuracy.vertical_position_m = accuracy.vertical_position_m();
+        frame.accuracy.velocity_valid = accuracy.velocity_valid();
+        frame.accuracy.velocity_mps = accuracy.velocity_mps();
+        frame.accuracy.heading_valid = accuracy.heading_valid();
+        frame.accuracy.heading_deg = accuracy.heading_deg();
+        frame.accuracy.attitude_valid = accuracy.attitude_valid();
+        frame.accuracy.attitude_deg = accuracy.attitude_deg();
+        frame.accuracy.position_covariance_valid = accuracy.position_covariance_valid();
+        for (int index = 0;
+             index < accuracy.position_covariance_size() &&
+             index < static_cast<int>(frame.accuracy.position_covariance.size());
+             ++index) {
+            frame.accuracy.position_covariance[static_cast<std::size_t>(index)] =
+                accuracy.position_covariance(index);
+        }
+        frame.accuracy.velocity_covariance_valid = accuracy.velocity_covariance_valid();
+        for (int index = 0;
+             index < accuracy.velocity_covariance_size() &&
+             index < static_cast<int>(frame.accuracy.velocity_covariance.size());
+             ++index) {
+            frame.accuracy.velocity_covariance[static_cast<std::size_t>(index)] =
+                accuracy.velocity_covariance(index);
+        }
+    }
+    if (proto_frame.has_home_origin()) {
+        const auto& home = proto_frame.home_origin();
+        frame.home_origin.frame = ToCoreCoordinateFrame(home.frame());
+        frame.home_origin.lat_deg = home.lat_deg();
+        frame.home_origin.lon_deg = home.lon_deg();
+        frame.home_origin.alt_m = home.alt_m();
+        frame.home_origin.north_m = home.north_m();
+        frame.home_origin.east_m = home.east_m();
+        frame.home_origin.down_m = home.down_m();
+    }
+    frame.gps_quality = ToCoreGpsQuality(proto_frame.gps_quality());
+    frame.estimator_state = ToCoreEstimatorState(proto_frame.estimator_state());
+    frame.estimator_flags = proto_frame.estimator_flags();
+    frame.estimator_position_ok = proto_frame.estimator_position_ok();
+    frame.estimator_velocity_ok = proto_frame.estimator_velocity_ok();
+    frame.estimator_attitude_ok = proto_frame.estimator_attitude_ok();
+    frame.active_command_id = proto_frame.active_command_id();
+    frame.active_goal_id = proto_frame.active_goal_id();
+    frame.active_execution_id = proto_frame.active_execution_id();
+    frame.correlation_id = proto_frame.correlation_id();
     return frame;
 }
 
@@ -2342,7 +2469,8 @@ struct VerificationSpec {
                                     [target_alt = static_cast<float>(takeoff.alt_m),
                                      tolerance = options.altitude_tolerance_m](
                                         const core::TelemetryFrame& frame) {
-                                        return frame.armed && !frame.landed &&
+                                        return frame.HasRelativeAltitude() && frame.armed &&
+                                               !frame.landed &&
                                                frame.rel_alt_m + tolerance >= target_alt;
                                     },
                             };
@@ -2370,7 +2498,8 @@ struct VerificationSpec {
                                 .label = "waypoint",
                                 .telemetry_predicate =
                                     [waypoint, options](const core::TelemetryFrame& frame) {
-                                        return DistanceMetres(frame.lat_deg, frame.lon_deg,
+                                        return frame.HasPosition() && frame.HasRelativeAltitude() &&
+                                               DistanceMetres(frame.lat_deg, frame.lon_deg,
                                                               waypoint.lat_deg, waypoint.lon_deg) <=
                                                    options.position_radius_m &&
                                                std::abs(frame.rel_alt_m -
@@ -2385,7 +2514,8 @@ struct VerificationSpec {
                                 .label = "goto",
                                 .telemetry_predicate =
                                     [go_to, options](const core::TelemetryFrame& frame) {
-                                        return DistanceMetres(frame.lat_deg, frame.lon_deg,
+                                        return frame.HasPosition() && frame.HasRelativeAltitude() &&
+                                               DistanceMetres(frame.lat_deg, frame.lon_deg,
                                                               go_to.lat_deg, go_to.lon_deg) <=
                                                    options.position_radius_m &&
                                                std::abs(frame.rel_alt_m -

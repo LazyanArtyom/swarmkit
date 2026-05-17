@@ -118,6 +118,8 @@ Telemetry streams provide continuous vehicle state such as:
 - GPS and health fields when available;
 - failsafe and EKF indicators when decoded by the backend.
 
+Telemetry fields use explicit validity metadata, so a zero value is not treated as a measurement unless the corresponding flag is true. Frames also carry source timestamps, coordinate-frame metadata, home origin when known, normalized GPS quality, estimator state, accuracy/covariance fields, and command/goal/execution linkage fields for monitoring tools and 3D swarm applications.
+
 Reports are typed, event-oriented messages used for higher-level supervision. They are easier for applications to consume than raw telemetry when tracking goal or trajectory execution.
 
 Report categories include:
@@ -202,7 +204,7 @@ The backend handles ArduPilot SITL behavior discovered during real tests. For ex
 
 The agent also performs protocol-independent command precondition checks before forwarding commands to the backend. For example, arming an already armed drone is treated as already satisfied, takeoff is treated as already satisfied when the vehicle is already airborne above the target altitude, landing an already landed vehicle is accepted, and normal disarm is rejected when telemetry indicates the vehicle is still airborne. Emergency force-disarm remains a separate high-authority operation.
 
-MAVLink telemetry decoding populates production-relevant health fields when the vehicle publishes them, including GPS fix type, visible satellites, HDOP, relative altitude, landed state, EKF status, and selected failsafe indicators. These fields are used by validation and command verification policies instead of relying only on generic heartbeat state.
+MAVLink telemetry decoding populates production-relevant health fields when the vehicle publishes them, including GPS fix type and normalized quality, visible satellites, HDOP, relative altitude, source timestamps, home origin, landed state, estimator status, selected accuracy estimates, and selected failsafe indicators. These fields are used by validation and command verification policies instead of relying only on generic heartbeat state.
 
 The same backend is intended to work against both:
 

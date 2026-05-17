@@ -312,6 +312,7 @@ class SimBackend final : public IDroneBackend {
                     frame.drone_id = drone_id;
                     frame.unix_time_ms =
                         duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                    frame.source_unix_time_ms = frame.unix_time_ms;
                     frame.lat_deg = lat_deg;
                     frame.lon_deg = lon_deg;
                     frame.rel_alt_m = alt_m;
@@ -329,6 +330,37 @@ class SimBackend final : public IDroneBackend {
                     frame.satellites_visible = 12;
                     frame.gps_hdop = 0.8F;
                     frame.link_quality_percent = 100.0F;
+                    frame.position_frame = core::CoordinateFrame::kWgs84;
+                    frame.velocity_frame = core::CoordinateFrame::kLocalNed;
+                    frame.validity.position = true;
+                    frame.validity.relative_altitude = true;
+                    frame.validity.absolute_altitude = true;
+                    frame.validity.velocity = true;
+                    frame.validity.battery = true;
+                    frame.validity.mode = true;
+                    frame.validity.armed = true;
+                    frame.validity.landed = true;
+                    frame.validity.failsafe = true;
+                    frame.validity.gps = true;
+                    frame.validity.gps_hdop = true;
+                    frame.validity.link_quality = true;
+                    frame.validity.estimator = true;
+                    frame.validity.home_origin = true;
+                    frame.accuracy.horizontal_position_valid = true;
+                    frame.accuracy.horizontal_position_m = 0.5F;
+                    frame.accuracy.vertical_position_valid = true;
+                    frame.accuracy.vertical_position_m = 0.8F;
+                    frame.accuracy.velocity_valid = true;
+                    frame.accuracy.velocity_mps = 0.1F;
+                    frame.gps_quality = core::GpsQuality::kFix3D;
+                    frame.estimator_state = core::EstimatorState::kHealthy;
+                    frame.estimator_position_ok = true;
+                    frame.estimator_velocity_ok = true;
+                    frame.estimator_attitude_ok = true;
+                    frame.home_origin.frame = core::CoordinateFrame::kWgs84;
+                    frame.home_origin.lat_deg = kInitialLatDeg;
+                    frame.home_origin.lon_deg = kInitialLonDeg;
+                    frame.home_origin.alt_m = 0.0F;
 
                     callback(frame);
 
@@ -404,7 +436,9 @@ class SimBackend final : public IDroneBackend {
                 {"waypoint", "takeoff", "land", "loiter", "delay", "action", "payload_action"},
             .supported_payloads = {"camera", "gimbal", "servo", "relay", "gripper"},
             .supported_telemetry_fields =
-                {"position", "altitude", "velocity", "battery", "mode", "gps", "health"},
+                {"position", "altitude", "velocity", "battery", "mode", "gps", "health",
+                 "validity", "source_time", "coordinate_frame", "home_origin", "accuracy",
+                 "estimator", "linkage"},
             .backend_command_names = {"sim.echo"},
             .supported_payload_action_namespaces = {"sim", "led", "camera", "gimbal"},
             .supported_payload_action_names = {"echo", "set-color", "photo", "point"},

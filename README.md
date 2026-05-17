@@ -11,6 +11,11 @@ future companion-computer deployments, the agent can also use the official
 MAVLink C headers vendored under `third_party/mavlink_c_library_v2` and talk
 directly to MAVLink UDP traffic.
 
+Telemetry is exposed as a typed vehicle-state model with explicit validity
+flags, source timestamps, coordinate-frame metadata, home origin, GPS quality,
+estimator state, accuracy fields, and command/goal linkage for monitoring and
+3D swarm applications.
+
 ---
 
 ## Prerequisites

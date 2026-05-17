@@ -500,8 +500,8 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    telemetry_file << "timestamp_ms,drone_id,lat_deg,lon_deg,rel_alt_m,"
-                      "battery_pct,mode\n";
+    telemetry_file << "timestamp_ms,source_timestamp_ms,drone_id,lat_deg,lon_deg,rel_alt_m,"
+                      "battery_pct,mode,gps_fix_type,gps_hdop,estimator_state\n";
     telemetry_file.flush();
 
     std::cout << "SwarmKit Test Server -- kOverride priority (20)\n"
@@ -521,10 +521,26 @@ int main(int argc, char** argv) {
         kTelemetryRateHz,
         [&file_mutex, &telemetry_file](const cor::TelemetryFrame& frame) {
             std::lock_guard<std::mutex> lock(file_mutex);
-            telemetry_file << frame.unix_time_ms << "," << frame.drone_id << "," << std::fixed
-                           << std::setprecision(kCsvCoordPrecision) << frame.lat_deg << ","
-                           << frame.lon_deg << "," << std::setprecision(kCsvValuePrecision)
-                           << frame.rel_alt_m << "," << frame.battery_percent << "," << frame.mode
+            const auto field = [](bool valid, const auto& value) {
+                std::ostringstream out;
+                if (valid) {
+                    out << value;
+                }
+                return out.str();
+            };
+            telemetry_file << frame.unix_time_ms << "," << frame.source_unix_time_ms << ","
+                           << frame.drone_id << "," << std::fixed
+                           << std::setprecision(kCsvCoordPrecision)
+                           << field(frame.validity.position, frame.lat_deg) << ","
+                           << field(frame.validity.position, frame.lon_deg) << ","
+                           << std::setprecision(kCsvValuePrecision)
+                           << field(frame.validity.relative_altitude, frame.rel_alt_m) << ","
+                           << field(frame.validity.battery, frame.battery_percent) << ","
+                           << (frame.validity.mode ? frame.mode : "") << ","
+                           << field(frame.validity.gps, frame.gps_fix_type) << ","
+                           << field(frame.validity.gps_hdop, frame.gps_hdop) << ","
+                           << field(frame.validity.estimator,
+                                    static_cast<int>(frame.estimator_state))
                            << "\n";
             telemetry_file.flush();
         },

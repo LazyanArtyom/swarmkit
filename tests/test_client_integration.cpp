@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -120,6 +121,9 @@ TEST_CASE("Client verified command helpers use agent health and telemetry",
         frame.armed = true;
         frame.landed = false;
         frame.rel_alt_m = 5.1F;
+        frame.validity.armed = true;
+        frame.validity.landed = true;
+        frame.validity.relative_altitude = true;
         while (!done.load(std::memory_order_relaxed)) {
             harness.Backend().EmitTelemetry("drone-1", frame);
             std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -257,9 +261,13 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
     Client client = MakeClient(harness.Address());
 
     std::atomic<int> frame_count{0};
+    std::mutex received_mutex;
+    std::optional<core::TelemetryFrame> received_frame;
     auto telemetry_stream = client.StartTelemetry(
         {.drone_id = "drone-1", .rate_hertz = 5}, [&](const core::TelemetryFrame& frame) {
             if (frame.drone_id == "drone-1") {
+                std::lock_guard<std::mutex> lock(received_mutex);
+                received_frame = frame;
                 frame_count.fetch_add(1, std::memory_order_relaxed);
             }
         });
@@ -276,6 +284,21 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
     frame.rel_alt_m = 10.0F;
     frame.battery_percent = 80.0F;
     frame.mode = "guided";
+    frame.validity.position = true;
+    frame.validity.relative_altitude = true;
+    frame.validity.battery = true;
+    frame.validity.mode = true;
+    frame.source_unix_time_ms = 100;
+    frame.position_frame = core::CoordinateFrame::kWgs84;
+    frame.velocity_frame = core::CoordinateFrame::kLocalNed;
+    frame.gps_quality = core::GpsQuality::kFix3D;
+    frame.validity.gps = true;
+    frame.accuracy.horizontal_position_valid = true;
+    frame.accuracy.horizontal_position_m = 1.5F;
+    frame.estimator_state = core::EstimatorState::kHealthy;
+    frame.validity.estimator = true;
+    frame.active_goal_id = "goal-123";
+    frame.correlation_id = "corr-123";
 
     REQUIRE(testsupport::WaitUntil(
         [&] {
@@ -283,6 +306,19 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
             return frame_count.load(std::memory_order_relaxed) >= 1;
         },
         kWaitTimeout, std::chrono::milliseconds{50}));
+    {
+        std::lock_guard<std::mutex> lock(received_mutex);
+        REQUIRE(received_frame.has_value());
+        CHECK(received_frame->HasPosition());
+        CHECK(received_frame->source_unix_time_ms == 100);
+        CHECK(received_frame->position_frame == core::CoordinateFrame::kWgs84);
+        CHECK(received_frame->gps_quality == core::GpsQuality::kFix3D);
+        CHECK(received_frame->accuracy.horizontal_position_valid);
+        CHECK(received_frame->accuracy.horizontal_position_m == 1.5F);
+        CHECK(received_frame->estimator_state == core::EstimatorState::kHealthy);
+        CHECK(received_frame->active_goal_id == "goal-123");
+        CHECK(received_frame->correlation_id == "corr-123");
+    }
 
     telemetry_stream->Stop();
     REQUIRE(testsupport::WaitUntil([&] { return !harness.Backend().HasTelemetryStream("drone-1"); },
@@ -377,6 +413,10 @@ TEST_CASE("Client active goal emits active and reached reports", "[client][integ
     frame.rel_alt_m = 10.0F;
     frame.battery_percent = 80.0F;
     frame.mode = "guided";
+    frame.validity.position = true;
+    frame.validity.relative_altitude = true;
+    frame.validity.battery = true;
+    frame.validity.mode = true;
 
     REQUIRE(testsupport::WaitUntil(
         [&] {
