@@ -8,6 +8,7 @@ add_executable(swarmkit_tests
     test_arbiter.cpp
     test_basic.cpp
     test_client_integration.cpp
+    test_command_preconditions.cpp
     test_config.cpp
     test_logger.cpp
     test_report_hub.cpp

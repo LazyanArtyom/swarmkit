@@ -1,0 +1,70 @@
+// Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+//
+// This file is part of SwarmKit.
+// See LICENSE.md in the repository root for full license terms.
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <string>
+
+#include "../src/agent/command_preconditions.h"
+
+namespace swarmkit::agent {
+namespace {
+
+[[nodiscard]] CommandEnvelope LandEnvelope() {
+    CommandEnvelope envelope;
+    envelope.context.drone_id = "drone-1";
+    envelope.context.client_id = "test-client";
+    envelope.command = commands::FlightCmd{commands::CmdLand{}};
+    return envelope;
+}
+
+[[nodiscard]] BackendHealth HealthWithVehicleState() {
+    BackendHealth health;
+    health.ready = true;
+    health.last_heartbeat_unix_ms = 1;
+    health.last_telemetry_unix_ms = 1;
+    return health;
+}
+
+TEST_CASE("Land precondition only skips command when disarmed near ground",
+          "[agent][commands][preconditions]") {
+    const CommandEnvelope envelope = LandEnvelope();
+
+    BackendHealth landed_but_armed = HealthWithVehicleState();
+    landed_but_armed.armed = true;
+    landed_but_armed.landed = true;
+    landed_but_armed.has_relative_altitude = true;
+    landed_but_armed.relative_alt_m = 0.1F;
+    CHECK(EvaluateCommandPreconditions(envelope, landed_but_armed).action ==
+          CommandPreconditionAction::kExecute);
+
+    BackendHealth disarmed_without_altitude = HealthWithVehicleState();
+    disarmed_without_altitude.armed = false;
+    disarmed_without_altitude.landed = true;
+    CHECK(EvaluateCommandPreconditions(envelope, disarmed_without_altitude).action ==
+          CommandPreconditionAction::kExecute);
+
+    BackendHealth disarmed_high = HealthWithVehicleState();
+    disarmed_high.armed = false;
+    disarmed_high.landed = true;
+    disarmed_high.has_relative_altitude = true;
+    disarmed_high.relative_alt_m = 8.0F;
+    CHECK(EvaluateCommandPreconditions(envelope, disarmed_high).action ==
+          CommandPreconditionAction::kExecute);
+
+    BackendHealth disarmed_near_ground = HealthWithVehicleState();
+    disarmed_near_ground.armed = false;
+    disarmed_near_ground.landed = true;
+    disarmed_near_ground.has_relative_altitude = true;
+    disarmed_near_ground.relative_alt_m = 0.2F;
+    const CommandPreconditionDecision decision =
+        EvaluateCommandPreconditions(envelope, disarmed_near_ground);
+    CHECK(decision.action == CommandPreconditionAction::kAlreadySatisfied);
+    CHECK(decision.result.message.find("relative altitude is near ground") != std::string::npos);
+}
+
+}  // namespace
+}  // namespace swarmkit::agent

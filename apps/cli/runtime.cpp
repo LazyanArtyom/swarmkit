@@ -74,6 +74,8 @@ struct SwarmResultSummary {
     int failed{0};
 };
 
+constexpr std::int64_t kSwarmHealthStaleAfterMs = 5000;
+
 struct WaitCondition {
     std::optional<float> alt_min_m;
     std::optional<float> alt_max_m;
@@ -522,6 +524,50 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
     std::ostringstream out;
     out << *value;
     return out.str();
+}
+
+[[nodiscard]] const char* BoolText(bool value) {
+    return value ? "true" : "false";
+}
+
+[[nodiscard]] bool IsStaleTimestamp(std::int64_t timestamp_ms, std::int64_t now_ms) {
+    return timestamp_ms <= 0 || now_ms - timestamp_ms > kSwarmHealthStaleAfterMs;
+}
+
+[[nodiscard]] std::string TimestampAgeMsText(std::int64_t timestamp_ms, std::int64_t now_ms) {
+    if (timestamp_ms <= 0) {
+        return "unknown";
+    }
+    return std::to_string(std::max<std::int64_t>(0, now_ms - timestamp_ms));
+}
+
+[[nodiscard]] std::string SwarmHealthReason(const swarmkit::client::HealthStatus& status,
+                                            bool heartbeat_stale, bool telemetry_stale) {
+    if (!status.ok) {
+        if (!status.message.empty()) {
+            return status.message;
+        }
+        return status.error.user_message;
+    }
+    if (!status.ready) {
+        return status.message.empty() ? "agent not ready" : status.message;
+    }
+    if (status.failsafe) {
+        return "failsafe active";
+    }
+    if (!status.ekf_ok) {
+        return "EKF unhealthy";
+    }
+    if (!status.gps_ok) {
+        return "GPS unhealthy";
+    }
+    if (heartbeat_stale) {
+        return "heartbeat stale";
+    }
+    if (telemetry_stale) {
+        return "telemetry stale";
+    }
+    return {};
 }
 
 [[nodiscard]] SwarmResultPolicy ParseSwarmResultPolicy(int argc, char** argv) {
@@ -1661,17 +1707,35 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
 
 int RunSwarmHealth(const SwarmRuntime& runtime) {
     bool all_ok = true;
+    const std::int64_t now_ms = NowUnixMs();
     for (const auto& drone_id : runtime.drone_ids) {
         const auto status = runtime.client->GetHealth(drone_id);
-        all_ok = all_ok && status.ok;
+        const bool heartbeat_stale =
+            status.ok && IsStaleTimestamp(status.last_heartbeat_unix_ms, now_ms);
+        const bool telemetry_stale =
+            status.ok && IsStaleTimestamp(status.last_telemetry_unix_ms, now_ms);
+        const std::string reason = SwarmHealthReason(status, heartbeat_stale, telemetry_stale);
+        const bool healthy = status.ok && status.ready && !status.failsafe && status.gps_ok &&
+                             status.ekf_ok && !heartbeat_stale && !telemetry_stale;
+        all_ok = all_ok && healthy;
         std::cout << drone_id << ": " << (status.ok ? "OK" : "FAILED");
         if (status.ok) {
-            std::cout << " ready=" << (status.ready ? "true" : "false")
+            std::cout << " ready=" << BoolText(status.ready) << " backend=" << status.backend_name
+                      << " protocol=" << status.protocol << " armed=" << BoolText(status.armed)
+                      << " landed=" << BoolText(status.landed)
+                      << " failsafe=" << BoolText(status.failsafe)
+                      << " gps=" << BoolText(status.gps_ok) << " ekf=" << BoolText(status.ekf_ok)
+                      << " link_quality=" << OptionalFloatText(status.link_quality_percent)
+                      << " heartbeat_age_ms="
+                      << TimestampAgeMsText(status.last_heartbeat_unix_ms, now_ms)
+                      << " heartbeat_stale=" << BoolText(heartbeat_stale)
+                      << " telemetry_age_ms="
+                      << TimestampAgeMsText(status.last_telemetry_unix_ms, now_ms)
+                      << " telemetry_stale=" << BoolText(telemetry_stale)
                       << " agent_id=" << status.agent_id << " version=" << status.version;
-        } else if (!status.message.empty()) {
-            std::cout << " " << status.message;
-        } else if (!status.error.user_message.empty()) {
-            std::cout << " " << status.error.user_message;
+        }
+        if (!reason.empty()) {
+            std::cout << " reason=" << reason;
         }
         std::cout << "\n";
     }

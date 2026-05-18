@@ -6,6 +6,7 @@
 
 #include "command_preconditions.h"
 
+#include <cmath>
 #include <string>
 #include <variant>
 
@@ -15,6 +16,7 @@ namespace swarmkit::agent {
 namespace {
 
 constexpr float kTakeoffAltitudeToleranceM = 0.5F;
+constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
 
 [[nodiscard]] CommandPreconditionDecision Execute() {
     return {};
@@ -32,6 +34,11 @@ constexpr float kTakeoffAltitudeToleranceM = 0.5F;
 
 [[nodiscard]] bool HasVehicleState(const BackendHealth& health) {
     return health.last_heartbeat_unix_ms != 0 || health.last_telemetry_unix_ms != 0;
+}
+
+[[nodiscard]] bool RelativeAltitudeConfirmsLanded(const BackendHealth& health) {
+    return health.has_relative_altitude &&
+           std::fabs(health.relative_alt_m) <= kLandedRelativeAltitudeToleranceM;
 }
 
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdArm& /*unused*/,
@@ -70,11 +77,9 @@ constexpr float kTakeoffAltitudeToleranceM = 0.5F;
 
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdLand& /*unused*/,
                                                                 const BackendHealth& health) {
-    if (!health.armed) {
-        return AlreadySatisfied("land already satisfied: vehicle is disarmed");
-    }
-    if (health.landed) {
-        return AlreadySatisfied("land already satisfied: vehicle is already landed");
+    if (!health.armed && RelativeAltitudeConfirmsLanded(health)) {
+        return AlreadySatisfied(
+            "land already satisfied: vehicle is disarmed and relative altitude is near ground");
     }
     return Execute();
 }

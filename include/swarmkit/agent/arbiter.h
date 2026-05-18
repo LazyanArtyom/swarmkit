@@ -129,6 +129,17 @@ class EventQueue {
  */
 class CommandArbiter {
    public:
+    struct GrantResult {
+        core::Result result{core::Result::Success()};
+        bool granted_for_call{false};
+        bool refreshed_existing{false};
+        bool preempted_holder{false};
+
+        [[nodiscard]] bool IsOk() const noexcept {
+            return result.IsOk();
+        }
+    };
+
     CommandArbiter();
     ~CommandArbiter();
 
@@ -153,6 +164,17 @@ class CommandArbiter {
      * @returns Ok if the command may proceed, Rejected otherwise.
      */
     [[nodiscard]] core::Result CheckAndGrant(
+        const CommandContext& context,
+        std::chrono::milliseconds ttl = std::chrono::milliseconds{0});
+
+    /**
+     * @brief Same authority check as CheckAndGrant(), with grant metadata.
+     *
+     * Use this when the caller needs to know whether the call created a
+     * temporary authority grant that should be explicitly released after a
+     * one-shot command completes.
+     */
+    [[nodiscard]] GrantResult CheckAndGrantDetailed(
         const CommandContext& context,
         std::chrono::milliseconds ttl = std::chrono::milliseconds{0});
 

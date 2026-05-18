@@ -1027,6 +1027,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, kAuthResult.message);
         }
 
+        const std::string kCmdName = ProtoCommandName(req->cmd());
+
         if (const core::Result kValidation = ValidateCommandContext(envelope.context);
             !kValidation.IsOk()) {
             if (kValidation.code == core::StatusCode::kFailed) {
@@ -1036,12 +1038,13 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 reply->set_error_code(swarmkit::v1::ERROR_CODE_DEADLINE_EXCEEDED);
                 reply->set_debug_message(kValidation.message);
                 counters_.IncrementCommandFailed();
+                PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_FAILED,
+                                     swarmkit::v1::REPORT_ERROR,
+                                     "command deadline already expired: " + kValidation.message);
                 return grpc::Status::OK;
             }
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, kValidation.message);
         }
-
-        const std::string kCmdName = ProtoCommandName(req->cmd());
 
         auto convert_result = ConvertProtoCommand(req->cmd());
         if (!convert_result.has_value()) {
@@ -1052,6 +1055,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_correlation_id(envelope.context.correlation_id);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
             reply->set_debug_message(error.message);
+            PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_FAILED,
+                                 swarmkit::v1::REPORT_ERROR,
+                                 "invalid command payload: " + error.message);
             return grpc::Status::OK;
         }
         envelope.command = std::move(convert_result.value());
@@ -1065,6 +1071,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             if (kPrecondition.action == CommandPreconditionAction::kAlreadySatisfied) {
                 reply->set_status(swarmkit::v1::CommandReply::OK);
                 reply->set_message(kPrecondition.result.message);
+                PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_ACKED,
+                                     swarmkit::v1::REPORT_INFO, kPrecondition.result.message);
                 core::Logger::InfoFmt(
                     "rpc=SendCommand corr={} agent={} drone={} client={} command={} "
                     "result=already_satisfied detail={}",
@@ -1074,6 +1082,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 counters_.IncrementCommandRejected();
                 reply->set_status(swarmkit::v1::CommandReply::REJECTED);
                 reply->set_message(kPrecondition.result.message);
+                PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_REJECTED,
+                                     swarmkit::v1::REPORT_WARNING, kPrecondition.result.message);
                 core::Logger::WarnFmt(
                     "rpc=SendCommand corr={} agent={} drone={} client={} command={} "
                     "result=precondition_rejected detail={}",
@@ -1093,20 +1103,22 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             }
         }
 
-        const core::Result kArbiterResult = arbiter_.CheckAndGrant(envelope.context, ttl);
-        if (!kArbiterResult.IsOk()) {
+        const CommandArbiter::GrantResult kGrant = arbiter_.CheckAndGrantDetailed(envelope.context, ttl);
+        if (!kGrant.IsOk()) {
             counters_.IncrementCommandRejected();
             core::Logger::WarnFmt(
                 "rpc=SendCommand corr={} agent={} drone={} client={} priority={} peer={} "
                 "result=rejected reason={}",
                 envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
                 envelope.context.client_id, static_cast<int>(envelope.context.priority),
-                ctx->peer(), kArbiterResult.message);
-            reply->set_status(ToProtoStatus(kArbiterResult.code));
-            reply->set_message(kArbiterResult.message);
+                ctx->peer(), kGrant.result.message);
+            reply->set_status(ToProtoStatus(kGrant.result.code));
+            reply->set_message(kGrant.result.message);
             reply->set_correlation_id(envelope.context.correlation_id);
-            reply->set_error_code(ToProtoErrorCode(kArbiterResult.code));
-            reply->set_debug_message(kArbiterResult.message);
+            reply->set_error_code(ToProtoErrorCode(kGrant.result.code));
+            reply->set_debug_message(kGrant.result.message);
+            PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_REJECTED,
+                                 swarmkit::v1::REPORT_WARNING, kGrant.result.message);
             return grpc::Status::OK;
         }
 
@@ -1115,6 +1127,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
             envelope.context.client_id, static_cast<int>(envelope.context.priority), ctx->peer(),
             kCmdName);
+        PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_ACCEPTED,
+                             swarmkit::v1::REPORT_INFO, "authority granted; dispatching to backend");
 
         const core::Result kExecResult = backend_->Execute(envelope);
         reply->set_correlation_id(envelope.context.correlation_id);
@@ -1122,6 +1136,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         if (kExecResult.IsOk()) {
             reply->set_status(swarmkit::v1::CommandReply::OK);
             reply->set_message(kExecResult.message);
+            PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_ACKED,
+                                 swarmkit::v1::REPORT_INFO,
+                                 kExecResult.message.empty() ? "command executed"
+                                                             : kExecResult.message);
         } else {
             counters_.IncrementCommandFailed();
             counters_.IncrementBackendFailures();
@@ -1135,6 +1153,16 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                                                            : kExecResult.message);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_BACKEND_FAILURE);
             reply->set_debug_message(kExecResult.message);
+            PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_FAILED,
+                                 swarmkit::v1::REPORT_ERROR,
+                                 kExecResult.message.empty() ? "command execution failed"
+                                                             : kExecResult.message);
+        }
+        if (kGrant.granted_for_call) {
+            arbiter_.Release(envelope.context.drone_id, envelope.context.client_id);
+            PublishSimpleReport(envelope.context.drone_id, envelope.context.correlation_id,
+                                swarmkit::v1::AUTHORITY_RELEASED, swarmkit::v1::REPORT_INFO,
+                                "one-shot command authority released");
         }
         return grpc::Status::OK;
     }
@@ -1866,6 +1894,17 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         report.set_severity(severity);
         report.set_message(std::string(message));
         reports_.Publish(std::move(report));
+    }
+
+    void PublishCommandReport(const CommandContext& context, std::string_view command_name,
+                              swarmkit::v1::AgentReportType type,
+                              swarmkit::v1::ReportSeverity severity, std::string_view detail) {
+        std::string message = "command=" + std::string(command_name);
+        if (!detail.empty()) {
+            message += " ";
+            message += detail;
+        }
+        PublishSimpleReport(context.drone_id, context.correlation_id, type, severity, message);
     }
 
     void PublishGoalFailure(const swarmkit::v1::ActiveGoal& goal, std::string_view correlation_id,

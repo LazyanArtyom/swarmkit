@@ -85,6 +85,54 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK_FALSE(capabilities.max_altitude_m.has_value());
 }
 
+TEST_CASE("Client command reports are replayable and delivered live", "[client][integration][reports]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    commands::CommandEnvelope envelope;
+    envelope.context.drone_id = "drone-1";
+    envelope.context.client_id = "test-client";
+    envelope.context.priority = commands::CommandPriority::kSupervisor;
+    envelope.command = commands::FlightCmd{commands::CmdSetMode{.mode = "guided"}};
+
+    const CommandResult replayed_command = client.SendCommand(envelope);
+    REQUIRE(replayed_command.ok);
+
+    std::mutex reports_mutex;
+    std::vector<AgentReport> reports;
+    auto reports_stream =
+        client.StartReports({.drone_id = "drone-1", .after_sequence = 0},
+                            [&](const AgentReport& report) {
+                                std::lock_guard<std::mutex> lock(reports_mutex);
+                                reports.push_back(report);
+                            });
+    REQUIRE(reports_stream.has_value());
+
+    const auto has_report = [&](const std::string& correlation_id, AgentReportType type) {
+        std::lock_guard<std::mutex> lock(reports_mutex);
+        return std::ranges::any_of(reports, [&](const AgentReport& report) {
+            return report.correlation_id == correlation_id && report.type == type;
+        });
+    };
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            return has_report(replayed_command.correlation_id, AgentReportType::kCommandAccepted) &&
+                   has_report(replayed_command.correlation_id, AgentReportType::kCommandAcked);
+        },
+        kWaitTimeout));
+
+    envelope.command = commands::FlightCmd{commands::CmdSetMode{.mode = "loiter"}};
+    const CommandResult live_command = client.SendCommand(envelope);
+    REQUIRE(live_command.ok);
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] { return has_report(live_command.correlation_id, AgentReportType::kCommandAcked); },
+        kWaitTimeout));
+
+    reports_stream->Stop();
+}
+
 TEST_CASE("Client verified command helpers use agent health and telemetry",
           "[client][integration][commands]") {
     testsupport::AgentServerHarness harness;
@@ -258,6 +306,31 @@ TEST_CASE("Agent validates already-satisfied commands before granting authority"
     REQUIRE(agent_service->SendCommand(&execute_context, &execute_request, &execute_reply).ok());
     REQUIRE(execute_reply.status() == swarmkit::v1::CommandReply::OK);
     CHECK(backend_ptr->ExecuteCallCount() == 1);
+
+    grpc::ServerContext supervisor_context;
+    swarmkit::v1::CommandRequest supervisor_request;
+    auto* supervisor_ctx = supervisor_request.mutable_ctx();
+    supervisor_ctx->set_drone_id("drone-1");
+    supervisor_ctx->set_client_id("supervisor-client");
+    supervisor_ctx->set_priority(static_cast<std::int32_t>(commands::CommandPriority::kSupervisor));
+    supervisor_request.mutable_cmd()->mutable_set_mode()->set_mode("loiter");
+    swarmkit::v1::CommandReply supervisor_reply;
+    REQUIRE(agent_service->SendCommand(&supervisor_context, &supervisor_request, &supervisor_reply)
+                .ok());
+    REQUIRE(supervisor_reply.status() == swarmkit::v1::CommandReply::OK);
+    CHECK(backend_ptr->ExecuteCallCount() == 2);
+
+    grpc::ServerContext resumed_context;
+    swarmkit::v1::CommandRequest resumed_request;
+    auto* resumed_ctx = resumed_request.mutable_ctx();
+    resumed_ctx->set_drone_id("drone-1");
+    resumed_ctx->set_client_id("operator-client");
+    resumed_ctx->set_priority(static_cast<std::int32_t>(commands::CommandPriority::kOperator));
+    resumed_request.mutable_cmd()->mutable_set_mode()->set_mode("auto");
+    swarmkit::v1::CommandReply resumed_reply;
+    REQUIRE(agent_service->SendCommand(&resumed_context, &resumed_request, &resumed_reply).ok());
+    REQUIRE(resumed_reply.status() == swarmkit::v1::CommandReply::OK);
+    CHECK(backend_ptr->ExecuteCallCount() == 3);
 }
 
 TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",

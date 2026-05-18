@@ -243,8 +243,14 @@ void CommandArbiter::RunExpiryLoop() {
 
 core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
                                            std::chrono::milliseconds ttl) {
+    return CheckAndGrantDetailed(context, ttl).result;
+}
+
+CommandArbiter::GrantResult CommandArbiter::CheckAndGrantDetailed(const CommandContext& context,
+                                                                  std::chrono::milliseconds ttl) {
+    GrantResult grant;
     if (context.priority >= CommandPriority::kEmergency) {
-        return core::Result::Success();
+        return grant;
     }
 
     std::vector<WatcherEntry> watchers_to_notify;
@@ -276,11 +282,13 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
             core::Logger::DebugFmt(
                 "CommandArbiter: '{}' granted authority on drone '{}' (priority={})",
                 context.client_id, context.drone_id, static_cast<int>(context.priority));
+            grant.granted_for_call = true;
         } else if (state.holder->client_id == context.client_id) {
             const auto kZeroPoint = std::chrono::system_clock::time_point{};
             if (ttl.count() > 0 && state.holder->expiry != kZeroPoint) {
                 state.holder->expiry = std::chrono::system_clock::now() + ttl;
             }
+            grant.refreshed_existing = true;
         } else if (context.priority > state.holder->priority) {
             const DroneState::Holder kPreviousHolder = *state.holder;
 
@@ -313,10 +321,14 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
                 "CommandArbiter: '{}' (priority={}) preempted '{}' (priority={}) on drone '{}'",
                 context.client_id, static_cast<int>(context.priority), kPreviousHolder.client_id,
                 static_cast<int>(kPreviousHolder.priority), context.drone_id);
+            grant.granted_for_call = true;
+            grant.preempted_holder = true;
         } else {
-            return core::Result::Rejected("command authority held by '" + state.holder->client_id +
-                                          "' at priority " +
-                                          std::to_string(static_cast<int>(state.holder->priority)));
+            grant.result =
+                core::Result::Rejected("command authority held by '" + state.holder->client_id +
+                                       "' at priority " +
+                                       std::to_string(static_cast<int>(state.holder->priority)));
+            return grant;
         }
 
         watchers_to_notify = state.watchers;
@@ -324,7 +336,7 @@ core::Result CommandArbiter::CheckAndGrant(const CommandContext& context,
     }
 
     NotifyPending(watchers_to_notify, notifications);
-    return core::Result::Success();
+    return grant;
 }
 
 /// @}
