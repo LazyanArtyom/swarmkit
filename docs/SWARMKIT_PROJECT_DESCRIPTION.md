@@ -76,7 +76,7 @@ It supports:
 - local sequence files;
 - trajectory files in YAML, JSONL, and CSV.
 - verified command execution through `--verify` and `--timeout-ms`;
-- swarm command result policies such as `--continue-on-error`, `--require-all`, and `--accept-already-satisfied`.
+- swarm command result policies such as `--continue-on-error` and `--require-all`; already-satisfied replies are treated as successful idempotent outcomes.
 
 The CLI is not intended to replace a full mission planner. Its role is to be a practical reference implementation and smoke-test tool for the SDK.
 

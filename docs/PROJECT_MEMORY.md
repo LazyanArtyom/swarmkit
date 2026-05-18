@@ -32,7 +32,7 @@ Last updated: 2026-05-16
   - `GotoAndWait`
   - `LandAndWait`
   - swarm `BroadcastCommandAndWait`
-- The CLI is a thin reference for those SDK APIs. It supports `--verify`, `--timeout-ms`, and swarm partial-failure policy flags such as `--continue-on-error`, `--require-all`, and `--accept-already-satisfied`.
+- The CLI is a thin reference for those SDK APIs. It supports `--verify`, `--timeout-ms`, and swarm partial-failure policy flags such as `--continue-on-error` and `--require-all`; idempotent already-satisfied replies count as successful outcomes.
 
 ## MAVLink / SITL Goal
 

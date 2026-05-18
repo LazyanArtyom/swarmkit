@@ -64,11 +64,11 @@ struct SwarmRuntime {
 struct SwarmResultPolicy {
     bool continue_on_error{false};
     bool require_all{false};
-    bool accept_already_satisfied{false};
 };
 
 struct SwarmResultSummary {
     int sent{0};
+    int succeeded{0};
     int accepted{0};
     int already_satisfied{0};
     int failed{0};
@@ -528,7 +528,6 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
     return {
         .continue_on_error = common::HasFlag(argc, argv, "--continue-on-error"),
         .require_all = common::HasFlag(argc, argv, "--require-all"),
-        .accept_already_satisfied = common::HasFlag(argc, argv, "--accept-already-satisfied"),
     };
 }
 
@@ -1548,8 +1547,10 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
         static_cast<void>(drone_id);
         if (IsAlreadySatisfied(result)) {
             ++summary.already_satisfied;
+            ++summary.succeeded;
         } else if (result.ok) {
             ++summary.accepted;
+            ++summary.succeeded;
         } else {
             ++summary.failed;
         }
@@ -1562,23 +1563,25 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
     if (summary.sent == 0) {
         return false;
     }
-    const int effective_ok =
-        summary.accepted + (policy.accept_already_satisfied ? summary.already_satisfied : 0);
     if (policy.require_all) {
-        return summary.failed == 0 && effective_ok == summary.sent;
+        return summary.failed == 0 && summary.succeeded == summary.sent;
     }
     if (policy.continue_on_error) {
-        return effective_ok > 0;
+        return summary.succeeded > 0;
     }
-    return summary.failed == 0 &&
-           (summary.already_satisfied == 0 || policy.accept_already_satisfied);
+    return summary.failed == 0 && summary.succeeded == summary.sent;
 }
 
 [[nodiscard]] bool PrintSwarmResults(
     const std::unordered_map<std::string, swarmkit::client::CommandResult>& results,
     const SwarmResultPolicy& policy) {
     for (const auto& [drone_id, result] : results) {
-        std::cout << drone_id << ": " << (result.ok ? "OK" : "FAILED");
+        std::cout << drone_id << ": ";
+        if (IsAlreadySatisfied(result)) {
+            std::cout << "ALREADY_SATISFIED";
+        } else {
+            std::cout << (result.ok ? "OK" : "FAILED");
+        }
         if (!result.message.empty()) {
             std::cout << " " << result.message;
         }
@@ -1588,7 +1591,8 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
         std::cout << "\n";
     }
     const SwarmResultSummary summary = SummarizeSwarmResults(results);
-    std::cout << "summary: sent=" << summary.sent << " accepted=" << summary.accepted
+    std::cout << "summary: sent=" << summary.sent << " succeeded=" << summary.succeeded
+              << " accepted=" << summary.accepted
               << " already_satisfied=" << summary.already_satisfied << " failed=" << summary.failed
               << "\n";
     return SwarmResultAccepted(summary, policy);
@@ -1610,12 +1614,13 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
         std::cout << "\n";
         if (result.ok) {
             ++summary.accepted;
+            ++summary.succeeded;
         } else {
             ++summary.failed;
         }
     }
-    std::cout << "summary: sent=" << summary.sent << " released=" << summary.accepted
-              << " failed=" << summary.failed << "\n";
+    std::cout << "summary: sent=" << summary.sent << " succeeded=" << summary.succeeded
+              << " released=" << summary.accepted << " failed=" << summary.failed << "\n";
     return SwarmResultAccepted(summary, policy);
 }
 
