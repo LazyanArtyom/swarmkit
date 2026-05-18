@@ -289,17 +289,17 @@ class SequenceTelemetryMonitor {
             std::cerr << "Failed to start sequence telemetry: swarm has no registered drones\n";
             return false;
         }
-        bool ok = true;
+        bool all_started = true;
         for (auto& [drone_id, result] : subscriptions) {
             if (!result.has_value()) {
                 std::cerr << "Failed to start sequence telemetry for " << drone_id << ": "
                           << result.error().user_message << "\n";
-                ok = false;
+                all_started = false;
                 continue;
             }
             swarm_subscriptions_.push_back(std::move(*result));
         }
-        if (!ok) {
+        if (!all_started) {
             Stop();
             return false;
         }
@@ -509,9 +509,19 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
 
 [[nodiscard]] bool IsAlreadySatisfied(const swarmkit::client::CommandResult& result) {
     std::string message = result.message;
-    std::ranges::transform(message, message.begin(),
-                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    std::ranges::transform(message, message.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
     return result.ok && message.find("already satisfied") != std::string::npos;
+}
+
+[[nodiscard]] std::string OptionalFloatText(const std::optional<float>& value) {
+    if (!value.has_value()) {
+        return "unknown";
+    }
+    std::ostringstream out;
+    out << *value;
+    return out.str();
 }
 
 [[nodiscard]] SwarmResultPolicy ParseSwarmResultPolicy(int argc, char** argv) {
@@ -1274,7 +1284,8 @@ int RunHealth(Client& client) {
               << "  failsafe               : " << (kStatus.failsafe ? "true" : "false") << "\n"
               << "  gps_ok                 : " << (kStatus.gps_ok ? "true" : "false") << "\n"
               << "  ekf_ok                 : " << (kStatus.ekf_ok ? "true" : "false") << "\n"
-              << "  link_quality_percent   : " << kStatus.link_quality_percent << "\n"
+              << "  link_quality_percent   : "
+              << OptionalFloatText(kStatus.link_quality_percent) << "\n"
               << "  message                : " << kStatus.message << "\n";
     return EXIT_SUCCESS;
 }
@@ -1355,10 +1366,14 @@ int RunCapabilities(Client& client) {
               << (capabilities.supports_payload_scheduling ? "true" : "false") << "\n"
               << "  payload_timing_precision_ms : " << capabilities.payload_timing_precision_ms
               << "\n"
-              << "  max_horizontal_speed_mps    : " << capabilities.max_horizontal_speed_mps << "\n"
-              << "  max_climb_speed_mps         : " << capabilities.max_climb_speed_mps << "\n"
-              << "  max_descent_speed_mps       : " << capabilities.max_descent_speed_mps << "\n"
-              << "  max_altitude_m              : " << capabilities.max_altitude_m << "\n";
+              << "  max_horizontal_speed_mps    : "
+              << OptionalFloatText(capabilities.max_horizontal_speed_mps) << "\n"
+              << "  max_climb_speed_mps         : "
+              << OptionalFloatText(capabilities.max_climb_speed_mps) << "\n"
+              << "  max_descent_speed_mps       : "
+              << OptionalFloatText(capabilities.max_descent_speed_mps) << "\n"
+              << "  max_altitude_m              : "
+              << OptionalFloatText(capabilities.max_altitude_m) << "\n";
     print_list("supported_modes", capabilities.supported_modes);
     print_list("supported_commands", capabilities.supported_commands);
     print_list("supported_mission_items", capabilities.supported_mission_items);

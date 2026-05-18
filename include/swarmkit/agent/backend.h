@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -39,14 +40,14 @@ struct BackendHealth {
     bool ekf_ok{true};
     bool has_relative_altitude{false};
     float relative_alt_m{};
-    float link_quality_percent{};
+    std::optional<float> link_quality_percent;
 };
 
 struct BackendNumericLimits {
-    float max_horizontal_speed_mps{};
-    float max_climb_speed_mps{};
-    float max_descent_speed_mps{};
-    float max_altitude_m{};
+    std::optional<float> max_horizontal_speed_mps;
+    std::optional<float> max_climb_speed_mps;
+    std::optional<float> max_descent_speed_mps;
+    std::optional<float> max_altitude_m;
 };
 
 struct BackendCapabilities {

@@ -886,7 +886,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_failsafe(backend_health.failsafe);
         reply->set_gps_ok(backend_health.gps_ok);
         reply->set_ekf_ok(backend_health.ekf_ok);
-        reply->set_link_quality_percent(backend_health.link_quality_percent);
+        if (backend_health.link_quality_percent.has_value()) {
+            reply->set_link_quality_percent(*backend_health.link_quality_percent);
+        }
         return grpc::Status::OK;
     }
 
@@ -984,10 +986,18 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
         reply->set_payload_timing_precision_ms(capabilities.payload_timing_precision_ms);
         reply->set_supports_payload_scheduling(capabilities.supports_payload_scheduling);
-        reply->set_max_horizontal_speed_mps(capabilities.limits.max_horizontal_speed_mps);
-        reply->set_max_climb_speed_mps(capabilities.limits.max_climb_speed_mps);
-        reply->set_max_descent_speed_mps(capabilities.limits.max_descent_speed_mps);
-        reply->set_max_altitude_m(capabilities.limits.max_altitude_m);
+        if (capabilities.limits.max_horizontal_speed_mps.has_value()) {
+            reply->set_max_horizontal_speed_mps(*capabilities.limits.max_horizontal_speed_mps);
+        }
+        if (capabilities.limits.max_climb_speed_mps.has_value()) {
+            reply->set_max_climb_speed_mps(*capabilities.limits.max_climb_speed_mps);
+        }
+        if (capabilities.limits.max_descent_speed_mps.has_value()) {
+            reply->set_max_descent_speed_mps(*capabilities.limits.max_descent_speed_mps);
+        }
+        if (capabilities.limits.max_altitude_m.has_value()) {
+            reply->set_max_altitude_m(*capabilities.limits.max_altitude_m);
+        }
         return grpc::Status::OK;
     }
 

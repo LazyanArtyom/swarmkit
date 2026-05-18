@@ -23,6 +23,19 @@ constexpr auto kPollInterval = std::chrono::milliseconds{20};
 
 TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent][sim]") {
     auto backend = MakeSimBackend();
+    const BackendHealth health = backend->GetHealth();
+    REQUIRE(health.link_quality_percent.has_value());
+    CHECK(health.link_quality_percent.value_or(0.0F) == 100.0F);
+
+    const BackendCapabilities capabilities = backend->GetCapabilities();
+    REQUIRE(capabilities.limits.max_horizontal_speed_mps.has_value());
+    REQUIRE(capabilities.limits.max_climb_speed_mps.has_value());
+    REQUIRE(capabilities.limits.max_descent_speed_mps.has_value());
+    REQUIRE(capabilities.limits.max_altitude_m.has_value());
+    CHECK(capabilities.limits.max_horizontal_speed_mps.value_or(0.0F) == 10.0F);
+    CHECK(capabilities.limits.max_climb_speed_mps.value_or(0.0F) == 5.0F);
+    CHECK(capabilities.limits.max_descent_speed_mps.value_or(0.0F) == 3.0F);
+    CHECK(capabilities.limits.max_altitude_m.value_or(0.0F) == 120.0F);
 
     std::atomic<int> drone_one_frames{0};
     std::atomic<int> drone_two_frames{0};

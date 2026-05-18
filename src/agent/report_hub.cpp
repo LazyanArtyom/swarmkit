@@ -37,8 +37,8 @@ namespace {
 [[nodiscard]] std::string JsonEscape(std::string_view value) {
     std::string out;
     out.reserve(value.size());
-    for (const char ch : value) {
-        switch (ch) {
+    for (const char character : value) {
+        switch (character) {
             case '"':
                 out += "\\\"";
                 break;
@@ -55,7 +55,7 @@ namespace {
                 out += "\\t";
                 break;
             default:
-                out += ch;
+                out += character;
                 break;
         }
     }
@@ -113,27 +113,27 @@ namespace {
     static_cast<void>(path);
     return true;
 #else
-    const int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0) {
+    const int file_descriptor = ::open(path.c_str(), O_RDONLY);
+    if (file_descriptor < 0) {
         return false;
     }
-    const bool ok = ::fsync(fd) == 0;
-    static_cast<void>(::close(fd));
-    return ok;
+    const bool synced = ::fsync(file_descriptor) == 0;
+    static_cast<void>(::close(file_descriptor));
+    return synced;
 #endif
 }
 
-void RenameIfExists(const std::string& from, const std::string& to) {
+void RenameIfExists(const std::string& from, const std::string& target) {
     std::error_code error;
     if (!std::filesystem::exists(from, error)) {
         return;
     }
-    std::filesystem::remove(to, error);
+    std::filesystem::remove(target, error);
     error.clear();
-    std::filesystem::rename(from, to, error);
+    std::filesystem::rename(from, target, error);
     if (error) {
-        core::Logger::WarnFmt("ReportHub: failed to rotate report log '{}' -> '{}': {}", from, to,
-                              error.message());
+        core::Logger::WarnFmt("ReportHub: failed to rotate report log '{}' -> '{}': {}", from,
+                              target, error.message());
     }
 }
 

@@ -52,6 +52,7 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     REQUIRE(kHealth.ok);
     CHECK(kHealth.ready);
     CHECK(kHealth.agent_id == "test-agent");
+    CHECK_FALSE(kHealth.link_quality_percent.has_value());
 
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = "drone-1";
@@ -78,6 +79,10 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK(capabilities.supports_velocity_control);
     CHECK_FALSE(capabilities.supports_payload_control);
     CHECK(std::ranges::contains(capabilities.supported_modes, "guided"));
+    CHECK_FALSE(capabilities.max_horizontal_speed_mps.has_value());
+    CHECK_FALSE(capabilities.max_climb_speed_mps.has_value());
+    CHECK_FALSE(capabilities.max_descent_speed_mps.has_value());
+    CHECK_FALSE(capabilities.max_altitude_m.has_value());
 }
 
 TEST_CASE("Client verified command helpers use agent health and telemetry",

@@ -108,7 +108,7 @@ message HealthReply {
     bool failsafe = 14;
     bool gps_ok = 15;
     bool ekf_ok = 16;
-    float link_quality_percent = 17;
+    optional float link_quality_percent = 17;
 }
 
 message RuntimeStatsRequest {}
@@ -156,10 +156,10 @@ message CapabilitiesReply {
     repeated string supported_payloads = 18;
     repeated string supported_telemetry_fields = 19;
     repeated string backend_command_names = 20;
-    float max_horizontal_speed_mps = 21;
-    float max_climb_speed_mps = 22;
-    float max_descent_speed_mps = 23;
-    float max_altitude_m = 24;
+    optional float max_horizontal_speed_mps = 21;
+    optional float max_climb_speed_mps = 22;
+    optional float max_descent_speed_mps = 23;
+    optional float max_altitude_m = 24;
     repeated string supported_payload_action_namespaces = 25;
     repeated string supported_payload_action_names = 26;
     int32 payload_timing_precision_ms = 27;

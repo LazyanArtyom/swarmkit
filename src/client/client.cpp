@@ -2297,7 +2297,9 @@ HealthStatus Client::GetHealth() const {
     out.failsafe = rep.failsafe();
     out.gps_ok = rep.gps_ok();
     out.ekf_ok = rep.ekf_ok();
-    out.link_quality_percent = rep.link_quality_percent();
+    if (rep.has_link_quality_percent()) {
+        out.link_quality_percent = rep.link_quality_percent();
+    }
     PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
 }
@@ -2393,10 +2395,18 @@ BackendCapabilities Client::GetCapabilities() const {
                                               rep.supported_payload_action_names().end());
     out.payload_timing_precision_ms = rep.payload_timing_precision_ms();
     out.supports_payload_scheduling = rep.supports_payload_scheduling();
-    out.max_horizontal_speed_mps = rep.max_horizontal_speed_mps();
-    out.max_climb_speed_mps = rep.max_climb_speed_mps();
-    out.max_descent_speed_mps = rep.max_descent_speed_mps();
-    out.max_altitude_m = rep.max_altitude_m();
+    if (rep.has_max_horizontal_speed_mps()) {
+        out.max_horizontal_speed_mps = rep.max_horizontal_speed_mps();
+    }
+    if (rep.has_max_climb_speed_mps()) {
+        out.max_climb_speed_mps = rep.max_climb_speed_mps();
+    }
+    if (rep.has_max_descent_speed_mps()) {
+        out.max_descent_speed_mps = rep.max_descent_speed_mps();
+    }
+    if (rep.has_max_altitude_m()) {
+        out.max_altitude_m = rep.max_altitude_m();
+    }
     PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
 }
