@@ -38,7 +38,7 @@ struct MavlinkBackendConfig {
     int telemetry_rate_hz{5};
     int peer_discovery_timeout_ms{2000};
     int command_ack_timeout_ms{2000};
-    bool set_guided_before_arm{true};
+    bool set_guided_before_arm{false};
     bool set_guided_before_takeoff{true};
     int guided_mode{4};
     bool allow_flight_termination{false};

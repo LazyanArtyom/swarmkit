@@ -203,6 +203,8 @@ void AddIssue(swarmkit::v1::ValidateTrajectoryResult* result,
     switch (proto.kind_case()) {
         case swarmkit::v1::Command::kArm:
             return commands::FlightCmd{commands::CmdArm{}};
+        case swarmkit::v1::Command::kForceArm:
+            return commands::FlightCmd{commands::CmdForceArm{}};
         case swarmkit::v1::Command::kDisarm:
             return commands::FlightCmd{commands::CmdDisarm{}};
         case swarmkit::v1::Command::kLand:

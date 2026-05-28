@@ -8,6 +8,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -86,6 +88,22 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
     return std::nullopt;
 }
 
+[[nodiscard]] std::optional<bool> ParseBoolOption(const std::string& value,
+                                                  std::string_view option_name) {
+    std::string lowered = value;
+    std::ranges::transform(lowered, lowered.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    if (lowered == "true" || lowered == "1" || lowered == "yes" || lowered == "on") {
+        return true;
+    }
+    if (lowered == "false" || lowered == "0" || lowered == "no" || lowered == "off") {
+        return false;
+    }
+    swarmkit::core::Logger::WarnFmt("Ignoring invalid {} value '{}'", option_name, value);
+    return std::nullopt;
+}
+
 [[nodiscard]] std::expected<void, int> ApplyMavlinkCliOverrides(
     int argc, char** argv, swarmkit::agent::MavlinkBackendConfig* mavlink) {
     if (mavlink == nullptr) {
@@ -122,6 +140,22 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
         if (const auto mavlink_id = ParseByteOption(kValue, "--mavlink-target-component");
             mavlink_id.has_value()) {
             mavlink->target_component = *mavlink_id;
+        }
+    }
+    if (const std::string kValue =
+            common::GetOptionValue(argc, argv, "--mavlink-set-guided-before-arm");
+        !kValue.empty()) {
+        if (const auto parsed = ParseBoolOption(kValue, "--mavlink-set-guided-before-arm");
+            parsed.has_value()) {
+            mavlink->set_guided_before_arm = *parsed;
+        }
+    }
+    if (const std::string kValue =
+            common::GetOptionValue(argc, argv, "--mavlink-set-guided-before-takeoff");
+        !kValue.empty()) {
+        if (const auto parsed = ParseBoolOption(kValue, "--mavlink-set-guided-before-takeoff");
+            parsed.has_value()) {
+            mavlink->set_guided_before_takeoff = *parsed;
         }
     }
     return {};

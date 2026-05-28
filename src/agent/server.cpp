@@ -495,6 +495,8 @@ void PopulateTelemetryProto(const core::TelemetryFrame& frame,
     switch (proto.kind_case()) {
         case swarmkit::v1::Command::kArm:
             return "ARM";
+        case swarmkit::v1::Command::kForceArm:
+            return "FORCE_ARM";
         case swarmkit::v1::Command::kDisarm:
             return "DISARM";
         case swarmkit::v1::Command::kLand:
@@ -617,6 +619,8 @@ void PopulateTelemetryProto(const core::TelemetryFrame& frame,
     switch (proto.kind_case()) {
         case swarmkit::v1::Command::kArm:
             return FlightCmd{CmdArm{}};
+        case swarmkit::v1::Command::kForceArm:
+            return FlightCmd{CmdForceArm{}};
         case swarmkit::v1::Command::kDisarm:
             return FlightCmd{CmdDisarm{}};
         case swarmkit::v1::Command::kLand:
@@ -883,9 +887,16 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_last_telemetry_unix_ms(backend_health.last_telemetry_unix_ms);
         reply->set_armed(backend_health.armed);
         reply->set_landed(backend_health.landed);
+        reply->set_mode(backend_health.mode);
+        reply->set_custom_mode(backend_health.custom_mode);
         reply->set_failsafe(backend_health.failsafe);
         reply->set_gps_ok(backend_health.gps_ok);
+        reply->set_gps_fix_type(backend_health.gps_fix_type);
+        reply->set_satellites_visible(backend_health.satellites_visible);
+        reply->set_gps_hdop(backend_health.gps_hdop);
         reply->set_ekf_ok(backend_health.ekf_ok);
+        reply->set_has_relative_altitude(backend_health.has_relative_altitude);
+        reply->set_relative_alt_m(backend_health.relative_alt_m);
         if (backend_health.link_quality_percent.has_value()) {
             reply->set_link_quality_percent(*backend_health.link_quality_percent);
         }

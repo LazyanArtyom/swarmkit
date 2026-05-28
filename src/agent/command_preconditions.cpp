@@ -54,8 +54,15 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
     if (!health.armed) {
         return AlreadySatisfied("disarm already satisfied: vehicle is already disarmed");
     }
-    if (!health.landed) {
-        return Reject("normal disarm refused while vehicle is airborne; use emergency force-disarm");
+    if (!health.landed && !RelativeAltitudeConfirmsLanded(health)) {
+        std::string detail =
+            "normal disarm refused while vehicle appears airborne; use emergency force-disarm";
+        if (health.has_relative_altitude) {
+            detail += " (relative_alt_m=" + std::to_string(health.relative_alt_m) + ")";
+        } else {
+            detail += " (relative altitude unknown)";
+        }
+        return Reject(std::move(detail));
     }
     return Execute();
 }
@@ -86,6 +93,11 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
 
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
     const commands::CmdForceDisarm& /*unused*/, const BackendHealth& /*unused*/) {
+    return Execute();
+}
+
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
+    const commands::CmdForceArm& /*unused*/, const BackendHealth& /*unused*/) {
     return Execute();
 }
 

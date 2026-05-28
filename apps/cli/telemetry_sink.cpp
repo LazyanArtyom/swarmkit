@@ -69,6 +69,13 @@ template <typename T>
     return out.str();
 }
 
+[[nodiscard]] const char* ConsoleBool(bool valid, bool value) {
+    if (!valid) {
+        return "unknown";
+    }
+    return value ? "true" : "false";
+}
+
 }  // namespace
 
 std::string TelemetryCsvLine(const swarmkit::core::TelemetryFrame& frame) {
@@ -131,8 +138,13 @@ void TelemetrySink::Write(const swarmkit::core::TelemetryFrame& frame) {
                   << std::setprecision(kTelemetryValuePrecision)
                   << " alt=" << ConsoleScalar(frame.validity.relative_altitude, frame.rel_alt_m, "m")
                   << " bat=" << ConsoleScalar(frame.validity.battery, frame.battery_percent, "%")
-                  << " gps="
-                  << ConsoleScalar(frame.validity.gps, frame.gps_fix_type)
+                  << " gps_fix=" << ConsoleScalar(frame.validity.gps, frame.gps_fix_type)
+                  << " sats=" << ConsoleScalar(frame.validity.gps, frame.satellites_visible)
+                  << " hdop=" << ConsoleScalar(frame.validity.gps_hdop, frame.gps_hdop)
+                  << " ekf=" << (frame.validity.estimator ? (frame.ekf_ok ? "ok" : "bad") : "unknown")
+                  << " armed=" << ConsoleBool(frame.validity.armed, frame.armed)
+                  << " landed=" << ConsoleBool(frame.validity.landed, frame.landed)
+                  << " failsafe=" << ConsoleBool(frame.validity.failsafe, frame.failsafe)
                   << " mode=" << (frame.validity.mode ? frame.mode : "unknown") << "\n";
     }
 

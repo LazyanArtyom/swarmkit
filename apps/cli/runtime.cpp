@@ -526,8 +526,42 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
     return out.str();
 }
 
+[[nodiscard]] std::string FloatText(float value, int precision = 2) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(precision) << value;
+    return out.str();
+}
+
 [[nodiscard]] const char* BoolText(bool value) {
     return value ? "true" : "false";
+}
+
+[[nodiscard]] std::string GpsFixText(int fix_type) {
+    switch (fix_type) {
+        case 0:
+            return "no GPS";
+        case 1:
+            return "no fix";
+        case 2:
+            return "2D fix";
+        case 3:
+            return "3D fix";
+        case 4:
+            return "DGPS";
+        case 5:
+            return "RTK float";
+        case 6:
+            return "RTK fixed";
+        default:
+            return "fix_type=" + std::to_string(fix_type);
+    }
+}
+
+[[nodiscard]] std::string RelativeAltitudeText(const swarmkit::client::HealthStatus& status) {
+    if (!status.has_relative_altitude) {
+        return "unknown";
+    }
+    return FloatText(status.relative_alt_m) + "m";
 }
 
 [[nodiscard]] bool IsStaleTimestamp(std::int64_t timestamp_ms, std::int64_t now_ms) {
@@ -1304,6 +1338,146 @@ int RunPing(Client& client) {
     return EXIT_SUCCESS;
 }
 
+[[nodiscard]] std::optional<swarmkit::core::TelemetryFrame> CollectTelemetrySample(
+    Client& client, std::string_view drone_id, std::int64_t timeout_ms) {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::optional<swarmkit::core::TelemetryFrame> latest_frame;
+
+    auto telemetry_stream = client.StartTelemetry(
+        {.drone_id = std::string(drone_id), .rate_hertz = 2},
+        [&](const swarmkit::core::TelemetryFrame& frame) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                latest_frame = frame;
+            }
+            cv.notify_all();
+        },
+        [](const std::string& error_msg) {
+            std::cerr << "Preflight telemetry stream error: " << error_msg << "\n";
+        });
+    if (!telemetry_stream.has_value()) {
+        std::cerr << "Preflight telemetry FAILED: " << telemetry_stream.error().user_message
+                  << "\n";
+        return std::nullopt;
+    }
+
+    std::unique_lock<std::mutex> lock(mutex);
+    cv.wait_for(lock, std::chrono::milliseconds{timeout_ms},
+                [&] { return latest_frame.has_value(); });
+    auto result = latest_frame;
+    lock.unlock();
+    telemetry_stream->Stop();
+    return result;
+}
+
+[[nodiscard]] std::expected<float, std::string> ParsePreflightMinBattery(int argc, char** argv) {
+    const auto min_battery =
+        ParseFloatArg(common::GetOptionValue(argc, argv, "--min-battery", "20"),
+                      "--min-battery");
+    if (!min_battery.has_value()) {
+        return std::unexpected(min_battery.error());
+    }
+    if (*min_battery < 0.0F || *min_battery > 100.0F) {
+        return std::unexpected("--min-battery must be between 0 and 100");
+    }
+    return *min_battery;
+}
+
+void PrintPreflightCheck(bool ok, std::string_view name, std::string_view detail) {
+    std::cout << "  [" << (ok ? "OK" : "FAIL") << "] " << name;
+    if (!detail.empty()) {
+        std::cout << " - " << detail;
+    }
+    std::cout << "\n";
+}
+
+int RunPreflight(Client& client, std::string_view drone_id, int argc, char** argv) {
+    const auto timeout_ms = ParseDurationMs(argc, argv);
+    if (!timeout_ms.has_value()) {
+        std::cerr << timeout_ms.error() << "\n";
+        return EXIT_FAILURE;
+    }
+    const std::int64_t sample_timeout_ms = *timeout_ms == 0 ? 3000 : *timeout_ms;
+    const auto min_battery = ParsePreflightMinBattery(argc, argv);
+    if (!min_battery.has_value()) {
+        std::cerr << min_battery.error() << "\n";
+        return EXIT_FAILURE;
+    }
+
+    const auto status = client.GetHealth();
+    const std::int64_t now_ms = NowUnixMs();
+    const bool heartbeat_ok =
+        status.ok && !IsStaleTimestamp(status.last_heartbeat_unix_ms, now_ms);
+    const bool telemetry_ok =
+        status.ok && !IsStaleTimestamp(status.last_telemetry_unix_ms, now_ms);
+    const auto telemetry = CollectTelemetrySample(client, drone_id, sample_timeout_ms);
+
+    bool ready = true;
+    std::cout << "Preflight " << drone_id << "\n";
+
+    const bool agent_ok = status.ok && status.ready;
+    ready = ready && agent_ok;
+    PrintPreflightCheck(agent_ok, "agent",
+                        status.ok ? status.message : status.error.user_message);
+
+    ready = ready && heartbeat_ok;
+    PrintPreflightCheck(heartbeat_ok, "MAVLink heartbeat",
+                        "age_ms=" + TimestampAgeMsText(status.last_heartbeat_unix_ms, now_ms));
+
+    ready = ready && telemetry_ok && telemetry.has_value();
+    PrintPreflightCheck(telemetry_ok && telemetry.has_value(), "telemetry",
+                        "age_ms=" + TimestampAgeMsText(status.last_telemetry_unix_ms, now_ms));
+
+    ready = ready && !status.armed;
+    PrintPreflightCheck(!status.armed, "armed state",
+                        status.armed ? "vehicle is already armed" : "disarmed");
+
+    ready = ready && status.landed;
+    PrintPreflightCheck(status.landed, "landed state",
+                        std::string{"landed="} + BoolText(status.landed) +
+                            " rel_alt=" + RelativeAltitudeText(status));
+
+    ready = ready && !status.failsafe;
+    PrintPreflightCheck(!status.failsafe, "failsafe", BoolText(status.failsafe));
+
+    ready = ready && status.ekf_ok;
+    PrintPreflightCheck(status.ekf_ok, "EKF", status.ekf_ok ? "healthy" : "unhealthy");
+
+    const std::string gps_detail = "fix=" + std::to_string(status.gps_fix_type) + " (" +
+                                   GpsFixText(status.gps_fix_type) + ") sats=" +
+                                   std::to_string(status.satellites_visible) +
+                                   " hdop=" + FloatText(status.gps_hdop);
+    ready = ready && status.gps_ok;
+    PrintPreflightCheck(status.gps_ok, "GPS", gps_detail);
+
+    bool battery_ok = false;
+    std::string battery_detail = "unknown";
+    if (telemetry.has_value() && telemetry->HasBattery()) {
+        battery_ok = telemetry->battery_percent >= *min_battery;
+        battery_detail = FloatText(telemetry->battery_percent, 1) + "% minimum=" +
+                         FloatText(*min_battery, 1) + "%";
+    }
+    ready = ready && battery_ok;
+    PrintPreflightCheck(battery_ok, "battery", battery_detail);
+
+    const std::string mode_text = status.mode.empty() ? "unknown" : status.mode;
+    PrintPreflightCheck(true, "mode", mode_text + " custom_mode=" +
+                                          std::to_string(status.custom_mode));
+
+    if (!status.gps_ok) {
+        std::cout << "  guidance: GPS is not ready. Normal GPS modes like GUIDED/takeoff may "
+                     "reject arming or takeoff. Use emergency force-arm only for bench/no-prop "
+                     "tests.\n";
+    }
+    if (ready) {
+        std::cout << "Preflight OK: drone appears ready for normal flight commands.\n";
+        return EXIT_SUCCESS;
+    }
+    std::cout << "Preflight FAILED: fix the failed checks before flight.\n";
+    return EXIT_FAILURE;
+}
+
 int RunHealth(Client& client) {
     const auto kStatus = client.GetHealth();
     if (!kStatus.ok) {
@@ -1326,9 +1500,17 @@ int RunHealth(Client& client) {
               << "  last_telemetry_unix_ms : " << kStatus.last_telemetry_unix_ms << "\n"
               << "  armed                  : " << (kStatus.armed ? "true" : "false") << "\n"
               << "  landed                 : " << (kStatus.landed ? "true" : "false") << "\n"
+              << "  mode                   : "
+              << (kStatus.mode.empty() ? "unknown" : kStatus.mode) << "\n"
+              << "  custom_mode            : " << kStatus.custom_mode << "\n"
               << "  failsafe               : " << (kStatus.failsafe ? "true" : "false") << "\n"
               << "  gps_ok                 : " << (kStatus.gps_ok ? "true" : "false") << "\n"
+              << "  gps_fix                : " << kStatus.gps_fix_type << " ("
+              << GpsFixText(kStatus.gps_fix_type) << ")\n"
+              << "  satellites_visible     : " << kStatus.satellites_visible << "\n"
+              << "  gps_hdop               : " << FloatText(kStatus.gps_hdop) << "\n"
               << "  ekf_ok                 : " << (kStatus.ekf_ok ? "true" : "false") << "\n"
+              << "  relative_altitude      : " << RelativeAltitudeText(kStatus) << "\n"
               << "  link_quality_percent   : "
               << OptionalFloatText(kStatus.link_quality_percent) << "\n"
               << "  message                : " << kStatus.message << "\n";
@@ -2134,6 +2316,10 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     }
     if (invocation.command == "health") {
         return RunHealth(client);
+    }
+    if (invocation.command == "preflight") {
+        return RunPreflight(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
+                            argc, argv);
     }
     if (invocation.command == "stats") {
         return RunStats(client);

@@ -109,6 +109,13 @@ message HealthReply {
     bool gps_ok = 15;
     bool ekf_ok = 16;
     optional float link_quality_percent = 17;
+    string mode = 18;
+    int32 custom_mode = 19;
+    int32 gps_fix_type = 20;
+    int32 satellites_visible = 21;
+    float gps_hdop = 22;
+    bool has_relative_altitude = 23;
+    float relative_alt_m = 24;
 }
 
 message RuntimeStatsRequest {}
@@ -197,6 +204,7 @@ message CommandContext {
 // --- Flight commands (fundamental vehicle control) ---
 
 message CmdArm {}
+message CmdForceArm {}
 message CmdDisarm {}
 message CmdLand {}
 
@@ -402,6 +410,7 @@ message Command {
         CmdSetMode set_mode = 5;
         CmdForceDisarm force_disarm = 6;
         CmdFlightTerminate flight_terminate = 7;
+        CmdForceArm force_arm = 8;
 
         // Navigation
         CmdSetWaypoint set_waypoint = 10;

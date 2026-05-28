@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <string>
 
 #include "mavlink_common.h"
 
@@ -58,6 +59,21 @@ TEST_CASE("MAVLink mode strings decode PX4 custom mode bit fields",
           "OFFBOARD");
     CHECK(ModeString(MakeHeartbeat(MakePx4CustomMode(4U, 99U)),
                      MavlinkAutopilotProfile::kPx4) == "AUTO(sub=99)");
+}
+
+TEST_CASE("MAVLink command ACK failure includes STATUSTEXT reason",
+          "[agent][mavlink][commands]") {
+    MavlinkCommandAckResult ack;
+    ack.has_ack = true;
+    ack.ack.command = MAV_CMD_COMPONENT_ARM_DISARM;
+    ack.ack.result = MAV_RESULT_FAILED;
+    ack.has_status_text = true;
+    ack.status_text.text = "PreArm: Bad GPS Position";
+
+    const auto result = ack.ToCoreResult();
+    CHECK_FALSE(result.IsOk());
+    CHECK(result.message.find("COMMAND_ACK command=400") != std::string::npos);
+    CHECK(result.message.find("PreArm: Bad GPS Position") != std::string::npos);
 }
 
 }  // namespace

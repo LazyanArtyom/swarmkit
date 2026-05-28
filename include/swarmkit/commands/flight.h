@@ -19,6 +19,9 @@ namespace swarmkit::commands {
 /// @brief Arm the vehicle's motors.
 struct CmdArm {};
 
+/// @brief Force-arm the vehicle for bench testing where supported.
+struct CmdForceArm {};
+
 /// @brief Disarm the vehicle's motors.
 struct CmdDisarm {};
 
@@ -48,7 +51,7 @@ struct CmdFlightTerminate {};
  * Implemented by every IDroneBackend.  Adding a new flight command here
  * without updating all backends produces a compile error (exhaustive visit).
  */
-using FlightCmd = std::variant<CmdArm, CmdDisarm, CmdTakeoff, CmdLand, CmdSetMode, CmdForceDisarm,
-                               CmdFlightTerminate>;
+using FlightCmd = std::variant<CmdArm, CmdForceArm, CmdDisarm, CmdTakeoff, CmdLand, CmdSetMode,
+                               CmdForceDisarm, CmdFlightTerminate>;
 
 }  // namespace swarmkit::commands

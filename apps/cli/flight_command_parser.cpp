@@ -66,7 +66,10 @@ std::expected<Command, std::string> BuildFlightCommand(const std::vector<std::st
     }
     if (action == "emergency") {
         if (actions.size() < 2) {
-            return std::unexpected("emergency requires force-disarm or flight-terminate");
+            return std::unexpected("emergency requires force-arm, force-disarm, or flight-terminate");
+        }
+        if (actions[1] == "force-arm") {
+            return FlightCmd{CmdForceArm{}};
         }
         if (actions[1] == "force-disarm") {
             return FlightCmd{CmdForceDisarm{}};

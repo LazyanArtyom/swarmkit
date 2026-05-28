@@ -482,6 +482,7 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                 std::visit(
                     core::Overloaded{
                         [&](const commands::CmdArm&) { proto_cmd->mutable_arm(); },
+                        [&](const commands::CmdForceArm&) { proto_cmd->mutable_force_arm(); },
                         [&](const commands::CmdDisarm&) { proto_cmd->mutable_disarm(); },
                         [&](const commands::CmdTakeoff& takeoff) {
                             proto_cmd->mutable_takeoff()->set_alt_m(takeoff.alt_m);
@@ -1472,6 +1473,8 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     switch (proto.kind_case()) {
         case swarmkit::v1::Command::kArm:
             return commands::FlightCmd{commands::CmdArm{}};
+        case swarmkit::v1::Command::kForceArm:
+            return commands::FlightCmd{commands::CmdForceArm{}};
         case swarmkit::v1::Command::kDisarm:
             return commands::FlightCmd{commands::CmdDisarm{}};
         case swarmkit::v1::Command::kLand:
@@ -2294,9 +2297,16 @@ HealthStatus Client::GetHealth() const {
     out.last_telemetry_unix_ms = rep.last_telemetry_unix_ms();
     out.armed = rep.armed();
     out.landed = rep.landed();
+    out.mode = rep.mode();
+    out.custom_mode = rep.custom_mode();
     out.failsafe = rep.failsafe();
     out.gps_ok = rep.gps_ok();
+    out.gps_fix_type = rep.gps_fix_type();
+    out.satellites_visible = rep.satellites_visible();
+    out.gps_hdop = rep.gps_hdop();
     out.ekf_ok = rep.ekf_ok();
+    out.has_relative_altitude = rep.has_relative_altitude();
+    out.relative_alt_m = rep.relative_alt_m();
     if (rep.has_link_quality_percent()) {
         out.link_quality_percent = rep.link_quality_percent();
     }
@@ -2460,6 +2470,14 @@ struct VerificationSpec {
                             return VerificationSpec{
                                 .source = VerificationSource::kHealth,
                                 .label = "arm",
+                                .health_predicate =
+                                    [](const HealthStatus& health) { return health.armed; },
+                            };
+                        },
+                        [](const CmdForceArm&) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kHealth,
+                                .label = "force-arm",
                                 .health_predicate =
                                     [](const HealthStatus& health) { return health.armed; },
                             };

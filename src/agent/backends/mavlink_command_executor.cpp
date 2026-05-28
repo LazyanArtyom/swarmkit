@@ -26,6 +26,7 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
         .supported_commands =
             {
                 "arm",
+                "force-arm",
                 "disarm",
                 "takeoff",
                 "land",

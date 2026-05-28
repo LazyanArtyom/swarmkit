@@ -21,6 +21,14 @@ namespace {
     return envelope;
 }
 
+[[nodiscard]] CommandEnvelope DisarmEnvelope() {
+    CommandEnvelope envelope;
+    envelope.context.drone_id = "drone-1";
+    envelope.context.client_id = "test-client";
+    envelope.command = commands::FlightCmd{commands::CmdDisarm{}};
+    return envelope;
+}
+
 [[nodiscard]] BackendHealth HealthWithVehicleState() {
     BackendHealth health;
     health.ready = true;
@@ -64,6 +72,29 @@ TEST_CASE("Land precondition only skips command when disarmed near ground",
         EvaluateCommandPreconditions(envelope, disarmed_near_ground);
     CHECK(decision.action == CommandPreconditionAction::kAlreadySatisfied);
     CHECK(decision.result.message.find("relative altitude is near ground") != std::string::npos);
+}
+
+TEST_CASE("Disarm precondition allows armed bench vehicle near ground",
+          "[agent][commands][preconditions]") {
+    const CommandEnvelope envelope = DisarmEnvelope();
+
+    BackendHealth armed_near_ground = HealthWithVehicleState();
+    armed_near_ground.armed = true;
+    armed_near_ground.landed = false;
+    armed_near_ground.has_relative_altitude = true;
+    armed_near_ground.relative_alt_m = 0.2F;
+    CHECK(EvaluateCommandPreconditions(envelope, armed_near_ground).action ==
+          CommandPreconditionAction::kExecute);
+
+    BackendHealth armed_high = HealthWithVehicleState();
+    armed_high.armed = true;
+    armed_high.landed = false;
+    armed_high.has_relative_altitude = true;
+    armed_high.relative_alt_m = 3.0F;
+    const CommandPreconditionDecision decision =
+        EvaluateCommandPreconditions(envelope, armed_high);
+    CHECK(decision.action == CommandPreconditionAction::kReject);
+    CHECK(decision.result.message.find("appears airborne") != std::string::npos);
 }
 
 }  // namespace

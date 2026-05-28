@@ -18,9 +18,9 @@ namespace swarmkit::apps::cli::internal {
 
 [[nodiscard]] bool IsSubcommand(std::string_view value) {
     return value == "ping" || value == "health" || value == "stats" ||
-           value == "capabilities" || value == "telemetry" || value == "command" ||
-           value == "sequence" || value == "trajectory" || value == "goal" ||
-           value == "reports" || value == "lock" || value == "unlock" ||
+           value == "capabilities" || value == "preflight" || value == "telemetry" ||
+           value == "command" || value == "sequence" || value == "trajectory" ||
+           value == "goal" || value == "reports" || value == "lock" || value == "unlock" ||
            value == "watch-authority" || value == "swarm";
 }
 
@@ -40,6 +40,7 @@ namespace swarmkit::apps::cli::internal {
            value == "--gripper" || value == "--goal-id" || value == "--revision" ||
            value == "--accept-radius" || value == "--deviation-radius" ||
            value == "--timeout-ms" || value == "--role" || value == "--format" ||
+           value == "--min-battery" ||
            value == "--report-file" || value == "--after-sequence" ||
            value == "--execution-id" || value == "--unix-time-ms" ||
            value == "--namespace" || value == "--name" || value == "--param" ||

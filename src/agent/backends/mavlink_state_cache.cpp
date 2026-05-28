@@ -169,6 +169,9 @@ BackendHealth MavlinkStateCache::Health() const {
     health.custom_mode = state.custom_mode;
     health.failsafe = state.failsafe;
     health.gps_ok = state.gps_seen && state.gps_ok;
+    health.gps_fix_type = state.gps_fix_type;
+    health.satellites_visible = state.satellites_visible;
+    health.gps_hdop = state.gps_hdop;
     health.ekf_ok = state.ekf_seen ? state.ekf_ok : !state.failsafe;
     health.has_relative_altitude = state.has_relative_altitude;
     health.relative_alt_m = state.relative_alt_m;
@@ -194,10 +197,11 @@ BackendHealth MavlinkStateCache::Health() const {
                      " compid=" + std::to_string(state.component_id) +
                      " armed=" + (state.armed ? "true" : "false") +
                      " landed=" + (health.landed ? "true" : "false") +
+                     " gps=" + (health.gps_ok ? "ok" : "bad") +
                      " gps_fix=" + std::to_string(state.gps_fix_type) +
                      " sats=" + std::to_string(state.satellites_visible) +
                      " hdop=" + std::to_string(state.gps_hdop) +
-                     " ekf_ok=" + (health.ekf_ok ? "true" : "false") +
+                     " ekf=" + (health.ekf_ok ? "ok" : "bad") +
                      " custom_mode=" + std::to_string(state.custom_mode);
     if (state.last_telemetry_unix_ms != 0 &&
         now_ms - state.last_telemetry_unix_ms > kTelemetryStaleTimeoutMs) {

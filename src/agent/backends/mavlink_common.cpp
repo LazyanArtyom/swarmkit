@@ -308,11 +308,14 @@ core::Result MavlinkCommandAckResult::ToCoreResult() const {
         return core::Result::Success();
     }
 
-    const std::string detail = "COMMAND_ACK command=" + std::to_string(ack.command) +
-                               " result=" + MavResultName(ack.result) +
-                               " param2=" + std::to_string(ack.result_param2) +
-                               " target=" + std::to_string(ack.target_system) + "/" +
-                               std::to_string(ack.target_component);
+    std::string detail = "COMMAND_ACK command=" + std::to_string(ack.command) +
+                         " result=" + MavResultName(ack.result) +
+                         " param2=" + std::to_string(ack.result_param2) +
+                         " target=" + std::to_string(ack.target_system) + "/" +
+                         std::to_string(ack.target_component);
+    if (has_status_text && !status_text.text.empty()) {
+        detail += " reason=\"" + status_text.text + "\"";
+    }
     switch (ack.result) {
         case MAV_RESULT_ACCEPTED:
             return core::Result::Success(detail);

@@ -82,9 +82,16 @@ struct CommandAck {
     std::uint8_t target_component{};
 };
 
+struct StatusText {
+    std::uint8_t severity{};
+    std::string text;
+};
+
 struct MavlinkCommandAckResult {
     CommandAck ack;
+    StatusText status_text;
     bool has_ack{false};
+    bool has_status_text{false};
     core::Result send_result{core::Result::Success()};
 
     [[nodiscard]] bool IsUnsupported() const;

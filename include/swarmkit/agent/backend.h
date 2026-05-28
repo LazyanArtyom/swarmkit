@@ -34,9 +34,13 @@ struct BackendHealth {
     std::int64_t last_telemetry_unix_ms{};
     bool armed{false};
     bool landed{false};
+    std::string mode;
     int custom_mode{-1};
     bool failsafe{false};
     bool gps_ok{false};
+    int gps_fix_type{};
+    int satellites_visible{};
+    float gps_hdop{};
     bool ekf_ok{true};
     bool has_relative_altitude{false};
     float relative_alt_m{};

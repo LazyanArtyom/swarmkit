@@ -88,6 +88,10 @@ class SimBackend final : public IDroneBackend {
                                 core::Logger::InfoFmt("SimBackend: ARM  drone={}",
                                                       context.drone_id);
                             },
+                            [&](const CmdForceArm&) {
+                                core::Logger::WarnFmt("SimBackend: FORCE_ARM  drone={}",
+                                                      context.drone_id);
+                            },
                             [&](const CmdDisarm&) {
                                 core::Logger::InfoFmt("SimBackend: DISARM  drone={}",
                                                       context.drone_id);
@@ -430,8 +434,8 @@ class SimBackend final : public IDroneBackend {
             .autopilot_type = "sim",
             .supported_modes = {"sim", "guided", "hold", "land", "rtl"},
             .supported_commands =
-                {"arm", "disarm", "takeoff", "land", "goto", "velocity", "mission", "payload",
-                 "backend-command"},
+                {"arm", "force-arm", "disarm", "takeoff", "land", "goto", "velocity",
+                 "mission", "payload", "backend-command"},
             .supported_mission_items =
                 {"waypoint", "takeoff", "land", "loiter", "delay", "action", "payload_action"},
             .supported_payloads = {"camera", "gimbal", "servo", "relay", "gripper"},

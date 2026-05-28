@@ -33,7 +33,7 @@ agent:
     telemetry_rate_hz: 10
     peer_discovery_timeout_ms: 5000
     command_ack_timeout_ms: 3000
-    set_guided_before_arm: true
+    set_guided_before_arm: false
     set_guided_before_takeoff: true
     guided_mode: 4
     allow_flight_termination: false
