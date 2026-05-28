@@ -2490,6 +2490,14 @@ struct VerificationSpec {
                                     [](const HealthStatus& health) { return !health.armed; },
                             };
                         },
+                        [](const CmdForceDisarm&) {
+                            return VerificationSpec{
+                                .source = VerificationSource::kHealth,
+                                .label = "force-disarm",
+                                .health_predicate =
+                                    [](const HealthStatus& health) { return !health.armed; },
+                            };
+                        },
                         [&](const CmdTakeoff& takeoff) {
                             return VerificationSpec{
                                 .source = VerificationSource::kTelemetry,
