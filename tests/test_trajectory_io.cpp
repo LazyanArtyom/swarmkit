@@ -14,6 +14,33 @@ using swarmkit::client::LoadTrajectoryPlan;
 using swarmkit::client::TrajectoryFileFormat;
 using swarmkit::client::TrajectoryLoadOptions;
 
+TEST_CASE("Trajectory IO loads documented YAML streams", "[client][trajectory]") {
+    std::istringstream input{
+        "execution_id: yaml-path-1\n"
+        "drone_id: drone-1\n"
+        "validation:\n"
+        "  min_battery_percent: 30\n"
+        "  require_gps: true\n"
+        "  max_altitude_m: 120\n"
+        "points:\n"
+        "  - {time_offset_ms: 0, lat: 40.18, lon: 44.51, alt: 10, yaw: 90}\n"
+        "  - {time_offset_ms: 5000, lat: 40.1801, lon: 44.5101, alt: 12}\n"};
+
+    const auto plan = LoadTrajectoryPlan(input, TrajectoryFileFormat::kYaml);
+
+    REQUIRE(plan.has_value());
+    CHECK(plan->execution_id == "yaml-path-1");
+    CHECK(plan->drone_id == "drone-1");
+    CHECK(plan->validation.min_battery_percent == 30.0F);
+    CHECK(plan->validation.require_gps);
+    REQUIRE(plan->points.size() == 2);
+    CHECK(plan->points[0].position.lat_deg == 40.18);
+    CHECK(plan->points[0].position.lon_deg == 44.51);
+    CHECK(plan->points[0].position.alt_m == 10.0);
+    CHECK(plan->points[0].has_yaw);
+    CHECK(plan->points[0].yaw_deg == 90.0F);
+}
+
 TEST_CASE("Trajectory IO loads planner JSONL streams", "[client][trajectory]") {
     std::istringstream input{
         "{\"execution_id\":\"jsonl-path-1\",\"drone_id\":\"drone-1\",\"frame\":\"global\","

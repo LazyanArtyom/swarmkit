@@ -16,7 +16,7 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
                              ? "fixed-wing"
                              : "multirotor",
         .supports_mission_upload = true,
-        .supports_payload_control = true,
+        .supports_payload_control = false,
         .supports_velocity_control = true,
         .supports_flight_termination = config.allow_flight_termination,
         .supports_backend_commands = true,
@@ -37,14 +37,10 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
                 "goto",
                 "set-yaw",
                 "velocity",
-                "pause",
-                "resume",
                 "set-home",
                 "mission-upload",
                 "mission-clear",
                 "mission-start",
-                "mission-pause",
-                "mission-resume",
                 "set-current-mission-item",
                 "backend-command",
             },
@@ -56,17 +52,10 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
                 "loiter",
                 "delay",
             },
-        .supported_payloads =
-            {
-                "photo",
-                "photo-interval",
-                "video",
-                "gimbal",
-                "roi",
-                "servo",
-                "relay",
-                "gripper",
-            },
+        // Peripheral presence cannot be inferred from generic MAVLink routing.
+        // Payload encoders remain available as experimental commands, but are
+        // not advertised until a vehicle-specific capability source exists.
+        .supported_payloads = {},
         .supported_telemetry_fields =
             {
                 "lat_deg",
@@ -91,7 +80,7 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
         .supported_payload_action_namespaces = {"mavlink"},
         .supported_payload_action_names = {"command-long"},
         .payload_timing_precision_ms = 50,
-        .supports_payload_scheduling = true,
+        .supports_payload_scheduling = false,
     };
 }
 

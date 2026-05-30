@@ -24,7 +24,18 @@ struct CommandPreconditionDecision {
     core::Result result{core::Result::Success()};
 };
 
+struct AutonomousReadinessRequirements {
+    bool require_armed{true};
+    bool require_gps{true};
+    bool require_ekf{true};
+};
+
+[[nodiscard]] core::Result ValidateAutonomousReadiness(
+    const BackendHealth& health, std::string_view operation, bool allow_unsafe_bench_commands,
+    AutonomousReadinessRequirements requirements = {});
+
 [[nodiscard]] CommandPreconditionDecision EvaluateCommandPreconditions(
-    const CommandEnvelope& envelope, const BackendHealth& health);
+    const CommandEnvelope& envelope, const BackendHealth& health,
+    bool allow_unsafe_bench_commands = false);
 
 }  // namespace swarmkit::agent

@@ -6,6 +6,7 @@
 
 #include "trajectory_execution_manager.h"
 
+#include "command_preconditions.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -24,6 +25,7 @@ namespace swarmkit::agent::internal {
 namespace {
 
 constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
+constexpr auto kTelemetryHealthSampleTimeout = std::chrono::milliseconds{1500};
 constexpr auto kFinalTargetReportInterval = std::chrono::seconds{1};
 constexpr std::int64_t kLateThresholdMs = 250;
 constexpr float kDefaultTrackingToleranceM = 2.0F;
@@ -591,6 +593,16 @@ core::Result TrajectoryExecutionManager::StartAt(const std::string& drone_id,
                                                  std::int64_t unix_time_ms,
                                                  std::string_view correlation_id,
                                                  swarmkit::v1::ExecutionHandle* out_handle) {
+    if (backend_ == nullptr || config_ == nullptr) {
+        return core::Result::Failed("trajectory start safety state is unavailable");
+    }
+    if (const core::Result readiness =
+            ValidateAutonomousReadiness(backend_->GetHealth(), "trajectory start",
+                                        config_->safety.allow_unsafe_bench_commands);
+        !readiness.IsOk()) {
+        return readiness;
+    }
+
     std::string key = Key(drone_id, execution_id);
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -795,7 +807,7 @@ std::optional<core::TelemetryFrame> TrajectoryExecutionManager::LatestTelemetry(
     core::TelemetryFrame frame;
     std::uint64_t sequence = 0;
     const bool got_frame =
-        TelemetryManager::WaitForFrame(lease, &sequence, &frame, std::chrono::milliseconds{50});
+        TelemetryManager::WaitForFrame(lease, &sequence, &frame, kTelemetryHealthSampleTimeout);
     telemetry_->ReleaseLease(lease);
     if (!got_frame) {
         return std::nullopt;

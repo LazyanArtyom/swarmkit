@@ -1044,6 +1044,14 @@ std::uint64_t Subscription::Id() const noexcept {
     if (final_status.ok()) {
         return false;
     }
+    switch (final_status.error_code()) {
+        case grpc::StatusCode::UNAVAILABLE:
+        case grpc::StatusCode::DEADLINE_EXCEEDED:
+        case grpc::StatusCode::CANCELLED:
+            break;
+        default:
+            return false;
+    }
 
     const bool kUnlimitedAttempts = policy.max_attempts == kUnlimitedStreamReconnectAttempts;
     return kUnlimitedAttempts || attempt_number < policy.max_attempts;

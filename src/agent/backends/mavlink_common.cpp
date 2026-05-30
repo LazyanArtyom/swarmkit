@@ -216,8 +216,8 @@ std::optional<Px4Mode> Px4ModeFromName(std::string mode) {
 std::vector<std::string> SupportedModes(MavlinkAutopilotProfile profile) {
     switch (profile) {
         case MavlinkAutopilotProfile::kArdupilotCopter:
-            return {"stabilize", "alt-hold", "auto", "guided", "loiter", "rtl",
-                    "land",      "brake",    "smart-rtl"};
+            return {"stabilize", "acro",  "alt-hold", "auto",  "guided", "guided-nogps",
+                    "loiter",    "rtl",   "land",     "brake", "smart-rtl"};
         case MavlinkAutopilotProfile::kArdupilotPlane:
             return {"manual", "circle", "stabilize", "fbwa", "fbwb", "cruise",
                     "auto",   "rtl",    "loiter",    "takeoff", "guided"};

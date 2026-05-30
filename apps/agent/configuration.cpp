@@ -280,6 +280,9 @@ void ReadBackendOptionsYaml(const YAML::Node& node,
         !sequence_state_file.empty()) {
         agent_cfg.reports.sequence_state_file = sequence_state_file;
     }
+    if (common::HasFlag(argc, argv, "--allow-unsafe-bench-commands")) {
+        agent_cfg.safety.allow_unsafe_bench_commands = true;
+    }
     if (const std::string kRootCaCert = common::GetOptionValue(argc, argv, "--ca-cert");
         !kRootCaCert.empty()) {
         agent_cfg.security.root_ca_cert_path = kRootCaCert;

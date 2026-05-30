@@ -304,6 +304,7 @@ class AgentServerHarness {
         agent::AgentConfig config;
         config.agent_id = "test-agent";
         config.bind_addr = "127.0.0.1:0";
+        config.safety.allow_unsafe_bench_commands = true;
         config.security.root_ca_cert_path = kPaths.root_ca_cert_path;
         config.security.cert_chain_path = kPaths.server_cert_chain_path;
         config.security.private_key_path = kPaths.server_private_key_path;

@@ -46,22 +46,21 @@ namespace {
     });
 }
 
-[[nodiscard]] YAML::Node FirstOf(const YAML::Node& node,
-                                 std::initializer_list<std::string_view> keys) {
-    for (std::string_view key : keys) {
-        if (YAML::Node value = node[std::string(key)]) {
-            if (value.IsDefined() && !value.IsNull()) {
-                return value;
-            }
-        }
-    }
-    return {};
-}
-
 template <typename T>
 void AssignIfPresent(const YAML::Node& node, std::initializer_list<std::string_view> keys, T* out) {
-    if (YAML::Node value = FirstOf(node, keys)) {
-        *out = value.as<T>();
+    for (std::string_view key : keys) {
+        if (YAML::Node value = node[std::string(key)]) {
+            if (!value.IsDefined() || value.IsNull()) {
+                continue;
+            }
+            try {
+                *out = value.as<T>();
+            } catch (const YAML::Exception&) {
+                throw YAML::RepresentationException(
+                    value.Mark(), "invalid trajectory scalar '" + std::string(key) + "'");
+            }
+            return;
+        }
     }
 }
 

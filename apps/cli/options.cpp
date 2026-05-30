@@ -47,6 +47,13 @@ namespace swarmkit::apps::cli::internal {
            value == "--transport-security";
 }
 
+[[nodiscard]] bool IsFlag(std::string_view value) {
+    return value == "--help" || value == "-h" || value == "--insecure" || value == "--verify" ||
+           value == "--continue-on-error" || value == "--require-all" || value == "--body-frame" ||
+           value == "--relative" || value == "--on" || value == "--release" ||
+           value == "--no-console";
+}
+
 [[nodiscard]] std::expected<float, std::string> ParseFloatArg(std::string_view value,
                                                               std::string_view key) {
     try {
@@ -104,10 +111,18 @@ namespace swarmkit::apps::cli::internal {
     for (int idx = 1; idx < argc; ++idx) {
         const std::string_view kArg = argv[idx];
         if (IsOptionWithValue(kArg)) {
+            if (idx + 1 >= argc) {
+                std::cerr << "Missing value for option '" << kArg << "'\n";
+                return std::unexpected(EXIT_FAILURE);
+            }
             ++idx;
             continue;
         }
         if (kArg.starts_with('-')) {
+            if (!IsFlag(kArg)) {
+                std::cerr << "Unknown option '" << kArg << "'\n";
+                return std::unexpected(EXIT_FAILURE);
+            }
             continue;
         }
         positional_args.emplace_back(kArg);

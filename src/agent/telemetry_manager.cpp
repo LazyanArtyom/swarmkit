@@ -66,7 +66,10 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
         if (!kStartResult.IsOk()) {
             backend_failure_count_.fetch_add(1, std::memory_order_relaxed);
             state->subscriber_rates_hz.erase(kSubscriberId);
-            return core::Result::Failed("backend StartTelemetry failed: " + kStartResult.message);
+            const std::string message = "backend StartTelemetry failed: " + kStartResult.message;
+            return kStartResult.code == core::StatusCode::kRejected
+                       ? core::Result::Rejected(message)
+                       : core::Result::Failed(message);
         }
 
         state->backend_running = true;
@@ -107,8 +110,11 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
             }
 
             state->subscriber_rates_hz.erase(kSubscriberId);
-            return core::Result::Failed("backend telemetry reconfigure failed: " +
-                                        kStartResult.message);
+            const std::string message =
+                "backend telemetry reconfigure failed: " + kStartResult.message;
+            return kStartResult.code == core::StatusCode::kRejected
+                       ? core::Result::Rejected(message)
+                       : core::Result::Failed(message);
         }
 
         state->backend_running = true;

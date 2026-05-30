@@ -9,6 +9,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -147,7 +148,7 @@ void ResetStopRequested() {
             ++index;
             continue;
         }
-        if (current_arg.starts_with("-") || IsSubcommand(current_arg)) {
+        if (current_arg.starts_with("-")) {
             continue;
         }
         actions.emplace_back(current_arg);
@@ -161,7 +162,8 @@ void ResetStopRequested() {
         .count();
 }
 
-int RunReports(Client& client, std::string_view drone_id, int argc, char** argv);
+int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
+               bool trajectory_only = false);
 
 [[nodiscard]] double DegToRad(double degrees) {
     return degrees * std::numbers::pi / 180.0;
@@ -1109,7 +1111,7 @@ int RunTrajectory(Client& client, std::string_view drone_id, int argc, char** ar
         return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     if (actions[0] == "reports") {
-        return RunReports(client, drone_id, argc, argv);
+        return RunReports(client, drone_id, argc, argv, true);
     }
     if (actions[0] == "list") {
         for (const auto& handle : client.ListExecutions(std::string(drone_id))) {
@@ -1256,7 +1258,8 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
     return EXIT_FAILURE;
 }
 
-int RunReports(Client& client, std::string_view drone_id, int argc, char** argv) {
+int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
+               bool trajectory_only) {
     const std::string format = common::GetOptionValue(argc, argv, "--format", "text");
     if (format != "text" && format != "jsonl") {
         std::cerr << "--format must be text or jsonl\n";
@@ -1294,7 +1297,10 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv)
     subscription.after_sequence = static_cast<std::uint64_t>(*after_sequence);
     auto report_stream = client.StartReports(
         subscription,
-        [out, &format](const swarmkit::client::AgentReport& report) {
+        [out, &format, trajectory_only](const swarmkit::client::AgentReport& report) {
+            if (trajectory_only && !report.trajectory.has_value()) {
+                return;
+            }
             if (format == "jsonl") {
                 PrintReportJsonl(report, *out);
             } else {
@@ -1338,11 +1344,17 @@ int RunPing(Client& client) {
     return EXIT_SUCCESS;
 }
 
-[[nodiscard]] std::optional<swarmkit::core::TelemetryFrame> CollectTelemetrySample(
+struct TelemetrySampleResult {
+    std::optional<swarmkit::core::TelemetryFrame> frame;
+    std::string error;
+};
+
+[[nodiscard]] TelemetrySampleResult CollectTelemetrySample(
     Client& client, std::string_view drone_id, std::int64_t timeout_ms) {
     std::mutex mutex;
     std::condition_variable cv;
     std::optional<swarmkit::core::TelemetryFrame> latest_frame;
+    std::string stream_error;
 
     auto telemetry_stream = client.StartTelemetry(
         {.drone_id = std::string(drone_id), .rate_hertz = 2},
@@ -1353,19 +1365,24 @@ int RunPing(Client& client) {
             }
             cv.notify_all();
         },
-        [](const std::string& error_msg) {
+        [&](const std::string& error_msg) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                stream_error = error_msg;
+            }
             std::cerr << "Preflight telemetry stream error: " << error_msg << "\n";
+            cv.notify_all();
         });
     if (!telemetry_stream.has_value()) {
         std::cerr << "Preflight telemetry FAILED: " << telemetry_stream.error().user_message
                   << "\n";
-        return std::nullopt;
+        return {.error = telemetry_stream.error().user_message};
     }
 
     std::unique_lock<std::mutex> lock(mutex);
     cv.wait_for(lock, std::chrono::milliseconds{timeout_ms},
-                [&] { return latest_frame.has_value(); });
-    auto result = latest_frame;
+                [&] { return latest_frame.has_value() || !stream_error.empty(); });
+    TelemetrySampleResult result{.frame = latest_frame, .error = stream_error};
     lock.unlock();
     telemetry_stream->Stop();
     return result;
@@ -1425,9 +1442,12 @@ int RunPreflight(Client& client, std::string_view drone_id, int argc, char** arg
     PrintPreflightCheck(heartbeat_ok, "MAVLink heartbeat",
                         "age_ms=" + TimestampAgeMsText(status.last_heartbeat_unix_ms, now_ms));
 
-    ready = ready && telemetry_ok && telemetry.has_value();
-    PrintPreflightCheck(telemetry_ok && telemetry.has_value(), "telemetry",
-                        "age_ms=" + TimestampAgeMsText(status.last_telemetry_unix_ms, now_ms));
+    ready = ready && telemetry_ok && telemetry.frame.has_value();
+    PrintPreflightCheck(telemetry_ok && telemetry.frame.has_value(), "telemetry",
+                        telemetry.error.empty()
+                            ? "age_ms=" +
+                                  TimestampAgeMsText(status.last_telemetry_unix_ms, now_ms)
+                            : telemetry.error);
 
     ready = ready && !status.armed;
     PrintPreflightCheck(!status.armed, "armed state",
@@ -1453,9 +1473,9 @@ int RunPreflight(Client& client, std::string_view drone_id, int argc, char** arg
 
     bool battery_ok = false;
     std::string battery_detail = "unknown";
-    if (telemetry.has_value() && telemetry->HasBattery()) {
-        battery_ok = telemetry->battery_percent >= *min_battery;
-        battery_detail = FloatText(telemetry->battery_percent, 1) + "% minimum=" +
+    if (telemetry.frame.has_value() && telemetry.frame->HasBattery()) {
+        battery_ok = telemetry.frame->battery_percent >= *min_battery;
+        battery_detail = FloatText(telemetry.frame->battery_percent, 1) + "% minimum=" +
                          FloatText(*min_battery, 1) + "%";
     }
     ready = ready && battery_ok;
@@ -1650,12 +1670,20 @@ int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz, int arg
         std::cout << "Telemetry CSV logging enabled.\n";
     }
 
+    std::atomic<bool> stream_failed{false};
+    std::string stream_error;
+    std::mutex stream_error_mutex;
     auto telemetry_stream = client.StartTelemetry(
         subscription,
         [&telemetry_sink](const swarmkit::core::TelemetryFrame& frame) {
             telemetry_sink->Write(frame);
         },
-        [](const std::string& error_msg) {
+        [&](const std::string& error_msg) {
+            {
+                std::lock_guard<std::mutex> lock(stream_error_mutex);
+                stream_error = error_msg;
+            }
+            stream_failed.store(true, std::memory_order_relaxed);
             std::cerr << "Telemetry stream error: " << error_msg << "\n";
         });
     if (!telemetry_stream.has_value()) {
@@ -1668,6 +1696,11 @@ int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz, int arg
 
     telemetry_stream->Stop();
     std::cout << "\nStopped.\n";
+    if (stream_failed.load(std::memory_order_relaxed)) {
+        std::lock_guard<std::mutex> lock(stream_error_mutex);
+        std::cerr << "Telemetry FAILED: " << stream_error << "\n";
+        return EXIT_FAILURE;
+    }
     return EXIT_SUCCESS;
 }
 

@@ -55,6 +55,7 @@ constexpr std::string_view kAgentEnvBindAddr = "BIND_ADDR";
 constexpr std::string_view kAgentEnvDefaultAuthorityTtlMs = "DEFAULT_AUTHORITY_TTL_MS";
 constexpr std::string_view kAgentEnvDefaultTelemetryRateHz = "DEFAULT_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvMinTelemetryRateHz = "MIN_TELEMETRY_RATE_HZ";
+constexpr std::string_view kAgentEnvAllowUnsafeBenchCommands = "ALLOW_UNSAFE_BENCH_COMMANDS";
 constexpr std::string_view kAgentEnvReportLogFile = "REPORT_LOG_FILE";
 constexpr std::string_view kAgentEnvReportSequenceStateFile = "REPORT_SEQUENCE_STATE_FILE";
 constexpr std::string_view kAgentEnvReportBacklogSize = "REPORT_BACKLOG_SIZE";
@@ -1074,7 +1075,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         envelope.command = std::move(convert_result.value());
 
         const CommandPreconditionDecision kPrecondition =
-            EvaluateCommandPreconditions(envelope, backend_->GetHealth());
+            EvaluateCommandPreconditions(envelope, backend_->GetHealth(),
+                                         config_.safety.allow_unsafe_bench_commands);
         if (kPrecondition.action != CommandPreconditionAction::kExecute) {
             reply->set_correlation_id(envelope.context.correlation_id);
             reply->set_error_code(ToProtoErrorCode(kPrecondition.result.code));
@@ -1237,8 +1239,23 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             .speed_mps = goal.speed_mps(),
         }};
 
+        const core::Result readiness = ValidateAutonomousReadiness(
+            backend_->GetHealth(), "active goal", config_.safety.allow_unsafe_bench_commands);
+        if (!readiness.IsOk()) {
+            arbiter_.Release(context.drone_id, context.client_id);
+            reply->set_ok(false);
+            reply->set_message(readiness.message);
+            reply->set_correlation_id(context.correlation_id);
+            reply->set_error_code(ToProtoErrorCode(readiness.code));
+            reply->set_debug_message(readiness.message);
+            *reply->mutable_goal() = goal;
+            PublishGoalFailure(goal, context.correlation_id, readiness.message);
+            return grpc::Status::OK;
+        }
+
         const core::Result exec_result = backend_->Execute(envelope);
         if (!exec_result.IsOk()) {
+            arbiter_.Release(context.drone_id, context.client_id);
             counters_.IncrementBackendFailures();
             reply->set_ok(false);
             reply->set_message(exec_result.message.empty() ? "active goal command failed"
@@ -1669,7 +1686,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 "result=acquire_failed detail={}",
                 kStreamId, config_.agent_id, kDroneId, kPeer, kEffectiveRateHz,
                 kAcquireResult.message);
-            return grpc::Status(grpc::StatusCode::UNAVAILABLE, kAcquireResult.message);
+            const auto status_code = kAcquireResult.code == core::StatusCode::kRejected
+                                         ? grpc::StatusCode::FAILED_PRECONDITION
+                                         : grpc::StatusCode::UNAVAILABLE;
+            return grpc::Status(status_code, kAcquireResult.message);
         }
 
         core::Logger::InfoFmt(
@@ -2104,6 +2124,8 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyIntEnv(prefix, kAgentEnvDefaultAuthorityTtlMs, &default_authority_ttl_ms);
     ApplyIntEnv(prefix, kAgentEnvDefaultTelemetryRateHz, &default_telemetry_rate_hz);
     ApplyIntEnv(prefix, kAgentEnvMinTelemetryRateHz, &min_telemetry_rate_hz);
+    ApplyBoolEnv(prefix, kAgentEnvAllowUnsafeBenchCommands,
+                 &safety.allow_unsafe_bench_commands);
     ApplyStringEnv(prefix, kAgentEnvReportLogFile, &reports.log_file);
     ApplyStringEnv(prefix, kAgentEnvReportSequenceStateFile, &reports.sequence_state_file);
     ApplyIntEnv(prefix, kAgentEnvReportBacklogSize, &reports.backlog_size);
@@ -2195,6 +2217,20 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
     }
     if (report_log_file->has_value()) {
         config.reports.log_file = report_log_file->value_or(config.reports.log_file);
+    }
+
+    if (const YAML::Node safety = root["safety"]; safety) {
+        if (!safety.IsMap()) {
+            return std::unexpected(core::Result::Rejected("agent.safety must be a map"));
+        }
+        const auto allow_unsafe_bench_commands =
+            core::yaml::ReadOptionalScalar<bool>(safety, "allow_unsafe_bench_commands");
+        if (!allow_unsafe_bench_commands.has_value()) {
+            return std::unexpected(allow_unsafe_bench_commands.error());
+        }
+        if (allow_unsafe_bench_commands->has_value()) {
+            config.safety.allow_unsafe_bench_commands = allow_unsafe_bench_commands->value_or(false);
+        }
     }
 
     const YAML::Node report_persistence =

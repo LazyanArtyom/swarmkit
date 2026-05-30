@@ -598,7 +598,7 @@ class MavlinkBackend final : public IDroneBackend {
             config_.target_component,
             velocity.body_frame ? MAV_FRAME_BODY_NED : MAV_FRAME_LOCAL_NED, type_mask, 0.0F, 0.0F,
             0.0F, velocity.vx_mps, velocity.vy_mps, velocity.vz_mps, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
-        return SendMavlinkMessage(message);
+        return SendUnverifiedMavlinkMessage(message);
     }
 
     [[nodiscard]] core::Result SendSetHome(const CmdSetHome& home) {
@@ -681,7 +681,7 @@ class MavlinkBackend final : public IDroneBackend {
             static_cast<std::int32_t>(std::llround(lon_deg * mav::kDegE7)),
             static_cast<float>(alt_m),
             0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, yaw_deg.value_or(0.0F), 0.0F);
-        return SendMavlinkMessage(message);
+        return SendUnverifiedMavlinkMessage(message);
     }
 
     [[nodiscard]] core::Result ExecuteMissionCommand(const MissionCmd& mission) {
@@ -701,6 +701,29 @@ class MavlinkBackend final : public IDroneBackend {
                                });
                        },
                        [&](const CmdStartMission& start) {
+                           if (config_.autopilot_profile ==
+                                   MavlinkAutopilotProfile::kArdupilotCopter ||
+                               config_.autopilot_profile ==
+                                   MavlinkAutopilotProfile::kArdupilotPlane) {
+                               if (start.last_item > 0) {
+                                   result = core::Result::Rejected(
+                                       "ArduPilot mission start does not support a last-item limit; "
+                                       "start the full mission or upload the desired subset");
+                                   return;
+                               }
+                               if (start.first_item > 0) {
+                                   result = mav::MavlinkMissionProtocol::SetCurrentMissionItem(
+                                       CmdSetCurrentMissionItem{start.first_item}, config_,
+                                       [this](const mavlink_message_t& message) {
+                                           return SendMavlinkMessage(message);
+                                       });
+                                   if (!result.IsOk()) {
+                                       return;
+                                   }
+                               }
+                               result = SetMode(CmdSetMode{.mode = "auto"});
+                               return;
+                           }
                            result = SendCommandLong(MAV_CMD_MISSION_START,
                                                     static_cast<float>(start.first_item),
                                                     static_cast<float>(start.last_item));
@@ -821,6 +844,14 @@ class MavlinkBackend final : public IDroneBackend {
         const std::uint16_t length = mavlink_msg_to_send_buffer(send_buffer.data(), &message);
 
         return transport_.Send(send_buffer.data(), length);
+    }
+
+    [[nodiscard]] core::Result SendUnverifiedMavlinkMessage(const mavlink_message_t& message) {
+        const core::Result result = SendMavlinkMessage(message);
+        if (!result.IsOk()) {
+            return result;
+        }
+        return core::Result::Success("MAVLink setpoint sent; execution not acknowledged");
     }
 
     void RecordCommandAck(const mav::CommandAck& ack) {

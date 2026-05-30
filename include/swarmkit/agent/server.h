@@ -81,6 +81,12 @@ struct ReportPersistenceConfig {
     [[nodiscard]] core::Result Validate() const;
 };
 
+struct SafetyPolicy {
+    /// Permit autonomous commands without normal flight-readiness checks.
+    /// Intended only for restrained, propeller-off bench testing.
+    bool allow_unsafe_bench_commands{false};
+};
+
 /// ---------------------------------------------------------------------------
 /// AgentConfig -- startup parameters for the gRPC agent server.
 /// ---------------------------------------------------------------------------
@@ -92,6 +98,7 @@ struct AgentConfig {
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};
     ReportPersistenceConfig reports{};
     VehicleProfile vehicle_profile{};
+    SafetyPolicy safety{};
     AgentSecurityConfig security{};
 
     [[nodiscard]] core::Result Validate() const;

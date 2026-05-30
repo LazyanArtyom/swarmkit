@@ -1,0 +1,10 @@
+execution_id: sitl-path-1
+drone_id: drone-1
+validation:
+  min_battery_percent: 20
+  require_gps: true
+  require_ekf_ok: true
+  max_altitude_m: 30
+points:
+  - {time_offset_ms: 0, lat: -35.363262, lon: 149.165237, alt: 5}
+  - {time_offset_ms: 5000, lat: -35.363200, lon: 149.165237, alt: 5}

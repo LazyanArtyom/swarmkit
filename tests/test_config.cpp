@@ -191,6 +191,8 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "  default_telemetry_rate_hz: 8\n";
     output << "  min_telemetry_rate_hz: 2\n";
     output << "  report_log_file: /tmp/swarmkit-agent-reports.jsonl\n";
+    output << "  safety:\n";
+    output << "    allow_unsafe_bench_commands: true\n";
     output << "  report_persistence:\n";
     output << "    sequence_state_file: /tmp/swarmkit-agent-reports.seq\n";
     output << "    backlog_size: 2048\n";
@@ -237,6 +239,7 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->reports.flush_each_write);
     CHECK_FALSE(kLoaded->reports.fsync_each_write);
     CHECK(kLoaded->reports.replay_from_log);
+    CHECK(kLoaded->safety.allow_unsafe_bench_commands);
     CHECK(kLoaded->vehicle_profile.profile_id == "heavy-copter");
     CHECK(kLoaded->vehicle_profile.cruise_speed_mps == 6.5F);
     CHECK(kLoaded->vehicle_profile.climb_speed_mps == 2.0F);

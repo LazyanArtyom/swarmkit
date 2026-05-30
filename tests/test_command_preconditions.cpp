@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <utility>
 
 #include "../src/agent/command_preconditions.h"
 
@@ -29,12 +30,60 @@ namespace {
     return envelope;
 }
 
+template <typename T>
+[[nodiscard]] CommandEnvelope Envelope(T command) {
+    CommandEnvelope envelope;
+    envelope.context.drone_id = "drone-1";
+    envelope.context.client_id = "test-client";
+    envelope.command = std::move(command);
+    return envelope;
+}
+
 [[nodiscard]] BackendHealth HealthWithVehicleState() {
     BackendHealth health;
     health.ready = true;
     health.last_heartbeat_unix_ms = 1;
     health.last_telemetry_unix_ms = 1;
     return health;
+}
+
+TEST_CASE("Autonomous commands require flight readiness by default",
+          "[agent][commands][preconditions][safety]") {
+    BackendHealth health = HealthWithVehicleState();
+    health.armed = false;
+    health.gps_ok = false;
+    health.ekf_ok = false;
+
+    const auto takeoff = EvaluateCommandPreconditions(
+        Envelope(commands::FlightCmd{commands::CmdTakeoff{.alt_m = 5.0}}), health);
+    CHECK(takeoff.action == CommandPreconditionAction::kReject);
+    CHECK(takeoff.result.message.find("must be armed") != std::string::npos);
+
+    health.armed = true;
+    const auto waypoint = EvaluateCommandPreconditions(
+        Envelope(commands::NavCmd{commands::CmdSetWaypoint{.lat_deg = 40.0,
+                                                            .lon_deg = 44.0,
+                                                            .alt_m = 5.0}}),
+        health);
+    CHECK(waypoint.action == CommandPreconditionAction::kReject);
+    CHECK(waypoint.result.message.find("healthy GPS") != std::string::npos);
+
+    const auto mission = EvaluateCommandPreconditions(
+        Envelope(commands::MissionCmd{commands::CmdStartMission{}}), health);
+    CHECK(mission.action == CommandPreconditionAction::kReject);
+    CHECK(mission.result.message.find("healthy GPS") != std::string::npos);
+}
+
+TEST_CASE("Bench override explicitly permits autonomous readiness bypass",
+          "[agent][commands][preconditions][safety]") {
+    BackendHealth health = HealthWithVehicleState();
+    health.armed = false;
+    health.gps_ok = false;
+    health.ekf_ok = false;
+
+    const auto decision = EvaluateCommandPreconditions(
+        Envelope(commands::NavCmd{commands::CmdVelocity{.vx_mps = 1.0F}}), health, true);
+    CHECK(decision.action == CommandPreconditionAction::kExecute);
 }
 
 TEST_CASE("Land precondition only skips command when disarmed near ground",
