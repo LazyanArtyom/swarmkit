@@ -1177,8 +1177,7 @@ int RunTrajectory(Client& client, std::string_view drone_id, int argc, char** ar
             return EXIT_FAILURE;
         }
         PrintExecutionHandle(status.handle);
-        std::cout << "  points               : " << status.plan.points.size() << "\n"
-                  << "  payload_timeline     : " << status.plan.payload_timeline.size() << "\n";
+        std::cout << "  points               : " << status.plan.points.size() << "\n";
         return EXIT_SUCCESS;
     }
     std::cerr << "Unknown trajectory action: " << actions[0] << "\n";
@@ -1609,10 +1608,6 @@ int RunCapabilities(Client& client) {
               << (capabilities.supports_time_sync ? "true" : "false") << "\n"
               << "  supports_trajectory_upload  : "
               << (capabilities.supports_trajectory_upload ? "true" : "false") << "\n"
-              << "  supports_payload_scheduling : "
-              << (capabilities.supports_payload_scheduling ? "true" : "false") << "\n"
-              << "  payload_timing_precision_ms : " << capabilities.payload_timing_precision_ms
-              << "\n"
               << "  max_horizontal_speed_mps    : "
               << OptionalFloatText(capabilities.max_horizontal_speed_mps) << "\n"
               << "  max_climb_speed_mps         : "
@@ -1625,8 +1620,6 @@ int RunCapabilities(Client& client) {
     print_list("supported_commands", capabilities.supported_commands);
     print_list("supported_mission_items", capabilities.supported_mission_items);
     print_list("supported_payloads", capabilities.supported_payloads);
-    print_list("payload_action_namespaces", capabilities.supported_payload_action_namespaces);
-    print_list("payload_action_names", capabilities.supported_payload_action_names);
     print_list("supported_telemetry_fields", capabilities.supported_telemetry_fields);
     print_list("backend_command_names", capabilities.backend_command_names);
     return EXIT_SUCCESS;

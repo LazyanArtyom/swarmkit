@@ -886,27 +886,6 @@ core::Result TrajectoryExecutionManager::SendTrajectoryPoint(
     return backend_->Execute(envelope);
 }
 
-core::Result TrajectoryExecutionManager::SendPayloadAction(
-    const swarmkit::v1::TrajectoryPlan& plan, const swarmkit::v1::PayloadAction& action,
-    std::string_view correlation_id) const {
-    if (backend_ == nullptr) {
-        return core::Result::Failed("backend unavailable");
-    }
-    commands::CmdBackendCommand command;
-    command.backend_namespace = action.action_namespace();
-    command.name = action.name();
-    for (const auto& [key, value] : action.params()) {
-        command.params.emplace(key, value);
-    }
-    commands::CommandEnvelope envelope;
-    envelope.context.drone_id = plan.drone_id();
-    envelope.context.client_id = "swarmkit-agent-execution";
-    envelope.context.priority = commands::CommandPriority::kSupervisor;
-    envelope.context.correlation_id = std::string(correlation_id);
-    envelope.command = commands::BackendCmd{std::move(command)};
-    return backend_->Execute(envelope);
-}
-
 std::int64_t TrajectoryExecutionManager::ComputeTrajectoryReachTimeoutMs(double distance_m) const {
     if (config_ == nullptr) {
         return agent::kDefaultGoalMarginMs;
@@ -943,7 +922,6 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
         }
     }
 
-    std::size_t next_payload_index = 0;
     while (true) {
         swarmkit::v1::TrajectoryPlan plan;
         swarmkit::v1::ExecutionHandle handle;
@@ -1012,20 +990,6 @@ void TrajectoryExecutionManager::RunExecution(const std::string& key,
                     iter->second.handle.set_message("trajectory tracking");
                     handle = iter->second.handle;
                 }
-            }
-
-            while (next_payload_index < static_cast<std::size_t>(plan.payload_timeline_size())) {
-                const auto& action = plan.payload_timeline(static_cast<int>(next_payload_index));
-                const std::int64_t due_ms = action.unix_time_ms() > 0
-                                                ? action.unix_time_ms()
-                                                : handle.start_unix_ms() + action.time_offset_ms();
-                if (due_ms > NowUnixMs()) {
-                    break;
-                }
-                if (action.has_action()) {
-                    static_cast<void>(SendPayloadAction(plan, action.action(), correlation_id));
-                }
-                ++next_payload_index;
             }
 
             if (telemetry_active) {

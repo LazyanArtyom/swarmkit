@@ -22,7 +22,7 @@ namespace swarmkit::core {
  *     [&](const CmdDisarm&)         { ... },
  *     [&](const CmdTakeoff& cmd)    { ... },
  *     [&](const CmdLand&)           { ... },
- *     [&](const CmdSetRole& cmd)    { ... },
+ *     [&](const CmdArm& cmd)        { ... },
  * }, envelope.command);
  * @endcode
  *

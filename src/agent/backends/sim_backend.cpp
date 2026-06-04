@@ -222,26 +222,6 @@ class SimBackend final : public IDroneBackend {
                 },
                 /// @}
 
-                /// @name Swarm commands
-                /// @{
-                [&](const SwarmCmd& swarm) {
-                    std::visit(core::Overloaded{
-                                   [&](const CmdSetRole& role_cmd) {
-                                       core::Logger::InfoFmt(
-                                           "SimBackend: SET_ROLE role={}  drone={}", role_cmd.role,
-                                           context.drone_id);
-                                   },
-                                   [&](const CmdSetFormation& formation_cmd) {
-                                       core::Logger::InfoFmt(
-                                           "SimBackend: SET_FORMATION id={} slot={}  drone={}",
-                                           formation_cmd.formation_id, formation_cmd.slot_index,
-                                           context.drone_id);
-                                   },
-                               },
-                               swarm);
-                },
-                /// @}
-
                 /// @name Payload commands
                 /// @{
                 [&](const PayloadCmd& payload) {
@@ -444,10 +424,6 @@ class SimBackend final : public IDroneBackend {
                  "validity", "source_time", "coordinate_frame", "home_origin", "accuracy",
                  "estimator", "linkage"},
             .backend_command_names = {"sim.echo"},
-            .supported_payload_action_namespaces = {"sim", "led", "camera", "gimbal"},
-            .supported_payload_action_names = {"echo", "set-color", "photo", "point"},
-            .payload_timing_precision_ms = 20,
-            .supports_payload_scheduling = true,
             .limits =
                 {
                     .max_horizontal_speed_mps = 10.0F,

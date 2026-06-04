@@ -104,9 +104,6 @@ class TrajectoryExecutionManager {
     [[nodiscard]] core::Result SendTrajectoryPoint(
         const swarmkit::v1::TrajectoryPlan& plan, const swarmkit::v1::TrajectoryPoint& point,
         std::string_view correlation_id) const;
-    [[nodiscard]] core::Result SendPayloadAction(const swarmkit::v1::TrajectoryPlan& plan,
-                                                 const swarmkit::v1::PayloadAction& action,
-                                                 std::string_view correlation_id) const;
     IDroneBackend* backend_{nullptr};
     TelemetryManager* telemetry_{nullptr};
     ReportHub* reports_{nullptr};

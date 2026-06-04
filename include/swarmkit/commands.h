@@ -16,7 +16,6 @@
 ///
 ///   #include "swarmkit/commands/flight.h"
 ///   #include "swarmkit/commands/nav.h"
-///   #include "swarmkit/commands/swarm.h"
 ///   #include "swarmkit/commands/payload.h"
 
 #include <chrono>
@@ -28,7 +27,6 @@
 #include "swarmkit/commands/mission.h"
 #include "swarmkit/commands/nav.h"
 #include "swarmkit/commands/payload.h"
-#include "swarmkit/commands/swarm.h"
 
 namespace swarmkit::commands {
 
@@ -74,7 +72,6 @@ enum class CommandPriority : std::uint8_t {
  *         }, cmd);
  *     },
  *     [&](const NavCmd&)     { ... },
- *     [&](const SwarmCmd&)   { ... },
  *     [&](const PayloadCmd&) { ... },
  * }, envelope.command);
  * @endcode
@@ -86,7 +83,7 @@ enum class CommandPriority : std::uint8_t {
  * 4. Handle it in every IDroneBackend implementation (compile error if missed).
  * 5. Add proto messages and map them in server.cpp.
  */
-using Command = std::variant<FlightCmd, NavCmd, MissionCmd, SwarmCmd, PayloadCmd, BackendCmd>;
+using Command = std::variant<FlightCmd, NavCmd, MissionCmd, PayloadCmd, BackendCmd>;
 
 /// ---------------------------------------------------------------------------
 /// CommandContext

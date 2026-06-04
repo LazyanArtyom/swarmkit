@@ -64,26 +64,6 @@ void AssignIfPresent(const YAML::Node& node, std::initializer_list<std::string_v
     }
 }
 
-[[nodiscard]] PayloadAction ParsePayloadActionNode(const YAML::Node& node) {
-    PayloadAction action;
-    AssignIfPresent(node, {"namespace", "action_namespace"}, &action.action_namespace);
-    AssignIfPresent(node, {"name", "action"}, &action.name);
-    if (const YAML::Node params = node["params"]; params && params.IsMap()) {
-        for (const auto& param : params) {
-            action.params[param.first.as<std::string>()] = param.second.as<std::string>();
-        }
-    }
-    return action;
-}
-
-[[nodiscard]] TimedPayloadAction ParseTimedPayloadActionNode(const YAML::Node& node) {
-    TimedPayloadAction action;
-    AssignIfPresent(node, {"time_offset_ms", "t_ms", "time_ms", "t"}, &action.time_offset_ms);
-    AssignIfPresent(node, {"unix_time_ms", "unix_ms"}, &action.unix_time_ms);
-    action.action = ParsePayloadActionNode(node["action"] ? node["action"] : node);
-    return action;
-}
-
 [[nodiscard]] std::optional<Geofence> ParseGeofenceNode(const YAML::Node& node) {
     if (!node || !node.IsMap()) {
         return std::nullopt;
@@ -148,10 +128,12 @@ void ApplyValidationNode(const YAML::Node& node, TrajectoryValidationPolicy* val
     point.has_yaw = HasAny(node, {"yaw", "yaw_deg"});
     AssignIfPresent(node, {"yaw", "yaw_deg"}, &point.yaw_deg);
 
-    if (const YAML::Node actions = node["payload_actions"]; actions && actions.IsSequence()) {
-        for (const auto& action : actions) {
-            point.payload_actions.push_back(ParseTimedPayloadActionNode(action));
-        }
+    if (const YAML::Node actions = node["payload_actions"];
+        actions && actions.IsDefined() && !actions.IsNull()) {
+        throw YAML::RepresentationException(
+            actions.Mark(),
+            "trajectory point payload_actions are not supported; dispatch payload commands from "
+            "controller logic");
     }
     return point;
 }
@@ -178,10 +160,12 @@ void ApplyPlanMetadataNode(const YAML::Node& node, TrajectoryPlan* plan) {
             plan->labels[label.first.as<std::string>()] = label.second.as<std::string>();
         }
     }
-    if (const YAML::Node timeline = node["payload_timeline"]; timeline && timeline.IsSequence()) {
-        for (const auto& action : timeline) {
-            plan->payload_timeline.push_back(ParseTimedPayloadActionNode(action));
-        }
+    if (const YAML::Node timeline = node["payload_timeline"];
+        timeline && timeline.IsDefined() && !timeline.IsNull()) {
+        throw YAML::RepresentationException(
+            timeline.Mark(),
+            "trajectory payload_timeline is not supported; dispatch payload commands from "
+            "controller logic");
     }
 }
 

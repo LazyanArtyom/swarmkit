@@ -75,12 +75,8 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
                 "home_origin",
                 "accuracy",
                 "estimator",
-            },
+        },
         .backend_command_names = {"mavlink.command-long"},
-        .supported_payload_action_namespaces = {"mavlink"},
-        .supported_payload_action_names = {"command-long"},
-        .payload_timing_precision_ms = 50,
-        .supports_payload_scheduling = false,
     };
 }
 

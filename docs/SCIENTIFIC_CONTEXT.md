@@ -10,7 +10,7 @@ This document summarizes how SwarmKit fits into the broader scientific platform 
 
 SwarmKit is a C++23 UAV swarm communication and execution SDK that provides the onboard agent and client-side control interface for a cloud-native UAV swarm platform. Each drone runs a SwarmKit agent on a companion computer, where it bridges high-level commands, verified command helpers, active goals, timed trajectories, telemetry, and execution reports to the vehicle flight stack through a pluggable backend such as MAVLink. External clients, cloud drone gateways, supervisor services, and local operator tools communicate with these agents through a typed gRPC API.
 
-The library is intentionally algorithm-agnostic. It does not prescribe a particular swarm coordination method; instead, it supplies the execution substrate required by higher-level systems such as deterministic rotor-router planners, adaptive mission supervisors, drone-show schedulers, patrol systems, inspection tools, or dynamic role-based controllers. This separation allows scientific work on swarm coordination and cloud orchestration to be evaluated against simulated or real UAVs through a stable and reusable control interface.
+The library is intentionally algorithm-agnostic. It does not prescribe a particular swarm coordination method; instead, it supplies the execution substrate required by higher-level systems such as deterministic rotor-router planners, adaptive mission supervisors, patrol systems, inspection tools, or dynamic controllers. This separation allows scientific work on swarm coordination and cloud orchestration to be evaluated against simulated or real UAVs through a stable and reusable control interface.
 
 Within the larger cloud-native UAV swarm platform, SwarmKit represents the UAV-side execution and connectivity layer. Cloud services can use it through the client SDK to send commands, subscribe to telemetry, monitor reports, coordinate authority, upload trajectories, and supervise active goals. Onboard agents retain local execution capability and continue operating even if cloud connectivity is intermittent, while the cloud layer can provide mission-level supervision, analytics, and corrective assistance when communication is available.
 
@@ -96,7 +96,7 @@ This design keeps the rotor-router logic independent, testable, and replaceable,
 
 ## Relation to Drone Shows and Synchronized Movement
 
-For synchronized movement tasks such as drone shows, SwarmKit provides timed trajectory primitives rather than hard-coded show logic. A show system can generate a trajectory per drone, validate it against vehicle profile limits, prepare execution, start all drones at a synchronized timestamp, and subscribe to trajectory reports.
+For synchronized movement tasks, SwarmKit provides timed trajectory primitives rather than hard-coded application logic. A higher-level planner can generate a trajectory per drone, validate it against vehicle profile limits, prepare execution, start all drones at a synchronized timestamp, and subscribe to trajectory reports.
 
 The generic primitives are:
 

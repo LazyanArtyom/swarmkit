@@ -39,8 +39,8 @@ service AgentService {
     rpc GetActiveGoal(GetActiveGoalRequest) returns (GetActiveGoalReply);
 
     /// Generic timed trajectory/execution lifecycle. This is intentionally
-    /// domain-neutral: drone shows, patrol, mapping, and custom controllers can
-    /// all build their own logic on top of these primitives.
+    /// domain-neutral: mission supervisors and custom controllers can build
+    /// their own logic on top of these primitives.
     rpc UploadTrajectory(UploadTrajectoryRequest) returns (ExecutionReply);
     rpc ClearTrajectory(ExecutionRequest) returns (ExecutionReply);
     rpc ValidateTrajectory(ValidateTrajectoryRequest) returns (ValidateTrajectoryReply);
@@ -167,10 +167,9 @@ message CapabilitiesReply {
     optional float max_climb_speed_mps = 22;
     optional float max_descent_speed_mps = 23;
     optional float max_altitude_m = 24;
-    repeated string supported_payload_action_namespaces = 25;
-    repeated string supported_payload_action_names = 26;
-    int32 payload_timing_precision_ms = 27;
-    bool supports_payload_scheduling = 28;
+    reserved 25, 26, 27, 28;
+    reserved "supported_payload_action_namespaces", "supported_payload_action_names",
+             "payload_timing_precision_ms", "supports_payload_scheduling";
 }
 
 // ---------------------------------------------------------------------------
@@ -319,17 +318,6 @@ message CmdSetCurrentMissionItem {
     int32 seq = 1;
 }
 
-// --- Swarm commands (multi-agent coordination) ---
-
-message CmdSetRole {
-    string role = 1;  /// Freeform role label (e.g. "leader", "follower-3").
-}
-
-message CmdSetFormation {
-    string formation_id = 1;  /// Identifier of the formation template.
-    int32 slot_index = 2;     /// Zero-based position within the formation.
-}
-
 // --- Payload commands ---
 
 message CmdPhoto {
@@ -400,6 +388,8 @@ message CmdBackendCommand {
  */
 message Command {
     reserved "send_data";
+    reserved 20, 21;
+    reserved "set_role", "set_formation";
 
     oneof kind {
         // Flight
@@ -423,10 +413,6 @@ message Command {
         CmdSetYaw set_yaw = 17;
         CmdVelocity velocity = 18;
         CmdSetHome set_home = 19;
-
-        // Swarm
-        CmdSetRole set_role = 20;
-        CmdSetFormation set_formation = 21;
 
         // Mission
         CmdUploadMission upload_mission = 31;
@@ -621,19 +607,10 @@ message LocalPoint {
     double z_m = 3;
 }
 
-message PayloadAction {
-    string action_namespace = 1;
-    string name = 2;
-    map<string, string> params = 3;
-}
-
-message TimedPayloadAction {
-    int64 time_offset_ms = 1;
-    int64 unix_time_ms = 2;
-    PayloadAction action = 3;
-}
-
 message TrajectoryPoint {
+    reserved 12;
+    reserved "payload_actions";
+
     int64 time_offset_ms = 1;
     int64 unix_time_ms = 2;
     GeoPoint position = 3;
@@ -645,7 +622,6 @@ message TrajectoryPoint {
     bool has_velocity = 9;
     float yaw_deg = 10;
     bool has_yaw = 11;
-    repeated TimedPayloadAction payload_actions = 12;
     Command command = 13;  // Optional typed command dispatched at this point's scheduled time.
 }
 
@@ -672,12 +648,14 @@ message TrajectoryValidationPolicy {
 }
 
 message TrajectoryPlan {
+    reserved 6;
+    reserved "payload_timeline";
+
     string execution_id = 1;
     uint64 revision = 2;
     string drone_id = 3;
     string frame = 4;  // global|local-ned; point.use_local_position may override per point.
     repeated TrajectoryPoint points = 5;
-    repeated TimedPayloadAction payload_timeline = 6;
     TrajectoryValidationPolicy validation = 7;
     map<string, string> labels = 8;
 }

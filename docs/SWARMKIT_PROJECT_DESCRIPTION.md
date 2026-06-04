@@ -8,7 +8,7 @@ SwarmKit is a C++23 software development kit and runtime framework for connectin
 
 In the broader swarm platform architecture, SwarmKit occupies the UAV-side connectivity and control layer. Higher-level services such as mission authoring, deterministic rotor-router planning, cloud supervision, telemetry aggregation, data analytics, and multi-user collaboration can use SwarmKit clients to communicate with onboard agents. Each agent runs near the vehicle, typically on a Raspberry Pi or similar companion computer, and translates generic SwarmKit commands into backend-specific vehicle protocol operations such as MAVLink messages for ArduPilot or PX4-compatible systems.
 
-The central design principle is separation of mission intelligence from vehicle communication. SwarmKit does not impose one swarm algorithm, planner, or mission model. Instead, it provides robust primitives that allow developers to build those systems above it: command dispatch, authority arbitration, telemetry streams, typed reports, active goals, timed trajectories, backend capability discovery, and pluggable drone backends. This makes the library usable for rotor-router coordination, drone shows, patrol, mapping, inspection, simulated combat scenarios, or custom dynamic swarm controllers.
+The central design principle is separation of mission intelligence from vehicle communication. SwarmKit does not impose one swarm algorithm, planner, or mission model. Instead, it provides robust primitives that allow developers to build those systems above it: command dispatch, authority arbitration, telemetry streams, typed reports, active goals, timed trajectories, backend capability discovery, and pluggable drone backends. This makes the library usable for rotor-router coordination, patrol, mapping, inspection, simulated combat scenarios, or custom dynamic swarm controllers.
 
 ## Role in the Cloud-Native UAV Swarm Platform
 
@@ -152,7 +152,7 @@ This supports workflows where commands are generated dynamically while the drone
 
 ## Timed Trajectory and Planner Integration
 
-SwarmKit includes generic timed trajectory primitives for use cases such as synchronized movement, drone shows, generated coverage paths, and planner output execution.
+SwarmKit includes generic timed trajectory primitives for use cases such as synchronized movement, generated coverage paths, and planner output execution.
 
 A trajectory can contain:
 
@@ -273,7 +273,7 @@ Repository examples cover the main deployment modes:
 
 ## Boundaries and Non-Goals
 
-SwarmKit does not implement one fixed swarm algorithm. It does not own rotor-router mission planning, drone-show choreography, cloud mission authoring, image analytics, or user collaboration logic. Those belong to higher-level applications and services.
+SwarmKit does not implement one fixed swarm algorithm. It does not own rotor-router mission planning, cloud mission authoring, image analytics, or user collaboration logic. Those belong to higher-level applications and services.
 
 SwarmKit provides the lower-level, reusable control substrate:
 

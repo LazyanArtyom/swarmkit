@@ -118,10 +118,6 @@ class MavlinkBackend final : public IDroneBackend {
                        },
                        [&](const NavCmd& nav) { result = ExecuteNavCommand(nav); },
                        [&](const MissionCmd& mission) { result = ExecuteMissionCommand(mission); },
-                       [&](const SwarmCmd&) {
-                           result = core::Result::Rejected(
-                               "MAVLink backend does not support swarm commands");
-                       },
                        [&](const PayloadCmd& payload) { result = ExecutePayloadCommand(payload); },
                        [&](const BackendCmd& backend) { result = ExecuteBackendCommand(backend); },
                    },

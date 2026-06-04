@@ -602,21 +602,6 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                     },
                     mission);
             },
-
-            [&](const commands::SwarmCmd& swarm) {
-                std::visit(core::Overloaded{
-                               [&](const commands::CmdSetRole& role) {
-                                   proto_cmd->mutable_set_role()->set_role(role.role);
-                               },
-                               [&](const commands::CmdSetFormation& formation) {
-                                   auto* proto_frm = proto_cmd->mutable_set_formation();
-                                   proto_frm->set_formation_id(formation.formation_id);
-                                   proto_frm->set_slot_index(formation.slot_index);
-                               },
-                           },
-                           swarm);
-            },
-
             [&](const commands::PayloadCmd& payload) {
                 std::visit(core::Overloaded{
                                [&](const commands::CmdPhoto& photo) {
@@ -1360,25 +1345,6 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     };
 }
 
-[[nodiscard]] swarmkit::v1::PayloadAction ToProtoPayloadAction(const PayloadAction& action) {
-    swarmkit::v1::PayloadAction proto;
-    proto.set_action_namespace(action.action_namespace);
-    proto.set_name(action.name);
-    for (const auto& [key, value] : action.params) {
-        (*proto.mutable_params())[key] = value;
-    }
-    return proto;
-}
-
-[[nodiscard]] swarmkit::v1::TimedPayloadAction ToProtoTimedPayloadAction(
-    const TimedPayloadAction& action) {
-    swarmkit::v1::TimedPayloadAction proto;
-    proto.set_time_offset_ms(action.time_offset_ms);
-    proto.set_unix_time_ms(action.unix_time_ms);
-    *proto.mutable_action() = ToProtoPayloadAction(action.action);
-    return proto;
-}
-
 [[nodiscard]] swarmkit::v1::TrajectoryPoint ToProtoTrajectoryPoint(const TrajectoryPoint& point) {
     swarmkit::v1::TrajectoryPoint proto;
     proto.set_time_offset_ms(point.time_offset_ms);
@@ -1399,9 +1365,6 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     proto.set_has_velocity(point.has_velocity);
     proto.set_yaw_deg(point.yaw_deg);
     proto.set_has_yaw(point.has_yaw);
-    for (const auto& action : point.payload_actions) {
-        *proto.add_payload_actions() = ToProtoTimedPayloadAction(action);
-    }
     if (point.command.has_value()) {
         swarmkit::v1::CommandRequest request;
         commands::CommandEnvelope envelope;
@@ -1422,9 +1385,6 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     proto->set_frame(plan.frame);
     for (const auto& point : plan.points) {
         *proto->add_points() = ToProtoTrajectoryPoint(point);
-    }
-    for (const auto& action : plan.payload_timeline) {
-        *proto->add_payload_timeline() = ToProtoTimedPayloadAction(action);
     }
     auto* validation = proto->mutable_validation();
     validation->set_min_battery_percent(plan.validation.min_battery_percent);
@@ -1455,25 +1415,6 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
         .lat_deg = point.lat_deg(),
         .lon_deg = point.lon_deg(),
         .alt_m = point.alt_m(),
-    };
-}
-
-[[nodiscard]] PayloadAction ToPayloadAction(const swarmkit::v1::PayloadAction& proto) {
-    PayloadAction action;
-    action.action_namespace = proto.action_namespace();
-    action.name = proto.name();
-    for (const auto& [key, value] : proto.params()) {
-        action.params.emplace(key, value);
-    }
-    return action;
-}
-
-[[nodiscard]] TimedPayloadAction ToTimedPayloadAction(
-    const swarmkit::v1::TimedPayloadAction& proto) {
-    return {
-        .time_offset_ms = proto.time_offset_ms(),
-        .unix_time_ms = proto.unix_time_ms(),
-        .action = proto.has_action() ? ToPayloadAction(proto.action()) : PayloadAction{},
     };
 }
 
@@ -1573,9 +1514,6 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     point.has_velocity = proto.has_velocity();
     point.yaw_deg = proto.yaw_deg();
     point.has_yaw = proto.has_yaw();
-    for (const auto& action : proto.payload_actions()) {
-        point.payload_actions.push_back(ToTimedPayloadAction(action));
-    }
     if (proto.has_command()) {
         point.command = ToClientCommand(proto.command());
     }
@@ -1590,9 +1528,6 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     plan.frame = proto.frame();
     for (const auto& point : proto.points()) {
         plan.points.push_back(ToTrajectoryPoint(point));
-    }
-    for (const auto& action : proto.payload_timeline()) {
-        plan.payload_timeline.push_back(ToTimedPayloadAction(action));
     }
     if (proto.has_validation()) {
         const auto& validation = proto.validation();
@@ -2406,13 +2341,6 @@ BackendCapabilities Client::GetCapabilities() const {
                                           rep.supported_telemetry_fields().end());
     out.backend_command_names.assign(rep.backend_command_names().begin(),
                                      rep.backend_command_names().end());
-    out.supported_payload_action_namespaces.assign(
-        rep.supported_payload_action_namespaces().begin(),
-        rep.supported_payload_action_namespaces().end());
-    out.supported_payload_action_names.assign(rep.supported_payload_action_names().begin(),
-                                              rep.supported_payload_action_names().end());
-    out.payload_timing_precision_ms = rep.payload_timing_precision_ms();
-    out.supports_payload_scheduling = rep.supports_payload_scheduling();
     if (rep.has_max_horizontal_speed_mps()) {
         out.max_horizontal_speed_mps = rep.max_horizontal_speed_mps();
     }

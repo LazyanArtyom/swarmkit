@@ -9,12 +9,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <expected>
 #include <mutex>
-#include <numbers>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -37,8 +35,6 @@ namespace {
 constexpr std::size_t kFallbackParallelism = 8;
 constexpr std::size_t kDefaultFanoutParallelism = 32;
 constexpr std::size_t kMaxDefaultFanoutParallelism = 64;
-constexpr double kEarthRadiusMeters = 6378137.0;
-constexpr double kPi = std::numbers::pi;
 
 [[nodiscard]] std::size_t ComputeParallelism(std::size_t task_count,
                                              const SwarmFanoutOptions& options) {
@@ -150,10 +146,6 @@ class BoundedFanoutExecutor final {
     const std::string& drone_id) {
     return LocalReleaseAuthorityResult(false, "drone '" + drone_id + "' not registered",
                                        RpcStatusCode::kNotFound);
-}
-
-[[nodiscard]] bool IsSwarmCommand(const commands::Command& command) {
-    return std::holds_alternative<commands::SwarmCmd>(command);
 }
 
 [[nodiscard]] bool IsProtocolSchedulableCommand(const commands::Command& command) {
@@ -415,7 +407,6 @@ void PopulateTrajectoryPointFromCommand(const commands::Command& command, Trajec
                    [](const commands::MissionCmd&) {},
                    [](const commands::PayloadCmd&) {},
                    [](const commands::BackendCmd&) {},
-                   [](const commands::SwarmCmd&) {},
                    [point](const commands::NavCmd& nav) {
                        std::visit(core::Overloaded{
                                       [point](const commands::CmdSetWaypoint& waypoint) {
@@ -452,12 +443,6 @@ void PopulateTrajectoryPointFromCommand(const commands::Command& command, Trajec
         return std::unexpected(LocalSwarmError(RpcStatusCode::kInvalidArgument,
                                                "synchronized execution requires drone_id"));
     }
-    if (IsSwarmCommand(command)) {
-        return std::unexpected(
-            LocalSwarmError(RpcStatusCode::kInvalidArgument,
-                            "logical swarm commands are manager state changes and cannot be "
-                            "scheduled as timed vehicle execution"));
-    }
     if (!IsProtocolSchedulableCommand(command)) {
         return std::unexpected(LocalSwarmError(
             RpcStatusCode::kUnsupported,
@@ -483,25 +468,6 @@ void PopulateTrajectoryPointFromCommand(const commands::Command& command, Trajec
     PopulateTrajectoryPointFromCommand(command, &point);
     plan.points.push_back(std::move(point));
     return plan;
-}
-
-[[nodiscard]] double DegreesToRadians(double degrees) {
-    return degrees * kPi / 180.0;
-}
-
-[[nodiscard]] double RadiansToDegrees(double radians) {
-    return radians * 180.0 / kPi;
-}
-
-[[nodiscard]] GeoPoint OffsetGlobalPosition(const SwarmFormationAnchor& anchor, double north_m,
-                                            double east_m, double up_m) {
-    const double lat_rad = DegreesToRadians(anchor.lat_deg);
-    const double cos_lat = std::max(0.000001, std::cos(lat_rad));
-    GeoPoint point;
-    point.lat_deg = anchor.lat_deg + RadiansToDegrees(north_m / kEarthRadiusMeters);
-    point.lon_deg = anchor.lon_deg + RadiansToDegrees(east_m / (kEarthRadiusMeters * cos_lat));
-    point.alt_m = anchor.alt_m + up_m;
-    return point;
 }
 
 [[nodiscard]] std::vector<std::pair<std::string, std::shared_ptr<Client>>> FilterClients(
@@ -537,8 +503,6 @@ struct SwarmClient::Impl {
 
     mutable std::mutex mutex;
     std::unordered_map<std::string, std::shared_ptr<Client>> clients;
-    std::unordered_map<std::string, std::string> roles;
-    std::unordered_map<std::string, SwarmFormationAssignment> formation_assignments;
 
     /// @brief Returns a snapshot of all drone_id / Client pairs.
     ///
@@ -654,10 +618,6 @@ core::Result SwarmClient::ApplyConfig(const SwarmConfig& config,
 }
 
 CommandResult SwarmClient::SendCommand(const commands::CommandEnvelope& envelope) const {
-    if (IsSwarmCommand(envelope.command)) {
-        return HandleSwarmCommand(envelope);
-    }
-
     std::shared_ptr<Client> client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -672,11 +632,6 @@ CommandResult SwarmClient::SendCommand(const commands::CommandEnvelope& envelope
 
 CommandResult SwarmClient::SendCommandAndWait(const commands::CommandEnvelope& envelope,
                                               const CommandWaitOptions& options) const {
-    if (IsSwarmCommand(envelope.command)) {
-        static_cast<void>(options);
-        return HandleSwarmCommand(envelope);
-    }
-
     std::shared_ptr<Client> client;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -725,20 +680,6 @@ RuntimeStats SwarmClient::GetRuntimeStats(const std::string& drone_id) const {
 std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
     const commands::Command& command, const commands::CommandContext& context,
     const SwarmFanoutOptions& fanout_options) const {
-    if (IsSwarmCommand(command)) {
-        const auto kSnapshot = impl_->Snapshot();
-        return RunCommandTasks(kSnapshot, fanout_options,
-                               [this, &command, &context](const std::string& drone_id,
-                                                          const std::shared_ptr<Client>& client) {
-                                   static_cast<void>(client);
-                                   commands::CommandEnvelope envelope;
-                                   envelope.context = context;
-                                   envelope.context.drone_id = drone_id;
-                                   envelope.command = command;
-                                   return HandleSwarmCommand(envelope);
-                               });
-    }
-
     const auto kSnapshot = impl_->Snapshot();
     return RunCommandTasks(
         kSnapshot, fanout_options,
@@ -754,20 +695,6 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommand(
 std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommandAndWait(
     const commands::Command& command, const commands::CommandContext& context,
     const CommandWaitOptions& options, const SwarmFanoutOptions& fanout_options) const {
-    if (IsSwarmCommand(command)) {
-        const auto kSnapshot = impl_->Snapshot();
-        return RunCommandTasks(kSnapshot, fanout_options,
-                               [this, &command, &context](const std::string& drone_id,
-                                                          const std::shared_ptr<Client>& client) {
-                                   static_cast<void>(client);
-                                   commands::CommandEnvelope envelope;
-                                   envelope.context = context;
-                                   envelope.context.drone_id = drone_id;
-                                   envelope.command = command;
-                                   return HandleSwarmCommand(envelope);
-                               });
-    }
-
     const auto kSnapshot = impl_->Snapshot();
     return RunCommandTasks(kSnapshot, fanout_options,
                            [&command, &context, &options](const std::string& drone_id,
@@ -791,132 +718,6 @@ SwarmExecutionReport SwarmClient::ExecuteSynchronizedCommand(
         planned.emplace(drone_id, command);
     }
     return ExecutePlannedCommands(planned, context, options);
-}
-
-SwarmExecutionReport SwarmClient::ApplyFormation(const SwarmFormationPlan& plan,
-                                                 const commands::CommandContext& context,
-                                                 const SwarmExecutionOptions& options) const {
-    SwarmExecutionReport report;
-    if (plan.formation_id.empty()) {
-        report.message = "formation_id is required";
-        report.error = MakeLocalError(core::ErrorDomain::kValidation,
-                                      RpcStatusCode::kInvalidArgument, report.message);
-        return report;
-    }
-    if (plan.slots.empty()) {
-        report.message = "formation requires at least one slot";
-        report.error = MakeLocalError(core::ErrorDomain::kValidation,
-                                      RpcStatusCode::kInvalidArgument, report.message);
-        return report;
-    }
-
-    std::unordered_map<std::string, commands::Command> planned;
-    planned.reserve(plan.slots.size());
-    for (std::size_t index = 0; index < plan.slots.size(); ++index) {
-        const SwarmFormationSlot& slot = plan.slots[index];
-        if (slot.drone_id.empty()) {
-            report.results.emplace(
-                "", LocalCommandResult(false, "formation slot drone_id is required"));
-            continue;
-        }
-        const GeoPoint target =
-            OffsetGlobalPosition(plan.anchor, slot.north_m, slot.east_m, slot.up_m);
-        const float speed = slot.speed_mps > 0.0F ? slot.speed_mps : plan.speed_mps;
-        planned[slot.drone_id] = commands::NavCmd{commands::CmdGoto{
-            .lat_deg = target.lat_deg,
-            .lon_deg = target.lon_deg,
-            .alt_m = target.alt_m,
-            .speed_mps = speed,
-            .yaw_deg = slot.yaw_deg,
-            .use_yaw = slot.use_yaw,
-        }};
-        static_cast<void>(
-            AssignFormationSlot(slot.drone_id, plan.formation_id, static_cast<int>(index)));
-        if (!slot.role.empty()) {
-            static_cast<void>(AssignRole(slot.drone_id, slot.role));
-        }
-    }
-
-    SwarmExecutionReport execution_report = ExecutePlannedCommands(planned, context, options);
-    for (auto& [drone_id, result] : report.results) {
-        execution_report.results.emplace(drone_id, std::move(result));
-    }
-    execution_report.requested = execution_report.results.size();
-    execution_report.succeeded = CountSucceeded(execution_report.results);
-    execution_report.failed = execution_report.requested - execution_report.succeeded;
-    if (!execution_report.ok && execution_report.message.empty()) {
-        execution_report.message = "formation execution failed";
-    }
-    return execution_report;
-}
-
-CommandResult SwarmClient::AssignRole(const std::string& drone_id, std::string role) const {
-    if (drone_id.empty()) {
-        return LocalCommandResult(false, "drone_id is required");
-    }
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (!impl_->clients.contains(drone_id)) {
-        return LocalCommandResult(false, "drone '" + drone_id + "' not registered");
-    }
-    impl_->roles[drone_id] = std::move(role);
-    return LocalCommandResult(true, "swarm role assigned");
-}
-
-CommandResult SwarmClient::AssignFormationSlot(const std::string& drone_id,
-                                               std::string formation_id, int slot_index) const {
-    if (drone_id.empty()) {
-        return LocalCommandResult(false, "drone_id is required");
-    }
-    if (formation_id.empty()) {
-        return LocalCommandResult(false, "formation_id is required");
-    }
-    if (slot_index < 0) {
-        return LocalCommandResult(false, "slot_index must be non-negative");
-    }
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (!impl_->clients.contains(drone_id)) {
-        return LocalCommandResult(false, "drone '" + drone_id + "' not registered");
-    }
-    impl_->formation_assignments[drone_id] = {
-        .formation_id = std::move(formation_id),
-        .slot_index = slot_index,
-    };
-    return LocalCommandResult(true, "swarm formation slot assigned");
-}
-
-std::optional<std::string> SwarmClient::GetDroneRole(const std::string& drone_id) const {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    const auto iter = impl_->roles.find(drone_id);
-    if (iter == impl_->roles.end()) {
-        return std::nullopt;
-    }
-    return iter->second;
-}
-
-std::optional<SwarmFormationAssignment> SwarmClient::GetFormationAssignment(
-    const std::string& drone_id) const {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    const auto iter = impl_->formation_assignments.find(drone_id);
-    if (iter == impl_->formation_assignments.end()) {
-        return std::nullopt;
-    }
-    return iter->second;
-}
-
-CommandResult SwarmClient::HandleSwarmCommand(const commands::CommandEnvelope& envelope) const {
-    if (envelope.context.drone_id.empty()) {
-        return LocalCommandResult(false, "swarm command requires context.drone_id");
-    }
-    const auto& swarm = std::get<commands::SwarmCmd>(envelope.command);
-    if (const auto* role = std::get_if<commands::CmdSetRole>(&swarm); role != nullptr) {
-        return AssignRole(envelope.context.drone_id, role->role);
-    }
-    if (const auto* formation = std::get_if<commands::CmdSetFormation>(&swarm);
-        formation != nullptr) {
-        return AssignFormationSlot(envelope.context.drone_id, formation->formation_id,
-                                   formation->slot_index);
-    }
-    return LocalCommandResult(false, "unknown swarm command");
 }
 
 SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
@@ -952,7 +753,7 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
         target_clients.emplace_back(drone_id, client_iter->second);
     }
 
-    const auto dispatch = [this, &planned_commands, &context, &options](
+    const auto dispatch = [&planned_commands, &context, &options](
                               const std::string& drone_id,
                               const std::shared_ptr<Client>& client) -> CommandResult {
         const auto command_iter = planned_commands.find(drone_id);
@@ -963,9 +764,6 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
         envelope.context = context;
         envelope.context.drone_id = drone_id;
         envelope.command = command_iter->second;
-        if (IsSwarmCommand(envelope.command)) {
-            return HandleSwarmCommand(envelope);
-        }
         return options.verify ? client->SendCommandAndWait(envelope, options.wait_options)
                               : client->SendCommand(envelope);
     };
@@ -987,15 +785,6 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
                                         LocalCommandResult(false, "no planned command for drone"));
                 continue;
             }
-            if (IsSwarmCommand(command_iter->second)) {
-                commands::CommandEnvelope envelope;
-                envelope.context = context;
-                envelope.context.drone_id = drone_id;
-                envelope.command = command_iter->second;
-                command_results.emplace(drone_id, HandleSwarmCommand(envelope));
-                continue;
-            }
-
             auto plan = BuildTimedCommandPlan(drone_id, command_iter->second, context, options,
                                               execution_id);
             if (!plan.has_value()) {

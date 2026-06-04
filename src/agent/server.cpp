@@ -532,10 +532,6 @@ void PopulateTelemetryProto(const core::TelemetryFrame& frame,
             return "VELOCITY";
         case swarmkit::v1::Command::kSetHome:
             return "SET_HOME";
-        case swarmkit::v1::Command::kSetRole:
-            return "SET_ROLE";
-        case swarmkit::v1::Command::kSetFormation:
-            return "SET_FORMATION";
         case swarmkit::v1::Command::kUploadMission:
             return "UPLOAD_MISSION";
         case swarmkit::v1::Command::kClearMission:
@@ -731,14 +727,6 @@ void PopulateTelemetryProto(const core::TelemetryFrame& frame,
         case swarmkit::v1::Command::kSetCurrentMissionItem:
             return MissionCmd{CmdSetCurrentMissionItem{proto.set_current_mission_item().seq()}};
 
-        case swarmkit::v1::Command::kSetRole:
-            return SwarmCmd{CmdSetRole{proto.set_role().role()}};
-        case swarmkit::v1::Command::kSetFormation: {
-            CmdSetFormation formation;
-            formation.formation_id = proto.set_formation().formation_id();
-            formation.slot_index = proto.set_formation().slot_index();
-            return SwarmCmd{std::move(formation)};
-        }
         case swarmkit::v1::Command::kPhoto:
             return PayloadCmd{CmdPhoto{proto.photo().camera_id()}};
         case swarmkit::v1::Command::kPhotoIntervalStart:
@@ -990,14 +978,6 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         for (const std::string& command : capabilities.backend_command_names) {
             reply->add_backend_command_names(command);
         }
-        for (const std::string& item : capabilities.supported_payload_action_namespaces) {
-            reply->add_supported_payload_action_namespaces(item);
-        }
-        for (const std::string& item : capabilities.supported_payload_action_names) {
-            reply->add_supported_payload_action_names(item);
-        }
-        reply->set_payload_timing_precision_ms(capabilities.payload_timing_precision_ms);
-        reply->set_supports_payload_scheduling(capabilities.supports_payload_scheduling);
         if (capabilities.limits.max_horizontal_speed_mps.has_value()) {
             reply->set_max_horizontal_speed_mps(*capabilities.limits.max_horizontal_speed_mps);
         }

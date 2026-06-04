@@ -82,35 +82,6 @@ struct SwarmExecutionOptions {
     CommandWaitOptions wait_options{};
 };
 
-struct SwarmFormationAnchor {
-    double lat_deg{};
-    double lon_deg{};
-    double alt_m{};
-};
-
-struct SwarmFormationSlot {
-    std::string drone_id;
-    double north_m{};
-    double east_m{};
-    double up_m{};
-    float speed_mps{};
-    float yaw_deg{};
-    bool use_yaw{false};
-    std::string role;
-};
-
-struct SwarmFormationPlan {
-    std::string formation_id;
-    SwarmFormationAnchor anchor;
-    std::vector<SwarmFormationSlot> slots;
-    float speed_mps{};
-};
-
-struct SwarmFormationAssignment {
-    std::string formation_id;
-    int slot_index{};
-};
-
 struct SwarmDroneReadiness {
     bool registered{false};
     bool uploaded{false};
@@ -291,8 +262,6 @@ class SwarmClient {
      * and goto that should start together. In kProtocolStartAt mode the manager
      * uploads per-drone timed command plans, prepares them, validates time-sync
      * quality/readiness, then sends one shared StartExecutionAt timestamp.
-     * Logical swarm commands are consumed by the manager and are not forwarded
-     * to vehicle backends.
      */
     [[nodiscard]] SwarmExecutionReport ExecuteSynchronizedCommand(
         const commands::Command& command, const commands::CommandContext& context,
@@ -308,20 +277,6 @@ class SwarmClient {
     [[nodiscard]] SwarmExecutionReport ExecutePlannedCommands(
         const std::unordered_map<std::string, commands::Command>& planned_commands,
         const commands::CommandContext& context, const SwarmExecutionOptions& options = {}) const;
-
-    /**
-     * @brief Translate a formation plan into per-drone goto commands and execute it.
-     */
-    [[nodiscard]] SwarmExecutionReport ApplyFormation(
-        const SwarmFormationPlan& plan, const commands::CommandContext& context,
-        const SwarmExecutionOptions& options = {}) const;
-
-    [[nodiscard]] CommandResult AssignRole(const std::string& drone_id, std::string role) const;
-    [[nodiscard]] CommandResult AssignFormationSlot(const std::string& drone_id,
-                                                    std::string formation_id, int slot_index) const;
-    [[nodiscard]] std::optional<std::string> GetDroneRole(const std::string& drone_id) const;
-    [[nodiscard]] std::optional<SwarmFormationAssignment> GetFormationAssignment(
-        const std::string& drone_id) const;
 
     /// @}
 
@@ -443,7 +398,6 @@ class SwarmClient {
 
    private:
     struct Impl;
-    [[nodiscard]] CommandResult HandleSwarmCommand(const commands::CommandEnvelope& envelope) const;
     std::unique_ptr<Impl> impl_;
 };
 

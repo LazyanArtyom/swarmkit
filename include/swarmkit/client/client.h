@@ -197,10 +197,6 @@ struct BackendCapabilities {
     std::vector<std::string> supported_payloads;
     std::vector<std::string> supported_telemetry_fields;
     std::vector<std::string> backend_command_names;
-    std::vector<std::string> supported_payload_action_namespaces;
-    std::vector<std::string> supported_payload_action_names;
-    int payload_timing_precision_ms{};
-    bool supports_payload_scheduling{false};
     std::optional<float> max_horizontal_speed_mps;
     std::optional<float> max_climb_speed_mps;
     std::optional<float> max_descent_speed_mps;
@@ -363,18 +359,6 @@ struct AgentReport {
     std::optional<TimeSyncState> time_sync;
 };
 
-struct PayloadAction {
-    std::string action_namespace;
-    std::string name;
-    std::unordered_map<std::string, std::string> params;
-};
-
-struct TimedPayloadAction {
-    std::int64_t time_offset_ms{};
-    std::int64_t unix_time_ms{};
-    PayloadAction action;
-};
-
 struct LocalPoint {
     double x_m{};
     double y_m{};
@@ -395,7 +379,6 @@ struct TrajectoryPoint {
     bool has_velocity{false};
     float yaw_deg{};
     bool has_yaw{false};
-    std::vector<TimedPayloadAction> payload_actions;
     std::optional<commands::Command> command;
 };
 
@@ -427,7 +410,6 @@ struct TrajectoryPlan {
     std::string drone_id{"default"};
     std::string frame{"global"};
     std::vector<TrajectoryPoint> points;
-    std::vector<TimedPayloadAction> payload_timeline;
     TrajectoryValidationPolicy validation;
     std::unordered_map<std::string, std::string> labels;
 };

@@ -1,6 +1,6 @@
 # SwarmKit Project Memory
 
-Last updated: 2026-05-16
+Last updated: 2026-06-04
 
 ## Current Shape
 
@@ -18,12 +18,11 @@ Last updated: 2026-05-16
   - `swarmkit-test-client` sends rotating low-priority commands.
   - `swarmkit-test-server` subscribes to telemetry and can send interactive high-priority commands.
 - The SDK includes client support for telemetry, commands, reports, authority, active goals, timed trajectories, and swarm fanout.
-- The SDK now has a real client-side swarm manager path:
-  - logical role and formation-slot commands are consumed by `SwarmClient` and are not forwarded to Pixhawk/MAVLink backends;
-  - formation plans are translated into per-drone `goto` commands;
+- The SDK has a client-side fleet manager path:
   - planner-produced per-drone command plans can be executed through the same manager path;
-  - synchronized swarm command execution uses a lock-step client barrier by default;
+  - synchronized swarm command execution uses a protocol start-at path when requested;
   - partial-failure policies include all-or-abort, best-effort, quorum, land-failed, and hold-failed.
+- Application concepts such as graph nodes, roles, routes, formations, gossip, target ownership, and task allocation are intentionally owned by higher-level controllers and are translated into concrete SwarmKit commands or active goals.
 - Trajectory file/stream loading supports YAML, JSONL/NDJSON, and CSV through the client SDK.
 - The SDK owns verified command helpers, so planner tools and the CLI can use one shared implementation:
   - `SendCommandAndWait`
@@ -99,8 +98,8 @@ Current development setup:
 ## Scientific Platform Context
 
 - SwarmKit is the UAV-side SDK and agent layer for the broader cloud-native, multi-user UAV swarm platform.
-- Higher-level systems such as rotor-router controllers, cloud drone gateways, mission supervisors, data analytics, and drone-show tools should use the SwarmKit client SDK to communicate with agents.
-- SwarmKit should stay algorithm-agnostic. It should not hard-code rotor-router, drone-show, or patrol logic.
+- Higher-level systems such as rotor-router controllers, cloud drone gateways, mission supervisors, and data analytics should use the SwarmKit client SDK to communicate with agents.
+- SwarmKit should stay algorithm-agnostic. It should not hard-code rotor-router, patrol, inspection, or domain-specific coordination logic.
 - The right abstraction is: commands, telemetry, authority, reports, active goals, trajectories, backend capabilities, and backend-specific extension commands.
 - See:
   - `docs/SWARMKIT_PROJECT_DESCRIPTION.md`
