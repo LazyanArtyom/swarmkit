@@ -731,6 +731,26 @@ ParseCommandWaitOptions(int argc, char** argv) {
     return result.ok;
 }
 
+[[nodiscard]] std::expected<std::unordered_map<std::string, std::string>, std::string>
+ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
+    std::unordered_map<std::string, std::string> labels;
+    for (int index = 1; index < argc; ++index) {
+        if (std::string_view(argv[index]) != option_name) {
+            continue;
+        }
+        if (index + 1 >= argc) {
+            return std::unexpected(std::string(option_name) + " requires KEY=VALUE");
+        }
+        const std::string entry = argv[++index];
+        const std::size_t separator = entry.find('=');
+        if (separator == std::string::npos || separator == 0) {
+            return std::unexpected(std::string(option_name) + " requires KEY=VALUE");
+        }
+        labels[entry.substr(0, separator)] = entry.substr(separator + 1);
+    }
+    return labels;
+}
+
 [[nodiscard]] std::expected<swarmkit::client::ActiveGoal, std::string> ParseActiveGoal(
     std::string_view drone_id, int argc, char** argv) {
     const std::string goal_id = common::GetOptionValue(argc, argv, "--goal-id");
@@ -783,6 +803,10 @@ ParseCommandWaitOptions(int argc, char** argv) {
     if (!timeout_ms.has_value()) {
         return std::unexpected(timeout_ms.error());
     }
+    auto labels = ParseKeyValueLabels(argc, argv, "--label");
+    if (!labels.has_value()) {
+        return std::unexpected(labels.error());
+    }
 
     return swarmkit::client::ActiveGoal{
         .drone_id = std::string(drone_id),
@@ -798,7 +822,7 @@ ParseCommandWaitOptions(int argc, char** argv) {
         .acceptance_radius_m = *acceptance_radius,
         .deviation_radius_m = *deviation_radius,
         .timeout_ms = *timeout_ms,
-        .role = common::GetOptionValue(argc, argv, "--role"),
+        .labels = std::move(*labels),
     };
 }
 
@@ -1208,7 +1232,11 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
         }
         std::cout << "Goal set OK"
                   << " goal_id=" << result.goal.goal_id << " revision=" << result.goal.revision
-                  << " computed_timeout_ms=" << result.computed_timeout_ms << "\n";
+                  << " computed_timeout_ms=" << result.computed_timeout_ms;
+        if (!result.goal.labels.empty()) {
+            std::cout << " labels=" << result.goal.labels.size();
+        }
+        std::cout << "\n";
         return EXIT_SUCCESS;
     }
 
@@ -1250,6 +1278,12 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
                   << "  accept_radius_m     : " << status.goal.acceptance_radius_m << "\n"
                   << "  deviation_radius_m  : " << status.goal.deviation_radius_m << "\n"
                   << "  computed_timeout_ms : " << status.computed_timeout_ms << "\n";
+        if (!status.goal.labels.empty()) {
+            std::cout << "  labels              :\n";
+            for (const auto& [key, value] : status.goal.labels) {
+                std::cout << "    " << key << "=" << value << "\n";
+            }
+        }
         return EXIT_SUCCESS;
     }
 

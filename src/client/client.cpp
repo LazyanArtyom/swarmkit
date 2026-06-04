@@ -1233,7 +1233,9 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     proto_goal->set_acceptance_radius_m(goal.acceptance_radius_m);
     proto_goal->set_deviation_radius_m(goal.deviation_radius_m);
     proto_goal->set_timeout_ms(goal.timeout_ms);
-    proto_goal->set_role(goal.role);
+    for (const auto& [key, value] : goal.labels) {
+        (*proto_goal->mutable_labels())[key] = value;
+    }
 }
 
 [[nodiscard]] ActiveGoal ToActiveGoal(const swarmkit::v1::ActiveGoal& proto_goal) {
@@ -1250,7 +1252,9 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     goal.acceptance_radius_m = proto_goal.acceptance_radius_m();
     goal.deviation_radius_m = proto_goal.deviation_radius_m();
     goal.timeout_ms = proto_goal.timeout_ms();
-    goal.role = proto_goal.role();
+    for (const auto& [key, value] : proto_goal.labels()) {
+        goal.labels.emplace(key, value);
+    }
     return goal;
 }
 

@@ -128,13 +128,6 @@ void ApplyValidationNode(const YAML::Node& node, TrajectoryValidationPolicy* val
     point.has_yaw = HasAny(node, {"yaw", "yaw_deg"});
     AssignIfPresent(node, {"yaw", "yaw_deg"}, &point.yaw_deg);
 
-    if (const YAML::Node actions = node["payload_actions"];
-        actions && actions.IsDefined() && !actions.IsNull()) {
-        throw YAML::RepresentationException(
-            actions.Mark(),
-            "trajectory point payload_actions are not supported; dispatch payload commands from "
-            "controller logic");
-    }
     return point;
 }
 
@@ -159,13 +152,6 @@ void ApplyPlanMetadataNode(const YAML::Node& node, TrajectoryPlan* plan) {
         for (const auto& label : labels) {
             plan->labels[label.first.as<std::string>()] = label.second.as<std::string>();
         }
-    }
-    if (const YAML::Node timeline = node["payload_timeline"];
-        timeline && timeline.IsDefined() && !timeline.IsNull()) {
-        throw YAML::RepresentationException(
-            timeline.Mark(),
-            "trajectory payload_timeline is not supported; dispatch payload commands from "
-            "controller logic");
     }
 }
 

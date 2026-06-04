@@ -476,10 +476,18 @@ TEST_CASE("Client active goal emits active and reached reports", "[client][integ
     goal.acceptance_radius_m = 5.0F;
     goal.deviation_radius_m = 25.0F;
     goal.timeout_ms = 5000;
+    goal.labels = {
+        {"from_node", "node-a"},
+        {"to_node", "node-b"},
+        {"edge_id", "edge-42"},
+    };
 
     const GoalResult result = client.SetActiveGoal(goal);
     REQUIRE(result.ok);
     CHECK(result.goal.goal_id == "goal-reached");
+    CHECK(result.goal.labels.at("from_node") == "node-a");
+    CHECK(result.goal.labels.at("to_node") == "node-b");
+    CHECK(result.goal.labels.at("edge_id") == "edge-42");
     CHECK(result.computed_timeout_ms == 5000);
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
@@ -511,6 +519,9 @@ TEST_CASE("Client active goal emits active and reached reports", "[client][integ
     const ActiveGoalStatus status = client.GetActiveGoal("drone-1");
     REQUIRE(status.has_goal);
     CHECK(status.status == GoalStatus::kReached);
+    CHECK(status.goal.labels.at("from_node") == "node-a");
+    CHECK(status.goal.labels.at("to_node") == "node-b");
+    CHECK(status.goal.labels.at("edge_id") == "edge-42");
 
     reports_stream->Stop();
 }

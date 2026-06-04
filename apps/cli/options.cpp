@@ -39,7 +39,7 @@ namespace swarmkit::apps::cli::internal {
            value == "--gimbal" || value == "--servo" || value == "--pwm" || value == "--relay" ||
            value == "--gripper" || value == "--goal-id" || value == "--revision" ||
            value == "--accept-radius" || value == "--deviation-radius" ||
-           value == "--timeout-ms" || value == "--role" || value == "--format" ||
+           value == "--timeout-ms" || value == "--label" || value == "--format" ||
            value == "--min-battery" ||
            value == "--report-file" || value == "--after-sequence" ||
            value == "--execution-id" || value == "--unix-time-ms" ||

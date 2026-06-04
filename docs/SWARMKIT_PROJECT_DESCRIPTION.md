@@ -144,7 +144,7 @@ The active-goal API is designed for dynamic controllers. A client can set a name
 - acceptance radius;
 - deviation radius;
 - timeout;
-- optional role or metadata.
+- optional metadata labels.
 
 The agent supervises the goal using telemetry and reports progress or deviation, but it does not force one correction policy. This is intentional. Rotor-router controllers, role-based tactical controllers, inspection tools, or custom planners can implement their own correction logic on top of the report stream.
 

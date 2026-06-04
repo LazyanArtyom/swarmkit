@@ -255,7 +255,7 @@ struct ActiveGoal {
     float acceptance_radius_m{2.0F};
     float deviation_radius_m{8.0F};
     std::int64_t timeout_ms{};  ///< 0 lets the agent compute from its vehicle profile.
-    std::string role;
+    std::unordered_map<std::string, std::string> labels;
 };
 
 enum class GoalStatus : std::uint8_t {
