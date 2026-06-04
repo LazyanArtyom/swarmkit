@@ -40,6 +40,16 @@ constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
 TEST_CASE("Client integrates with agent service for ping health stats and command execution",
           "[client][integration]") {
     testsupport::AgentServerHarness harness;
+    swarmkit::agent::BackendHealth healthy;
+    healthy.ready = true;
+    healthy.message = "ready";
+    healthy.last_heartbeat_unix_ms = 1;
+    healthy.last_telemetry_unix_ms = 1;
+    healthy.armed = false;
+    healthy.landed = true;
+    healthy.gps_ok = true;
+    healthy.ekf_ok = true;
+    harness.Backend().SetHealth(healthy);
     Client client = MakeClient(harness.Address());
 
     const PingResult kPing = client.Ping();
@@ -53,6 +63,12 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK(kHealth.ready);
     CHECK(kHealth.agent_id == "test-agent");
     CHECK_FALSE(kHealth.link_quality_percent.has_value());
+    CHECK(kHealth.autonomous_ready);
+    CHECK(kHealth.arming_blockers.empty());
+    CHECK_FALSE(kHealth.readiness_checks.empty());
+    CHECK(std::ranges::any_of(kHealth.readiness_checks, [](const ReadinessCheck& check) {
+        return check.name == "gps" && check.ok;
+    }));
 
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = "drone-1";
@@ -571,6 +587,30 @@ TEST_CASE("Client can cancel active goal and receive cancellation report",
     CHECK_FALSE(status.has_goal);
 
     reports_stream->Stop();
+}
+
+TEST_CASE("Client active goal accepts local-NED shape and reports unsupported execution",
+          "[client][integration][goal]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    ActiveGoal goal;
+    goal.drone_id = "drone-1";
+    goal.goal_id = "local-goal";
+    goal.revision = 9;
+    goal.use_local_target = true;
+    goal.target_frame = "local-ned";
+    goal.local_target = {.x_m = 5.0, .y_m = -2.0, .z_m = -1.0};
+    goal.acceptance_radius_m = 1.0F;
+    goal.deviation_radius_m = 5.0F;
+
+    const GoalResult result = client.SetActiveGoal(goal);
+    REQUIRE_FALSE(result.ok);
+    CHECK(result.goal.use_local_target);
+    CHECK(result.goal.target_frame == "local-ned");
+    CHECK(result.goal.local_target.x_m == 5.0);
+    CHECK(result.message.find("local-ned") != std::string::npos);
+    CHECK(harness.Backend().ExecuteCallCount() == 0);
 }
 
 TEST_CASE("Client reports backend execution failure and telemetry counters",

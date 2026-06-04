@@ -566,6 +566,19 @@ void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* condition) {
     return FloatText(status.relative_alt_m) + "m";
 }
 
+[[nodiscard]] std::string ReadinessSeverityText(
+    swarmkit::client::ReadinessCheckSeverity severity) {
+    switch (severity) {
+        case swarmkit::client::ReadinessCheckSeverity::kWarning:
+            return "warning";
+        case swarmkit::client::ReadinessCheckSeverity::kError:
+            return "error";
+        case swarmkit::client::ReadinessCheckSeverity::kInfo:
+        default:
+            return "info";
+    }
+}
+
 [[nodiscard]] bool IsStaleTimestamp(std::int64_t timestamp_ms, std::int64_t now_ms) {
     return timestamp_ms <= 0 || now_ms - timestamp_ms > kSwarmHealthStaleAfterMs;
 }
@@ -757,17 +770,49 @@ ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
     if (goal_id.empty()) {
         return std::unexpected("goal set requires --goal-id ID");
     }
-    const auto lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat"), "--lat");
-    const auto lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon"), "--lon");
-    const auto alt = ParseDoubleArg(common::GetOptionValue(argc, argv, "--alt"), "--alt");
-    if (!lat.has_value()) {
-        return std::unexpected(lat.error());
+    std::string target_frame = common::GetOptionValue(argc, argv, "--frame", "global");
+    target_frame = ToLowerAscii(std::move(target_frame));
+    const bool use_local_target =
+        target_frame == "local-ned" || !common::GetOptionValue(argc, argv, "--x").empty() ||
+        !common::GetOptionValue(argc, argv, "--y").empty() ||
+        !common::GetOptionValue(argc, argv, "--z").empty();
+    if (use_local_target) {
+        target_frame = "local-ned";
     }
-    if (!lon.has_value()) {
-        return std::unexpected(lon.error());
+    if (target_frame != "global" && target_frame != "local-ned") {
+        return std::unexpected("--frame must be global or local-ned");
     }
-    if (!alt.has_value()) {
-        return std::unexpected(alt.error());
+
+    swarmkit::client::GeoPoint target;
+    swarmkit::client::LocalPoint local_target;
+    if (use_local_target) {
+        const auto x = ParseDoubleArg(common::GetOptionValue(argc, argv, "--x"), "--x");
+        const auto y = ParseDoubleArg(common::GetOptionValue(argc, argv, "--y"), "--y");
+        const auto z = ParseDoubleArg(common::GetOptionValue(argc, argv, "--z"), "--z");
+        if (!x.has_value()) {
+            return std::unexpected(x.error());
+        }
+        if (!y.has_value()) {
+            return std::unexpected(y.error());
+        }
+        if (!z.has_value()) {
+            return std::unexpected(z.error());
+        }
+        local_target = swarmkit::client::LocalPoint{.x_m = *x, .y_m = *y, .z_m = *z};
+    } else {
+        const auto lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat"), "--lat");
+        const auto lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon"), "--lon");
+        const auto alt = ParseDoubleArg(common::GetOptionValue(argc, argv, "--alt"), "--alt");
+        if (!lat.has_value()) {
+            return std::unexpected(lat.error());
+        }
+        if (!lon.has_value()) {
+            return std::unexpected(lon.error());
+        }
+        if (!alt.has_value()) {
+            return std::unexpected(alt.error());
+        }
+        target = swarmkit::client::GeoPoint{.lat_deg = *lat, .lon_deg = *lon, .alt_m = *alt};
     }
 
     auto revision = static_cast<std::uint64_t>(NowUnixMs());
@@ -812,12 +857,10 @@ ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
         .drone_id = std::string(drone_id),
         .goal_id = goal_id,
         .revision = revision,
-        .target =
-            swarmkit::client::GeoPoint{
-                .lat_deg = *lat,
-                .lon_deg = *lon,
-                .alt_m = *alt,
-            },
+        .target = target,
+        .local_target = local_target,
+        .use_local_target = use_local_target,
+        .target_frame = target_frame,
         .speed_mps = *speed,
         .acceptance_radius_m = *acceptance_radius,
         .deviation_radius_m = *deviation_radius,
@@ -1271,9 +1314,13 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
                   << "  goal_id             : " << status.goal.goal_id << "\n"
                   << "  revision            : " << status.goal.revision << "\n"
                   << "  status              : " << GoalStatusName(status.status) << "\n"
+                  << "  target_frame        : " << status.goal.target_frame << "\n"
                   << "  lat                 : " << status.goal.target.lat_deg << "\n"
                   << "  lon                 : " << status.goal.target.lon_deg << "\n"
                   << "  alt_m               : " << status.goal.target.alt_m << "\n"
+                  << "  local_x_m           : " << status.goal.local_target.x_m << "\n"
+                  << "  local_y_m           : " << status.goal.local_target.y_m << "\n"
+                  << "  local_z_m           : " << status.goal.local_target.z_m << "\n"
                   << "  speed_mps           : " << status.goal.speed_mps << "\n"
                   << "  accept_radius_m     : " << status.goal.acceptance_radius_m << "\n"
                   << "  deviation_radius_m  : " << status.goal.deviation_radius_m << "\n"
@@ -1564,9 +1611,32 @@ int RunHealth(Client& client) {
               << "  gps_hdop               : " << FloatText(kStatus.gps_hdop) << "\n"
               << "  ekf_ok                 : " << (kStatus.ekf_ok ? "true" : "false") << "\n"
               << "  relative_altitude      : " << RelativeAltitudeText(kStatus) << "\n"
+              << "  autonomous_ready       : "
+              << (kStatus.autonomous_ready ? "true" : "false") << "\n"
               << "  link_quality_percent   : "
               << OptionalFloatText(kStatus.link_quality_percent) << "\n"
               << "  message                : " << kStatus.message << "\n";
+    if (!kStatus.arming_blockers.empty()) {
+        std::cout << "  arming_blockers        : ";
+        for (std::size_t index = 0; index < kStatus.arming_blockers.size(); ++index) {
+            if (index > 0) {
+                std::cout << ", ";
+            }
+            std::cout << kStatus.arming_blockers[index];
+        }
+        std::cout << "\n";
+    }
+    if (!kStatus.readiness_checks.empty()) {
+        std::cout << "  readiness_checks       :\n";
+        for (const auto& check : kStatus.readiness_checks) {
+            std::cout << "    [" << (check.ok ? "OK" : "FAIL") << "] " << check.name
+                      << " severity=" << ReadinessSeverityText(check.severity);
+            if (!check.detail.empty()) {
+                std::cout << " detail=" << check.detail;
+            }
+            std::cout << "\n";
+        }
+    }
     return EXIT_SUCCESS;
 }
 

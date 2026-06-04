@@ -98,6 +98,7 @@ void PrintUsage() {
            "\n"
            "Goal options:\n"
            "  goal set --goal-id ID --lat L --lon L --alt M [--revision N]\n"
+           "  goal set --goal-id ID --frame local-ned --x M --y M --z M\n"
            "           [--speed MPS] [--accept-radius M] [--deviation-radius M]\n"
            "           [--timeout-ms MS] [--label KEY=VALUE ...]\n"
            "  goal cancel [--goal-id ID]\n"

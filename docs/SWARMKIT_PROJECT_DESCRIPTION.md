@@ -140,13 +140,13 @@ The active-goal API is designed for dynamic controllers. A client can set a name
 
 - goal ID;
 - revision;
-- target position;
+- target position in the current global GPS frame, with API room for future local-NED targets;
 - acceptance radius;
 - deviation radius;
 - timeout;
 - optional metadata labels.
 
-The agent supervises the goal using telemetry and reports progress or deviation, but it does not force one correction policy. This is intentional. Rotor-router controllers, role-based tactical controllers, inspection tools, or custom planners can implement their own correction logic on top of the report stream.
+The agent supervises the goal using telemetry and reports progress or deviation, but it does not force one correction policy. This is intentional. Dynamic controllers should prefer `SetActiveGoal` for movement, wait for `GOAL_REACHED`, then update their own graph, event log, or task state. Rotor-router controllers, role-based tactical controllers, inspection tools, or custom planners can implement their own correction logic on top of the report stream.
 
 This supports workflows where commands are generated dynamically while the drones are flying. For example, a swarm controller may repeatedly update goals as graph nodes are visited, reassign drones between roles, or issue corrective movement after observing deviation reports.
 
@@ -160,8 +160,7 @@ A trajectory can contain:
 - local position points where supported;
 - optional velocity;
 - optional yaw;
-- time offsets or absolute Unix timestamps;
-- generic payload actions.
+- time offsets or absolute Unix timestamps.
 
 The lifecycle is:
 

@@ -10,6 +10,7 @@
 #include <stop_token>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <variant>
 
@@ -95,6 +96,41 @@ TEST_CASE("SwarmClient broadcasts commands and reports unknown drones", "[swarm]
     CHECK(kMissing.error.code == RpcStatusCode::kNotFound);
     CHECK(kMissing.error.severity == core::ErrorSeverity::kWarning);
     CHECK(kMissing.error.retryability == core::ErrorRetryability::kAfterRemediation);
+}
+
+TEST_CASE("SwarmClient fans out active goals", "[swarm][client][goal]") {
+    testsupport::AgentServerHarness drone_one;
+    testsupport::AgentServerHarness drone_two;
+
+    SwarmClient swarm(MakeDefaultClientConfig());
+    swarm.AddDrone("drone-1", drone_one.Address());
+    swarm.AddDrone("drone-2", drone_two.Address());
+
+    ActiveGoal base_goal;
+    base_goal.goal_id = "route-step";
+    base_goal.revision = 11;
+    base_goal.target = {.lat_deg = 40.0, .lon_deg = 44.0, .alt_m = 10.0};
+    base_goal.acceptance_radius_m = 3.0F;
+    base_goal.deviation_radius_m = 20.0F;
+    base_goal.labels = {{"edge_id", "edge-a"}};
+
+    std::unordered_map<std::string, ActiveGoal> goals;
+    goals.emplace("drone-1", base_goal);
+    goals.emplace("drone-2", base_goal);
+
+    const auto results = swarm.SetActiveGoals(goals);
+    REQUIRE(results.size() == 2);
+    REQUIRE(results.at("drone-1").ok);
+    REQUIRE(results.at("drone-2").ok);
+    CHECK(results.at("drone-1").goal.drone_id == "drone-1");
+    CHECK(results.at("drone-2").goal.drone_id == "drone-2");
+    CHECK(results.at("drone-1").goal.labels.at("edge_id") == "edge-a");
+    CHECK(drone_one.Backend().ExecuteCallCount() == 1);
+    CHECK(drone_two.Backend().ExecuteCallCount() == 1);
+
+    const auto command_one = drone_one.Backend().ExecuteCallAt(0).envelope.command;
+    REQUIRE(std::holds_alternative<commands::NavCmd>(command_one));
+    CHECK(std::holds_alternative<commands::CmdGoto>(std::get<commands::NavCmd>(command_one)));
 }
 
 TEST_CASE("SwarmClient applies partial failure hold policy", "[swarm][client][manager]") {

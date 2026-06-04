@@ -30,8 +30,9 @@ namespace swarmkit::apps::cli::internal {
            value == "--log-file" || value == "--log-level" || value == "--ca-cert" ||
            value == "--client-cert" || value == "--client-key" || value == "--server-name" ||
            value == "--priority" || value == "--mode" || value == "--custom-mode" ||
-           value == "--ground" || value == "--deg" || value == "--yaw" || value == "--vx" ||
-           value == "--vy" || value == "--vz" || value == "--duration-ms" || value == "--ttl-ms" ||
+           value == "--ground" || value == "--deg" || value == "--yaw" || value == "--x" ||
+           value == "--y" || value == "--z" || value == "--vx" || value == "--vy" ||
+           value == "--vz" || value == "--duration-ms" || value == "--ttl-ms" ||
            value == "--swarm-config" || value == "--address-mode" || value == "--file" ||
            value == "--telemetry-file" || value == "--telemetry-dir" || value == "--seq" ||
            value == "--first" || value == "--last" || value == "--camera" || value == "--stream" ||
@@ -39,7 +40,7 @@ namespace swarmkit::apps::cli::internal {
            value == "--gimbal" || value == "--servo" || value == "--pwm" || value == "--relay" ||
            value == "--gripper" || value == "--goal-id" || value == "--revision" ||
            value == "--accept-radius" || value == "--deviation-radius" ||
-           value == "--timeout-ms" || value == "--label" || value == "--format" ||
+           value == "--timeout-ms" || value == "--label" || value == "--frame" || value == "--format" ||
            value == "--min-battery" ||
            value == "--report-file" || value == "--after-sequence" ||
            value == "--execution-id" || value == "--unix-time-ms" ||

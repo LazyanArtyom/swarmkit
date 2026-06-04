@@ -84,6 +84,10 @@ struct LocalPointMeters {
     return std::sqrt((delta_x * delta_x) + (delta_y * delta_y));
 }
 
+[[nodiscard]] bool GoalUsesLocalTarget(const swarmkit::v1::ActiveGoal& goal) {
+    return goal.use_local_target() || goal.target_frame() == "local-ned";
+}
+
 [[nodiscard]] std::int64_t ComputeGoalTimeoutMs(const VehicleProfile& profile,
                                                 const swarmkit::v1::ActiveGoal& goal,
                                                 const std::optional<core::TelemetryFrame>& frame) {
@@ -134,11 +138,19 @@ core::Result ActiveGoalSupervisor::ValidateGoal(const swarmkit::v1::ActiveGoal& 
     if (goal.goal_id().empty()) {
         return core::Result::Rejected("goal.goal_id must not be empty");
     }
-    if (!goal.has_target()) {
+    if (!GoalUsesLocalTarget(goal) && !goal.has_target()) {
         return core::Result::Rejected("goal.target must be set");
     }
-    if (goal.target().lat_deg() < -90.0 || goal.target().lat_deg() > 90.0 ||
-        goal.target().lon_deg() < -180.0 || goal.target().lon_deg() > 180.0) {
+    if (GoalUsesLocalTarget(goal) && !goal.has_local_target()) {
+        return core::Result::Rejected("goal.local_target must be set for local-ned goals");
+    }
+    if (!goal.target_frame().empty() && goal.target_frame() != "global" &&
+        goal.target_frame() != "local-ned") {
+        return core::Result::Rejected("goal.target_frame must be global or local-ned");
+    }
+    if (!GoalUsesLocalTarget(goal) &&
+        (goal.target().lat_deg() < -90.0 || goal.target().lat_deg() > 90.0 ||
+         goal.target().lon_deg() < -180.0 || goal.target().lon_deg() > 180.0)) {
         return core::Result::Rejected("goal target latitude/longitude out of range");
     }
     if (goal.speed_mps() < 0.0F) {

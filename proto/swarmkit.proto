@@ -91,6 +91,19 @@ message PingReply {
 
 message HealthRequest {}
 
+enum ReadinessCheckSeverity {
+    READINESS_INFO = 0;
+    READINESS_WARNING = 1;
+    READINESS_ERROR = 2;
+}
+
+message ReadinessCheck {
+    string name = 1;
+    bool ok = 2;
+    string detail = 3;
+    ReadinessCheckSeverity severity = 4;
+}
+
 message HealthReply {
     bool ok = 1;
     bool ready = 2;
@@ -116,6 +129,9 @@ message HealthReply {
     float gps_hdop = 22;
     bool has_relative_altitude = 23;
     float relative_alt_m = 24;
+    bool autonomous_ready = 25;
+    repeated ReadinessCheck readiness_checks = 26;
+    repeated string arming_blockers = 27;
 }
 
 message RuntimeStatsRequest {}
@@ -474,16 +490,25 @@ message GeoPoint {
     double alt_m = 3;
 }
 
+message LocalPoint {
+    double x_m = 1;
+    double y_m = 2;
+    double z_m = 3;
+}
+
 message ActiveGoal {
     string drone_id = 1;
     string goal_id = 2;
     uint64 revision = 3;
-    GeoPoint target = 4;
+    GeoPoint target = 4;       // WGS84 target for current GPS-backed execution.
     float speed_mps = 5;
     float acceptance_radius_m = 6;
     float deviation_radius_m = 7;
     int64 timeout_ms = 8;  // 0 => agent computes from vehicle profile.
     map<string, string> labels = 9;  // Freeform user metadata, not sent to MAVLink.
+    LocalPoint local_target = 10;     // Future local-NED target support.
+    bool use_local_target = 11;
+    string target_frame = 12;         // global|local-ned; empty means global.
 }
 
 enum GoalStatus {
@@ -593,12 +618,6 @@ message GetActiveGoalReply {
 // ---------------------------------------------------------------------------
 // Generic timed trajectory / execution
 // ---------------------------------------------------------------------------
-
-message LocalPoint {
-    double x_m = 1;
-    double y_m = 2;
-    double z_m = 3;
-}
 
 message TrajectoryPoint {
     int64 time_offset_ms = 1;

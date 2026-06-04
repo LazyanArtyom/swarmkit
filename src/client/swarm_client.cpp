@@ -115,6 +115,14 @@ class BoundedFanoutExecutor final {
     return out;
 }
 
+[[nodiscard]] GoalResult UnregisteredGoalResult(const std::string& drone_id) {
+    GoalResult out;
+    out.ok = false;
+    out.message = "drone '" + drone_id + "' not registered";
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
+    return out;
+}
+
 [[nodiscard]] CommandResult LocalCommandResult(bool success, std::string message) {
     CommandResult out;
     out.ok = success;
@@ -192,10 +200,27 @@ class BoundedFanoutExecutor final {
                            "swarm fanout cancelled before dispatch for drone '" + drone_id + "'");
 }
 
+[[nodiscard]] GoalResult CancelledGoalResult(const std::string& drone_id) {
+    GoalResult out;
+    out.ok = false;
+    out.message = "swarm goal fanout cancelled before dispatch for drone '" + drone_id + "'";
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kCancelled, out.message);
+    return out;
+}
+
 [[nodiscard]] CommandResult ExceptionCommandResult(const std::string& drone_id,
                                                    const std::string& detail) {
     return LocalSwarmError(RpcStatusCode::kInternal,
                            "swarm fanout task failed for drone '" + drone_id + "': " + detail);
+}
+
+[[nodiscard]] GoalResult ExceptionGoalResult(const std::string& drone_id,
+                                             const std::string& detail) {
+    GoalResult out;
+    out.ok = false;
+    out.message = "swarm goal fanout task failed for drone '" + drone_id + "': " + detail;
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInternal, out.message);
+    return out;
 }
 
 [[nodiscard]] ReleaseAuthorityResult CancelledReleaseAuthorityResult(const std::string& drone_id) {
@@ -322,6 +347,15 @@ template <typename TaskFn>
     return RunBoundedClientTasks<ExecutionResult>(
         clients, fanout_options, std::forward<TaskFn>(task_fn), CancelledExecutionResult,
         ExceptionExecutionResult, [](const ExecutionResult& result) { return result.ok; });
+}
+
+template <typename TaskFn>
+[[nodiscard]] std::unordered_map<std::string, GoalResult> RunGoalTasks(
+    const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients,
+    const SwarmFanoutOptions& fanout_options, TaskFn&& task_fn) {
+    return RunBoundedClientTasks<GoalResult>(
+        clients, fanout_options, std::forward<TaskFn>(task_fn), CancelledGoalResult,
+        ExceptionGoalResult, [](const GoalResult& result) { return result.ok; });
 }
 
 template <typename TaskFn>
@@ -1022,6 +1056,68 @@ SwarmExecutionReport SwarmClient::ExecutePlannedCommands(
         MakeLocalError(core::ErrorDomain::kSwarm,
                        report.ok ? RpcStatusCode::kOk : RpcStatusCode::kRejected, report.message);
     return report;
+}
+
+GoalResult SwarmClient::SetActiveGoal(ActiveGoal goal) const {
+    if (goal.drone_id.empty()) {
+        GoalResult out;
+        out.ok = false;
+        out.message = "goal.drone_id is required";
+        out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInvalidArgument,
+                                   out.message);
+        return out;
+    }
+
+    std::shared_ptr<Client> client;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        auto iter = impl_->clients.find(goal.drone_id);
+        if (iter == impl_->clients.end()) {
+            return UnregisteredGoalResult(goal.drone_id);
+        }
+        client = iter->second;
+    }
+    return client->SetActiveGoal(goal);
+}
+
+std::unordered_map<std::string, GoalResult> SwarmClient::SetActiveGoals(
+    const std::unordered_map<std::string, ActiveGoal>& goals,
+    const SwarmFanoutOptions& fanout_options) const {
+    if (goals.empty()) {
+        return {};
+    }
+
+    const auto snapshot = impl_->Snapshot();
+    std::unordered_map<std::string, std::shared_ptr<Client>> clients_by_drone;
+    clients_by_drone.reserve(snapshot.size());
+    for (const auto& [drone_id, client] : snapshot) {
+        clients_by_drone.emplace(drone_id, client);
+    }
+
+    std::unordered_map<std::string, GoalResult> results;
+    std::vector<std::pair<std::string, std::shared_ptr<Client>>> target_clients;
+    target_clients.reserve(goals.size());
+    for (const auto& [drone_id, goal] : goals) {
+        static_cast<void>(goal);
+        const auto client_iter = clients_by_drone.find(drone_id);
+        if (client_iter == clients_by_drone.end()) {
+            results.emplace(drone_id, UnregisteredGoalResult(drone_id));
+            continue;
+        }
+        target_clients.emplace_back(drone_id, client_iter->second);
+    }
+
+    auto goal_results = RunGoalTasks(
+        target_clients, fanout_options,
+        [&goals](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            ActiveGoal goal = goals.at(drone_id);
+            goal.drone_id = drone_id;
+            return client->SetActiveGoal(goal);
+        });
+    for (auto& [drone_id, result] : goal_results) {
+        results.emplace(drone_id, std::move(result));
+    }
+    return results;
 }
 
 ExecutionResult SwarmClient::UploadTrajectory(const TrajectoryPlan& plan) const {

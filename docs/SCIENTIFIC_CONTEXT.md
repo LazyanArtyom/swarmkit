@@ -103,7 +103,7 @@ The generic primitives are:
 - trajectory points;
 - optional velocities;
 - yaw targets;
-- timestamped payload actions;
+- timestamped point or command dispatch;
 - validation policies;
 - execution handles;
 - report streams;

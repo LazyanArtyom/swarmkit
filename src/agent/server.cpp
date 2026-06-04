@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "active_goal_supervisor.h"
 #include "command_preconditions.h"
@@ -82,6 +83,86 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     using std::chrono::milliseconds;
     using std::chrono::system_clock;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+[[nodiscard]] bool HasFreshTimestamp(std::int64_t unix_time_ms) {
+    return unix_time_ms > 0;
+}
+
+void AddReadinessCheck(swarmkit::v1::HealthReply* reply, std::string_view name, bool ok,
+                       std::string detail, swarmkit::v1::ReadinessCheckSeverity severity) {
+    auto* check = reply->add_readiness_checks();
+    check->set_name(std::string(name));
+    check->set_ok(ok);
+    check->set_detail(std::move(detail));
+    check->set_severity(ok ? swarmkit::v1::READINESS_INFO : severity);
+}
+
+void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::HealthReply* reply) {
+    if (reply == nullptr) {
+        return;
+    }
+
+    const bool heartbeat_ok = HasFreshTimestamp(health.last_heartbeat_unix_ms);
+    const bool telemetry_ok = HasFreshTimestamp(health.last_telemetry_unix_ms);
+    const bool not_failsafe = !health.failsafe;
+    const bool checks_ok =
+        ready && heartbeat_ok && telemetry_ok && health.gps_ok && health.ekf_ok && not_failsafe;
+    reply->set_autonomous_ready(checks_ok);
+
+    AddReadinessCheck(reply, "backend", ready, ready ? health.message : "not ready: " + health.message,
+                      swarmkit::v1::READINESS_ERROR);
+    AddReadinessCheck(reply, "heartbeat", heartbeat_ok,
+                      heartbeat_ok ? "heartbeat observed" : "no vehicle heartbeat observed",
+                      swarmkit::v1::READINESS_ERROR);
+    AddReadinessCheck(reply, "telemetry", telemetry_ok,
+                      telemetry_ok ? "telemetry observed" : "no vehicle telemetry observed",
+                      swarmkit::v1::READINESS_ERROR);
+    AddReadinessCheck(reply, "gps", health.gps_ok,
+                      "fix_type=" + std::to_string(health.gps_fix_type) + " sats=" +
+                          std::to_string(health.satellites_visible) + " hdop=" +
+                          std::to_string(health.gps_hdop),
+                      swarmkit::v1::READINESS_ERROR);
+    AddReadinessCheck(reply, "ekf", health.ekf_ok,
+                      health.ekf_ok ? "healthy" : "unhealthy", swarmkit::v1::READINESS_ERROR);
+    AddReadinessCheck(reply, "failsafe", not_failsafe,
+                      health.failsafe ? "failsafe active" : "inactive",
+                      swarmkit::v1::READINESS_ERROR);
+    AddReadinessCheck(reply, "armed", !health.armed,
+                      health.armed ? "vehicle already armed" : "vehicle disarmed",
+                      swarmkit::v1::READINESS_WARNING);
+    AddReadinessCheck(reply, "landed", health.landed,
+                      std::string{"landed="} + (health.landed ? "true" : "false"),
+                      swarmkit::v1::READINESS_WARNING);
+
+    if (!ready) {
+        reply->add_arming_blockers("backend_not_ready");
+    }
+    if (!heartbeat_ok) {
+        reply->add_arming_blockers("heartbeat_missing");
+    }
+    if (!telemetry_ok) {
+        reply->add_arming_blockers("telemetry_missing");
+    }
+    if (!health.gps_ok) {
+        reply->add_arming_blockers("gps_unhealthy");
+    }
+    if (!health.ekf_ok) {
+        reply->add_arming_blockers("ekf_unhealthy");
+    }
+    if (health.failsafe) {
+        reply->add_arming_blockers("failsafe_active");
+    }
+    if (health.armed) {
+        reply->add_arming_blockers("already_armed");
+    }
+    if (!health.landed) {
+        reply->add_arming_blockers("not_landed");
+    }
+}
+
+[[nodiscard]] bool GoalUsesLocalTarget(const swarmkit::v1::ActiveGoal& goal) {
+    return goal.use_local_target() || goal.target_frame() == "local-ned";
 }
 
 [[nodiscard]] internal::ReportHubOptions MakeReportHubOptions(
@@ -886,6 +967,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_ekf_ok(backend_health.ekf_ok);
         reply->set_has_relative_altitude(backend_health.has_relative_altitude);
         reply->set_relative_alt_m(backend_health.relative_alt_m);
+        PopulateReadiness(backend_health, kIsReady, reply);
         if (backend_health.link_quality_percent.has_value()) {
             reply->set_link_quality_percent(*backend_health.link_quality_percent);
         }
@@ -1194,6 +1276,19 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         if (const core::Result validation = internal::ActiveGoalSupervisor::ValidateGoal(goal);
             !validation.IsOk()) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, validation.message);
+        }
+        if (GoalUsesLocalTarget(goal)) {
+            const std::string message =
+                "active goal local-ned target is supported by the API but current backend "
+                "execution requires a global GPS target";
+            reply->set_ok(false);
+            reply->set_message(message);
+            reply->set_correlation_id(context.correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_REJECTED);
+            reply->set_debug_message(message);
+            *reply->mutable_goal() = goal;
+            PublishGoalFailure(goal, context.correlation_id, message);
+            return grpc::Status::OK;
         }
 
         const core::Result arbiter_result =

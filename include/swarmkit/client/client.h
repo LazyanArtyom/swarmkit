@@ -125,6 +125,19 @@ struct ReleaseAuthorityResult {
     RpcError error;
 };
 
+enum class ReadinessCheckSeverity : std::uint8_t {
+    kInfo,
+    kWarning,
+    kError,
+};
+
+struct ReadinessCheck {
+    std::string name;
+    bool ok{false};
+    std::string detail;
+    ReadinessCheckSeverity severity{ReadinessCheckSeverity::kInfo};
+};
+
 struct HealthStatus {
     bool ok{false};
     bool ready{false};
@@ -149,6 +162,9 @@ struct HealthStatus {
     bool ekf_ok{true};
     bool has_relative_altitude{false};
     float relative_alt_m{};
+    bool autonomous_ready{false};
+    std::vector<ReadinessCheck> readiness_checks;
+    std::vector<std::string> arming_blockers;
     std::optional<float> link_quality_percent;
     RpcError error;
 };
@@ -246,11 +262,20 @@ struct GeoPoint {
     double alt_m{};
 };
 
+struct LocalPoint {
+    double x_m{};
+    double y_m{};
+    double z_m{};
+};
+
 struct ActiveGoal {
     std::string drone_id{"default"};
     std::string goal_id;
     std::uint64_t revision{};
     GeoPoint target{};
+    LocalPoint local_target{};
+    bool use_local_target{false};
+    std::string target_frame{"global"};
     float speed_mps{};
     float acceptance_radius_m{2.0F};
     float deviation_radius_m{8.0F};
@@ -357,12 +382,6 @@ struct AgentReport {
     std::optional<GoalReport> goal;
     std::optional<TrajectoryReport> trajectory;
     std::optional<TimeSyncState> time_sync;
-};
-
-struct LocalPoint {
-    double x_m{};
-    double y_m{};
-    double z_m{};
 };
 
 struct TrajectoryPoint {

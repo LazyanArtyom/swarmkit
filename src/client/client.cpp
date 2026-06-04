@@ -1229,6 +1229,12 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     proto_goal->set_goal_id(goal.goal_id);
     proto_goal->set_revision(goal.revision);
     *proto_goal->mutable_target() = ToProtoGeoPoint(goal.target);
+    auto* local_target = proto_goal->mutable_local_target();
+    local_target->set_x_m(goal.local_target.x_m);
+    local_target->set_y_m(goal.local_target.y_m);
+    local_target->set_z_m(goal.local_target.z_m);
+    proto_goal->set_use_local_target(goal.use_local_target);
+    proto_goal->set_target_frame(goal.target_frame);
     proto_goal->set_speed_mps(goal.speed_mps);
     proto_goal->set_acceptance_radius_m(goal.acceptance_radius_m);
     proto_goal->set_deviation_radius_m(goal.deviation_radius_m);
@@ -1248,6 +1254,15 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
         .lon_deg = proto_goal.target().lon_deg(),
         .alt_m = proto_goal.target().alt_m(),
     };
+    if (proto_goal.has_local_target()) {
+        goal.local_target = LocalPoint{
+            .x_m = proto_goal.local_target().x_m(),
+            .y_m = proto_goal.local_target().y_m(),
+            .z_m = proto_goal.local_target().z_m(),
+        };
+    }
+    goal.use_local_target = proto_goal.use_local_target();
+    goal.target_frame = proto_goal.target_frame().empty() ? "global" : proto_goal.target_frame();
     goal.speed_mps = proto_goal.speed_mps();
     goal.acceptance_radius_m = proto_goal.acceptance_radius_m();
     goal.deviation_radius_m = proto_goal.deviation_radius_m();
@@ -1329,6 +1344,19 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
         case ProtoSeverity::REPORT_SEVERITY_UNSPECIFIED:
         default:
             return ReportSeverity::kInfo;
+    }
+}
+
+[[nodiscard]] ReadinessCheckSeverity ToReadinessCheckSeverity(
+    swarmkit::v1::ReadinessCheckSeverity severity) {
+    switch (severity) {
+        case swarmkit::v1::READINESS_WARNING:
+            return ReadinessCheckSeverity::kWarning;
+        case swarmkit::v1::READINESS_ERROR:
+            return ReadinessCheckSeverity::kError;
+        case swarmkit::v1::READINESS_INFO:
+        default:
+            return ReadinessCheckSeverity::kInfo;
     }
 }
 
@@ -2254,6 +2282,16 @@ HealthStatus Client::GetHealth() const {
     out.ekf_ok = rep.ekf_ok();
     out.has_relative_altitude = rep.has_relative_altitude();
     out.relative_alt_m = rep.relative_alt_m();
+    out.autonomous_ready = rep.autonomous_ready();
+    for (const auto& check : rep.readiness_checks()) {
+        out.readiness_checks.push_back(ReadinessCheck{
+            .name = check.name(),
+            .ok = check.ok(),
+            .detail = check.detail(),
+            .severity = ToReadinessCheckSeverity(check.severity()),
+        });
+    }
+    out.arming_blockers.assign(rep.arming_blockers().begin(), rep.arming_blockers().end());
     if (rep.has_link_quality_percent()) {
         out.link_quality_percent = rep.link_quality_percent();
     }
