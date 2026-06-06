@@ -8,6 +8,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -147,6 +150,142 @@ TEST_CASE("Client command reports are replayable and delivered live", "[client][
         kWaitTimeout));
 
     reports_stream->Stop();
+}
+
+TEST_CASE("Client data messages publish and subscribe independently",
+          "[client][integration][data]") {
+    testsupport::AgentServerHarness harness;
+    Client publisher = MakeClient(harness.Address());
+    Client subscriber = MakeClient(harness.Address());
+
+    std::mutex mutex;
+    std::vector<DataMessage> messages;
+    auto stream = subscriber.StartMessages(
+        {.subscriber_id = "subscriber-1", .topics = {"rotor.event"}},
+        [&](const DataMessage& message) {
+            std::lock_guard<std::mutex> lock(mutex);
+            messages.push_back(message);
+        });
+    REQUIRE(stream.has_value());
+
+    DataMessage message;
+    message.topic = "rotor.event";
+    message.labels["edge_id"] = "edge-7";
+    message.payload = R"({"state":"completed"})";
+    const PublishMessageResult published = publisher.PublishMessage(std::move(message));
+    REQUIRE(published.ok);
+    CHECK(published.sequence > 0);
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            std::lock_guard<std::mutex> lock(mutex);
+            return !messages.empty();
+        },
+        kWaitTimeout));
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        REQUIRE(messages.size() == 1);
+        CHECK(messages.front().topic == "rotor.event");
+        CHECK(messages.front().source_id == "test-client");
+        CHECK(messages.front().labels.at("edge_id") == "edge-7");
+        CHECK(messages.front().payload == R"({"state":"completed"})");
+    }
+    const RuntimeStats active_stats = publisher.GetRuntimeStats();
+    REQUIRE(active_stats.ok);
+    CHECK(active_stats.data_messages_published_total >= 1);
+    CHECK(active_stats.current_message_subscribers >= 1);
+    stream->Stop();
+}
+
+TEST_CASE("Client artifacts upload download and verify hash", "[client][integration][data]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    const std::filesystem::path input_path =
+        std::filesystem::temp_directory_path() / "swarmkit-artifact-input.bin";
+    const std::filesystem::path output_path =
+        std::filesystem::temp_directory_path() / "swarmkit-artifact-output.bin";
+    const std::string payload = "image-bytes-that-stand-in-for-a-frame";
+    {
+        std::ofstream output(input_path, std::ios::binary | std::ios::trunc);
+        output << payload;
+    }
+
+    ArtifactUpload upload;
+    upload.file_path = input_path.string();
+    upload.chunk_bytes = 8;
+    upload.descriptor.content_type = "image/jpeg";
+    upload.descriptor.labels["camera_id"] = "front";
+
+    const ArtifactTransferResult uploaded = client.UploadArtifact(upload);
+    REQUIRE(uploaded.ok);
+    REQUIRE_FALSE(uploaded.descriptor.artifact_id.empty());
+    CHECK(uploaded.descriptor.size_bytes == static_cast<std::int64_t>(payload.size()));
+    CHECK(uploaded.descriptor.content_type == "image/jpeg");
+    CHECK(uploaded.descriptor.labels.at("camera_id") == "front");
+    CHECK_FALSE(uploaded.descriptor.sha256_hex.empty());
+
+    const ArtifactTransferResult downloaded =
+        client.DownloadArtifact(uploaded.descriptor.artifact_id, output_path.string());
+    REQUIRE(downloaded.ok);
+    CHECK(downloaded.descriptor.artifact_id == uploaded.descriptor.artifact_id);
+    CHECK(downloaded.descriptor.sha256_hex == uploaded.descriptor.sha256_hex);
+
+    std::ifstream input(output_path, std::ios::binary);
+    const std::string downloaded_payload{std::istreambuf_iterator<char>(input),
+                                         std::istreambuf_iterator<char>()};
+    CHECK(downloaded_payload == payload);
+
+    const RuntimeStats stats = client.GetRuntimeStats();
+    REQUIRE(stats.ok);
+    CHECK(stats.artifact_uploads_total >= 1);
+    CHECK(stats.artifact_downloads_total >= 1);
+    CHECK(stats.artifact_bytes_received_total >= payload.size());
+    CHECK(stats.artifact_bytes_sent_total >= payload.size());
+
+    std::error_code error;
+    std::filesystem::remove(input_path, error);
+    std::filesystem::remove(output_path, error);
+}
+
+TEST_CASE("Client artifact download rejects expired artifacts", "[client][integration][data]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    const std::filesystem::path input_path =
+        std::filesystem::temp_directory_path() / "swarmkit-artifact-expiring.bin";
+    const std::filesystem::path output_path =
+        std::filesystem::temp_directory_path() / "swarmkit-artifact-expired-output.bin";
+    const std::string payload = "short-lived-artifact";
+    {
+        std::ofstream output(input_path, std::ios::binary | std::ios::trunc);
+        output << payload;
+    }
+
+    ArtifactUpload upload;
+    upload.file_path = input_path.string();
+    upload.chunk_bytes = 8;
+    upload.descriptor.content_type = "application/octet-stream";
+    upload.descriptor.ttl_ms = 1;
+
+    const ArtifactTransferResult uploaded = client.UploadArtifact(upload);
+    REQUIRE(uploaded.ok);
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+
+    const ArtifactTransferResult downloaded =
+        client.DownloadArtifact(uploaded.descriptor.artifact_id, output_path.string());
+    CHECK_FALSE(downloaded.ok);
+    CHECK(downloaded.error.code == RpcStatusCode::kNotFound);
+    CHECK(downloaded.error.user_message.find("expired") != std::string::npos);
+
+    const RuntimeStats stats = client.GetRuntimeStats();
+    REQUIRE(stats.ok);
+    CHECK(stats.artifact_failures_total >= 1);
+
+    std::error_code error;
+    std::filesystem::remove(input_path, error);
+    std::filesystem::remove(output_path, error);
 }
 
 TEST_CASE("Client verified command helpers use agent health and telemetry",

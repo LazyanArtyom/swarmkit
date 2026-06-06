@@ -165,6 +165,33 @@ void ResetStopRequested() {
 int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
                bool trajectory_only = false);
 
+[[nodiscard]] std::vector<std::string> CollectOptionValues(int argc, char** argv,
+                                                           std::string_view option_name) {
+    std::vector<std::string> values;
+    for (int index = 1; index + 1 < argc; ++index) {
+        if (std::string_view(argv[index]) == option_name) {
+            values.emplace_back(argv[++index]);
+        }
+    }
+    return values;
+}
+
+[[nodiscard]] std::expected<std::string, std::string> ReadSmallPayload(int argc, char** argv) {
+    if (const std::string payload = common::GetOptionValue(argc, argv, "--payload");
+        !payload.empty()) {
+        return payload;
+    }
+    const std::string file_path = common::GetOptionValue(argc, argv, "--file");
+    if (file_path.empty()) {
+        return {};
+    }
+    std::ifstream input(file_path, std::ios::binary);
+    if (!input.is_open()) {
+        return std::unexpected("failed to open payload file '" + file_path + "'");
+    }
+    return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+}
+
 [[nodiscard]] double DegToRad(double degrees) {
     return degrees * std::numbers::pi / 180.0;
 }
@@ -1405,6 +1432,237 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
     return EXIT_SUCCESS;
 }
 
+int RunMessage(Client& client, int argc, char** argv) {
+    const auto actions = FindActionsAfterCommand(argc, argv, "message");
+    if (actions.empty()) {
+        std::cerr << "message requires publish|subscribe\n";
+        return EXIT_FAILURE;
+    }
+
+    if (actions[0] == "publish") {
+        const std::string topic = common::GetOptionValue(argc, argv, "--topic");
+        if (topic.empty()) {
+            std::cerr << "message publish requires --topic TOPIC\n";
+            return EXIT_FAILURE;
+        }
+        auto labels = ParseKeyValueLabels(argc, argv, "--label");
+        if (!labels.has_value()) {
+            std::cerr << labels.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        auto payload = ReadSmallPayload(argc, argv);
+        if (!payload.has_value()) {
+            std::cerr << payload.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        swarmkit::client::DataMessage message;
+        message.topic = topic;
+        message.target_id = common::GetOptionValue(argc, argv, "--target");
+        const auto ttl_ms = ParseDurationMs(argc, argv);
+        if (!ttl_ms.has_value()) {
+            std::cerr << ttl_ms.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        message.ttl_ms = *ttl_ms;
+        message.labels = std::move(*labels);
+        message.payload = std::move(*payload);
+
+        const auto result = client.PublishMessage(std::move(message));
+        std::cout << "Message publish: " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (result.sequence > 0) {
+            std::cout << " seq=" << result.sequence;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (actions[0] == "subscribe") {
+        const auto duration_ms = ParseDurationMs(argc, argv);
+        if (!duration_ms.has_value()) {
+            std::cerr << duration_ms.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        const auto after_sequence =
+            ParseIntArg(common::GetOptionValue(argc, argv, "--after-sequence", kDefaultZero),
+                        "--after-sequence");
+        if (!after_sequence.has_value() || *after_sequence < 0) {
+            std::cerr << "Invalid --after-sequence\n";
+            return EXIT_FAILURE;
+        }
+
+        ResetStopRequested();
+        std::signal(SIGINT, OnSignal);
+        std::signal(SIGTERM, OnSignal);
+
+        swarmkit::client::MessageSubscription subscription;
+        subscription.target_id = common::GetOptionValue(argc, argv, "--target");
+        subscription.topics = CollectOptionValues(argc, argv, "--topic");
+        subscription.after_sequence = static_cast<std::uint64_t>(*after_sequence);
+
+        std::mutex output_mutex;
+        auto stream = client.StartMessages(
+            std::move(subscription),
+            [&](const swarmkit::client::DataMessage& message) {
+                std::lock_guard<std::mutex> lock(output_mutex);
+                std::cout << "MESSAGE seq=" << message.sequence << " topic=" << message.topic
+                          << " source=" << message.source_id;
+                if (!message.target_id.empty()) {
+                    std::cout << " target=" << message.target_id;
+                }
+                if (!message.message_id.empty()) {
+                    std::cout << " id=" << message.message_id;
+                }
+                std::cout << " payload=" << message.payload << "\n";
+            },
+            [](const std::string& error) { std::cerr << "message stream error: " << error << "\n"; });
+        if (!stream.has_value()) {
+            std::cerr << "Message subscribe failed: " << stream.error().user_message << "\n";
+            return EXIT_FAILURE;
+        }
+
+        const auto start = std::chrono::steady_clock::now();
+        while (!IsStopRequested()) {
+            if (*duration_ms > 0 &&
+                std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(*duration_ms)) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        }
+        stream->Stop();
+        return EXIT_SUCCESS;
+    }
+
+    std::cerr << "Unknown message action: " << actions[0] << "\n";
+    return EXIT_FAILURE;
+}
+
+int RunArtifact(Client& client, int argc, char** argv) {
+    const auto actions = FindActionsAfterCommand(argc, argv, "artifact");
+    if (actions.empty()) {
+        std::cerr << "artifact requires upload|download|announce\n";
+        return EXIT_FAILURE;
+    }
+
+    if (actions[0] == "upload") {
+        const std::string file_path = common::GetOptionValue(argc, argv, "--file");
+        if (file_path.empty()) {
+            std::cerr << "artifact upload requires --file PATH\n";
+            return EXIT_FAILURE;
+        }
+        auto labels = ParseKeyValueLabels(argc, argv, "--label");
+        if (!labels.has_value()) {
+            std::cerr << labels.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        swarmkit::client::ArtifactUpload upload;
+        upload.file_path = file_path;
+        upload.descriptor.target_id = common::GetOptionValue(argc, argv, "--target");
+        upload.descriptor.content_type =
+            common::GetOptionValue(argc, argv, "--content-type", "application/octet-stream");
+        const auto ttl_ms = ParseDurationMs(argc, argv);
+        if (!ttl_ms.has_value()) {
+            std::cerr << ttl_ms.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        upload.descriptor.ttl_ms = *ttl_ms;
+        upload.descriptor.labels = std::move(*labels);
+        if (const std::string chunk_bytes = common::GetOptionValue(argc, argv, "--chunk-bytes");
+            !chunk_bytes.empty()) {
+            const auto parsed = ParseIntArg(chunk_bytes, "--chunk-bytes");
+            if (!parsed.has_value() || *parsed <= 0) {
+                std::cerr << "Invalid --chunk-bytes\n";
+                return EXIT_FAILURE;
+            }
+            upload.chunk_bytes = static_cast<std::size_t>(*parsed);
+        }
+
+        const auto result = client.UploadArtifact(upload);
+        std::cout << "Artifact upload: " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.descriptor.artifact_id.empty()) {
+            std::cout << " artifact_id=" << result.descriptor.artifact_id;
+        }
+        if (!result.descriptor.sha256_hex.empty()) {
+            std::cout << " sha256=" << result.descriptor.sha256_hex;
+        }
+        std::cout << " size=" << result.descriptor.size_bytes;
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (actions[0] == "download") {
+        const std::string artifact_id = common::GetOptionValue(argc, argv, "--artifact-id");
+        const std::string file_path = common::GetOptionValue(argc, argv, "--file");
+        if (artifact_id.empty() || file_path.empty()) {
+            std::cerr << "artifact download requires --artifact-id ID --file PATH\n";
+            return EXIT_FAILURE;
+        }
+        const auto result = client.DownloadArtifact(artifact_id, file_path);
+        std::cout << "Artifact download: " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.descriptor.artifact_id.empty()) {
+            std::cout << " artifact_id=" << result.descriptor.artifact_id;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (actions[0] == "announce") {
+        const std::string artifact_id = common::GetOptionValue(argc, argv, "--artifact-id");
+        if (artifact_id.empty()) {
+            std::cerr << "artifact announce requires --artifact-id ID\n";
+            return EXIT_FAILURE;
+        }
+        auto labels = ParseKeyValueLabels(argc, argv, "--label");
+        if (!labels.has_value()) {
+            std::cerr << labels.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        swarmkit::client::ArtifactDescriptor descriptor;
+        descriptor.artifact_id = artifact_id;
+        descriptor.target_id = common::GetOptionValue(argc, argv, "--target");
+        descriptor.content_type =
+            common::GetOptionValue(argc, argv, "--content-type", "application/octet-stream");
+        descriptor.filename = common::GetOptionValue(argc, argv, "--file");
+        const auto ttl_ms = ParseDurationMs(argc, argv);
+        if (!ttl_ms.has_value()) {
+            std::cerr << ttl_ms.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        descriptor.ttl_ms = *ttl_ms;
+        descriptor.labels = std::move(*labels);
+        const auto result = client.AnnounceArtifact(std::move(descriptor));
+        std::cout << "Artifact announce: " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    std::cerr << "Unknown artifact action: " << actions[0] << "\n";
+    return EXIT_FAILURE;
+}
+
 int RunPing(Client& client) {
     const auto kResult = client.Ping();
 
@@ -1666,7 +1924,16 @@ int RunStats(Client& client) {
               << "  total_telemetry_subs        : " << kStats.total_telemetry_subscriptions << "\n"
               << "  current_telemetry_streams   : " << kStats.current_telemetry_streams << "\n"
               << "  telemetry_frames_sent_total : " << kStats.telemetry_frames_sent_total << "\n"
-              << "  backend_failures_total      : " << kStats.backend_failures_total << "\n";
+              << "  backend_failures_total      : " << kStats.backend_failures_total << "\n"
+              << "  data_messages_published     : " << kStats.data_messages_published_total
+              << "\n"
+              << "  data_messages_rejected      : " << kStats.data_messages_rejected_total << "\n"
+              << "  current_message_subscribers : " << kStats.current_message_subscribers << "\n"
+              << "  artifact_uploads_total      : " << kStats.artifact_uploads_total << "\n"
+              << "  artifact_downloads_total    : " << kStats.artifact_downloads_total << "\n"
+              << "  artifact_bytes_received     : " << kStats.artifact_bytes_received_total << "\n"
+              << "  artifact_bytes_sent         : " << kStats.artifact_bytes_sent_total << "\n"
+              << "  artifact_failures_total     : " << kStats.artifact_failures_total << "\n";
     return EXIT_SUCCESS;
 }
 
@@ -2484,6 +2751,12 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     }
     if (invocation.command == "reports") {
         return RunReports(client, common::GetOptionValue(argc, argv, "--drone", "all"), argc, argv);
+    }
+    if (invocation.command == "message") {
+        return RunMessage(client, argc, argv);
+    }
+    if (invocation.command == "artifact") {
+        return RunArtifact(client, argc, argv);
     }
     if (invocation.command == "lock") {
         return RunLock(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId), argc,

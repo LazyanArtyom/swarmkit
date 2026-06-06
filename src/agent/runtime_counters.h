@@ -32,6 +32,14 @@ struct CounterSnapshot {
     std::uint64_t current_telemetry_streams{0};
     std::uint64_t telemetry_frames_sent_total{0};
     std::uint64_t backend_failures_total{0};
+    std::uint64_t data_messages_published_total{0};
+    std::uint64_t data_messages_rejected_total{0};
+    std::uint64_t current_message_subscribers{0};
+    std::uint64_t artifact_uploads_total{0};
+    std::uint64_t artifact_downloads_total{0};
+    std::uint64_t artifact_bytes_received_total{0};
+    std::uint64_t artifact_bytes_sent_total{0};
+    std::uint64_t artifact_failures_total{0};
 };
 
 /// @brief Lock-free atomic counters for the agent server runtime.
@@ -66,6 +74,29 @@ class RuntimeCounters {
     }
     void IncrementBackendFailures() {
         backend_failures_total_.fetch_add(1, std::memory_order_relaxed);
+    }
+    void IncrementDataMessagesPublished() {
+        data_messages_published_total_.fetch_add(1, std::memory_order_relaxed);
+    }
+    void IncrementDataMessagesRejected() {
+        data_messages_rejected_total_.fetch_add(1, std::memory_order_relaxed);
+    }
+    void IncrementMessageSubscribers() {
+        current_message_subscribers_.fetch_add(1, std::memory_order_relaxed);
+    }
+    void DecrementMessageSubscribers() {
+        current_message_subscribers_.fetch_sub(1, std::memory_order_relaxed);
+    }
+    void IncrementArtifactUploads(std::uint64_t bytes_received) {
+        artifact_uploads_total_.fetch_add(1, std::memory_order_relaxed);
+        artifact_bytes_received_total_.fetch_add(bytes_received, std::memory_order_relaxed);
+    }
+    void IncrementArtifactDownloads(std::uint64_t bytes_sent) {
+        artifact_downloads_total_.fetch_add(1, std::memory_order_relaxed);
+        artifact_bytes_sent_total_.fetch_add(bytes_sent, std::memory_order_relaxed);
+    }
+    void IncrementArtifactFailures() {
+        artifact_failures_total_.fetch_add(1, std::memory_order_relaxed);
     }
 
     void IncrementAuthorityWatchers() {
@@ -109,6 +140,19 @@ class RuntimeCounters {
                 telemetry_frames_sent_total_.load(std::memory_order_relaxed),
             .backend_failures_total = backend_failures_total_.load(std::memory_order_relaxed) +
                                       telemetry_backend_failures_.load(std::memory_order_relaxed),
+            .data_messages_published_total =
+                data_messages_published_total_.load(std::memory_order_relaxed),
+            .data_messages_rejected_total =
+                data_messages_rejected_total_.load(std::memory_order_relaxed),
+            .current_message_subscribers =
+                current_message_subscribers_.load(std::memory_order_relaxed),
+            .artifact_uploads_total = artifact_uploads_total_.load(std::memory_order_relaxed),
+            .artifact_downloads_total = artifact_downloads_total_.load(std::memory_order_relaxed),
+            .artifact_bytes_received_total =
+                artifact_bytes_received_total_.load(std::memory_order_relaxed),
+            .artifact_bytes_sent_total =
+                artifact_bytes_sent_total_.load(std::memory_order_relaxed),
+            .artifact_failures_total = artifact_failures_total_.load(std::memory_order_relaxed),
         };
     }
 
@@ -127,6 +171,14 @@ class RuntimeCounters {
     std::atomic<std::uint64_t> telemetry_frames_sent_total_{0};
     std::atomic<std::uint64_t> backend_failures_total_{0};
     std::atomic<std::uint64_t> telemetry_backend_failures_{0};
+    std::atomic<std::uint64_t> data_messages_published_total_{0};
+    std::atomic<std::uint64_t> data_messages_rejected_total_{0};
+    std::atomic<std::uint64_t> current_message_subscribers_{0};
+    std::atomic<std::uint64_t> artifact_uploads_total_{0};
+    std::atomic<std::uint64_t> artifact_downloads_total_{0};
+    std::atomic<std::uint64_t> artifact_bytes_received_total_{0};
+    std::atomic<std::uint64_t> artifact_bytes_sent_total_{0};
+    std::atomic<std::uint64_t> artifact_failures_total_{0};
 };
 
 }  // namespace swarmkit::agent::internal

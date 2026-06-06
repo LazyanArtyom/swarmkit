@@ -7,7 +7,6 @@
 #include "swarmkit/client/client.h"
 
 #include <grpcpp/grpcpp.h>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -17,11 +16,15 @@
 #include <deque>
 #include <exception>
 #include <expected>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -30,6 +33,7 @@
 
 #include "env_utils.h"
 #include "security_utils.h"
+#include "sha256.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/overloaded.h"
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
@@ -68,6 +72,13 @@ constexpr std::string_view kClientEnvServerAuthorityOverride = "SERVER_AUTHORITY
 constexpr std::string_view kClientEnvTransportSecurity = "TRANSPORT_SECURITY";
 constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
 constexpr double kEarthRadiusM = 6371000.0;
+constexpr std::size_t kDefaultArtifactChunkBytes = 64 * 1024;
+
+[[nodiscard]] std::int64_t NowUnixMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
 
 [[nodiscard]] RpcStatusCode ToRpcStatusCode(const grpc::Status& status) {
     if (status.ok()) {
@@ -718,14 +729,17 @@ struct Client::Impl {
     ClientConfig config;
     std::shared_ptr<grpc::Channel> channel;
     std::unique_ptr<swarmkit::v1::AgentService::Stub> stub;
+    std::unique_ptr<swarmkit::v1::DataService::Stub> data_stub;
     std::shared_ptr<StreamState> telemetry{std::make_shared<StreamState>()};
     std::shared_ptr<StreamState> authority{std::make_shared<StreamState>()};
     std::shared_ptr<StreamState> reports{std::make_shared<StreamState>()};
+    std::shared_ptr<StreamState> messages{std::make_shared<StreamState>()};
 
     explicit Impl(ClientConfig cfg)
         : config(std::move(cfg)),
           channel(MakeChannel(config)),
-          stub(swarmkit::v1::AgentService::NewStub(channel)) {}
+          stub(swarmkit::v1::AgentService::NewStub(channel)),
+          data_stub(swarmkit::v1::DataService::NewStub(channel)) {}
 };
 
 struct StreamRetryState {
@@ -736,6 +750,11 @@ struct StreamRetryState {
 struct ClientRuntime {
     const ClientConfig& config;
     swarmkit::v1::AgentService::Stub& stub;
+};
+
+struct DataClientRuntime {
+    const ClientConfig& config;
+    swarmkit::v1::DataService::Stub& stub;
 };
 
 [[nodiscard]] bool IsStopRequested(const StreamState& stream_state) {
@@ -773,6 +792,8 @@ void ResetStreamContext(StreamState& stream_state) {
             return core::ErrorDomain::kAuthority;
         case SubscriptionKind::kReports:
             return core::ErrorDomain::kInternal;
+        case SubscriptionKind::kMessages:
+            return core::ErrorDomain::kInternal;
     }
     return core::ErrorDomain::kInternal;
 }
@@ -785,6 +806,8 @@ void ResetStreamContext(StreamState& stream_state) {
             return "authority";
         case SubscriptionKind::kReports:
             return "reports";
+        case SubscriptionKind::kMessages:
+            return "messages";
     }
     return "stream";
 }
@@ -1242,6 +1265,76 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     for (const auto& [key, value] : goal.labels) {
         (*proto_goal->mutable_labels())[key] = value;
     }
+}
+
+[[nodiscard]] swarmkit::v1::DataMessage ToProtoDataMessage(const DataMessage& message) {
+    swarmkit::v1::DataMessage proto;
+    proto.set_message_id(message.message_id);
+    proto.set_sequence(message.sequence);
+    proto.set_source_id(message.source_id);
+    proto.set_target_id(message.target_id);
+    proto.set_topic(message.topic);
+    proto.set_unix_time_ms(message.unix_time_ms);
+    proto.set_ttl_ms(message.ttl_ms);
+    for (const auto& [key, value] : message.labels) {
+        (*proto.mutable_labels())[key] = value;
+    }
+    proto.set_payload(message.payload);
+    return proto;
+}
+
+[[nodiscard]] DataMessage ToDataMessage(const swarmkit::v1::DataMessage& proto) {
+    DataMessage message;
+    message.message_id = proto.message_id();
+    message.sequence = proto.sequence();
+    message.source_id = proto.source_id();
+    message.target_id = proto.target_id();
+    message.topic = proto.topic();
+    message.unix_time_ms = proto.unix_time_ms();
+    message.ttl_ms = proto.ttl_ms();
+    for (const auto& [key, value] : proto.labels()) {
+        message.labels.emplace(key, value);
+    }
+    message.payload = proto.payload();
+    return message;
+}
+
+[[nodiscard]] swarmkit::v1::ArtifactDescriptor ToProtoArtifactDescriptor(
+    const ArtifactDescriptor& descriptor) {
+    swarmkit::v1::ArtifactDescriptor proto;
+    proto.set_artifact_id(descriptor.artifact_id);
+    proto.set_source_id(descriptor.source_id);
+    proto.set_target_id(descriptor.target_id);
+    proto.set_content_type(descriptor.content_type);
+    proto.set_filename(descriptor.filename);
+    proto.set_size_bytes(descriptor.size_bytes);
+    proto.set_created_unix_ms(descriptor.created_unix_ms);
+    proto.set_ttl_ms(descriptor.ttl_ms);
+    proto.set_sha256_hex(descriptor.sha256_hex);
+    proto.set_storage_path(descriptor.storage_path);
+    for (const auto& [key, value] : descriptor.labels) {
+        (*proto.mutable_labels())[key] = value;
+    }
+    return proto;
+}
+
+[[nodiscard]] ArtifactDescriptor ToArtifactDescriptor(
+    const swarmkit::v1::ArtifactDescriptor& proto) {
+    ArtifactDescriptor descriptor;
+    descriptor.artifact_id = proto.artifact_id();
+    descriptor.source_id = proto.source_id();
+    descriptor.target_id = proto.target_id();
+    descriptor.content_type = proto.content_type();
+    descriptor.filename = proto.filename();
+    descriptor.size_bytes = proto.size_bytes();
+    descriptor.created_unix_ms = proto.created_unix_ms();
+    descriptor.ttl_ms = proto.ttl_ms();
+    descriptor.sha256_hex = proto.sha256_hex();
+    descriptor.storage_path = proto.storage_path();
+    for (const auto& [key, value] : proto.labels()) {
+        descriptor.labels.emplace(key, value);
+    }
+    return descriptor;
 }
 
 [[nodiscard]] ActiveGoal ToActiveGoal(const swarmkit::v1::ActiveGoal& proto_goal) {
@@ -1803,6 +1896,44 @@ void PopulateProtoTrajectoryPlan(const TrajectoryPlan& plan, swarmkit::v1::Traje
     return kFinalStatus;
 }
 
+[[nodiscard]] grpc::Status RunMessageStreamAttempt(DataClientRuntime runtime,
+                                                   StreamState& message_stream,
+                                                   const MessageSubscription& subscription,
+                                                   const DataMessageHandler& on_message,
+                                                   std::string_view stream_id) {
+    grpc::ClientContext* context = InstallStreamContext(message_stream, stream_id);
+
+    swarmkit::v1::MessageSubscription request;
+    request.set_subscriber_id(subscription.subscriber_id.empty() ? runtime.config.client_id
+                                                                 : subscription.subscriber_id);
+    request.set_target_id(subscription.target_id);
+    request.set_after_sequence(subscription.after_sequence);
+    for (const auto& topic : subscription.topics) {
+        request.add_topics(topic);
+    }
+
+    auto reader = runtime.stub.SubscribeMessages(context, request);
+    EmitSubscriptionEvent(message_stream, SubscriptionLifecycleState::kConnected,
+                          "message stream connected");
+    swarmkit::v1::DataMessage proto_message;
+    while (reader->Read(&proto_message)) {
+        if (IsStopRequested(message_stream)) {
+            break;
+        }
+        if (on_message) {
+            auto message = ToDataMessage(proto_message);
+            static_cast<void>(EnqueueCallback(message_stream,
+                                              [on_message, message = std::move(message)]() {
+                                                  on_message(message);
+                                              }));
+        }
+    }
+
+    const grpc::Status final_status = reader->Finish();
+    ResetStreamContext(message_stream);
+    return final_status;
+}
+
 [[nodiscard]] grpc::Status RunAuthorityStreamAttempt(ClientRuntime runtime,
                                                      StreamState& authority_stream,
                                                      const AuthoritySubscription& subscription,
@@ -1936,6 +2067,49 @@ void RunAuthorityLoop(ClientRuntime runtime, StreamState& authority_stream,
     }
     authority_stream.active.store(false, std::memory_order_relaxed);
     ShutdownCallbackQueue(authority_stream);
+}
+
+void RunMessageLoop(DataClientRuntime runtime, StreamState& message_stream,
+                    const MessageSubscription& subscription, const DataMessageHandler& on_message,
+                    const TelemetryErrorHandler& on_error) {
+    static_cast<void>(on_error);
+    StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
+
+    while (!IsStopRequested(message_stream)) {
+        ++retry_state.attempt_number;
+        const std::string stream_id = MakeCorrelationId("messages");
+        const grpc::Status final_status =
+            RunMessageStreamAttempt(runtime, message_stream, subscription, on_message, stream_id);
+
+        if (IsStopRequested(message_stream)) {
+            break;
+        }
+
+        LogStreamFailure("messages", subscription.target_id, stream_id, final_status,
+                         retry_state.attempt_number);
+        if (final_status.ok()) {
+            EmitSubscriptionEvent(message_stream, SubscriptionLifecycleState::kStopped,
+                                  "message stream ended");
+            break;
+        }
+        if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
+                               final_status)) {
+            EmitSubscriptionEvent(
+                message_stream, SubscriptionLifecycleState::kFailed,
+                final_status.error_message(), retry_state.attempt_number,
+                MakeStreamError(final_status, stream_id, retry_state.attempt_number));
+            MaybeReportStreamFailure(message_stream, final_status);
+            break;
+        }
+        SleepBeforeNextRetry(runtime.config.stream_reconnect_policy, &retry_state.backoff_ms);
+    }
+
+    if (IsStopRequested(message_stream)) {
+        EmitSubscriptionEvent(message_stream, SubscriptionLifecycleState::kStopped,
+                              "message stream stopped");
+    }
+    message_stream.active.store(false, std::memory_order_relaxed);
+    ShutdownCallbackQueue(message_stream);
 }
 
 void RunReportLoop(ClientRuntime runtime, StreamState& report_stream,
@@ -2145,6 +2319,7 @@ Client::~Client() {
     StopTelemetry();
     StopAuthorityWatch();
     StopReports();
+    StopMessages();
 }
 
 AuthoritySession::~AuthoritySession() {
@@ -2335,6 +2510,14 @@ RuntimeStats Client::GetRuntimeStats() const {
     out.current_telemetry_streams = rep.current_telemetry_streams();
     out.telemetry_frames_sent_total = rep.telemetry_frames_sent_total();
     out.backend_failures_total = rep.backend_failures_total();
+    out.data_messages_published_total = rep.data_messages_published_total();
+    out.data_messages_rejected_total = rep.data_messages_rejected_total();
+    out.current_message_subscribers = rep.current_message_subscribers();
+    out.artifact_uploads_total = rep.artifact_uploads_total();
+    out.artifact_downloads_total = rep.artifact_downloads_total();
+    out.artifact_bytes_received_total = rep.artifact_bytes_received_total();
+    out.artifact_bytes_sent_total = rep.artifact_bytes_sent_total();
+    out.artifact_failures_total = rep.artifact_failures_total();
     out.ready = rep.ready();
     PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
@@ -3362,6 +3545,329 @@ std::expected<Subscription, RpcError> Client::StartReports(ReportSubscription su
 
 void Client::StopReports() {
     CancelAndJoinStream(*impl_->reports);
+}
+
+PublishMessageResult Client::PublishMessage(DataMessage message) const {
+    PublishMessageResult out;
+    const std::string correlation_id = MakeCorrelationId("data-message");
+    if (message.source_id.empty()) {
+        message.source_id = impl_->config.client_id;
+    }
+
+    swarmkit::v1::PublishMessageRequest req;
+    *req.mutable_message() = ToProtoDataMessage(message);
+    swarmkit::v1::PublishMessageReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->PublishMessage(context, req, &rep);
+                             });
+
+    out.correlation_id = correlation_id;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.sequence = rep.sequence();
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kInternal);
+    return out;
+}
+
+std::expected<Subscription, RpcError> Client::StartMessages(
+    MessageSubscription subscription, DataMessageHandler on_message, TelemetryErrorHandler on_error,
+    SubscriptionEventHandler on_event, SubscriptionOptions options) {
+    if (subscription.subscriber_id.empty()) {
+        subscription.subscriber_id = impl_->config.client_id;
+    }
+    if (!on_message) {
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kMessages, RpcStatusCode::kInvalidArgument,
+            "message subscription callback must not be empty"));
+    }
+
+    auto generation = PrepareSubscriptionStart(impl_->messages, SubscriptionKind::kMessages,
+                                               subscription.target_id, std::move(on_error),
+                                               std::move(on_event), options);
+    if (!generation.has_value()) {
+        return std::unexpected(std::move(generation.error()));
+    }
+
+    try {
+        const auto stream = impl_->messages;
+        stream->worker =
+            std::thread([this, stream, subscription = std::move(subscription),
+                         on_message = std::move(on_message), on_error = stream->on_error]() mutable {
+                RunMessageLoop(DataClientRuntime{.config = impl_->config,
+                                                 .stub = *impl_->data_stub},
+                               *stream, subscription, on_message, on_error);
+            });
+    } catch (const std::system_error& exc) {
+        CancelAndJoinStream(*impl_->messages);
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kMessages, RpcStatusCode::kInternal,
+            "failed to start message subscription worker: " + std::string(exc.what())));
+    }
+
+    auto state = std::make_shared<Subscription::State>();
+    state->stream = impl_->messages;
+    state->kind = SubscriptionKind::kMessages;
+    state->generation = *generation;
+    return Subscription(std::move(state));
+}
+
+void Client::StopMessages() {
+    CancelAndJoinStream(*impl_->messages);
+}
+
+ArtifactTransferResult Client::UploadArtifact(const ArtifactUpload& upload) const {
+    ArtifactTransferResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-upload");
+    out.correlation_id = correlation_id;
+
+    const std::filesystem::path file_path(upload.file_path);
+    std::error_code fs_error;
+    const auto file_size = std::filesystem::file_size(file_path, fs_error);
+    if (upload.file_path.empty() || fs_error) {
+        out.message = "artifact file does not exist or cannot be read";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    std::ifstream input(file_path, std::ios::binary);
+    if (!input.is_open()) {
+        out.message = "failed to open artifact file";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    ArtifactDescriptor descriptor = upload.descriptor;
+    if (descriptor.filename.empty()) {
+        descriptor.filename = file_path.filename().string();
+    }
+    if (descriptor.source_id.empty()) {
+        descriptor.source_id = impl_->config.client_id;
+    }
+    if (descriptor.created_unix_ms == 0) {
+        descriptor.created_unix_ms = NowUnixMs();
+    }
+    descriptor.size_bytes = static_cast<std::int64_t>(file_size);
+    if (descriptor.sha256_hex.empty()) {
+        descriptor.sha256_hex = core::internal::Sha256FileHex(file_path);
+    }
+
+    grpc::ClientContext context;
+    ApplyUnaryClientContext(impl_->config, &context, correlation_id);
+    swarmkit::v1::ArtifactDescriptor proto_reply;
+    auto writer = impl_->data_stub->UploadArtifact(&context, &proto_reply);
+
+    const std::size_t chunk_size = std::max<std::size_t>(
+        1, upload.chunk_bytes == 0 ? kDefaultArtifactChunkBytes : upload.chunk_bytes);
+    std::string buffer(chunk_size, '\0');
+    std::int64_t offset = 0;
+    int chunk_index = 0;
+    bool wrote_all = true;
+    if (descriptor.size_bytes == 0) {
+        swarmkit::v1::ArtifactChunk chunk;
+        chunk.set_transfer_id(correlation_id);
+        *chunk.mutable_artifact() = ToProtoArtifactDescriptor(descriptor);
+        chunk.set_offset(0);
+        chunk.set_chunk_index(0);
+        chunk.set_final_chunk(true);
+        wrote_all = writer->Write(chunk);
+    }
+    while (input.good()) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize read = input.gcount();
+        if (read <= 0) {
+            break;
+        }
+        swarmkit::v1::ArtifactChunk chunk;
+        chunk.set_transfer_id(correlation_id);
+        if (chunk_index == 0) {
+            *chunk.mutable_artifact() = ToProtoArtifactDescriptor(descriptor);
+        }
+        chunk.set_offset(offset);
+        chunk.set_chunk_index(chunk_index);
+        chunk.set_data(buffer.data(), static_cast<std::size_t>(read));
+        offset += read;
+        chunk.set_final_chunk(offset >= descriptor.size_bytes);
+        if (!writer->Write(chunk)) {
+            wrote_all = false;
+            break;
+        }
+        ++chunk_index;
+    }
+    writer->WritesDone();
+    const grpc::Status status = writer->Finish();
+
+    if (!wrote_all && status.ok()) {
+        out.message = "artifact upload stream closed before all chunks were accepted";
+        PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                           RpcStatusCode::kUnavailable, out.message, out.message, correlation_id,
+                           1);
+        return out;
+    }
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, 1);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.ok = true;
+    out.message = "artifact uploaded";
+    out.descriptor = ToArtifactDescriptor(proto_reply);
+    PopulateSuccessError(&out.error, correlation_id, 1);
+    return out;
+}
+
+ArtifactTransferResult Client::DownloadArtifact(const std::string& artifact_id,
+                                                const std::string& output_path) const {
+    ArtifactTransferResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-download");
+    out.correlation_id = correlation_id;
+
+    if (artifact_id.empty() || output_path.empty()) {
+        out.message = "artifact_id and output_path are required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    grpc::ClientContext context;
+    ApplyUnaryClientContext(impl_->config, &context, correlation_id);
+    swarmkit::v1::ArtifactRequest req;
+    req.set_artifact_id(artifact_id);
+    auto reader = impl_->data_stub->DownloadArtifact(&context, req);
+
+    const std::filesystem::path final_path(output_path);
+    const std::filesystem::path tmp_path =
+        final_path.parent_path() /
+        (final_path.filename().string() + "." + correlation_id + ".part");
+    std::error_code fs_error;
+    if (!final_path.parent_path().empty()) {
+        std::filesystem::create_directories(final_path.parent_path(), fs_error);
+    }
+    std::ofstream output(tmp_path, std::ios::binary | std::ios::trunc);
+    if (!output.is_open()) {
+        out.message = "failed to open artifact output file";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    swarmkit::v1::ArtifactChunk chunk;
+    bool saw_descriptor = false;
+    bool saw_final = false;
+    std::int64_t received_bytes = 0;
+    while (reader->Read(&chunk)) {
+        if (!saw_descriptor && chunk.has_artifact()) {
+            out.descriptor = ToArtifactDescriptor(chunk.artifact());
+            saw_descriptor = true;
+        }
+        if (chunk.offset() != received_bytes) {
+            output.close();
+            std::filesystem::remove(tmp_path, fs_error);
+            out.message = "artifact download chunk offset mismatch";
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
+                               1);
+            return out;
+        }
+        output.write(chunk.data().data(), static_cast<std::streamsize>(chunk.data().size()));
+        received_bytes += static_cast<std::int64_t>(chunk.data().size());
+        saw_final = saw_final || chunk.final_chunk();
+    }
+    output.flush();
+    output.close();
+
+    const grpc::Status status = reader->Finish();
+    if (!status.ok()) {
+        std::filesystem::remove(tmp_path, fs_error);
+        PopulateTransportError(&out.error, status, correlation_id, 1);
+        out.message = out.error.user_message;
+        return out;
+    }
+    if (!saw_descriptor || !saw_final) {
+        std::filesystem::remove(tmp_path, fs_error);
+        out.message = "artifact download ended before descriptor/final chunk";
+        PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                           RpcStatusCode::kInternal, out.message, out.message, correlation_id, 1);
+        return out;
+    }
+    if (!out.descriptor.sha256_hex.empty()) {
+        const std::string downloaded_hash = core::internal::Sha256FileHex(tmp_path);
+        if (downloaded_hash != out.descriptor.sha256_hex) {
+            std::filesystem::remove(tmp_path, fs_error);
+            out.message = "artifact download sha256 mismatch";
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
+                               1);
+            return out;
+        }
+    }
+
+    std::filesystem::rename(tmp_path, final_path, fs_error);
+    if (fs_error) {
+        std::filesystem::remove(final_path, fs_error);
+        fs_error.clear();
+        std::filesystem::rename(tmp_path, final_path, fs_error);
+    }
+    if (fs_error) {
+        std::filesystem::remove(tmp_path, fs_error);
+        out.message = "failed to finalize artifact output file";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kFailedPrecondition, out.message, out.message,
+                           correlation_id, 1);
+        return out;
+    }
+
+    out.ok = true;
+    out.message = "artifact downloaded";
+    out.descriptor.storage_path = final_path.string();
+    PopulateSuccessError(&out.error, correlation_id, 1);
+    return out;
+}
+
+ArtifactTransferResult Client::AnnounceArtifact(ArtifactDescriptor descriptor) const {
+    ArtifactTransferResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-announce");
+
+    swarmkit::v1::ArtifactReply rep;
+    swarmkit::v1::ArtifactDescriptor req = ToProtoArtifactDescriptor(descriptor);
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->AnnounceArtifact(context, req, &rep);
+                             });
+
+    out.correlation_id = correlation_id;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.descriptor = ToArtifactDescriptor(rep.artifact());
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kInternal);
+    return out;
 }
 
 CommandResult Client::LockAuthority(const std::string& drone_id, std::int64_t ttl_ms) const {

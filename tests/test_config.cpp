@@ -201,6 +201,12 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "    flush_each_write: true\n";
     output << "    fsync_each_write: false\n";
     output << "    replay_from_log: true\n";
+    output << "  data:\n";
+    output << "    artifact_dir: /tmp/swarmkit-artifacts-test\n";
+    output << "    message_backlog_size: 99\n";
+    output << "    max_message_payload_bytes: 12345\n";
+    output << "    artifact_chunk_bytes: 4096\n";
+    output << "    max_artifact_bytes: 98765\n";
     output << "  vehicle_profile:\n";
     output << "    profile_id: heavy-copter\n";
     output << "    cruise_speed_mps: 6.5\n";
@@ -239,6 +245,11 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->reports.flush_each_write);
     CHECK_FALSE(kLoaded->reports.fsync_each_write);
     CHECK(kLoaded->reports.replay_from_log);
+    CHECK(kLoaded->data.artifact_dir == "/tmp/swarmkit-artifacts-test");
+    CHECK(kLoaded->data.message_backlog_size == 99);
+    CHECK(kLoaded->data.max_message_payload_bytes == 12345);
+    CHECK(kLoaded->data.artifact_chunk_bytes == 4096);
+    CHECK(kLoaded->data.max_artifact_bytes == 98765);
     CHECK(kLoaded->safety.allow_unsafe_bench_commands);
     CHECK(kLoaded->vehicle_profile.profile_id == "heavy-copter");
     CHECK(kLoaded->vehicle_profile.cruise_speed_mps == 6.5F);

@@ -187,6 +187,14 @@ struct RuntimeStats {
     std::uint64_t current_telemetry_streams{0};
     std::uint64_t telemetry_frames_sent_total{0};
     std::uint64_t backend_failures_total{0};
+    std::uint64_t data_messages_published_total{0};
+    std::uint64_t data_messages_rejected_total{0};
+    std::uint64_t current_message_subscribers{0};
+    std::uint64_t artifact_uploads_total{0};
+    std::uint64_t artifact_downloads_total{0};
+    std::uint64_t artifact_bytes_received_total{0};
+    std::uint64_t artifact_bytes_sent_total{0};
+    std::uint64_t artifact_failures_total{0};
     bool ready{false};
     RpcError error;
 };
@@ -520,6 +528,61 @@ struct ReportSubscription {
     std::uint64_t after_sequence{};
 };
 
+struct DataMessage {
+    std::string message_id;
+    std::uint64_t sequence{};
+    std::string source_id;
+    std::string target_id;
+    std::string topic;
+    std::int64_t unix_time_ms{};
+    std::int64_t ttl_ms{};
+    std::unordered_map<std::string, std::string> labels;
+    std::string payload;
+};
+
+struct PublishMessageResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    std::uint64_t sequence{};
+};
+
+struct MessageSubscription {
+    std::string subscriber_id;
+    std::vector<std::string> topics;
+    std::string target_id;
+    std::uint64_t after_sequence{};
+};
+
+struct ArtifactDescriptor {
+    std::string artifact_id;
+    std::string source_id;
+    std::string target_id;
+    std::string content_type{"application/octet-stream"};
+    std::string filename;
+    std::int64_t size_bytes{};
+    std::int64_t created_unix_ms{};
+    std::int64_t ttl_ms{};
+    std::string sha256_hex;
+    std::unordered_map<std::string, std::string> labels;
+    std::string storage_path;
+};
+
+struct ArtifactTransferResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    ArtifactDescriptor descriptor;
+};
+
+struct ArtifactUpload {
+    std::string file_path;
+    ArtifactDescriptor descriptor;
+    std::size_t chunk_bytes{64 * 1024};
+};
+
 /**
  * @brief Callback types used by streaming subscriptions.
  *
@@ -531,12 +594,14 @@ using TelemetryHandler = std::function<void(const swarmkit::core::TelemetryFrame
 using TelemetryErrorHandler = std::function<void(const std::string&)>;
 using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
 using AgentReportHandler = std::function<void(const AgentReport&)>;
+using DataMessageHandler = std::function<void(const DataMessage&)>;
 /// @}
 
 enum class SubscriptionKind : std::uint8_t {
     kTelemetry,
     kAuthority,
     kReports,
+    kMessages,
 };
 
 enum class SubscriptionLifecycleState : std::uint8_t {
@@ -722,6 +787,26 @@ class Client {
 
     /// @brief Read the current active goal state known by the agent.
     [[nodiscard]] ActiveGoalStatus GetActiveGoal(const std::string& drone_id) const;
+
+    /// @brief Publish a small app-defined data-plane message.
+    [[nodiscard]] PublishMessageResult PublishMessage(DataMessage message) const;
+
+    /// @brief Subscribe to app-defined data-plane messages.
+    [[nodiscard]] SubscriptionResult StartMessages(
+        MessageSubscription subscription, DataMessageHandler on_message,
+        TelemetryErrorHandler on_error = {}, SubscriptionEventHandler on_event = {},
+        SubscriptionOptions options = {});
+    void StopMessages();
+
+    /// @brief Upload a file/blob to the connected agent using chunked transfer.
+    [[nodiscard]] ArtifactTransferResult UploadArtifact(const ArtifactUpload& upload) const;
+
+    /// @brief Download a stored artifact from the connected agent into a file.
+    [[nodiscard]] ArtifactTransferResult DownloadArtifact(const std::string& artifact_id,
+                                                          const std::string& output_path) const;
+
+    /// @brief Announce an artifact descriptor without uploading bytes.
+    [[nodiscard]] ArtifactTransferResult AnnounceArtifact(ArtifactDescriptor descriptor) const;
 
     [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan) const;
     [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan,

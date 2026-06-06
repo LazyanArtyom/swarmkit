@@ -74,6 +74,18 @@ service AgentService {
     rpc ReleaseAuthority(ReleaseAuthorityRequest) returns (ReleaseAuthorityReply);
 }
 
+/**
+ * Independent data plane for app messages and binary artifacts.
+ * This service intentionally does not participate in command authority locks.
+ */
+service DataService {
+    rpc PublishMessage(PublishMessageRequest) returns (PublishMessageReply);
+    rpc SubscribeMessages(MessageSubscription) returns (stream DataMessage);
+    rpc UploadArtifact(stream ArtifactChunk) returns (ArtifactDescriptor);
+    rpc DownloadArtifact(ArtifactRequest) returns (stream ArtifactChunk);
+    rpc AnnounceArtifact(ArtifactDescriptor) returns (ArtifactReply);
+}
+
 // ---------------------------------------------------------------------------
 // Ping
 // ---------------------------------------------------------------------------
@@ -154,6 +166,14 @@ message RuntimeStatsReply {
     uint64 telemetry_frames_sent_total = 15;
     uint64 backend_failures_total = 16;
     bool ready = 17;
+    uint64 data_messages_published_total = 18;
+    uint64 data_messages_rejected_total = 19;
+    uint64 current_message_subscribers = 20;
+    uint64 artifact_uploads_total = 21;
+    uint64 artifact_downloads_total = 22;
+    uint64 artifact_bytes_received_total = 23;
+    uint64 artifact_bytes_sent_total = 24;
+    uint64 artifact_failures_total = 25;
 }
 
 message CapabilitiesRequest {}
@@ -885,6 +905,78 @@ message ReleaseAuthorityRequest {
 }
 
 message ReleaseAuthorityReply {}
+
+// ---------------------------------------------------------------------------
+// Data plane: messages and artifacts
+// ---------------------------------------------------------------------------
+
+message DataMessage {
+    string message_id = 1;
+    uint64 sequence = 2;
+    string source_id = 3;
+    string target_id = 4;  // Empty means topic/broadcast delivery.
+    string topic = 5;
+    int64 unix_time_ms = 6;
+    int64 ttl_ms = 7;
+    map<string, string> labels = 8;
+    bytes payload = 9;  // Small payload only; large data belongs in artifacts.
+}
+
+message PublishMessageRequest {
+    DataMessage message = 1;
+}
+
+message PublishMessageReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    uint64 sequence = 6;
+}
+
+message MessageSubscription {
+    string subscriber_id = 1;
+    repeated string topics = 2;
+    string target_id = 3;
+    uint64 after_sequence = 4;
+}
+
+message ArtifactDescriptor {
+    string artifact_id = 1;
+    string source_id = 2;
+    string target_id = 3;
+    string content_type = 4;
+    string filename = 5;
+    int64 size_bytes = 6;
+    int64 created_unix_ms = 7;
+    int64 ttl_ms = 8;
+    string sha256_hex = 9;
+    map<string, string> labels = 10;
+    string storage_path = 11;
+}
+
+message ArtifactChunk {
+    string transfer_id = 1;
+    ArtifactDescriptor artifact = 2;  // Required on the first chunk.
+    int64 offset = 3;
+    int32 chunk_index = 4;
+    bytes data = 5;
+    bool final_chunk = 6;
+}
+
+message ArtifactRequest {
+    string artifact_id = 1;
+}
+
+message ArtifactReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    ArtifactDescriptor artifact = 6;
+}
 
 // ---------------------------------------------------------------------------
 // Telemetry

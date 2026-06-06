@@ -36,6 +36,10 @@ inline constexpr float kDefaultMaxGpsHdop = 2.5F;
 inline constexpr int kDefaultReportBacklogSize = 1000;
 inline constexpr int kDefaultReportLogMaxFileSizeBytes = 10 * 1024 * 1024;
 inline constexpr int kDefaultReportLogMaxFiles = 5;
+inline constexpr int kDefaultDataMessageBacklogSize = 1000;
+inline constexpr int kDefaultDataMessageMaxPayloadBytes = 256 * 1024;
+inline constexpr int kDefaultArtifactChunkBytes = 64 * 1024;
+inline constexpr int kDefaultMaxArtifactBytes = 100 * 1024 * 1024;
 
 struct VehicleProfile {
     std::string profile_id{"generic-quad"};
@@ -87,6 +91,16 @@ struct SafetyPolicy {
     bool allow_unsafe_bench_commands{false};
 };
 
+struct DataPlaneConfig {
+    std::string artifact_dir{"/tmp/swarmkit-artifacts"};
+    int message_backlog_size{kDefaultDataMessageBacklogSize};
+    int max_message_payload_bytes{kDefaultDataMessageMaxPayloadBytes};
+    int artifact_chunk_bytes{kDefaultArtifactChunkBytes};
+    int max_artifact_bytes{kDefaultMaxArtifactBytes};
+
+    [[nodiscard]] core::Result Validate() const;
+};
+
 /// ---------------------------------------------------------------------------
 /// AgentConfig -- startup parameters for the gRPC agent server.
 /// ---------------------------------------------------------------------------
@@ -97,6 +111,7 @@ struct AgentConfig {
     int default_telemetry_rate_hz{kDefaultTelemetryRateHz};
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};
     ReportPersistenceConfig reports{};
+    DataPlaneConfig data{};
     VehicleProfile vehicle_profile{};
     SafetyPolicy safety{};
     AgentSecurityConfig security{};

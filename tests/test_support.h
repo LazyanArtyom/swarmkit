@@ -28,6 +28,7 @@
 #include "swarmkit/client/client.h"
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/telemetry.h"
+#include "swarmkit/v1/swarmkit.grpc.pb.h"
 
 namespace swarmkit::testsupport {
 
@@ -277,6 +278,10 @@ class AgentServerHarness {
         builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options),
                                  &selected_port);
         builder.RegisterService(service_.get());
+        if (auto* data_service = dynamic_cast<swarmkit::v1::DataService::Service*>(service_.get());
+            data_service != nullptr) {
+            builder.RegisterService(data_service);
+        }
         server_ = builder.BuildAndStart();
         address_ = "127.0.0.1:" + std::to_string(selected_port);
     }
@@ -312,7 +317,7 @@ class AgentServerHarness {
     }
 
     RecordingBackend* backend_{nullptr};
-    std::unique_ptr<grpc::Service> service_;
+    std::unique_ptr<swarmkit::v1::AgentService::Service> service_;
     std::unique_ptr<grpc::Server> server_;
     std::string address_;
 };

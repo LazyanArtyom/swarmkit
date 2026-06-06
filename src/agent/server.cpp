@@ -7,17 +7,23 @@
 #include "swarmkit/agent/server.h"
 
 #include <grpcpp/grpcpp.h>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <expected>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <iomanip>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -29,6 +35,7 @@
 #include "runtime_counters.h"
 #include "security_utils.h"
 #include "server_test_support.h"
+#include "sha256.h"
 #include "swarmkit/agent/arbiter.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/version.h"
@@ -65,6 +72,12 @@ constexpr std::string_view kAgentEnvReportLogMaxFiles = "REPORT_LOG_MAX_FILES";
 constexpr std::string_view kAgentEnvReportFlushEachWrite = "REPORT_FLUSH_EACH_WRITE";
 constexpr std::string_view kAgentEnvReportFsyncEachWrite = "REPORT_FSYNC_EACH_WRITE";
 constexpr std::string_view kAgentEnvReportReplayFromLog = "REPORT_REPLAY_FROM_LOG";
+constexpr std::string_view kAgentEnvArtifactDir = "ARTIFACT_DIR";
+constexpr std::string_view kAgentEnvDataMessageBacklogSize = "DATA_MESSAGE_BACKLOG_SIZE";
+constexpr std::string_view kAgentEnvDataMaxMessagePayloadBytes =
+    "DATA_MAX_MESSAGE_PAYLOAD_BYTES";
+constexpr std::string_view kAgentEnvDataArtifactChunkBytes = "DATA_ARTIFACT_CHUNK_BYTES";
+constexpr std::string_view kAgentEnvDataMaxArtifactBytes = "DATA_MAX_ARTIFACT_BYTES";
 constexpr std::string_view kAgentEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
 constexpr std::string_view kAgentEnvCertChainPath = "CERT_CHAIN_PATH";
 constexpr std::string_view kAgentEnvPrivateKeyPath = "PRIVATE_KEY_PATH";
@@ -83,6 +96,53 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     using std::chrono::milliseconds;
     using std::chrono::system_clock;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+[[nodiscard]] std::string SanitizedPathComponent(std::string value) {
+    if (value.empty()) {
+        return "artifact";
+    }
+    for (char& character : value) {
+        const bool ok = (character >= 'a' && character <= 'z') ||
+                        (character >= 'A' && character <= 'Z') ||
+                        (character >= '0' && character <= '9') || character == '.' ||
+                        character == '-' || character == '_';
+        if (!ok) {
+            character = '_';
+        }
+    }
+    return value;
+}
+
+[[nodiscard]] bool MessageExpired(const swarmkit::v1::DataMessage& message,
+                                  std::int64_t now_ms) {
+    return message.ttl_ms() > 0 && message.unix_time_ms() > 0 &&
+           now_ms - message.unix_time_ms() > message.ttl_ms();
+}
+
+[[nodiscard]] bool ArtifactExpired(const swarmkit::v1::ArtifactDescriptor& descriptor,
+                                   std::int64_t now_ms) {
+    return descriptor.ttl_ms() > 0 && descriptor.created_unix_ms() > 0 &&
+           now_ms - descriptor.created_unix_ms() > descriptor.ttl_ms();
+}
+
+[[nodiscard]] bool MessageMatchesSubscription(const swarmkit::v1::DataMessage& message,
+                                              const swarmkit::v1::MessageSubscription& sub) {
+    const bool message_is_broadcast = message.target_id().empty();
+    if (!sub.target_id().empty() && !message_is_broadcast &&
+        message.target_id() != sub.target_id() && message.source_id() != sub.target_id()) {
+        return false;
+    }
+    if (sub.target_id().empty() && !sub.subscriber_id().empty() && !message_is_broadcast &&
+        message.target_id() != sub.subscriber_id()) {
+        return false;
+    }
+    if (sub.topics().empty()) {
+        return true;
+    }
+    return std::ranges::any_of(sub.topics(), [&message](const std::string& topic) {
+        return topic == message.topic();
+    });
 }
 
 [[nodiscard]] bool HasFreshTimestamp(std::int64_t unix_time_ms) {
@@ -885,7 +945,8 @@ void PopulateTelemetryProto(const core::TelemetryFrame& frame,
  * Delegates telemetry management to TelemetryManager and runtime
  * counting to RuntimeCounters, keeping RPC handlers focused.
  */
-class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
+class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
+                               public swarmkit::v1::DataService::Service {
    public:
     AgentServiceImpl(AgentConfig config, DroneBackendPtr backend)
         : config_(std::move(config)),
@@ -1011,6 +1072,14 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_current_telemetry_streams(kSnap.current_telemetry_streams);
         reply->set_telemetry_frames_sent_total(kSnap.telemetry_frames_sent_total);
         reply->set_backend_failures_total(kSnap.backend_failures_total);
+        reply->set_data_messages_published_total(kSnap.data_messages_published_total);
+        reply->set_data_messages_rejected_total(kSnap.data_messages_rejected_total);
+        reply->set_current_message_subscribers(kSnap.current_message_subscribers);
+        reply->set_artifact_uploads_total(kSnap.artifact_uploads_total);
+        reply->set_artifact_downloads_total(kSnap.artifact_downloads_total);
+        reply->set_artifact_bytes_received_total(kSnap.artifact_bytes_received_total);
+        reply->set_artifact_bytes_sent_total(kSnap.artifact_bytes_sent_total);
+        reply->set_artifact_failures_total(kSnap.artifact_failures_total);
         reply->set_ready(ready_.load(std::memory_order_relaxed));
         return grpc::Status::OK;
     }
@@ -1906,6 +1975,359 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
+    grpc::Status PublishMessage(grpc::ServerContext* ctx,
+                                const swarmkit::v1::PublishMessageRequest* req,
+                                swarmkit::v1::PublishMessageReply* reply) override {
+        if (req == nullptr || reply == nullptr || !req->has_message()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing message");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "data-message");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        swarmkit::v1::DataMessage message = req->message();
+        if (message.topic().empty()) {
+            counters_.IncrementDataMessagesRejected();
+            reply->set_ok(false);
+            reply->set_message("message.topic is required");
+            reply->set_correlation_id(correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+            return grpc::Status::OK;
+        }
+        if (message.payload().size() >
+            static_cast<std::size_t>(config_.data.max_message_payload_bytes)) {
+            counters_.IncrementDataMessagesRejected();
+            reply->set_ok(false);
+            reply->set_message("message payload exceeds max_message_payload_bytes");
+            reply->set_correlation_id(correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_REJECTED);
+            return grpc::Status::OK;
+        }
+        if (message.source_id().empty()) {
+            message.set_source_id(config_.agent_id);
+        }
+        if (message.unix_time_ms() == 0) {
+            message.set_unix_time_ms(NowUnixMs());
+        }
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            message.set_sequence(++data_sequence_);
+            if (message.message_id().empty()) {
+                message.set_message_id("msg-" + std::to_string(message.sequence()));
+            }
+            message_backlog_.push_back(message);
+            while (static_cast<int>(message_backlog_.size()) > config_.data.message_backlog_size) {
+                message_backlog_.pop_front();
+            }
+        }
+        data_cv_.notify_all();
+        counters_.IncrementDataMessagesPublished();
+
+        reply->set_ok(true);
+        reply->set_message("message published");
+        reply->set_correlation_id(correlation_id);
+        reply->set_error_code(swarmkit::v1::ERROR_CODE_NONE);
+        reply->set_sequence(message.sequence());
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SubscribeMessages(
+        grpc::ServerContext* ctx, const swarmkit::v1::MessageSubscription* req,
+        grpc::ServerWriter<swarmkit::v1::DataMessage>* writer) override {
+        if (ctx == nullptr || req == nullptr || writer == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/writer");
+        }
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        counters_.IncrementMessageSubscribers();
+        const auto decrement_subscribers = [this] {
+            counters_.DecrementMessageSubscribers();
+        };
+        std::uint64_t cursor = req->after_sequence();
+        while (!ctx->IsCancelled()) {
+            std::vector<swarmkit::v1::DataMessage> pending;
+            {
+                std::unique_lock<std::mutex> lock(data_mutex_);
+                data_cv_.wait_for(lock, std::chrono::milliseconds{250}, [&] {
+                    return ctx->IsCancelled() || data_sequence_ > cursor;
+                });
+                const std::int64_t now_ms = NowUnixMs();
+                for (const auto& message : message_backlog_) {
+                    if (message.sequence() <= cursor || MessageExpired(message, now_ms) ||
+                        !MessageMatchesSubscription(message, *req)) {
+                        continue;
+                    }
+                    pending.push_back(message);
+                }
+            }
+            for (const auto& message : pending) {
+                cursor = std::max(cursor, message.sequence());
+                if (!writer->Write(message)) {
+                    decrement_subscribers();
+                    return grpc::Status::OK;
+                }
+            }
+        }
+        decrement_subscribers();
+        return grpc::Status::OK;
+    }
+
+    grpc::Status UploadArtifact(grpc::ServerContext* ctx,
+                                grpc::ServerReader<swarmkit::v1::ArtifactChunk>* reader,
+                                swarmkit::v1::ArtifactDescriptor* reply) override {
+        if (ctx == nullptr || reader == nullptr || reply == nullptr) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/reader/reply");
+        }
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        std::filesystem::path tmp_dir = std::filesystem::path(config_.data.artifact_dir) / "tmp";
+        std::error_code fs_error;
+        std::filesystem::create_directories(tmp_dir, fs_error);
+        if (fs_error) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                                "failed to create artifact temp dir");
+        }
+
+        swarmkit::v1::ArtifactDescriptor descriptor;
+        std::string transfer_id;
+        std::filesystem::path tmp_path;
+        std::ofstream output;
+        std::int64_t received_bytes = 0;
+        bool saw_descriptor = false;
+        bool saw_final = false;
+        const auto fail_upload = [&](grpc::StatusCode code, std::string_view message) {
+            if (output.is_open()) {
+                output.close();
+            }
+            if (!tmp_path.empty()) {
+                std::filesystem::remove(tmp_path, fs_error);
+            }
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(code, std::string(message));
+        };
+
+        swarmkit::v1::ArtifactChunk chunk;
+        while (reader->Read(&chunk)) {
+            if (!saw_descriptor) {
+                if (!chunk.has_artifact()) {
+                    return fail_upload(grpc::StatusCode::INVALID_ARGUMENT,
+                                       "first artifact chunk must include descriptor");
+                }
+                descriptor = chunk.artifact();
+                if (descriptor.source_id().empty()) {
+                    descriptor.set_source_id(config_.agent_id);
+                }
+                if (descriptor.created_unix_ms() == 0) {
+                    descriptor.set_created_unix_ms(NowUnixMs());
+                }
+                transfer_id = chunk.transfer_id().empty()
+                                  ? "transfer-" + std::to_string(descriptor.created_unix_ms())
+                                  : chunk.transfer_id();
+                tmp_path = tmp_dir / (SanitizedPathComponent(transfer_id) + ".part");
+                output.open(tmp_path, std::ios::binary | std::ios::trunc);
+                if (!output.is_open()) {
+                    return fail_upload(grpc::StatusCode::FAILED_PRECONDITION,
+                                       "failed to open artifact temp file");
+                }
+                saw_descriptor = true;
+            }
+            if (chunk.offset() != received_bytes) {
+                return fail_upload(grpc::StatusCode::INVALID_ARGUMENT,
+                                   "artifact chunks must arrive in order with matching offsets");
+            }
+            if (received_bytes + static_cast<std::int64_t>(chunk.data().size()) >
+                config_.data.max_artifact_bytes) {
+                return fail_upload(grpc::StatusCode::RESOURCE_EXHAUSTED,
+                                   "artifact exceeds max_artifact_bytes");
+            }
+            output.write(chunk.data().data(), static_cast<std::streamsize>(chunk.data().size()));
+            received_bytes += static_cast<std::int64_t>(chunk.data().size());
+            saw_final = saw_final || chunk.final_chunk();
+        }
+        if (!saw_descriptor) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "empty artifact upload");
+        }
+        output.flush();
+        output.close();
+        if (!saw_final) {
+            std::filesystem::remove(tmp_path, fs_error);
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "artifact upload ended before final chunk");
+        }
+
+        const std::string sha256_hex = core::internal::Sha256FileHex(tmp_path);
+        if (sha256_hex.empty()) {
+            std::filesystem::remove(tmp_path, fs_error);
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INTERNAL, "failed to hash artifact");
+        }
+        if (!descriptor.sha256_hex().empty() && descriptor.sha256_hex() != sha256_hex) {
+            std::filesystem::remove(tmp_path, fs_error);
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::DATA_LOSS, "artifact sha256 mismatch");
+        }
+        descriptor.set_sha256_hex(sha256_hex);
+        if (descriptor.artifact_id().empty()) {
+            descriptor.set_artifact_id(sha256_hex);
+        }
+        descriptor.set_size_bytes(received_bytes);
+        if (descriptor.filename().empty()) {
+            descriptor.set_filename(descriptor.artifact_id() + ".bin");
+        }
+
+        const std::filesystem::path final_dir =
+            std::filesystem::path(config_.data.artifact_dir) /
+            SanitizedPathComponent(descriptor.source_id()) /
+            SanitizedPathComponent(descriptor.artifact_id());
+        std::filesystem::create_directories(final_dir, fs_error);
+        if (fs_error) {
+            std::filesystem::remove(tmp_path, fs_error);
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                                "failed to create artifact final dir");
+        }
+        const std::filesystem::path final_path =
+            final_dir / SanitizedPathComponent(descriptor.filename());
+        std::filesystem::rename(tmp_path, final_path, fs_error);
+        if (fs_error) {
+            std::filesystem::remove(final_path, fs_error);
+            std::filesystem::rename(tmp_path, final_path, fs_error);
+        }
+        if (fs_error) {
+            std::filesystem::remove(tmp_path, fs_error);
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                                "failed to finalize artifact");
+        }
+        descriptor.set_storage_path(final_path.string());
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            artifacts_[descriptor.artifact_id()] = descriptor;
+        }
+        *reply = descriptor;
+        counters_.IncrementArtifactUploads(static_cast<std::uint64_t>(received_bytes));
+        return grpc::Status::OK;
+    }
+
+    grpc::Status DownloadArtifact(
+        grpc::ServerContext* ctx, const swarmkit::v1::ArtifactRequest* req,
+        grpc::ServerWriter<swarmkit::v1::ArtifactChunk>* writer) override {
+        if (ctx == nullptr || req == nullptr || writer == nullptr) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/writer");
+        }
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        swarmkit::v1::ArtifactDescriptor descriptor;
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            const auto iter = artifacts_.find(req->artifact_id());
+            if (iter == artifacts_.end()) {
+                counters_.IncrementArtifactFailures();
+                return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact not found");
+            }
+            descriptor = iter->second;
+            if (ArtifactExpired(descriptor, NowUnixMs())) {
+                artifacts_.erase(iter);
+                counters_.IncrementArtifactFailures();
+                return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact expired");
+            }
+        }
+        std::ifstream input(descriptor.storage_path(), std::ios::binary);
+        if (!input.is_open()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact file not found");
+        }
+        if (descriptor.size_bytes() == 0) {
+            swarmkit::v1::ArtifactChunk chunk;
+            chunk.set_transfer_id("download-" + descriptor.artifact_id());
+            *chunk.mutable_artifact() = descriptor;
+            chunk.set_offset(0);
+            chunk.set_chunk_index(0);
+            chunk.set_final_chunk(true);
+            static_cast<void>(writer->Write(chunk));
+            counters_.IncrementArtifactDownloads(0);
+            return grpc::Status::OK;
+        }
+        const std::size_t chunk_size =
+            std::max<std::size_t>(1, static_cast<std::size_t>(config_.data.artifact_chunk_bytes));
+        std::string buffer(chunk_size, '\0');
+        std::int64_t offset = 0;
+        int chunk_index = 0;
+        while (!ctx->IsCancelled() && input.good()) {
+            input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize read = input.gcount();
+            if (read <= 0) {
+                break;
+            }
+            swarmkit::v1::ArtifactChunk chunk;
+            chunk.set_transfer_id("download-" + descriptor.artifact_id());
+            if (chunk_index == 0) {
+                *chunk.mutable_artifact() = descriptor;
+            }
+            chunk.set_offset(offset);
+            chunk.set_chunk_index(chunk_index);
+            chunk.set_data(buffer.data(), static_cast<std::size_t>(read));
+            offset += read;
+            chunk.set_final_chunk(offset >= descriptor.size_bytes());
+            if (!writer->Write(chunk)) {
+                counters_.IncrementArtifactDownloads(static_cast<std::uint64_t>(offset));
+                return grpc::Status::OK;
+            }
+            ++chunk_index;
+        }
+        counters_.IncrementArtifactDownloads(static_cast<std::uint64_t>(offset));
+        return grpc::Status::OK;
+    }
+
+    grpc::Status AnnounceArtifact(grpc::ServerContext* ctx,
+                                  const swarmkit::v1::ArtifactDescriptor* req,
+                                  swarmkit::v1::ArtifactReply* reply) override {
+        if (req == nullptr || reply == nullptr) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-announce");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        if (req->artifact_id().empty()) {
+            counters_.IncrementArtifactFailures();
+            reply->set_ok(false);
+            reply->set_message("artifact_id is required");
+            reply->set_correlation_id(correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+            return grpc::Status::OK;
+        }
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            swarmkit::v1::ArtifactDescriptor descriptor = *req;
+            if (descriptor.source_id().empty()) {
+                descriptor.set_source_id(config_.agent_id);
+            }
+            if (descriptor.created_unix_ms() == 0) {
+                descriptor.set_created_unix_ms(NowUnixMs());
+            }
+            artifacts_[descriptor.artifact_id()] = descriptor;
+            *reply->mutable_artifact() = descriptor;
+        }
+        reply->set_ok(true);
+        reply->set_message("artifact announced");
+        reply->set_correlation_id(correlation_id);
+        reply->set_error_code(swarmkit::v1::ERROR_CODE_NONE);
+        return grpc::Status::OK;
+    }
+
    private:
     [[nodiscard]] std::expected<CommandContext, grpc::Status> PrepareExecutionContext(
         grpc::ServerContext* ctx, const swarmkit::v1::CommandContext& proto_context,
@@ -2043,6 +2465,11 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
     internal::RuntimeCounters counters_;
     std::atomic<bool> ready_{true};
     std::string startup_error_;
+    mutable std::mutex data_mutex_;
+    std::condition_variable data_cv_;
+    std::deque<swarmkit::v1::DataMessage> message_backlog_;
+    std::unordered_map<std::string, swarmkit::v1::ArtifactDescriptor> artifacts_;
+    std::uint64_t data_sequence_{0};
 };
 
 /// @}
@@ -2161,6 +2588,25 @@ core::Result ReportPersistenceConfig::Validate() const {
     return core::Result::Success();
 }
 
+core::Result DataPlaneConfig::Validate() const {
+    if (artifact_dir.empty()) {
+        return core::Result::Rejected("data.artifact_dir must not be empty");
+    }
+    if (message_backlog_size < 0) {
+        return core::Result::Rejected("data.message_backlog_size must be >= 0");
+    }
+    if (max_message_payload_bytes <= 0) {
+        return core::Result::Rejected("data.max_message_payload_bytes must be > 0");
+    }
+    if (artifact_chunk_bytes <= 0) {
+        return core::Result::Rejected("data.artifact_chunk_bytes must be > 0");
+    }
+    if (max_artifact_bytes <= 0) {
+        return core::Result::Rejected("data.max_artifact_bytes must be > 0");
+    }
+    return core::Result::Success();
+}
+
 core::Result AgentConfig::Validate() const {
     if (agent_id.empty()) {
         return core::Result::Rejected("agent_id must not be empty");
@@ -2186,6 +2632,9 @@ core::Result AgentConfig::Validate() const {
     if (const core::Result report_result = reports.Validate(); !report_result.IsOk()) {
         return report_result;
     }
+    if (const core::Result data_result = data.Validate(); !data_result.IsOk()) {
+        return data_result;
+    }
     return security.Validate();
 }
 
@@ -2209,6 +2658,11 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyBoolEnv(prefix, kAgentEnvReportFlushEachWrite, &reports.flush_each_write);
     ApplyBoolEnv(prefix, kAgentEnvReportFsyncEachWrite, &reports.fsync_each_write);
     ApplyBoolEnv(prefix, kAgentEnvReportReplayFromLog, &reports.replay_from_log);
+    ApplyStringEnv(prefix, kAgentEnvArtifactDir, &data.artifact_dir);
+    ApplyIntEnv(prefix, kAgentEnvDataMessageBacklogSize, &data.message_backlog_size);
+    ApplyIntEnv(prefix, kAgentEnvDataMaxMessagePayloadBytes, &data.max_message_payload_bytes);
+    ApplyIntEnv(prefix, kAgentEnvDataArtifactChunkBytes, &data.artifact_chunk_bytes);
+    ApplyIntEnv(prefix, kAgentEnvDataMaxArtifactBytes, &data.max_artifact_bytes);
 
     ApplyStringEnv(prefix, kAgentEnvRootCaCertPath, &security.root_ca_cert_path);
     ApplyStringEnv(prefix, kAgentEnvCertChainPath, &security.cert_chain_path);
@@ -2308,7 +2762,7 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         }
     }
 
-    const YAML::Node report_persistence =
+        const YAML::Node report_persistence =
         root["report_persistence"] ? root["report_persistence"] : root["reports"];
     if (report_persistence) {
         if (!report_persistence.IsMap()) {
@@ -2392,6 +2846,62 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         if (replay_from_log->has_value()) {
             config.reports.replay_from_log =
                 replay_from_log->value_or(config.reports.replay_from_log);
+        }
+    }
+
+    const YAML::Node data = root["data"] ? root["data"] : root["data_plane"];
+    if (data) {
+        if (!data.IsMap()) {
+            return std::unexpected(core::Result::Rejected("agent.data must be a map"));
+        }
+
+        const auto artifact_dir =
+            core::yaml::ReadOptionalScalar<std::string>(data, "artifact_dir");
+        if (!artifact_dir.has_value()) {
+            return std::unexpected(artifact_dir.error());
+        }
+        if (artifact_dir->has_value()) {
+            config.data.artifact_dir = artifact_dir->value_or(config.data.artifact_dir);
+        }
+
+        const auto message_backlog_size =
+            core::yaml::ReadOptionalScalar<int>(data, "message_backlog_size");
+        if (!message_backlog_size.has_value()) {
+            return std::unexpected(message_backlog_size.error());
+        }
+        if (message_backlog_size->has_value()) {
+            config.data.message_backlog_size =
+                message_backlog_size->value_or(config.data.message_backlog_size);
+        }
+
+        const auto max_message_payload_bytes =
+            core::yaml::ReadOptionalScalar<int>(data, "max_message_payload_bytes");
+        if (!max_message_payload_bytes.has_value()) {
+            return std::unexpected(max_message_payload_bytes.error());
+        }
+        if (max_message_payload_bytes->has_value()) {
+            config.data.max_message_payload_bytes =
+                max_message_payload_bytes->value_or(config.data.max_message_payload_bytes);
+        }
+
+        const auto artifact_chunk_bytes =
+            core::yaml::ReadOptionalScalar<int>(data, "artifact_chunk_bytes");
+        if (!artifact_chunk_bytes.has_value()) {
+            return std::unexpected(artifact_chunk_bytes.error());
+        }
+        if (artifact_chunk_bytes->has_value()) {
+            config.data.artifact_chunk_bytes =
+                artifact_chunk_bytes->value_or(config.data.artifact_chunk_bytes);
+        }
+
+        const auto max_artifact_bytes =
+            core::yaml::ReadOptionalScalar<int>(data, "max_artifact_bytes");
+        if (!max_artifact_bytes.has_value()) {
+            return std::unexpected(max_artifact_bytes.error());
+        }
+        if (max_artifact_bytes->has_value()) {
+            config.data.max_artifact_bytes =
+                max_artifact_bytes->value_or(config.data.max_artifact_bytes);
         }
     }
 
@@ -2650,7 +3160,14 @@ int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend) {
     builder.AddListeningPort(config.bind_addr, credentials);
 
     auto service = internal::MakeAgentServiceForTesting(config, std::move(backend));
-    builder.RegisterService(service.get());
+    if (auto* agent_service = dynamic_cast<swarmkit::v1::AgentService::Service*>(service.get());
+        agent_service != nullptr) {
+        builder.RegisterService(agent_service);
+    }
+    if (auto* data_service = dynamic_cast<swarmkit::v1::DataService::Service*>(service.get());
+        data_service != nullptr) {
+        builder.RegisterService(data_service);
+    }
 
     std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
     if (!server) {
@@ -2663,8 +3180,8 @@ int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend) {
     return 0;
 }
 
-std::unique_ptr<grpc::Service> internal::MakeAgentServiceForTesting(const AgentConfig& config,
-                                                                    DroneBackendPtr backend) {
+std::unique_ptr<swarmkit::v1::AgentService::Service> internal::MakeAgentServiceForTesting(
+    const AgentConfig& config, DroneBackendPtr backend) {
     return std::make_unique<AgentServiceImpl>(config, std::move(backend));
 }
 

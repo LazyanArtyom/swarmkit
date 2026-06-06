@@ -21,7 +21,8 @@ namespace swarmkit::apps::cli::internal {
            value == "capabilities" || value == "preflight" || value == "telemetry" ||
            value == "command" || value == "sequence" || value == "trajectory" ||
            value == "goal" || value == "reports" || value == "lock" || value == "unlock" ||
-           value == "watch-authority" || value == "swarm";
+           value == "watch-authority" || value == "message" || value == "artifact" ||
+           value == "swarm";
 }
 
 [[nodiscard]] bool IsOptionWithValue(std::string_view value) {
@@ -44,6 +45,8 @@ namespace swarmkit::apps::cli::internal {
            value == "--min-battery" ||
            value == "--report-file" || value == "--after-sequence" ||
            value == "--execution-id" || value == "--unix-time-ms" ||
+           value == "--topic" || value == "--target" || value == "--payload" ||
+           value == "--content-type" || value == "--artifact-id" || value == "--chunk-bytes" ||
            value == "--namespace" || value == "--name" || value == "--param" ||
            value == "--transport-security";
 }

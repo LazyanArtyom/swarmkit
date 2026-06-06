@@ -10,6 +10,7 @@
 
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/version.h"
+#include "../src/core/sha256.h"
 
 TEST_CASE("Version constants are sane", "[core]") {
     REQUIRE(swarmkit::core::kVersionMajor >= 0);
@@ -31,4 +32,10 @@ TEST_CASE("Core Result carries typed SwarmError metadata", "[core][result]") {
     CHECK(result.error.severity == swarmkit::core::ErrorSeverity::kError);
     CHECK(result.error.retryability == swarmkit::core::ErrorRetryability::kUnknown);
     CHECK(result.error.remediation.find("autopilot") != std::string::npos);
+}
+
+TEST_CASE("Internal SHA-256 helper matches a known vector", "[core][crypto]") {
+    CHECK(swarmkit::core::internal::Sha256Hex("abc") ==
+          "ba7816bf8f01cfea414140de5dae2223"
+          "b00361a396177a9cb410ff61f20015ad");
 }

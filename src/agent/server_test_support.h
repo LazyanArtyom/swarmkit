@@ -6,15 +6,14 @@
 
 #pragma once
 
-#include <grpcpp/impl/service_type.h>
-
 #include <memory>
 
 #include "swarmkit/agent/server.h"
+#include "swarmkit/v1/swarmkit.grpc.pb.h"
 
 namespace swarmkit::agent::internal {
 
-[[nodiscard]] std::unique_ptr<grpc::Service> MakeAgentServiceForTesting(const AgentConfig& config,
-                                                                        DroneBackendPtr backend);
+[[nodiscard]] std::unique_ptr<swarmkit::v1::AgentService::Service> MakeAgentServiceForTesting(
+    const AgentConfig& config, DroneBackendPtr backend);
 
 }  // namespace swarmkit::agent::internal
