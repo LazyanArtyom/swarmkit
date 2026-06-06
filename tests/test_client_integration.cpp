@@ -249,6 +249,52 @@ TEST_CASE("Client artifacts upload download and verify hash", "[client][integrat
     std::filesystem::remove(output_path, error);
 }
 
+TEST_CASE("Client parallel duplicate artifact uploads are idempotent",
+          "[client][integration][data]") {
+    swarmkit::agent::AgentConfig config;
+    const testsupport::DevMtlsPaths paths = testsupport::MakeDevMtlsPaths();
+    config.agent_id = "artifact-agent";
+    config.data.artifact_dir =
+        (std::filesystem::temp_directory_path() / "swarmkit-idempotent-artifacts").string();
+    config.safety.allow_unsafe_bench_commands = true;
+    config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    config.security.cert_chain_path = paths.server_cert_chain_path;
+    config.security.private_key_path = paths.server_private_key_path;
+    std::error_code error;
+    std::filesystem::remove_all(config.data.artifact_dir, error);
+    testsupport::AgentServerHarness harness(config);
+
+    Client first = MakeClient(harness.Address());
+    Client second = MakeClient(harness.Address());
+    const std::filesystem::path input_path =
+        std::filesystem::temp_directory_path() / "swarmkit-idempotent-frame.jpg";
+    const std::string payload = "same-camera-frame";
+    {
+        std::ofstream output(input_path, std::ios::binary | std::ios::trunc);
+        output << payload;
+    }
+
+    ArtifactUpload upload;
+    upload.file_path = input_path.string();
+    upload.chunk_bytes = 4;
+    upload.descriptor.content_type = "image/jpeg";
+
+    ArtifactTransferResult first_result;
+    ArtifactTransferResult second_result;
+    std::thread first_thread([&] { first_result = first.UploadArtifact(upload); });
+    std::thread second_thread([&] { second_result = second.UploadArtifact(upload); });
+    first_thread.join();
+    second_thread.join();
+
+    REQUIRE(first_result.ok);
+    REQUIRE(second_result.ok);
+    CHECK(first_result.descriptor.artifact_id == second_result.descriptor.artifact_id);
+    CHECK(first_result.descriptor.sha256_hex == second_result.descriptor.sha256_hex);
+
+    std::filesystem::remove(input_path, error);
+    std::filesystem::remove_all(config.data.artifact_dir, error);
+}
+
 TEST_CASE("Client artifact download rejects expired artifacts", "[client][integration][data]") {
     testsupport::AgentServerHarness harness;
     Client client = MakeClient(harness.Address());

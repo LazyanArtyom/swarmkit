@@ -12,9 +12,13 @@
 /// These are implementation details — not part of the public SDK.
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <expected>
+#include <random>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -138,7 +142,7 @@ namespace swarmkit::core::internal {
 
 /// @brief Thread-safe generator for unique correlation IDs.
 ///
-/// Produces IDs of the form "prefix-timestamp_ms-sequence".
+/// Produces IDs of the form "prefix-timestamp_ms-process_nonce-sequence".
 class CorrelationIdGenerator {
    public:
     [[nodiscard]] std::string Next(std::string_view prefix) {
@@ -146,10 +150,18 @@ class CorrelationIdGenerator {
         const auto kNow = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch());
         return std::string(prefix) + "-" + std::to_string(kNow.count()) + "-" +
-               std::to_string(kSequence);
+               process_nonce_ + "-" + std::to_string(kSequence);
     }
 
    private:
+    [[nodiscard]] static std::string MakeProcessNonce() {
+        std::random_device random;
+        const std::uint64_t hi = (static_cast<std::uint64_t>(random()) << 32U) ^ random();
+        const std::uint64_t lo = (static_cast<std::uint64_t>(random()) << 32U) ^ random();
+        return std::to_string(hi) + std::to_string(lo);
+    }
+
+    std::string process_nonce_{MakeProcessNonce()};
     std::atomic<std::uint64_t> next_sequence_{1};
 };
 

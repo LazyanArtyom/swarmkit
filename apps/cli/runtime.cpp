@@ -2351,7 +2351,14 @@ int RunSwarmStats(const SwarmRuntime& runtime) {
                       << " failed=" << stats.command_failed_total
                       << " telemetry_streams=" << stats.current_telemetry_streams
                       << " frames=" << stats.telemetry_frames_sent_total
-                      << " backend_failures=" << stats.backend_failures_total;
+                      << " backend_failures=" << stats.backend_failures_total
+                      << " data_messages=" << stats.data_messages_published_total
+                      << " data_rejected=" << stats.data_messages_rejected_total
+                      << " artifacts_up=" << stats.artifact_uploads_total
+                      << " artifacts_down=" << stats.artifact_downloads_total
+                      << " artifact_rx_bytes=" << stats.artifact_bytes_received_total
+                      << " artifact_tx_bytes=" << stats.artifact_bytes_sent_total
+                      << " artifact_failures=" << stats.artifact_failures_total;
         } else if (!stats.error.user_message.empty()) {
             std::cout << " " << stats.error.user_message;
         }

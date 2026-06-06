@@ -6,10 +6,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <string>
 
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/version.h"
+#include "../src/core/env_utils.h"
 #include "../src/core/sha256.h"
 
 TEST_CASE("Version constants are sane", "[core]") {
@@ -38,4 +40,12 @@ TEST_CASE("Internal SHA-256 helper matches a known vector", "[core][crypto]") {
     CHECK(swarmkit::core::internal::Sha256Hex("abc") ==
           "ba7816bf8f01cfea414140de5dae2223"
           "b00361a396177a9cb410ff61f20015ad");
+}
+
+TEST_CASE("Correlation IDs include process entropy", "[core]") {
+    const std::string first = swarmkit::core::internal::MakeCorrelationId("qa");
+    const std::string second = swarmkit::core::internal::MakeCorrelationId("qa");
+    CHECK(first != second);
+    CHECK(first.starts_with("qa-"));
+    CHECK(std::ranges::count(first, '-') >= 3);
 }

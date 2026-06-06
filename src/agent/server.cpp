@@ -114,6 +114,14 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     return value;
 }
 
+[[nodiscard]] std::filesystem::path ArtifactStorageRoot(const AgentConfig& config) {
+    std::filesystem::path root(config.data.artifact_dir);
+    if (config.data.artifact_dir == DataPlaneConfig{}.artifact_dir) {
+        root /= SanitizedPathComponent(config.agent_id);
+    }
+    return root;
+}
+
 [[nodiscard]] bool MessageExpired(const swarmkit::v1::DataMessage& message,
                                   std::int64_t now_ms) {
     return message.ttl_ms() > 0 && message.unix_time_ms() > 0 &&
@@ -2193,7 +2201,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             counters_.IncrementArtifactFailures();
             return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
         }
-        std::filesystem::path tmp_dir = std::filesystem::path(config_.data.artifact_dir) / "tmp";
+        std::filesystem::path tmp_dir = ArtifactStorageRoot(config_) / "tmp";
         std::error_code fs_error;
         std::filesystem::create_directories(tmp_dir, fs_error);
         if (fs_error) {
@@ -2291,10 +2299,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             descriptor.set_filename(descriptor.artifact_id() + ".bin");
         }
 
-        const std::filesystem::path final_dir =
-            std::filesystem::path(config_.data.artifact_dir) /
-            SanitizedPathComponent(descriptor.source_id()) /
-            SanitizedPathComponent(descriptor.artifact_id());
+        const std::filesystem::path final_dir = ArtifactStorageRoot(config_) /
+                                                SanitizedPathComponent(descriptor.source_id()) /
+                                                SanitizedPathComponent(descriptor.artifact_id());
         std::filesystem::create_directories(final_dir, fs_error);
         if (fs_error) {
             std::filesystem::remove(tmp_path, fs_error);
@@ -2306,8 +2313,19 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             final_dir / SanitizedPathComponent(descriptor.filename());
         std::filesystem::rename(tmp_path, final_path, fs_error);
         if (fs_error) {
-            std::filesystem::remove(final_path, fs_error);
-            std::filesystem::rename(tmp_path, final_path, fs_error);
+            std::error_code exists_error;
+            if (std::filesystem::exists(final_path, exists_error)) {
+                const std::string existing_sha256 = core::internal::Sha256FileHex(final_path);
+                if (existing_sha256 == sha256_hex) {
+                    std::filesystem::remove(tmp_path, fs_error);
+                    fs_error.clear();
+                } else {
+                    std::filesystem::remove(tmp_path, exists_error);
+                    counters_.IncrementArtifactFailures();
+                    return grpc::Status(grpc::StatusCode::ALREADY_EXISTS,
+                                        "artifact final path exists with different sha256");
+                }
+            }
         }
         if (fs_error) {
             std::filesystem::remove(tmp_path, fs_error);
