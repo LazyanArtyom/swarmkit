@@ -2205,9 +2205,12 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         std::error_code fs_error;
         std::filesystem::create_directories(tmp_dir, fs_error);
         if (fs_error) {
+            const std::string detail =
+                "failed to create artifact temp dir path=" + tmp_dir.string() +
+                " error=" + fs_error.message();
+            core::Logger::ErrorFmt("rpc=UploadArtifact agent={} {}", config_.agent_id, detail);
             counters_.IncrementArtifactFailures();
-            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
-                                "failed to create artifact temp dir");
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, detail);
         }
 
         swarmkit::v1::ArtifactDescriptor descriptor;
@@ -2248,8 +2251,12 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 tmp_path = tmp_dir / (SanitizedPathComponent(transfer_id) + ".part");
                 output.open(tmp_path, std::ios::binary | std::ios::trunc);
                 if (!output.is_open()) {
+                    core::Logger::ErrorFmt(
+                        "rpc=UploadArtifact agent={} failed to open artifact temp file path={}",
+                        config_.agent_id, tmp_path.string());
                     return fail_upload(grpc::StatusCode::FAILED_PRECONDITION,
-                                       "failed to open artifact temp file");
+                                       "failed to open artifact temp file path=" +
+                                           tmp_path.string());
                 }
                 saw_descriptor = true;
             }
@@ -2304,10 +2311,13 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                                                 SanitizedPathComponent(descriptor.artifact_id());
         std::filesystem::create_directories(final_dir, fs_error);
         if (fs_error) {
+            const std::string detail =
+                "failed to create artifact final dir path=" + final_dir.string() +
+                " error=" + fs_error.message();
+            core::Logger::ErrorFmt("rpc=UploadArtifact agent={} {}", config_.agent_id, detail);
             std::filesystem::remove(tmp_path, fs_error);
             counters_.IncrementArtifactFailures();
-            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
-                                "failed to create artifact final dir");
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, detail);
         }
         const std::filesystem::path final_path =
             final_dir / SanitizedPathComponent(descriptor.filename());
@@ -2322,16 +2332,24 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 } else {
                     std::filesystem::remove(tmp_path, exists_error);
                     counters_.IncrementArtifactFailures();
-                    return grpc::Status(grpc::StatusCode::ALREADY_EXISTS,
-                                        "artifact final path exists with different sha256");
+                    const std::string detail =
+                        "artifact final path exists with different sha256 path=" +
+                        final_path.string() + " existing_sha256=" + existing_sha256 +
+                        " incoming_sha256=" + sha256_hex;
+                    core::Logger::ErrorFmt("rpc=UploadArtifact agent={} {}", config_.agent_id,
+                                           detail);
+                    return grpc::Status(grpc::StatusCode::ALREADY_EXISTS, detail);
                 }
             }
         }
         if (fs_error) {
+            const std::string detail =
+                "failed to finalize artifact tmp_path=" + tmp_path.string() +
+                " final_path=" + final_path.string() + " error=" + fs_error.message();
+            core::Logger::ErrorFmt("rpc=UploadArtifact agent={} {}", config_.agent_id, detail);
             std::filesystem::remove(tmp_path, fs_error);
             counters_.IncrementArtifactFailures();
-            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
-                                "failed to finalize artifact");
+            return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, detail);
         }
         descriptor.set_storage_path(final_path.string());
         {

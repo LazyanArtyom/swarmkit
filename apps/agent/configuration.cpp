@@ -280,6 +280,10 @@ void ReadBackendOptionsYaml(const YAML::Node& node,
         !sequence_state_file.empty()) {
         agent_cfg.reports.sequence_state_file = sequence_state_file;
     }
+    if (const std::string artifact_dir = common::GetOptionValue(argc, argv, "--artifact-dir");
+        !artifact_dir.empty()) {
+        agent_cfg.data.artifact_dir = artifact_dir;
+    }
     if (common::HasFlag(argc, argv, "--allow-unsafe-bench-commands")) {
         agent_cfg.safety.allow_unsafe_bench_commands = true;
     }

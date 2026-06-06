@@ -117,6 +117,7 @@ void PrintUsage() {
            "                  [--duration-ms TTL_MS] [--label KEY=VALUE ...]\n"
            "  message subscribe [--topic TOPIC ...] [--target ID]\n"
            "                    [--after-sequence N] [--duration-ms MS]\n"
+           "                    Without --target, targeted messages for another id are hidden.\n"
            "  artifact upload --file PATH [--content-type TYPE] [--target ID]\n"
            "  artifact send --file PATH --target DRONE_ID [--content-type TYPE]\n"
            "                  [--chunk-bytes N] [--duration-ms TTL_MS] [--label KEY=VALUE ...]\n"

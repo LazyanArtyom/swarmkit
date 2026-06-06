@@ -20,6 +20,7 @@ void PrintUsage() {
                  "  --report-log-file PATH   Persist agent reports as rotated JSONL\n"
                  "  --report-sequence-state-file PATH\n"
                  "                             Persist the report sequence cursor\n"
+                 "  --artifact-dir PATH        Store received data-plane artifacts here\n"
                  "  --allow-unsafe-bench-commands\n"
                  "                             Bypass autonomous readiness gates for restrained,\n"
                  "                             propeller-off bench testing only\n"
@@ -47,6 +48,7 @@ void PrintUsage() {
                  "YAML:\n"
                  "  agent.backend selects the registered backend.\n"
                  "  agent.backend_options passes string key/value options to custom backends.\n"
+                 "  agent.data.artifact_dir sets artifact storage root.\n"
                  "  --help                    Print this message\n";
 }
 

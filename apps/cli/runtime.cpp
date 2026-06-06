@@ -1513,6 +1513,9 @@ int RunMessage(Client& client, int argc, char** argv) {
         subscription.target_id = common::GetOptionValue(argc, argv, "--target");
         subscription.topics = CollectOptionValues(argc, argv, "--topic");
         subscription.after_sequence = static_cast<std::uint64_t>(*after_sequence);
+        if (subscription.target_id.empty()) {
+            std::cerr << "Note: no --target set; targeted messages for another id may not appear.\n";
+        }
 
         std::mutex output_mutex;
         auto stream = client.StartMessages(
