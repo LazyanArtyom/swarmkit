@@ -126,6 +126,48 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
            now_ms - descriptor.created_unix_ms() > descriptor.ttl_ms();
 }
 
+[[nodiscard]] core::TransportSecurityMode EffectivePeerTransportSecurity(
+    const DataPeerConfig& peer, const AgentSecurityConfig& fallback) {
+    if (peer.transport_security != core::TransportSecurityMode::kAuto) {
+        return peer.transport_security;
+    }
+    return fallback.EffectiveTransportSecurity();
+}
+
+[[nodiscard]] std::shared_ptr<grpc::ChannelCredentials> MakePeerChannelCredentials(
+    const DataPeerConfig& peer, const AgentSecurityConfig& fallback) {
+    const core::TransportSecurityMode mode = EffectivePeerTransportSecurity(peer, fallback);
+    if (mode == core::TransportSecurityMode::kInsecure) {
+        return grpc::InsecureChannelCredentials();
+    }
+
+    grpc::SslCredentialsOptions options;
+    const std::string root_ca =
+        peer.root_ca_cert_path.empty() ? fallback.root_ca_cert_path : peer.root_ca_cert_path;
+    const std::string cert_chain =
+        peer.cert_chain_path.empty() ? fallback.cert_chain_path : peer.cert_chain_path;
+    const std::string private_key =
+        peer.private_key_path.empty() ? fallback.private_key_path : peer.private_key_path;
+    static_cast<void>(core::internal::ReadTextFile(root_ca, &options.pem_root_certs));
+    if (mode == core::TransportSecurityMode::kMutualTls) {
+        static_cast<void>(core::internal::ReadTextFile(private_key, &options.pem_private_key));
+        static_cast<void>(core::internal::ReadTextFile(cert_chain, &options.pem_cert_chain));
+    }
+    return grpc::SslCredentials(options);
+}
+
+[[nodiscard]] std::shared_ptr<grpc::Channel> MakePeerChannel(
+    const DataPeerConfig& peer, const AgentSecurityConfig& fallback) {
+    const auto credentials = MakePeerChannelCredentials(peer, fallback);
+    if (peer.server_authority_override.empty() ||
+        EffectivePeerTransportSecurity(peer, fallback) == core::TransportSecurityMode::kInsecure) {
+        return grpc::CreateChannel(peer.address, credentials);
+    }
+    grpc::ChannelArguments arguments;
+    arguments.SetSslTargetNameOverride(peer.server_authority_override);
+    return grpc::CreateCustomChannel(peer.address, credentials, arguments);
+}
+
 [[nodiscard]] bool MessageMatchesSubscription(const swarmkit::v1::DataMessage& message,
                                               const swarmkit::v1::MessageSubscription& sub) {
     const bool message_is_broadcast = message.target_id().empty();
@@ -2031,6 +2073,73 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         return grpc::Status::OK;
     }
 
+    grpc::Status SendMessageToDrone(grpc::ServerContext* ctx,
+                                    const swarmkit::v1::PublishMessageRequest* req,
+                                    swarmkit::v1::PublishMessageReply* reply) override {
+        if (req == nullptr || reply == nullptr || !req->has_message()) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "missing message");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "data-route-message");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        swarmkit::v1::DataMessage message = req->message();
+        if (message.target_id().empty()) {
+            counters_.IncrementDataMessagesRejected();
+            reply->set_ok(false);
+            reply->set_message("message.target_id is required for routed sends");
+            reply->set_correlation_id(correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+            return grpc::Status::OK;
+        }
+        if (message.target_id() == config_.agent_id) {
+            swarmkit::v1::PublishMessageRequest local_req;
+            *local_req.mutable_message() = std::move(message);
+            return PublishMessage(ctx, &local_req, reply);
+        }
+        const std::optional<DataPeerConfig> peer = config_.data.FindPeer(message.target_id());
+        if (!peer.has_value()) {
+            counters_.IncrementDataMessagesRejected();
+            reply->set_ok(false);
+            reply->set_message("no data peer configured for target_id=" + message.target_id());
+            reply->set_correlation_id(correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            return grpc::Status::OK;
+        }
+        if (message.source_id().empty()) {
+            message.set_source_id(config_.agent_id);
+        }
+        if (message.unix_time_ms() == 0) {
+            message.set_unix_time_ms(NowUnixMs());
+        }
+
+        auto channel = MakePeerChannel(*peer, config_.security);
+        auto stub = swarmkit::v1::DataService::NewStub(channel);
+        grpc::ClientContext peer_ctx;
+        peer_ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{30});
+        peer_ctx.AddMetadata(std::string(kCorrelationMetadataKey), correlation_id);
+        swarmkit::v1::PublishMessageRequest peer_req;
+        *peer_req.mutable_message() = std::move(message);
+        swarmkit::v1::PublishMessageReply peer_reply;
+        const grpc::Status peer_status = stub->PublishMessage(&peer_ctx, peer_req, &peer_reply);
+        if (!peer_status.ok()) {
+            counters_.IncrementDataMessagesRejected();
+            reply->set_ok(false);
+            reply->set_message("peer message delivery failed: " + peer_status.error_message());
+            reply->set_correlation_id(correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            return grpc::Status::OK;
+        }
+        *reply = peer_reply;
+        if (reply->correlation_id().empty()) {
+            reply->set_correlation_id(correlation_id);
+        }
+        if (reply->ok()) {
+            reply->set_message("message delivered to " + peer->drone_id + ": " + reply->message());
+        }
+        return grpc::Status::OK;
+    }
+
     grpc::Status SubscribeMessages(
         grpc::ServerContext* ctx, const swarmkit::v1::MessageSubscription* req,
         grpc::ServerWriter<swarmkit::v1::DataMessage>* writer) override {
@@ -2213,6 +2322,82 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         }
         *reply = descriptor;
         counters_.IncrementArtifactUploads(static_cast<std::uint64_t>(received_bytes));
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SendArtifactToDrone(grpc::ServerContext* ctx,
+                                     grpc::ServerReader<swarmkit::v1::ArtifactChunk>* reader,
+                                     swarmkit::v1::ArtifactDescriptor* reply) override {
+        if (ctx == nullptr || reader == nullptr || reply == nullptr) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/reader/reply");
+        }
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-route");
+
+        swarmkit::v1::ArtifactChunk chunk;
+        if (!reader->Read(&chunk)) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "empty artifact send");
+        }
+        if (!chunk.has_artifact()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "first artifact chunk must include descriptor");
+        }
+        swarmkit::v1::ArtifactDescriptor descriptor = chunk.artifact();
+        if (descriptor.target_id().empty()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "artifact.target_id is required for routed sends");
+        }
+        if (descriptor.target_id() == config_.agent_id) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                "routed artifact target_id points to local agent");
+        }
+        const std::optional<DataPeerConfig> peer = config_.data.FindPeer(descriptor.target_id());
+        if (!peer.has_value()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::NOT_FOUND,
+                                "no data peer configured for target_id=" + descriptor.target_id());
+        }
+        if (descriptor.source_id().empty()) {
+            descriptor.set_source_id(config_.agent_id);
+        }
+        if (descriptor.created_unix_ms() == 0) {
+            descriptor.set_created_unix_ms(NowUnixMs());
+        }
+        *chunk.mutable_artifact() = descriptor;
+
+        auto channel = MakePeerChannel(*peer, config_.security);
+        auto stub = swarmkit::v1::DataService::NewStub(channel);
+        grpc::ClientContext peer_ctx;
+        peer_ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{60});
+        peer_ctx.AddMetadata(std::string(kCorrelationMetadataKey), correlation_id);
+        auto writer = stub->UploadArtifact(&peer_ctx, reply);
+        std::uint64_t bytes_forwarded = static_cast<std::uint64_t>(chunk.data().size());
+        bool wrote_all = writer->Write(chunk);
+        while (wrote_all && reader->Read(&chunk)) {
+            bytes_forwarded += static_cast<std::uint64_t>(chunk.data().size());
+            wrote_all = writer->Write(chunk);
+        }
+        writer->WritesDone();
+        const grpc::Status peer_status = writer->Finish();
+        if (!wrote_all && peer_status.ok()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(grpc::StatusCode::UNAVAILABLE,
+                                "peer artifact stream closed before all chunks were accepted");
+        }
+        if (!peer_status.ok()) {
+            counters_.IncrementArtifactFailures();
+            return grpc::Status(peer_status.error_code(),
+                                "peer artifact delivery failed: " + peer_status.error_message());
+        }
+        counters_.IncrementArtifactDownloads(bytes_forwarded);
         return grpc::Status::OK;
     }
 
@@ -2588,6 +2773,16 @@ core::Result ReportPersistenceConfig::Validate() const {
     return core::Result::Success();
 }
 
+core::Result DataPeerConfig::Validate() const {
+    if (drone_id.empty()) {
+        return core::Result::Rejected("data.peers[].drone_id must not be empty");
+    }
+    if (!LooksLikeAddress(address)) {
+        return core::Result::Rejected("data.peers[].address must be in host:port format");
+    }
+    return core::Result::Success();
+}
+
 core::Result DataPlaneConfig::Validate() const {
     if (artifact_dir.empty()) {
         return core::Result::Rejected("data.artifact_dir must not be empty");
@@ -2604,7 +2799,28 @@ core::Result DataPlaneConfig::Validate() const {
     if (max_artifact_bytes <= 0) {
         return core::Result::Rejected("data.max_artifact_bytes must be > 0");
     }
+    std::vector<std::string> seen;
+    for (const auto& peer : peers) {
+        if (const core::Result result = peer.Validate(); !result.IsOk()) {
+            return result;
+        }
+        if (std::ranges::find(seen, peer.drone_id) != seen.end()) {
+            return core::Result::Rejected("data.peers contains duplicate drone_id: " +
+                                          peer.drone_id);
+        }
+        seen.push_back(peer.drone_id);
+    }
     return core::Result::Success();
+}
+
+std::optional<DataPeerConfig> DataPlaneConfig::FindPeer(std::string_view drone_id) const {
+    const auto iter = std::ranges::find_if(peers, [drone_id](const DataPeerConfig& peer) {
+        return peer.drone_id == drone_id;
+    });
+    if (iter == peers.end()) {
+        return std::nullopt;
+    }
+    return *iter;
 }
 
 core::Result AgentConfig::Validate() const {
@@ -2902,6 +3118,96 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         if (max_artifact_bytes->has_value()) {
             config.data.max_artifact_bytes =
                 max_artifact_bytes->value_or(config.data.max_artifact_bytes);
+        }
+
+        const YAML::Node peers = data["peers"];
+        if (peers) {
+            if (!peers.IsSequence()) {
+                return std::unexpected(
+                    core::Result::Rejected("agent.data.peers must be a sequence"));
+            }
+            config.data.peers.clear();
+            config.data.peers.reserve(peers.size());
+            for (const auto& entry : peers) {
+                if (!entry.IsMap()) {
+                    return std::unexpected(
+                        core::Result::Rejected("agent.data.peers entries must be maps"));
+                }
+                DataPeerConfig peer;
+                const auto drone_id =
+                    core::yaml::ReadOptionalScalar<std::string>(entry, "drone_id");
+                if (!drone_id.has_value()) {
+                    return std::unexpected(drone_id.error());
+                }
+                if (drone_id->has_value()) {
+                    peer.drone_id = drone_id->value_or(peer.drone_id);
+                }
+
+                const auto address =
+                    core::yaml::ReadOptionalScalar<std::string>(entry, "address");
+                if (!address.has_value()) {
+                    return std::unexpected(address.error());
+                }
+                if (address->has_value()) {
+                    peer.address = address->value_or(peer.address);
+                }
+
+                const auto transport_security =
+                    core::yaml::ReadOptionalScalar<std::string>(entry, "transport_security");
+                if (!transport_security.has_value()) {
+                    return std::unexpected(transport_security.error());
+                }
+                if (transport_security->has_value()) {
+                    const auto parsed = core::ParseTransportSecurityMode(
+                        transport_security->value_or(std::string{}));
+                    if (!parsed.has_value()) {
+                        return std::unexpected(core::Result::Rejected(parsed.error()));
+                    }
+                    peer.transport_security = *parsed;
+                }
+
+                const auto root_ca_cert_path =
+                    core::yaml::ReadOptionalScalar<std::string>(entry, "root_ca_cert_path");
+                if (!root_ca_cert_path.has_value()) {
+                    return std::unexpected(root_ca_cert_path.error());
+                }
+                if (root_ca_cert_path->has_value()) {
+                    peer.root_ca_cert_path = core::internal::ResolveConfigRelativePath(
+                        path, root_ca_cert_path->value_or(std::string{}));
+                }
+
+                const auto cert_chain_path =
+                    core::yaml::ReadOptionalScalar<std::string>(entry, "cert_chain_path");
+                if (!cert_chain_path.has_value()) {
+                    return std::unexpected(cert_chain_path.error());
+                }
+                if (cert_chain_path->has_value()) {
+                    peer.cert_chain_path = core::internal::ResolveConfigRelativePath(
+                        path, cert_chain_path->value_or(std::string{}));
+                }
+
+                const auto private_key_path =
+                    core::yaml::ReadOptionalScalar<std::string>(entry, "private_key_path");
+                if (!private_key_path.has_value()) {
+                    return std::unexpected(private_key_path.error());
+                }
+                if (private_key_path->has_value()) {
+                    peer.private_key_path = core::internal::ResolveConfigRelativePath(
+                        path, private_key_path->value_or(std::string{}));
+                }
+
+                const auto server_authority_override = core::yaml::ReadOptionalScalar<std::string>(
+                    entry, "server_authority_override");
+                if (!server_authority_override.has_value()) {
+                    return std::unexpected(server_authority_override.error());
+                }
+                if (server_authority_override->has_value()) {
+                    peer.server_authority_override =
+                        server_authority_override->value_or(peer.server_authority_override);
+                }
+
+                config.data.peers.push_back(std::move(peer));
+            }
         }
     }
 

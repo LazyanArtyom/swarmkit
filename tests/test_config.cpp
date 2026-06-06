@@ -207,6 +207,10 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "    max_message_payload_bytes: 12345\n";
     output << "    artifact_chunk_bytes: 4096\n";
     output << "    max_artifact_bytes: 98765\n";
+    output << "    peers:\n";
+    output << "      - drone_id: drone-2\n";
+    output << "        address: 127.0.0.1:50062\n";
+    output << "        transport_security: insecure\n";
     output << "  vehicle_profile:\n";
     output << "    profile_id: heavy-copter\n";
     output << "    cruise_speed_mps: 6.5\n";
@@ -250,6 +254,11 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->data.max_message_payload_bytes == 12345);
     CHECK(kLoaded->data.artifact_chunk_bytes == 4096);
     CHECK(kLoaded->data.max_artifact_bytes == 98765);
+    REQUIRE(kLoaded->data.peers.size() == 1);
+    CHECK(kLoaded->data.peers.front().drone_id == "drone-2");
+    CHECK(kLoaded->data.peers.front().address == "127.0.0.1:50062");
+    CHECK(kLoaded->data.peers.front().transport_security ==
+          swarmkit::core::TransportSecurityMode::kInsecure);
     CHECK(kLoaded->safety.allow_unsafe_bench_commands);
     CHECK(kLoaded->vehicle_profile.profile_id == "heavy-copter");
     CHECK(kLoaded->vehicle_profile.cruise_speed_mps == 6.5F);

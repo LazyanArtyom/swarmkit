@@ -7,6 +7,7 @@
 #pragma once
 
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -91,14 +92,28 @@ struct SafetyPolicy {
     bool allow_unsafe_bench_commands{false};
 };
 
+struct DataPeerConfig {
+    std::string drone_id;
+    std::string address;
+    core::TransportSecurityMode transport_security{core::TransportSecurityMode::kAuto};
+    std::string root_ca_cert_path;
+    std::string cert_chain_path;
+    std::string private_key_path;
+    std::string server_authority_override;
+
+    [[nodiscard]] core::Result Validate() const;
+};
+
 struct DataPlaneConfig {
     std::string artifact_dir{"/tmp/swarmkit-artifacts"};
     int message_backlog_size{kDefaultDataMessageBacklogSize};
     int max_message_payload_bytes{kDefaultDataMessageMaxPayloadBytes};
     int artifact_chunk_bytes{kDefaultArtifactChunkBytes};
     int max_artifact_bytes{kDefaultMaxArtifactBytes};
+    std::vector<DataPeerConfig> peers;
 
     [[nodiscard]] core::Result Validate() const;
+    [[nodiscard]] std::optional<DataPeerConfig> FindPeer(std::string_view drone_id) const;
 };
 
 /// ---------------------------------------------------------------------------

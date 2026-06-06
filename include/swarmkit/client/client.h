@@ -791,6 +791,9 @@ class Client {
     /// @brief Publish a small app-defined data-plane message.
     [[nodiscard]] PublishMessageResult PublishMessage(DataMessage message) const;
 
+    /// @brief Route a small app-defined data-plane message to another drone agent.
+    [[nodiscard]] PublishMessageResult SendMessageToDrone(DataMessage message) const;
+
     /// @brief Subscribe to app-defined data-plane messages.
     [[nodiscard]] SubscriptionResult StartMessages(
         MessageSubscription subscription, DataMessageHandler on_message,
@@ -800,6 +803,9 @@ class Client {
 
     /// @brief Upload a file/blob to the connected agent using chunked transfer.
     [[nodiscard]] ArtifactTransferResult UploadArtifact(const ArtifactUpload& upload) const;
+
+    /// @brief Route a local file/blob through the connected agent to another drone agent.
+    [[nodiscard]] ArtifactTransferResult SendArtifactToDrone(const ArtifactUpload& upload) const;
 
     /// @brief Download a stored artifact from the connected agent into a file.
     [[nodiscard]] ArtifactTransferResult DownloadArtifact(const std::string& artifact_id,

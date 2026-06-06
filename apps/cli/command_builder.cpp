@@ -163,11 +163,12 @@ namespace {
 }
 
 [[nodiscard]] commands::CommandEnvelope MakeCommandEnvelope(std::string_view drone_id,
+                                                            std::string_view client_id,
                                                             commands::Command command,
                                                             commands::CommandPriority priority) {
     commands::CommandEnvelope envelope;
     envelope.context.drone_id = std::string(drone_id);
-    envelope.context.client_id = std::string(kCliClientId);
+    envelope.context.client_id = std::string(client_id);
     envelope.context.priority = priority;
     envelope.command = std::move(command);
     return envelope;

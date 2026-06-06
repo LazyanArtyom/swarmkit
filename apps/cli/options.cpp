@@ -28,7 +28,8 @@ namespace swarmkit::apps::cli::internal {
 [[nodiscard]] bool IsOptionWithValue(std::string_view value) {
     return value == "--config" || value == "--drone" || value == "--rate" || value == "--alt" ||
            value == "--lat" || value == "--lon" || value == "--speed" || value == "--log-sink" ||
-           value == "--log-file" || value == "--log-level" || value == "--ca-cert" ||
+           value == "--log-file" || value == "--log-level" || value == "--client-id" ||
+           value == "--ca-cert" ||
            value == "--client-cert" || value == "--client-key" || value == "--server-name" ||
            value == "--priority" || value == "--mode" || value == "--custom-mode" ||
            value == "--ground" || value == "--deg" || value == "--yaw" || value == "--x" ||
@@ -200,7 +201,13 @@ namespace swarmkit::apps::cli::internal {
     }
 
     client_cfg.ApplyEnvironment();
-    client_cfg.client_id = std::string(kCliClientId);
+    if (client_cfg.client_id.empty() || client_cfg.client_id == "swarmkit-client") {
+        client_cfg.client_id = std::string(kCliClientId);
+    }
+    if (const std::string client_id = common::GetOptionValue(argc, argv, "--client-id");
+        !client_id.empty()) {
+        client_cfg.client_id = client_id;
+    }
     const auto priority = ParseCliPriority(argc, argv);
     if (!priority.has_value()) {
         std::cerr << priority.error() << "\n";

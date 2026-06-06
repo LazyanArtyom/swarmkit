@@ -288,6 +288,149 @@ TEST_CASE("Client artifact download rejects expired artifacts", "[client][integr
     std::filesystem::remove(output_path, error);
 }
 
+TEST_CASE("Client routes data messages to configured peer agent", "[client][integration][data]") {
+    const testsupport::DevMtlsPaths paths = testsupport::MakeDevMtlsPaths();
+    swarmkit::agent::AgentConfig target_config;
+    target_config.agent_id = "drone-2";
+    target_config.safety.allow_unsafe_bench_commands = true;
+    target_config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    target_config.security.cert_chain_path = paths.server_cert_chain_path;
+    target_config.security.private_key_path = paths.server_private_key_path;
+    testsupport::AgentServerHarness target(target_config);
+
+    swarmkit::agent::AgentConfig source_config;
+    source_config.agent_id = "drone-1";
+    source_config.safety.allow_unsafe_bench_commands = true;
+    source_config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    source_config.security.cert_chain_path = paths.server_cert_chain_path;
+    source_config.security.private_key_path = paths.server_private_key_path;
+    swarmkit::agent::DataPeerConfig peer;
+    peer.drone_id = "drone-2";
+    peer.address = target.Address();
+    peer.transport_security = swarmkit::core::TransportSecurityMode::kMutualTls;
+    peer.root_ca_cert_path = paths.root_ca_cert_path;
+    peer.cert_chain_path = paths.client_cert_chain_path;
+    peer.private_key_path = paths.client_private_key_path;
+    peer.server_authority_override = paths.server_authority_override;
+    source_config.data.peers.push_back(peer);
+    testsupport::AgentServerHarness source(source_config);
+
+    Client source_client = MakeClient(source.Address());
+    Client target_client = MakeClient(target.Address());
+
+    std::mutex mutex;
+    std::vector<DataMessage> messages;
+    auto stream = target_client.StartMessages(
+        {.subscriber_id = "drone-2", .topics = {"rotor.event"}, .target_id = "drone-2"},
+        [&](const DataMessage& message) {
+            std::lock_guard<std::mutex> lock(mutex);
+            messages.push_back(message);
+        });
+    REQUIRE(stream.has_value());
+
+    DataMessage message;
+    message.topic = "rotor.event";
+    message.target_id = "drone-2";
+    message.labels["edge_id"] = "edge-routed";
+    message.payload = R"({"event":"routed"})";
+    const PublishMessageResult routed = source_client.SendMessageToDrone(std::move(message));
+    REQUIRE(routed.ok);
+    CHECK(routed.message.find("delivered") != std::string::npos);
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            std::lock_guard<std::mutex> lock(mutex);
+            return !messages.empty();
+        },
+        kWaitTimeout));
+
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        REQUIRE(messages.size() == 1);
+        CHECK(messages.front().topic == "rotor.event");
+        CHECK(messages.front().source_id == "test-client");
+        CHECK(messages.front().target_id == "drone-2");
+        CHECK(messages.front().labels.at("edge_id") == "edge-routed");
+        CHECK(messages.front().payload == R"({"event":"routed"})");
+    }
+    stream->Stop();
+}
+
+TEST_CASE("Client routes artifacts to configured peer agent", "[client][integration][data]") {
+    const testsupport::DevMtlsPaths paths = testsupport::MakeDevMtlsPaths();
+    const std::filesystem::path target_store =
+        std::filesystem::temp_directory_path() / "swarmkit-peer-artifacts-drone2";
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(target_store, cleanup_error);
+
+    swarmkit::agent::AgentConfig target_config;
+    target_config.agent_id = "drone-2";
+    target_config.data.artifact_dir = target_store.string();
+    target_config.safety.allow_unsafe_bench_commands = true;
+    target_config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    target_config.security.cert_chain_path = paths.server_cert_chain_path;
+    target_config.security.private_key_path = paths.server_private_key_path;
+    testsupport::AgentServerHarness target(target_config);
+
+    swarmkit::agent::AgentConfig source_config;
+    source_config.agent_id = "drone-1";
+    source_config.safety.allow_unsafe_bench_commands = true;
+    source_config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    source_config.security.cert_chain_path = paths.server_cert_chain_path;
+    source_config.security.private_key_path = paths.server_private_key_path;
+    swarmkit::agent::DataPeerConfig peer;
+    peer.drone_id = "drone-2";
+    peer.address = target.Address();
+    peer.transport_security = swarmkit::core::TransportSecurityMode::kMutualTls;
+    peer.root_ca_cert_path = paths.root_ca_cert_path;
+    peer.cert_chain_path = paths.client_cert_chain_path;
+    peer.private_key_path = paths.client_private_key_path;
+    peer.server_authority_override = paths.server_authority_override;
+    source_config.data.peers.push_back(peer);
+    testsupport::AgentServerHarness source(source_config);
+
+    Client source_client = MakeClient(source.Address());
+    Client target_client = MakeClient(target.Address());
+
+    const std::filesystem::path input_path =
+        std::filesystem::temp_directory_path() / "swarmkit-peer-camera-frame.jpg";
+    const std::filesystem::path output_path =
+        std::filesystem::temp_directory_path() / "swarmkit-peer-camera-frame-out.jpg";
+    const std::string payload = "camera-frame-from-drone-1";
+    {
+        std::ofstream output(input_path, std::ios::binary | std::ios::trunc);
+        output << payload;
+    }
+
+    ArtifactUpload upload;
+    upload.file_path = input_path.string();
+    upload.chunk_bytes = 7;
+    upload.descriptor.target_id = "drone-2";
+    upload.descriptor.content_type = "image/jpeg";
+    upload.descriptor.labels["camera_id"] = "front";
+    upload.descriptor.labels["frame_id"] = "123";
+
+    const ArtifactTransferResult sent = source_client.SendArtifactToDrone(upload);
+    REQUIRE(sent.ok);
+    REQUIRE_FALSE(sent.descriptor.artifact_id.empty());
+    CHECK(sent.descriptor.target_id == "drone-2");
+    CHECK(sent.descriptor.labels.at("frame_id") == "123");
+
+    const ArtifactTransferResult downloaded =
+        target_client.DownloadArtifact(sent.descriptor.artifact_id, output_path.string());
+    REQUIRE(downloaded.ok);
+    CHECK(downloaded.descriptor.sha256_hex == sent.descriptor.sha256_hex);
+
+    std::ifstream input(output_path, std::ios::binary);
+    const std::string downloaded_payload{std::istreambuf_iterator<char>(input),
+                                         std::istreambuf_iterator<char>()};
+    CHECK(downloaded_payload == payload);
+
+    std::filesystem::remove(input_path, cleanup_error);
+    std::filesystem::remove(output_path, cleanup_error);
+    std::filesystem::remove_all(target_store, cleanup_error);
+}
+
 TEST_CASE("Client verified command helpers use agent health and telemetry",
           "[client][integration][commands]") {
     testsupport::AgentServerHarness harness;

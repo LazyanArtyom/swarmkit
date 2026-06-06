@@ -60,6 +60,7 @@ using swarmkit::commands::NavCmd;
 struct SwarmRuntime {
     std::unique_ptr<swarmkit::client::SwarmClient> client;
     std::vector<std::string> drone_ids;
+    std::string client_id;
 };
 
 struct SwarmResultPolicy {
@@ -941,8 +942,8 @@ void WaitForStop(std::int64_t duration_ms) {
     }
 }
 
-int RunSequence(Client& client, std::string_view default_drone_id, CommandPriority priority,
-                int argc, char** argv) {
+int RunSequence(Client& client, std::string_view default_drone_id, std::string_view client_id,
+                CommandPriority priority, int argc, char** argv) {
     const auto path = ParseSequenceFilePath(argc, argv);
     if (!path.has_value()) {
         std::cerr << path.error() << "\n";
@@ -1013,7 +1014,7 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
                     break;
                 }
             }
-            const auto envelope = MakeCommandEnvelope(drone_id, *command, priority);
+            const auto envelope = MakeCommandEnvelope(drone_id, client_id, *command, priority);
             const bool verify_step = verify_commands || step.verify;
             const auto result = verify_step ? client.SendCommandAndWait(
                                                   envelope, StepWaitOptions(*wait_options, step))
@@ -1046,8 +1047,8 @@ int RunSequence(Client& client, std::string_view default_drone_id, CommandPriori
     return EXIT_SUCCESS;
 }
 
-int RunCommand(Client& client, std::string_view drone_id, CommandPriority priority, int argc,
-               char** argv) {
+int RunCommand(Client& client, std::string_view drone_id, std::string_view client_id,
+               CommandPriority priority, int argc, char** argv) {
     const auto kCommand = BuildCommandFromArgs(argc, argv);
     if (!kCommand.has_value()) {
         std::cerr << kCommand.error() << "\n";
@@ -1058,7 +1059,7 @@ int RunCommand(Client& client, std::string_view drone_id, CommandPriority priori
         return EXIT_FAILURE;
     }
 
-    const auto envelope = MakeCommandEnvelope(drone_id, *kCommand, priority);
+    const auto envelope = MakeCommandEnvelope(drone_id, client_id, *kCommand, priority);
     const bool verify = common::HasFlag(argc, argv, "--verify");
     const auto wait_options = ParseCommandWaitOptions(argc, argv);
     if (!wait_options.has_value()) {
@@ -1435,14 +1436,14 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
 int RunMessage(Client& client, int argc, char** argv) {
     const auto actions = FindActionsAfterCommand(argc, argv, "message");
     if (actions.empty()) {
-        std::cerr << "message requires publish|subscribe\n";
+        std::cerr << "message requires publish|send|subscribe\n";
         return EXIT_FAILURE;
     }
 
-    if (actions[0] == "publish") {
+    if (actions[0] == "publish" || actions[0] == "send") {
         const std::string topic = common::GetOptionValue(argc, argv, "--topic");
         if (topic.empty()) {
-            std::cerr << "message publish requires --topic TOPIC\n";
+            std::cerr << "message " << actions[0] << " requires --topic TOPIC\n";
             return EXIT_FAILURE;
         }
         auto labels = ParseKeyValueLabels(argc, argv, "--label");
@@ -1467,8 +1468,16 @@ int RunMessage(Client& client, int argc, char** argv) {
         message.labels = std::move(*labels);
         message.payload = std::move(*payload);
 
-        const auto result = client.PublishMessage(std::move(message));
-        std::cout << "Message publish: " << (result.ok ? "OK" : "FAILED");
+        const bool routed_send = actions[0] == "send";
+        if (routed_send && message.target_id.empty()) {
+            std::cerr << "message send requires --target DRONE_ID\n";
+            return EXIT_FAILURE;
+        }
+        const auto result =
+            routed_send ? client.SendMessageToDrone(std::move(message))
+                        : client.PublishMessage(std::move(message));
+        std::cout << (routed_send ? "Message send: " : "Message publish: ")
+                  << (result.ok ? "OK" : "FAILED");
         if (!result.message.empty()) {
             std::cout << " " << result.message;
         }
@@ -1545,14 +1554,14 @@ int RunMessage(Client& client, int argc, char** argv) {
 int RunArtifact(Client& client, int argc, char** argv) {
     const auto actions = FindActionsAfterCommand(argc, argv, "artifact");
     if (actions.empty()) {
-        std::cerr << "artifact requires upload|download|announce\n";
+        std::cerr << "artifact requires upload|send|download|announce\n";
         return EXIT_FAILURE;
     }
 
-    if (actions[0] == "upload") {
+    if (actions[0] == "upload" || actions[0] == "send") {
         const std::string file_path = common::GetOptionValue(argc, argv, "--file");
         if (file_path.empty()) {
-            std::cerr << "artifact upload requires --file PATH\n";
+            std::cerr << "artifact " << actions[0] << " requires --file PATH\n";
             return EXIT_FAILURE;
         }
         auto labels = ParseKeyValueLabels(argc, argv, "--label");
@@ -1572,6 +1581,11 @@ int RunArtifact(Client& client, int argc, char** argv) {
         }
         upload.descriptor.ttl_ms = *ttl_ms;
         upload.descriptor.labels = std::move(*labels);
+        const bool routed_send = actions[0] == "send";
+        if (routed_send && upload.descriptor.target_id.empty()) {
+            std::cerr << "artifact send requires --target DRONE_ID\n";
+            return EXIT_FAILURE;
+        }
         if (const std::string chunk_bytes = common::GetOptionValue(argc, argv, "--chunk-bytes");
             !chunk_bytes.empty()) {
             const auto parsed = ParseIntArg(chunk_bytes, "--chunk-bytes");
@@ -1582,8 +1596,10 @@ int RunArtifact(Client& client, int argc, char** argv) {
             upload.chunk_bytes = static_cast<std::size_t>(*parsed);
         }
 
-        const auto result = client.UploadArtifact(upload);
-        std::cout << "Artifact upload: " << (result.ok ? "OK" : "FAILED");
+        const auto result =
+            routed_send ? client.SendArtifactToDrone(upload) : client.UploadArtifact(upload);
+        std::cout << (routed_send ? "Artifact send: " : "Artifact upload: ")
+                  << (result.ok ? "OK" : "FAILED");
         if (!result.message.empty()) {
             std::cout << " " << result.message;
         }
@@ -2152,6 +2168,7 @@ int RunWatchAuthority(Client& client, std::string_view drone_id, CommandPriority
         runtime.drone_ids.push_back(drone.drone_id);
     }
     runtime.client = std::make_unique<swarmkit::client::SwarmClient>(client_cfg);
+    runtime.client_id = client_cfg.client_id;
     const std::string address_mode =
         common::GetOptionValue(argc, argv, "--address-mode", kDefaultAddressMode);
     const auto preference = address_mode == "local"
@@ -2551,7 +2568,7 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
                               << attempts << "\n";
                 }
                 swarmkit::commands::CommandContext context;
-                context.client_id = std::string(kCliClientId);
+                context.client_id = runtime.client_id;
                 context.priority = priority;
                 const bool verify_step = verify_commands || step.verify;
                 step_ok = PrintSwarmResults(
@@ -2560,7 +2577,8 @@ int RunSwarmSequence(SwarmRuntime& runtime, CommandPriority priority, int argc, 
                                 : runtime.client->BroadcastCommand(*command, context),
                     result_policy);
             } else {
-                const auto envelope = MakeCommandEnvelope(drone_id, *command, priority);
+                const auto envelope =
+                    MakeCommandEnvelope(drone_id, runtime.client_id, *command, priority);
                 const bool verify_step = verify_commands || step.verify;
                 const auto result = verify_step
                                         ? runtime.client->SendCommandAndWait(
@@ -2658,7 +2676,7 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
             return EXIT_FAILURE;
         }
         swarmkit::commands::CommandEnvelope envelope =
-            MakeCommandEnvelope(drone_id, *built, client_cfg.priority);
+            MakeCommandEnvelope(drone_id, client_cfg.client_id, *built, client_cfg.priority);
         const bool verify = common::HasFlag(argc, argv, "--verify");
         const auto wait_options = ParseCommandWaitOptions(argc, argv);
         if (!wait_options.has_value()) {
@@ -2690,7 +2708,7 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     }
 
     swarmkit::commands::CommandContext context;
-    context.client_id = std::string(kCliClientId);
+    context.client_id = client_cfg.client_id;
     context.priority = client_cfg.priority;
     const bool verify = common::HasFlag(argc, argv, "--verify");
     const auto wait_options = ParseCommandWaitOptions(argc, argv);
@@ -2735,11 +2753,11 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     }
     if (invocation.command == "command") {
         return RunCommand(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
-                          client_cfg.priority, argc, argv);
+                          client_cfg.client_id, client_cfg.priority, argc, argv);
     }
     if (invocation.command == "sequence") {
         return RunSequence(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
-                           client_cfg.priority, argc, argv);
+                           client_cfg.client_id, client_cfg.priority, argc, argv);
     }
     if (invocation.command == "trajectory") {
         return RunTrajectory(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),

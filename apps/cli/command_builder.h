@@ -23,7 +23,7 @@ namespace swarmkit::apps::cli::internal {
 [[nodiscard]] std::expected<commands::Command, std::string> BuildCommandFromArgs(int argc,
                                                                                  char** argv);
 [[nodiscard]] commands::CommandEnvelope MakeCommandEnvelope(
-    std::string_view drone_id, commands::Command command,
+    std::string_view drone_id, std::string_view client_id, commands::Command command,
     commands::CommandPriority priority = commands::CommandPriority::kSupervisor);
 
 }  // namespace swarmkit::apps::cli::internal

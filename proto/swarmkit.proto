@@ -80,8 +80,10 @@ service AgentService {
  */
 service DataService {
     rpc PublishMessage(PublishMessageRequest) returns (PublishMessageReply);
+    rpc SendMessageToDrone(PublishMessageRequest) returns (PublishMessageReply);
     rpc SubscribeMessages(MessageSubscription) returns (stream DataMessage);
     rpc UploadArtifact(stream ArtifactChunk) returns (ArtifactDescriptor);
+    rpc SendArtifactToDrone(stream ArtifactChunk) returns (ArtifactDescriptor);
     rpc DownloadArtifact(ArtifactRequest) returns (stream ArtifactChunk);
     rpc AnnounceArtifact(ArtifactDescriptor) returns (ArtifactReply);
 }

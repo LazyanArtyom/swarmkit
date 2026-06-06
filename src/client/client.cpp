@@ -3580,6 +3580,46 @@ PublishMessageResult Client::PublishMessage(DataMessage message) const {
     return out;
 }
 
+PublishMessageResult Client::SendMessageToDrone(DataMessage message) const {
+    PublishMessageResult out;
+    const std::string correlation_id = MakeCorrelationId("data-route-message");
+    if (message.target_id.empty()) {
+        out.message = "target_id is required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+    if (message.source_id.empty()) {
+        message.source_id = impl_->config.client_id;
+    }
+
+    swarmkit::v1::PublishMessageRequest req;
+    *req.mutable_message() = ToProtoDataMessage(message);
+    swarmkit::v1::PublishMessageReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->SendMessageToDrone(context, req, &rep);
+                             });
+
+    out.correlation_id = correlation_id;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.sequence = rep.sequence();
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kTransport);
+    return out;
+}
+
 std::expected<Subscription, RpcError> Client::StartMessages(
     MessageSubscription subscription, DataMessageHandler on_message, TelemetryErrorHandler on_error,
     SubscriptionEventHandler on_event, SubscriptionOptions options) {
@@ -3726,6 +3766,119 @@ ArtifactTransferResult Client::UploadArtifact(const ArtifactUpload& upload) cons
 
     out.ok = true;
     out.message = "artifact uploaded";
+    out.descriptor = ToArtifactDescriptor(proto_reply);
+    PopulateSuccessError(&out.error, correlation_id, 1);
+    return out;
+}
+
+ArtifactTransferResult Client::SendArtifactToDrone(const ArtifactUpload& upload) const {
+    ArtifactTransferResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-route");
+    out.correlation_id = correlation_id;
+
+    if (upload.descriptor.target_id.empty()) {
+        out.message = "target_id is required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    const std::filesystem::path file_path(upload.file_path);
+    std::error_code fs_error;
+    const auto file_size = std::filesystem::file_size(file_path, fs_error);
+    if (upload.file_path.empty() || fs_error) {
+        out.message = "artifact file does not exist or cannot be read";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    std::ifstream input(file_path, std::ios::binary);
+    if (!input.is_open()) {
+        out.message = "failed to open artifact file";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    ArtifactDescriptor descriptor = upload.descriptor;
+    if (descriptor.filename.empty()) {
+        descriptor.filename = file_path.filename().string();
+    }
+    if (descriptor.source_id.empty()) {
+        descriptor.source_id = impl_->config.client_id;
+    }
+    if (descriptor.created_unix_ms == 0) {
+        descriptor.created_unix_ms = NowUnixMs();
+    }
+    descriptor.size_bytes = static_cast<std::int64_t>(file_size);
+    if (descriptor.sha256_hex.empty()) {
+        descriptor.sha256_hex = core::internal::Sha256FileHex(file_path);
+    }
+
+    grpc::ClientContext context;
+    ApplyUnaryClientContext(impl_->config, &context, correlation_id);
+    swarmkit::v1::ArtifactDescriptor proto_reply;
+    auto writer = impl_->data_stub->SendArtifactToDrone(&context, &proto_reply);
+
+    const std::size_t chunk_size = std::max<std::size_t>(
+        1, upload.chunk_bytes == 0 ? kDefaultArtifactChunkBytes : upload.chunk_bytes);
+    std::string buffer(chunk_size, '\0');
+    std::int64_t offset = 0;
+    int chunk_index = 0;
+    bool wrote_all = true;
+    if (descriptor.size_bytes == 0) {
+        swarmkit::v1::ArtifactChunk chunk;
+        chunk.set_transfer_id(correlation_id);
+        *chunk.mutable_artifact() = ToProtoArtifactDescriptor(descriptor);
+        chunk.set_offset(0);
+        chunk.set_chunk_index(0);
+        chunk.set_final_chunk(true);
+        wrote_all = writer->Write(chunk);
+    }
+    while (input.good()) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize read = input.gcount();
+        if (read <= 0) {
+            break;
+        }
+        swarmkit::v1::ArtifactChunk chunk;
+        chunk.set_transfer_id(correlation_id);
+        if (chunk_index == 0) {
+            *chunk.mutable_artifact() = ToProtoArtifactDescriptor(descriptor);
+        }
+        chunk.set_offset(offset);
+        chunk.set_chunk_index(chunk_index);
+        chunk.set_data(buffer.data(), static_cast<std::size_t>(read));
+        offset += read;
+        chunk.set_final_chunk(offset >= descriptor.size_bytes);
+        if (!writer->Write(chunk)) {
+            wrote_all = false;
+            break;
+        }
+        ++chunk_index;
+    }
+    writer->WritesDone();
+    const grpc::Status status = writer->Finish();
+
+    if (!wrote_all && status.ok()) {
+        out.message = "artifact route stream closed before all chunks were accepted";
+        PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                           RpcStatusCode::kUnavailable, out.message, out.message, correlation_id,
+                           1);
+        return out;
+    }
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, 1);
+        out.message = out.error.user_message;
+        return out;
+    }
+
+    out.ok = true;
+    out.message = "artifact delivered";
     out.descriptor = ToArtifactDescriptor(proto_reply);
     PopulateSuccessError(&out.error, correlation_id, 1);
     return out;
