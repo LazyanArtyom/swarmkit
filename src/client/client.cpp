@@ -572,7 +572,6 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
                             auto* proto = proto_cmd->mutable_upload_mission();
                             for (const auto& item : upload.items) {
                                 auto* proto_item = proto->add_items();
-                                proto_item->set_command(item.backend_command);
                                 proto_item->set_lat_deg(item.lat_deg);
                                 proto_item->set_lon_deg(item.lon_deg);
                                 proto_item->set_alt_m(item.alt_m);
@@ -1299,6 +1298,34 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     return message;
 }
 
+[[nodiscard]] DataPeerState ToDataPeerState(swarmkit::v1::DataPeerState state) {
+    switch (state) {
+        case swarmkit::v1::DATA_PEER_STATE_READY:
+            return DataPeerState::kReady;
+        case swarmkit::v1::DATA_PEER_STATE_UNREACHABLE:
+            return DataPeerState::kUnreachable;
+        case swarmkit::v1::DATA_PEER_STATE_MISCONFIGURED:
+            return DataPeerState::kMisconfigured;
+        case swarmkit::v1::DATA_PEER_STATE_UNKNOWN:
+        default:
+            return DataPeerState::kUnknown;
+    }
+}
+
+[[nodiscard]] DataPeerStatus ToDataPeerStatus(const swarmkit::v1::DataPeerStatus& proto) {
+    DataPeerStatus status;
+    status.drone_id = proto.drone_id();
+    status.address = proto.address();
+    status.transport_security = proto.transport_security();
+    status.state = ToDataPeerState(proto.state());
+    status.last_checked_unix_ms = proto.last_checked_unix_ms();
+    status.last_success_unix_ms = proto.last_success_unix_ms();
+    status.last_failure_unix_ms = proto.last_failure_unix_ms();
+    status.round_trip_ms = proto.round_trip_ms();
+    status.message = proto.message();
+    return status;
+}
+
 [[nodiscard]] swarmkit::v1::ArtifactDescriptor ToProtoArtifactDescriptor(
     const ArtifactDescriptor& descriptor) {
     swarmkit::v1::ArtifactDescriptor proto;
@@ -1335,6 +1362,42 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
         descriptor.labels.emplace(key, value);
     }
     return descriptor;
+}
+
+[[nodiscard]] ArtifactTransferState ToArtifactTransferState(
+    swarmkit::v1::ArtifactTransferState state) {
+    switch (state) {
+        case swarmkit::v1::ARTIFACT_TRANSFER_STATE_QUEUED:
+            return ArtifactTransferState::kQueued;
+        case swarmkit::v1::ARTIFACT_TRANSFER_STATE_RUNNING:
+            return ArtifactTransferState::kRunning;
+        case swarmkit::v1::ARTIFACT_TRANSFER_STATE_COMPLETED:
+            return ArtifactTransferState::kCompleted;
+        case swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED:
+            return ArtifactTransferState::kFailed;
+        case swarmkit::v1::ARTIFACT_TRANSFER_STATE_CANCELLED:
+            return ArtifactTransferState::kCancelled;
+        case swarmkit::v1::ARTIFACT_TRANSFER_STATE_UNKNOWN:
+        default:
+            return ArtifactTransferState::kUnknown;
+    }
+}
+
+[[nodiscard]] ArtifactTransferStatus ToArtifactTransferStatus(
+    const swarmkit::v1::ArtifactTransferStatus& proto) {
+    ArtifactTransferStatus status;
+    status.transfer_id = proto.transfer_id();
+    status.state = ToArtifactTransferState(proto.state());
+    status.descriptor = ToArtifactDescriptor(proto.artifact());
+    status.bytes_total = proto.bytes_total();
+    status.bytes_transferred = proto.bytes_transferred();
+    status.started_unix_ms = proto.started_unix_ms();
+    status.updated_unix_ms = proto.updated_unix_ms();
+    status.completed_unix_ms = proto.completed_unix_ms();
+    status.message = proto.message();
+    PopulateReplyError(&status.error, proto.error_code(), proto.message(), proto.message(),
+                       status.transfer_id, 1, core::ErrorDomain::kInternal);
+    return status;
 }
 
 [[nodiscard]] ActiveGoal ToActiveGoal(const swarmkit::v1::ActiveGoal& proto_goal) {
@@ -3553,6 +3616,9 @@ PublishMessageResult Client::PublishMessage(DataMessage message) const {
     if (message.source_id.empty()) {
         message.source_id = impl_->config.client_id;
     }
+    if (message.message_id.empty()) {
+        message.message_id = MakeCorrelationId("msg-" + message.source_id);
+    }
 
     swarmkit::v1::PublishMessageRequest req;
     *req.mutable_message() = ToProtoDataMessage(message);
@@ -3592,6 +3658,9 @@ PublishMessageResult Client::SendMessageToDrone(DataMessage message) const {
     }
     if (message.source_id.empty()) {
         message.source_id = impl_->config.client_id;
+    }
+    if (message.message_id.empty()) {
+        message.message_id = MakeCorrelationId("msg-" + message.source_id);
     }
 
     swarmkit::v1::PublishMessageRequest req;
@@ -3664,6 +3733,66 @@ std::expected<Subscription, RpcError> Client::StartMessages(
 
 void Client::StopMessages() {
     CancelAndJoinStream(*impl_->messages);
+}
+
+DataPeerListResult Client::ListDataPeers(bool refresh) const {
+    DataPeerListResult out;
+    const std::string correlation_id = MakeCorrelationId("data-peers");
+    swarmkit::v1::DataPeerListRequest req;
+    req.set_refresh(refresh);
+    swarmkit::v1::DataPeerListReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->ListDataPeers(context, req, &rep);
+                             });
+    out.correlation_id = correlation_id;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = true;
+    out.message = "data peers listed";
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.peers.reserve(static_cast<std::size_t>(rep.peers_size()));
+    for (const auto& peer : rep.peers()) {
+        out.peers.push_back(ToDataPeerStatus(peer));
+    }
+    PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
+    return out;
+}
+
+DataPeerListResult Client::RefreshDataPeers(const std::vector<std::string>& drone_ids) const {
+    DataPeerListResult out;
+    const std::string correlation_id = MakeCorrelationId("data-peers-refresh");
+    swarmkit::v1::DataPeerRefreshRequest req;
+    for (const auto& drone_id : drone_ids) {
+        req.add_drone_ids(drone_id);
+    }
+    swarmkit::v1::DataPeerListReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->RefreshDataPeers(context, req, &rep);
+                             });
+    out.correlation_id = correlation_id;
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = true;
+    out.message = "data peers refreshed";
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.peers.reserve(static_cast<std::size_t>(rep.peers_size()));
+    for (const auto& peer : rep.peers()) {
+        out.peers.push_back(ToDataPeerStatus(peer));
+    }
+    PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
+    return out;
 }
 
 ArtifactTransferResult Client::UploadArtifact(const ArtifactUpload& upload) const {
@@ -3881,6 +4010,130 @@ ArtifactTransferResult Client::SendArtifactToDrone(const ArtifactUpload& upload)
     out.message = "artifact delivered";
     out.descriptor = ToArtifactDescriptor(proto_reply);
     PopulateSuccessError(&out.error, correlation_id, 1);
+    return out;
+}
+
+ArtifactTransferStatusResult Client::StartArtifactTransfer(const ArtifactUpload& upload,
+                                                           bool route_to_target) const {
+    ArtifactTransferStatusResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-transfer-start");
+    out.correlation_id = correlation_id;
+
+    if (upload.file_path.empty()) {
+        out.message = "artifact source path is required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+    if (route_to_target && upload.descriptor.target_id.empty()) {
+        out.message = "target_id is required for routed artifact transfer";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    ArtifactDescriptor descriptor = upload.descriptor;
+    if (descriptor.source_id.empty()) {
+        descriptor.source_id = impl_->config.client_id;
+    }
+    if (descriptor.created_unix_ms == 0) {
+        descriptor.created_unix_ms = NowUnixMs();
+    }
+
+    swarmkit::v1::ArtifactTransferStartRequest req;
+    req.set_source_path(upload.file_path);
+    *req.mutable_artifact() = ToProtoArtifactDescriptor(descriptor);
+    req.set_route_to_target(route_to_target);
+    req.set_chunk_bytes(static_cast<int>(upload.chunk_bytes));
+    swarmkit::v1::ArtifactTransferReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->StartArtifactTransfer(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.transfer = ToArtifactTransferStatus(rep.transfer());
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kInternal);
+    return out;
+}
+
+ArtifactTransferStatusResult Client::GetArtifactTransfer(const std::string& transfer_id) const {
+    ArtifactTransferStatusResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-transfer-get");
+    out.correlation_id = correlation_id;
+    if (transfer_id.empty()) {
+        out.message = "transfer_id is required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+    swarmkit::v1::ArtifactTransferRequest req;
+    req.set_transfer_id(transfer_id);
+    swarmkit::v1::ArtifactTransferReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->GetArtifactTransfer(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.transfer = ToArtifactTransferStatus(rep.transfer());
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kInternal);
+    return out;
+}
+
+ArtifactTransferStatusResult Client::CancelArtifactTransfer(const std::string& transfer_id) const {
+    ArtifactTransferStatusResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-transfer-cancel");
+    out.correlation_id = correlation_id;
+    if (transfer_id.empty()) {
+        out.message = "transfer_id is required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+    swarmkit::v1::ArtifactTransferRequest req;
+    req.set_transfer_id(transfer_id);
+    swarmkit::v1::ArtifactTransferReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->CancelArtifactTransfer(context, req,
+                                                                                 &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.transfer = ToArtifactTransferStatus(rep.transfer());
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kInternal);
     return out;
 }
 

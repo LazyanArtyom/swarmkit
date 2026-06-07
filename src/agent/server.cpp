@@ -23,7 +23,9 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -174,6 +176,20 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
     grpc::ChannelArguments arguments;
     arguments.SetSslTargetNameOverride(peer.server_authority_override);
     return grpc::CreateCustomChannel(peer.address, credentials, arguments);
+}
+
+[[nodiscard]] std::string TransportSecurityName(core::TransportSecurityMode mode) {
+    switch (mode) {
+        case core::TransportSecurityMode::kInsecure:
+            return "insecure";
+        case core::TransportSecurityMode::kTls:
+            return "tls";
+        case core::TransportSecurityMode::kMutualTls:
+            return "mtls";
+        case core::TransportSecurityMode::kAuto:
+        default:
+            return "auto";
+    }
 }
 
 [[nodiscard]] bool MessageMatchesSubscription(const swarmkit::v1::DataMessage& message,
@@ -882,7 +898,6 @@ void PopulateTelemetryProto(const core::TelemetryFrame& frame,
             for (const auto& proto_item : proto.upload_mission().items()) {
                 MissionItem item;
                 item.type = ToCoreMissionItemType(proto_item.type());
-                item.backend_command = static_cast<std::uint16_t>(proto_item.command());
                 item.lat_deg = proto_item.lat_deg();
                 item.lon_deg = proto_item.lon_deg();
                 item.alt_m = proto_item.alt_m();
@@ -1010,6 +1025,22 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             ready_.store(false, std::memory_order_relaxed);
             startup_error_ = start_result.message;
             core::Logger::ErrorFmt("Agent backend failed to start: {}", start_result.message);
+        }
+    }
+
+    ~AgentServiceImpl() override {
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            for (auto& [unused, cancel] : artifact_transfer_cancel_) {
+                static_cast<void>(unused);
+                cancel->store(true, std::memory_order_relaxed);
+            }
+        }
+        std::lock_guard<std::mutex> lock(artifact_transfer_threads_mutex_);
+        for (std::thread& worker : artifact_transfer_threads_) {
+            if (worker.joinable()) {
+                worker.join();
+            }
         }
     }
 
@@ -2042,6 +2073,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             reply->set_message("message.topic is required");
             reply->set_correlation_id(correlation_id);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+            core::Logger::WarnFmt(
+                "rpc=PublishMessage corr={} agent={} source={} target={} result=rejected "
+                "reason=missing_topic",
+                correlation_id, config_.agent_id, message.source_id(), message.target_id());
             return grpc::Status::OK;
         }
         if (message.payload().size() >
@@ -2051,10 +2086,20 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             reply->set_message("message payload exceeds max_message_payload_bytes");
             reply->set_correlation_id(correlation_id);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_REJECTED);
+            core::Logger::WarnFmt(
+                "rpc=PublishMessage corr={} agent={} topic={} source={} target={} "
+                "payload_bytes={} limit={} result=rejected reason=payload_too_large",
+                correlation_id, config_.agent_id, message.topic(), message.source_id(),
+                message.target_id(), message.payload().size(),
+                config_.data.max_message_payload_bytes);
             return grpc::Status::OK;
         }
         if (message.source_id().empty()) {
             message.set_source_id(config_.agent_id);
+        }
+        if (message.message_id().empty()) {
+            message.set_message_id(
+                MakeCorrelationId("msg-" + SanitizedPathComponent(message.source_id())));
         }
         if (message.unix_time_ms() == 0) {
             message.set_unix_time_ms(NowUnixMs());
@@ -2063,7 +2108,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             std::lock_guard<std::mutex> lock(data_mutex_);
             message.set_sequence(++data_sequence_);
             if (message.message_id().empty()) {
-                message.set_message_id("msg-" + std::to_string(message.sequence()));
+                message.set_message_id(
+                    MakeCorrelationId("msg-" + SanitizedPathComponent(message.source_id())));
             }
             message_backlog_.push_back(message);
             while (static_cast<int>(message_backlog_.size()) > config_.data.message_backlog_size) {
@@ -2072,12 +2118,59 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         }
         data_cv_.notify_all();
         counters_.IncrementDataMessagesPublished();
+        core::Logger::InfoFmt(
+            "rpc=PublishMessage corr={} agent={} seq={} message_id={} topic={} source={} "
+            "target={} payload_bytes={} result=published",
+            correlation_id, config_.agent_id, message.sequence(), message.message_id(),
+            message.topic(), message.source_id(), message.target_id(), message.payload().size());
 
         reply->set_ok(true);
         reply->set_message("message published");
         reply->set_correlation_id(correlation_id);
         reply->set_error_code(swarmkit::v1::ERROR_CODE_NONE);
         reply->set_sequence(message.sequence());
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ListDataPeers(grpc::ServerContext* ctx,
+                               const swarmkit::v1::DataPeerListRequest* req,
+                               swarmkit::v1::DataPeerListReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "data-peers");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        if (req->refresh()) {
+            RefreshPeerStatuses({});
+        }
+        FillPeerListReply(correlation_id, reply);
+        core::Logger::InfoFmt("rpc=ListDataPeers corr={} agent={} peer_count={} refresh={}",
+                              correlation_id, config_.agent_id, reply->peers_size(),
+                              req->refresh());
+        return grpc::Status::OK;
+    }
+
+    grpc::Status RefreshDataPeers(grpc::ServerContext* ctx,
+                                  const swarmkit::v1::DataPeerRefreshRequest* req,
+                                  swarmkit::v1::DataPeerListReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "data-peers-refresh");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        std::unordered_set<std::string> requested;
+        for (const std::string& drone_id : req->drone_ids()) {
+            requested.insert(drone_id);
+        }
+        RefreshPeerStatuses(requested);
+        FillPeerListReply(correlation_id, reply);
+        core::Logger::InfoFmt(
+            "rpc=RefreshDataPeers corr={} agent={} requested={} peer_count={}", correlation_id,
+            config_.agent_id, requested.size(), reply->peers_size());
         return grpc::Status::OK;
     }
 
@@ -2112,6 +2205,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             reply->set_message("no data peer configured for target_id=" + message.target_id());
             reply->set_correlation_id(correlation_id);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            core::Logger::WarnFmt(
+                "rpc=SendMessageToDrone corr={} agent={} target={} topic={} result=rejected "
+                "reason=no_peer",
+                correlation_id, config_.agent_id, message.target_id(), message.topic());
             return grpc::Status::OK;
         }
         if (message.source_id().empty()) {
@@ -2121,6 +2218,12 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             message.set_unix_time_ms(NowUnixMs());
         }
 
+        const auto route_started = std::chrono::steady_clock::now();
+        core::Logger::InfoFmt(
+            "rpc=SendMessageToDrone corr={} agent={} peer={} address={} topic={} source={} "
+            "target={} message_id={} payload_bytes={} result=routing",
+            correlation_id, config_.agent_id, peer->drone_id, peer->address, message.topic(),
+            message.source_id(), message.target_id(), message.message_id(), message.payload().size());
         auto channel = MakePeerChannel(*peer, config_.security);
         auto stub = swarmkit::v1::DataService::NewStub(channel);
         grpc::ClientContext peer_ctx;
@@ -2130,14 +2233,25 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         *peer_req.mutable_message() = std::move(message);
         swarmkit::v1::PublishMessageReply peer_reply;
         const grpc::Status peer_status = stub->PublishMessage(&peer_ctx, peer_req, &peer_reply);
+        const auto route_latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now() - route_started)
+                                          .count();
         if (!peer_status.ok()) {
             counters_.IncrementDataMessagesRejected();
             reply->set_ok(false);
             reply->set_message("peer message delivery failed: " + peer_status.error_message());
             reply->set_correlation_id(correlation_id);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            MarkPeerRouteResult(*peer, false, route_latency_ms, peer_status.error_message());
+            core::Logger::WarnFmt(
+                "rpc=SendMessageToDrone corr={} agent={} peer={} address={} topic={} target={} "
+                "latency_ms={} result=failed error={}",
+                correlation_id, config_.agent_id, peer->drone_id, peer->address,
+                peer_req.message().topic(), peer_req.message().target_id(), route_latency_ms,
+                peer_status.error_message());
             return grpc::Status::OK;
         }
+        MarkPeerRouteResult(*peer, peer_reply.ok(), route_latency_ms, peer_reply.message());
         *reply = peer_reply;
         if (reply->correlation_id().empty()) {
             reply->set_correlation_id(correlation_id);
@@ -2145,6 +2259,12 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         if (reply->ok()) {
             reply->set_message("message delivered to " + peer->drone_id + ": " + reply->message());
         }
+        core::Logger::InfoFmt(
+            "rpc=SendMessageToDrone corr={} agent={} peer={} address={} topic={} target={} "
+            "remote_seq={} latency_ms={} result={}",
+            correlation_id, config_.agent_id, peer->drone_id, peer->address,
+            peer_req.message().topic(), peer_req.message().target_id(), reply->sequence(),
+            route_latency_ms, reply->ok() ? "delivered" : "rejected");
         return grpc::Status::OK;
     }
 
@@ -2358,6 +2478,11 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         }
         *reply = descriptor;
         counters_.IncrementArtifactUploads(static_cast<std::uint64_t>(received_bytes));
+        core::Logger::InfoFmt(
+            "rpc=UploadArtifact agent={} artifact_id={} source={} target={} bytes={} path={} "
+            "result=stored",
+            config_.agent_id, descriptor.artifact_id(), descriptor.source_id(),
+            descriptor.target_id(), received_bytes, descriptor.storage_path());
         return grpc::Status::OK;
     }
 
@@ -2387,17 +2512,28 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         swarmkit::v1::ArtifactDescriptor descriptor = chunk.artifact();
         if (descriptor.target_id().empty()) {
             counters_.IncrementArtifactFailures();
+            core::Logger::WarnFmt(
+                "rpc=SendArtifactToDrone corr={} agent={} result=rejected reason=missing_target",
+                correlation_id, config_.agent_id);
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
                                 "artifact.target_id is required for routed sends");
         }
         if (descriptor.target_id() == config_.agent_id) {
             counters_.IncrementArtifactFailures();
+            core::Logger::WarnFmt(
+                "rpc=SendArtifactToDrone corr={} agent={} target={} result=rejected "
+                "reason=local_target",
+                correlation_id, config_.agent_id, descriptor.target_id());
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
                                 "routed artifact target_id points to local agent");
         }
         const std::optional<DataPeerConfig> peer = config_.data.FindPeer(descriptor.target_id());
         if (!peer.has_value()) {
             counters_.IncrementArtifactFailures();
+            core::Logger::WarnFmt(
+                "rpc=SendArtifactToDrone corr={} agent={} target={} result=rejected "
+                "reason=no_peer",
+                correlation_id, config_.agent_id, descriptor.target_id());
             return grpc::Status(grpc::StatusCode::NOT_FOUND,
                                 "no data peer configured for target_id=" + descriptor.target_id());
         }
@@ -2425,15 +2561,165 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         const grpc::Status peer_status = writer->Finish();
         if (!wrote_all && peer_status.ok()) {
             counters_.IncrementArtifactFailures();
+            MarkPeerRouteResult(*peer, false, 0, "peer stream closed");
+            core::Logger::WarnFmt(
+                "rpc=SendArtifactToDrone corr={} agent={} peer={} address={} result=failed "
+                "error=peer_stream_closed",
+                correlation_id, config_.agent_id, peer->drone_id, peer->address);
             return grpc::Status(grpc::StatusCode::UNAVAILABLE,
                                 "peer artifact stream closed before all chunks were accepted");
         }
         if (!peer_status.ok()) {
             counters_.IncrementArtifactFailures();
+            MarkPeerRouteResult(*peer, false, 0, peer_status.error_message());
+            core::Logger::WarnFmt(
+                "rpc=SendArtifactToDrone corr={} agent={} peer={} address={} result=failed "
+                "error={}",
+                correlation_id, config_.agent_id, peer->drone_id, peer->address,
+                peer_status.error_message());
             return grpc::Status(peer_status.error_code(),
                                 "peer artifact delivery failed: " + peer_status.error_message());
         }
+        MarkPeerRouteResult(*peer, true, 0, "artifact delivered");
         counters_.IncrementArtifactDownloads(bytes_forwarded);
+        core::Logger::InfoFmt(
+            "rpc=SendArtifactToDrone corr={} agent={} peer={} address={} artifact_id={} "
+            "bytes={} result=delivered",
+            correlation_id, config_.agent_id, peer->drone_id, peer->address, reply->artifact_id(),
+            bytes_forwarded);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status StartArtifactTransfer(grpc::ServerContext* ctx,
+                                       const swarmkit::v1::ArtifactTransferStartRequest* req,
+                                       swarmkit::v1::ArtifactTransferReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-transfer");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        if (req->source_path().empty()) {
+            FillArtifactTransferReply(reply, false, "source_path is required", correlation_id,
+                                      swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT, {});
+            return grpc::Status::OK;
+        }
+        if (req->route_to_target() && req->artifact().target_id().empty()) {
+            FillArtifactTransferReply(reply, false,
+                                      "artifact.target_id is required for routed transfer",
+                                      correlation_id,
+                                      swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT, {});
+            return grpc::Status::OK;
+        }
+        std::error_code fs_error;
+        const auto file_size = std::filesystem::file_size(req->source_path(), fs_error);
+        if (fs_error) {
+            FillArtifactTransferReply(reply, false,
+                                      "source_path cannot be read path=" + req->source_path() +
+                                          " error=" + fs_error.message(),
+                                      correlation_id,
+                                      swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT, {});
+            return grpc::Status::OK;
+        }
+
+        const std::string transfer_id = MakeCorrelationId("artifact-transfer");
+        swarmkit::v1::ArtifactTransferStatus status;
+        status.set_transfer_id(transfer_id);
+        status.set_state(swarmkit::v1::ARTIFACT_TRANSFER_STATE_QUEUED);
+        *status.mutable_artifact() = req->artifact();
+        status.set_bytes_total(static_cast<std::int64_t>(file_size));
+        status.set_started_unix_ms(NowUnixMs());
+        status.set_updated_unix_ms(status.started_unix_ms());
+        status.set_message("queued");
+        status.set_error_code(swarmkit::v1::ERROR_CODE_NONE);
+
+        auto cancel_flag = std::make_shared<std::atomic<bool>>(false);
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            artifact_transfers_[transfer_id] = status;
+            artifact_transfer_cancel_[transfer_id] = cancel_flag;
+        }
+        swarmkit::v1::ArtifactTransferStartRequest request = *req;
+        {
+            std::lock_guard<std::mutex> lock(artifact_transfer_threads_mutex_);
+            artifact_transfer_threads_.emplace_back(
+                [this, transfer_id, request = std::move(request), cancel_flag] {
+                    RunArtifactTransfer(transfer_id, request, cancel_flag);
+                });
+        }
+        core::Logger::InfoFmt(
+            "rpc=StartArtifactTransfer corr={} agent={} transfer_id={} source_path={} "
+            "target={} route={} bytes={} result=queued",
+            correlation_id, config_.agent_id, transfer_id, req->source_path(),
+            req->artifact().target_id(), req->route_to_target(), file_size);
+        FillArtifactTransferReply(reply, true, "artifact transfer queued", correlation_id,
+                                  swarmkit::v1::ERROR_CODE_NONE, status);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetArtifactTransfer(grpc::ServerContext* ctx,
+                                     const swarmkit::v1::ArtifactTransferRequest* req,
+                                     swarmkit::v1::ArtifactTransferReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-transfer-get");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        const auto status = FindArtifactTransfer(req->transfer_id());
+        if (!status.has_value()) {
+            FillArtifactTransferReply(reply, false, "artifact transfer not found", correlation_id,
+                                      swarmkit::v1::ERROR_CODE_UNAVAILABLE, {});
+            return grpc::Status::OK;
+        }
+        FillArtifactTransferReply(reply, true, status->message(), correlation_id,
+                                  status->error_code(), *status);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status CancelArtifactTransfer(grpc::ServerContext* ctx,
+                                        const swarmkit::v1::ArtifactTransferRequest* req,
+                                        swarmkit::v1::ArtifactTransferReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id =
+            ResolveCorrelationId(ctx, "", "artifact-transfer-cancel");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        std::optional<swarmkit::v1::ArtifactTransferStatus> status;
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            const auto cancel_iter = artifact_transfer_cancel_.find(req->transfer_id());
+            const auto status_iter = artifact_transfers_.find(req->transfer_id());
+            if (status_iter == artifact_transfers_.end()) {
+                FillArtifactTransferReply(reply, false, "artifact transfer not found",
+                                          correlation_id, swarmkit::v1::ERROR_CODE_UNAVAILABLE,
+                                          {});
+                return grpc::Status::OK;
+            }
+            if (cancel_iter != artifact_transfer_cancel_.end()) {
+                cancel_iter->second->store(true, std::memory_order_relaxed);
+            }
+            if (status_iter->second.state() ==
+                    swarmkit::v1::ARTIFACT_TRANSFER_STATE_COMPLETED ||
+                status_iter->second.state() == swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED ||
+                status_iter->second.state() == swarmkit::v1::ARTIFACT_TRANSFER_STATE_CANCELLED) {
+                status = status_iter->second;
+            } else {
+                status_iter->second.set_state(swarmkit::v1::ARTIFACT_TRANSFER_STATE_CANCELLED);
+                status_iter->second.set_message("cancel requested");
+                status_iter->second.set_updated_unix_ms(NowUnixMs());
+                status = status_iter->second;
+            }
+        }
+        core::Logger::InfoFmt("rpc=CancelArtifactTransfer corr={} agent={} transfer_id={}",
+                              correlation_id, config_.agent_id, req->transfer_id());
+        FillArtifactTransferReply(reply, true, status->message(), correlation_id,
+                                  status->error_code(), *status);
         return grpc::Status::OK;
     }
 
@@ -2454,18 +2740,28 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             const auto iter = artifacts_.find(req->artifact_id());
             if (iter == artifacts_.end()) {
                 counters_.IncrementArtifactFailures();
+                core::Logger::WarnFmt(
+                    "rpc=DownloadArtifact agent={} artifact_id={} result=failed reason=not_found",
+                    config_.agent_id, req->artifact_id());
                 return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact not found");
             }
             descriptor = iter->second;
             if (ArtifactExpired(descriptor, NowUnixMs())) {
                 artifacts_.erase(iter);
                 counters_.IncrementArtifactFailures();
+                core::Logger::WarnFmt(
+                    "rpc=DownloadArtifact agent={} artifact_id={} result=failed reason=expired",
+                    config_.agent_id, req->artifact_id());
                 return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact expired");
             }
         }
         std::ifstream input(descriptor.storage_path(), std::ios::binary);
         if (!input.is_open()) {
             counters_.IncrementArtifactFailures();
+            core::Logger::WarnFmt(
+                "rpc=DownloadArtifact agent={} artifact_id={} path={} result=failed "
+                "reason=file_not_found",
+                config_.agent_id, req->artifact_id(), descriptor.storage_path());
             return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact file not found");
         }
         if (descriptor.size_bytes() == 0) {
@@ -2477,6 +2773,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             chunk.set_final_chunk(true);
             static_cast<void>(writer->Write(chunk));
             counters_.IncrementArtifactDownloads(0);
+            core::Logger::InfoFmt(
+                "rpc=DownloadArtifact agent={} artifact_id={} bytes=0 result=sent",
+                config_.agent_id, descriptor.artifact_id());
             return grpc::Status::OK;
         }
         const std::size_t chunk_size =
@@ -2507,6 +2806,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             ++chunk_index;
         }
         counters_.IncrementArtifactDownloads(static_cast<std::uint64_t>(offset));
+        core::Logger::InfoFmt(
+            "rpc=DownloadArtifact agent={} artifact_id={} bytes={} result=sent", config_.agent_id,
+            descriptor.artifact_id(), offset);
         return grpc::Status::OK;
     }
 
@@ -2528,6 +2830,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             reply->set_message("artifact_id is required");
             reply->set_correlation_id(correlation_id);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+            core::Logger::WarnFmt(
+                "rpc=AnnounceArtifact corr={} agent={} result=rejected reason=missing_artifact_id",
+                correlation_id, config_.agent_id);
             return grpc::Status::OK;
         }
         {
@@ -2546,10 +2851,465 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         reply->set_message("artifact announced");
         reply->set_correlation_id(correlation_id);
         reply->set_error_code(swarmkit::v1::ERROR_CODE_NONE);
+        core::Logger::InfoFmt(
+            "rpc=AnnounceArtifact corr={} agent={} artifact_id={} source={} target={} "
+            "result=announced",
+            correlation_id, config_.agent_id, reply->artifact().artifact_id(),
+            reply->artifact().source_id(), reply->artifact().target_id());
         return grpc::Status::OK;
     }
 
    private:
+    [[nodiscard]] swarmkit::v1::DataPeerStatus DefaultPeerStatus(
+        const DataPeerConfig& peer) const {
+        swarmkit::v1::DataPeerStatus status;
+        status.set_drone_id(peer.drone_id);
+        status.set_address(peer.address);
+        status.set_transport_security(
+            TransportSecurityName(EffectivePeerTransportSecurity(peer, config_.security)));
+        status.set_state(swarmkit::v1::DATA_PEER_STATE_UNKNOWN);
+        status.set_message("not checked");
+        return status;
+    }
+
+    [[nodiscard]] swarmkit::v1::DataPeerStatus RefreshPeerStatus(
+        const DataPeerConfig& peer) const {
+        swarmkit::v1::DataPeerStatus status = DefaultPeerStatus(peer);
+        const std::int64_t started_ms = NowUnixMs();
+        status.set_last_checked_unix_ms(started_ms);
+        if (const core::Result validation = peer.Validate(); !validation.IsOk()) {
+            status.set_state(swarmkit::v1::DATA_PEER_STATE_MISCONFIGURED);
+            status.set_last_failure_unix_ms(started_ms);
+            status.set_message(validation.message);
+            return status;
+        }
+
+        auto channel = MakePeerChannel(peer, config_.security);
+        auto stub = swarmkit::v1::AgentService::NewStub(channel);
+        grpc::ClientContext peer_ctx;
+        peer_ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{3});
+        peer_ctx.AddMetadata(std::string(kCorrelationMetadataKey), MakeCorrelationId("peer-check"));
+        swarmkit::v1::PingRequest request;
+        request.set_agent_id(config_.agent_id);
+        swarmkit::v1::PingReply reply;
+        const grpc::Status ping_status = stub->Ping(&peer_ctx, request, &reply);
+        const std::int64_t finished_ms = NowUnixMs();
+        status.set_round_trip_ms(std::max<std::int64_t>(0, finished_ms - started_ms));
+        if (!ping_status.ok()) {
+            status.set_state(swarmkit::v1::DATA_PEER_STATE_UNREACHABLE);
+            status.set_last_failure_unix_ms(finished_ms);
+            status.set_message(ping_status.error_message().empty()
+                                   ? "peer ping failed"
+                                   : ping_status.error_message());
+            return status;
+        }
+        status.set_state(swarmkit::v1::DATA_PEER_STATE_READY);
+        status.set_last_success_unix_ms(finished_ms);
+        status.set_message("ready agent_id=" + reply.agent_id());
+        return status;
+    }
+
+    void RefreshPeerStatuses(const std::unordered_set<std::string>& requested) {
+        for (const auto& peer : config_.data.peers) {
+            if (!requested.empty() && !requested.contains(peer.drone_id)) {
+                continue;
+            }
+            swarmkit::v1::DataPeerStatus status = RefreshPeerStatus(peer);
+            {
+                std::lock_guard<std::mutex> lock(data_mutex_);
+                peer_statuses_[peer.drone_id] = status;
+            }
+            core::Logger::InfoFmt(
+                "data_peer_refresh agent={} peer={} address={} state={} rtt_ms={} message={}",
+                config_.agent_id, status.drone_id(), status.address(),
+                static_cast<int>(status.state()), status.round_trip_ms(), status.message());
+        }
+    }
+
+    void FillPeerListReply(std::string_view correlation_id,
+                           swarmkit::v1::DataPeerListReply* reply) const {
+        if (reply == nullptr) {
+            return;
+        }
+        reply->set_correlation_id(std::string(correlation_id));
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        for (const auto& peer : config_.data.peers) {
+            const auto iter = peer_statuses_.find(peer.drone_id);
+            if (iter != peer_statuses_.end()) {
+                *reply->add_peers() = iter->second;
+            } else {
+                *reply->add_peers() = DefaultPeerStatus(peer);
+            }
+        }
+    }
+
+    void MarkPeerRouteResult(const DataPeerConfig& peer, bool ok, long long latency_ms,
+                             std::string_view message) {
+        swarmkit::v1::DataPeerStatus status = DefaultPeerStatus(peer);
+        const std::int64_t now_ms = NowUnixMs();
+        status.set_last_checked_unix_ms(now_ms);
+        status.set_round_trip_ms(std::max<long long>(0, latency_ms));
+        status.set_message(std::string(message));
+        if (ok) {
+            status.set_state(swarmkit::v1::DATA_PEER_STATE_READY);
+            status.set_last_success_unix_ms(now_ms);
+        } else {
+            status.set_state(swarmkit::v1::DATA_PEER_STATE_UNREACHABLE);
+            status.set_last_failure_unix_ms(now_ms);
+        }
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        peer_statuses_[peer.drone_id] = std::move(status);
+    }
+
+    struct ArtifactTransferOutcome {
+        bool ok{false};
+        swarmkit::v1::ErrorCode error_code{swarmkit::v1::ERROR_CODE_INTERNAL};
+        std::string message;
+        swarmkit::v1::ArtifactDescriptor descriptor;
+    };
+
+    void FillArtifactTransferReply(swarmkit::v1::ArtifactTransferReply* reply, bool ok,
+                                   std::string_view message, std::string_view correlation_id,
+                                   swarmkit::v1::ErrorCode error_code,
+                                   const swarmkit::v1::ArtifactTransferStatus& status) const {
+        if (reply == nullptr) {
+            return;
+        }
+        reply->set_ok(ok);
+        reply->set_message(std::string(message));
+        reply->set_correlation_id(std::string(correlation_id));
+        reply->set_error_code(error_code);
+        reply->set_debug_message(std::string(message));
+        if (!status.transfer_id().empty()) {
+            *reply->mutable_transfer() = status;
+        }
+    }
+
+    [[nodiscard]] std::optional<swarmkit::v1::ArtifactTransferStatus> FindArtifactTransfer(
+        std::string_view transfer_id) const {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        const auto iter = artifact_transfers_.find(std::string(transfer_id));
+        if (iter == artifact_transfers_.end()) {
+            return std::nullopt;
+        }
+        return iter->second;
+    }
+
+    void UpdateArtifactTransfer(
+        std::string_view transfer_id,
+        const std::function<void(swarmkit::v1::ArtifactTransferStatus*)>& update) {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        const auto iter = artifact_transfers_.find(std::string(transfer_id));
+        if (iter == artifact_transfers_.end()) {
+            return;
+        }
+        update(&iter->second);
+        iter->second.set_updated_unix_ms(NowUnixMs());
+    }
+
+    void CompleteArtifactTransfer(std::string_view transfer_id,
+                                  swarmkit::v1::ArtifactTransferState state,
+                                  swarmkit::v1::ErrorCode error_code, std::string_view message,
+                                  const swarmkit::v1::ArtifactDescriptor& descriptor) {
+        UpdateArtifactTransfer(transfer_id, [&](swarmkit::v1::ArtifactTransferStatus* status) {
+            status->set_state(state);
+            status->set_error_code(error_code);
+            status->set_message(std::string(message));
+            status->set_completed_unix_ms(NowUnixMs());
+            if (!descriptor.artifact_id().empty()) {
+                *status->mutable_artifact() = descriptor;
+            }
+        });
+    }
+
+    [[nodiscard]] swarmkit::v1::ArtifactDescriptor PrepareArtifactDescriptorForPath(
+        std::filesystem::path source_path, swarmkit::v1::ArtifactDescriptor descriptor,
+        std::int64_t file_size) const {
+        if (descriptor.source_id().empty()) {
+            descriptor.set_source_id(config_.agent_id);
+        }
+        if (descriptor.created_unix_ms() == 0) {
+            descriptor.set_created_unix_ms(NowUnixMs());
+        }
+        if (descriptor.filename().empty()) {
+            descriptor.set_filename(source_path.filename().string());
+        }
+        if (descriptor.content_type().empty()) {
+            descriptor.set_content_type("application/octet-stream");
+        }
+        descriptor.set_size_bytes(file_size);
+        return descriptor;
+    }
+
+    [[nodiscard]] ArtifactTransferOutcome StoreArtifactFileLocally(
+        std::string_view transfer_id, const std::filesystem::path& source_path,
+        swarmkit::v1::ArtifactDescriptor descriptor,
+        const std::shared_ptr<std::atomic<bool>>& cancel_flag) {
+        ArtifactTransferOutcome outcome;
+        std::ifstream input(source_path, std::ios::binary);
+        if (!input.is_open()) {
+            outcome.message = "failed to open source_path=" + source_path.string();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT;
+            return outcome;
+        }
+        std::filesystem::path tmp_dir = ArtifactStorageRoot(config_) / "tmp";
+        std::error_code fs_error;
+        std::filesystem::create_directories(tmp_dir, fs_error);
+        if (fs_error) {
+            outcome.message = "failed to create artifact temp dir path=" + tmp_dir.string() +
+                              " error=" + fs_error.message();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            return outcome;
+        }
+        const std::filesystem::path tmp_path =
+            tmp_dir / (SanitizedPathComponent(std::string(transfer_id)) + ".part");
+        std::ofstream output(tmp_path, std::ios::binary | std::ios::trunc);
+        if (!output.is_open()) {
+            outcome.message = "failed to open artifact temp file path=" + tmp_path.string();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            return outcome;
+        }
+
+        const std::size_t chunk_size =
+            std::max<std::size_t>(1, static_cast<std::size_t>(config_.data.artifact_chunk_bytes));
+        std::string buffer(chunk_size, '\0');
+        std::int64_t bytes = 0;
+        while (input.good()) {
+            if (cancel_flag->load(std::memory_order_relaxed)) {
+                output.close();
+                std::filesystem::remove(tmp_path, fs_error);
+                outcome.message = "artifact transfer cancelled";
+                outcome.error_code = swarmkit::v1::ERROR_CODE_CANCELLED;
+                return outcome;
+            }
+            input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize read = input.gcount();
+            if (read <= 0) {
+                break;
+            }
+            if (bytes + static_cast<std::int64_t>(read) > config_.data.max_artifact_bytes) {
+                output.close();
+                std::filesystem::remove(tmp_path, fs_error);
+                outcome.message = "artifact exceeds max_artifact_bytes";
+                outcome.error_code = swarmkit::v1::ERROR_CODE_REJECTED;
+                return outcome;
+            }
+            output.write(buffer.data(), read);
+            bytes += static_cast<std::int64_t>(read);
+            UpdateArtifactTransfer(transfer_id, [bytes](swarmkit::v1::ArtifactTransferStatus* s) {
+                s->set_bytes_transferred(bytes);
+            });
+        }
+        output.flush();
+        output.close();
+
+        const std::string sha256_hex = core::internal::Sha256FileHex(tmp_path);
+        if (sha256_hex.empty()) {
+            std::filesystem::remove(tmp_path, fs_error);
+            outcome.message = "failed to hash artifact";
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            return outcome;
+        }
+        if (!descriptor.sha256_hex().empty() && descriptor.sha256_hex() != sha256_hex) {
+            std::filesystem::remove(tmp_path, fs_error);
+            outcome.message = "artifact sha256 mismatch";
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            return outcome;
+        }
+        descriptor.set_sha256_hex(sha256_hex);
+        if (descriptor.artifact_id().empty()) {
+            descriptor.set_artifact_id(sha256_hex);
+        }
+
+        const std::filesystem::path final_dir = ArtifactStorageRoot(config_) /
+                                                SanitizedPathComponent(descriptor.source_id()) /
+                                                SanitizedPathComponent(descriptor.artifact_id());
+        std::filesystem::create_directories(final_dir, fs_error);
+        if (fs_error) {
+            std::filesystem::remove(tmp_path, fs_error);
+            outcome.message = "failed to create artifact final dir path=" + final_dir.string() +
+                              " error=" + fs_error.message();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            return outcome;
+        }
+        const std::filesystem::path final_path =
+            final_dir / SanitizedPathComponent(descriptor.filename());
+        std::filesystem::rename(tmp_path, final_path, fs_error);
+        if (fs_error) {
+            std::error_code exists_error;
+            if (std::filesystem::exists(final_path, exists_error) &&
+                core::internal::Sha256FileHex(final_path) == sha256_hex) {
+                std::filesystem::remove(tmp_path, exists_error);
+                fs_error.clear();
+            }
+        }
+        if (fs_error) {
+            std::filesystem::remove(tmp_path, fs_error);
+            outcome.message = "failed to finalize artifact tmp_path=" + tmp_path.string() +
+                              " final_path=" + final_path.string() +
+                              " error=" + fs_error.message();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            return outcome;
+        }
+
+        descriptor.set_storage_path(final_path.string());
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            artifacts_[descriptor.artifact_id()] = descriptor;
+        }
+        counters_.IncrementArtifactUploads(static_cast<std::uint64_t>(bytes));
+        outcome.ok = true;
+        outcome.error_code = swarmkit::v1::ERROR_CODE_NONE;
+        outcome.message = "artifact stored";
+        outcome.descriptor = descriptor;
+        return outcome;
+    }
+
+    [[nodiscard]] ArtifactTransferOutcome RouteArtifactFileToPeer(
+        std::string_view transfer_id, const std::filesystem::path& source_path,
+        swarmkit::v1::ArtifactDescriptor descriptor, int chunk_bytes,
+        const std::shared_ptr<std::atomic<bool>>& cancel_flag) {
+        ArtifactTransferOutcome outcome;
+        const std::optional<DataPeerConfig> peer = config_.data.FindPeer(descriptor.target_id());
+        if (!peer.has_value()) {
+            outcome.message = "no data peer configured for target_id=" + descriptor.target_id();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_UNAVAILABLE;
+            return outcome;
+        }
+        std::ifstream input(source_path, std::ios::binary);
+        if (!input.is_open()) {
+            outcome.message = "failed to open source_path=" + source_path.string();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT;
+            return outcome;
+        }
+
+        const auto route_started = std::chrono::steady_clock::now();
+        auto channel = MakePeerChannel(*peer, config_.security);
+        auto stub = swarmkit::v1::DataService::NewStub(channel);
+        grpc::ClientContext peer_ctx;
+        peer_ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{300});
+        peer_ctx.AddMetadata(std::string(kCorrelationMetadataKey), std::string(transfer_id));
+        swarmkit::v1::ArtifactDescriptor peer_reply;
+        auto writer = stub->UploadArtifact(&peer_ctx, &peer_reply);
+
+        const std::size_t chunk_size = std::max<std::size_t>(
+            1, chunk_bytes > 0 ? static_cast<std::size_t>(chunk_bytes)
+                               : static_cast<std::size_t>(config_.data.artifact_chunk_bytes));
+        std::string buffer(chunk_size, '\0');
+        std::int64_t offset = 0;
+        int chunk_index = 0;
+        bool wrote_all = true;
+        while (input.good()) {
+            if (cancel_flag->load(std::memory_order_relaxed)) {
+                peer_ctx.TryCancel();
+                writer->WritesDone();
+                static_cast<void>(writer->Finish());
+                outcome.message = "artifact transfer cancelled";
+                outcome.error_code = swarmkit::v1::ERROR_CODE_CANCELLED;
+                return outcome;
+            }
+            input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize read = input.gcount();
+            if (read <= 0) {
+                break;
+            }
+            swarmkit::v1::ArtifactChunk chunk;
+            chunk.set_transfer_id(std::string(transfer_id));
+            if (chunk_index == 0) {
+                *chunk.mutable_artifact() = descriptor;
+            }
+            chunk.set_offset(offset);
+            chunk.set_chunk_index(chunk_index);
+            chunk.set_data(buffer.data(), static_cast<std::size_t>(read));
+            offset += static_cast<std::int64_t>(read);
+            chunk.set_final_chunk(offset >= descriptor.size_bytes());
+            wrote_all = writer->Write(chunk);
+            if (!wrote_all) {
+                break;
+            }
+            UpdateArtifactTransfer(transfer_id, [offset](swarmkit::v1::ArtifactTransferStatus* s) {
+                s->set_bytes_transferred(offset);
+            });
+            ++chunk_index;
+        }
+        writer->WritesDone();
+        const grpc::Status peer_status = writer->Finish();
+        const auto latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - route_started)
+                                    .count();
+        if (!wrote_all && peer_status.ok()) {
+            MarkPeerRouteResult(*peer, false, latency_ms, "peer stream closed");
+            outcome.message = "peer artifact stream closed before all chunks were accepted";
+            outcome.error_code = swarmkit::v1::ERROR_CODE_UNAVAILABLE;
+            return outcome;
+        }
+        if (!peer_status.ok()) {
+            MarkPeerRouteResult(*peer, false, latency_ms, peer_status.error_message());
+            outcome.message = "peer artifact delivery failed: " + peer_status.error_message();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_UNAVAILABLE;
+            return outcome;
+        }
+        MarkPeerRouteResult(*peer, true, latency_ms, "artifact delivered");
+        counters_.IncrementArtifactDownloads(static_cast<std::uint64_t>(offset));
+        outcome.ok = true;
+        outcome.error_code = swarmkit::v1::ERROR_CODE_NONE;
+        outcome.message = "artifact delivered";
+        outcome.descriptor = peer_reply;
+        return outcome;
+    }
+
+    void RunArtifactTransfer(std::string transfer_id,
+                             swarmkit::v1::ArtifactTransferStartRequest request,
+                             std::shared_ptr<std::atomic<bool>> cancel_flag) {
+        UpdateArtifactTransfer(transfer_id, [](swarmkit::v1::ArtifactTransferStatus* status) {
+            status->set_state(swarmkit::v1::ARTIFACT_TRANSFER_STATE_RUNNING);
+            status->set_message("running");
+        });
+
+        std::error_code fs_error;
+        const auto file_size = std::filesystem::file_size(request.source_path(), fs_error);
+        swarmkit::v1::ArtifactDescriptor descriptor =
+            PrepareArtifactDescriptorForPath(request.source_path(), request.artifact(),
+                                             fs_error ? 0 : static_cast<std::int64_t>(file_size));
+        UpdateArtifactTransfer(transfer_id, [&descriptor](swarmkit::v1::ArtifactTransferStatus* s) {
+            *s->mutable_artifact() = descriptor;
+            s->set_bytes_total(descriptor.size_bytes());
+        });
+        ArtifactTransferOutcome outcome;
+        if (fs_error) {
+            outcome.message = "source_path cannot be read path=" + request.source_path() +
+                              " error=" + fs_error.message();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT;
+        } else if (request.route_to_target()) {
+            outcome = RouteArtifactFileToPeer(transfer_id, request.source_path(), descriptor,
+                                              request.chunk_bytes(), cancel_flag);
+        } else {
+            outcome = StoreArtifactFileLocally(transfer_id, request.source_path(), descriptor,
+                                               cancel_flag);
+        }
+
+        const bool cancelled = outcome.error_code == swarmkit::v1::ERROR_CODE_CANCELLED;
+        CompleteArtifactTransfer(
+            transfer_id,
+            outcome.ok ? swarmkit::v1::ARTIFACT_TRANSFER_STATE_COMPLETED
+                       : (cancelled ? swarmkit::v1::ARTIFACT_TRANSFER_STATE_CANCELLED
+                                    : swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED),
+            outcome.error_code, outcome.message, outcome.descriptor);
+        if (outcome.ok) {
+            core::Logger::InfoFmt(
+                "artifact_transfer agent={} transfer_id={} artifact_id={} bytes={} result={}",
+                config_.agent_id, transfer_id, outcome.descriptor.artifact_id(),
+                outcome.descriptor.size_bytes(),
+                request.route_to_target() ? "delivered" : "stored");
+        } else {
+            core::Logger::WarnFmt(
+                "artifact_transfer agent={} transfer_id={} source_path={} target={} result={} "
+                "error={}",
+                config_.agent_id, transfer_id, request.source_path(), request.artifact().target_id(),
+                cancelled ? "cancelled" : "failed", outcome.message);
+        }
+    }
+
     [[nodiscard]] std::expected<CommandContext, grpc::Status> PrepareExecutionContext(
         grpc::ServerContext* ctx, const swarmkit::v1::CommandContext& proto_context,
         std::string_view fallback_drone_id, std::string_view correlation_prefix) const {
@@ -2690,6 +3450,11 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
     std::condition_variable data_cv_;
     std::deque<swarmkit::v1::DataMessage> message_backlog_;
     std::unordered_map<std::string, swarmkit::v1::ArtifactDescriptor> artifacts_;
+    std::unordered_map<std::string, swarmkit::v1::DataPeerStatus> peer_statuses_;
+    std::unordered_map<std::string, swarmkit::v1::ArtifactTransferStatus> artifact_transfers_;
+    std::unordered_map<std::string, std::shared_ptr<std::atomic<bool>>> artifact_transfer_cancel_;
+    std::mutex artifact_transfer_threads_mutex_;
+    std::vector<std::thread> artifact_transfer_threads_;
     std::uint64_t data_sequence_{0};
 };
 

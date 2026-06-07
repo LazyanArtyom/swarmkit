@@ -48,6 +48,7 @@ namespace swarmkit::apps::cli::internal {
            value == "--execution-id" || value == "--unix-time-ms" ||
            value == "--topic" || value == "--target" || value == "--payload" ||
            value == "--content-type" || value == "--artifact-id" || value == "--chunk-bytes" ||
+           value == "--transfer-id" ||
            value == "--namespace" || value == "--name" || value == "--param" ||
            value == "--transport-security";
 }
@@ -56,6 +57,7 @@ namespace swarmkit::apps::cli::internal {
     return value == "--help" || value == "-h" || value == "--insecure" || value == "--verify" ||
            value == "--continue-on-error" || value == "--require-all" || value == "--body-frame" ||
            value == "--relative" || value == "--on" || value == "--release" ||
+           value == "--route" || value == "--refresh" ||
            value == "--no-console";
 }
 

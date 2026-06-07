@@ -82,8 +82,13 @@ service DataService {
     rpc PublishMessage(PublishMessageRequest) returns (PublishMessageReply);
     rpc SendMessageToDrone(PublishMessageRequest) returns (PublishMessageReply);
     rpc SubscribeMessages(MessageSubscription) returns (stream DataMessage);
+    rpc ListDataPeers(DataPeerListRequest) returns (DataPeerListReply);
+    rpc RefreshDataPeers(DataPeerRefreshRequest) returns (DataPeerListReply);
     rpc UploadArtifact(stream ArtifactChunk) returns (ArtifactDescriptor);
     rpc SendArtifactToDrone(stream ArtifactChunk) returns (ArtifactDescriptor);
+    rpc StartArtifactTransfer(ArtifactTransferStartRequest) returns (ArtifactTransferReply);
+    rpc GetArtifactTransfer(ArtifactTransferRequest) returns (ArtifactTransferReply);
+    rpc CancelArtifactTransfer(ArtifactTransferRequest) returns (ArtifactTransferReply);
     rpc DownloadArtifact(ArtifactRequest) returns (stream ArtifactChunk);
     rpc AnnounceArtifact(ArtifactDescriptor) returns (ArtifactReply);
 }
@@ -316,7 +321,6 @@ enum MissionItemType {
 }
 
 message MissionItem {
-    uint32 command = 1;  // Deprecated backend-native command id.
     double lat_deg = 2;
     double lon_deg = 3;
     double alt_m = 4;
@@ -944,6 +948,38 @@ message MessageSubscription {
     uint64 after_sequence = 4;
 }
 
+enum DataPeerState {
+    DATA_PEER_STATE_UNKNOWN = 0;
+    DATA_PEER_STATE_READY = 1;
+    DATA_PEER_STATE_UNREACHABLE = 2;
+    DATA_PEER_STATE_MISCONFIGURED = 3;
+}
+
+message DataPeerStatus {
+    string drone_id = 1;
+    string address = 2;
+    string transport_security = 3;
+    DataPeerState state = 4;
+    int64 last_checked_unix_ms = 5;
+    int64 last_success_unix_ms = 6;
+    int64 last_failure_unix_ms = 7;
+    int64 round_trip_ms = 8;
+    string message = 9;
+}
+
+message DataPeerListRequest {
+    bool refresh = 1;
+}
+
+message DataPeerRefreshRequest {
+    repeated string drone_ids = 1;
+}
+
+message DataPeerListReply {
+    repeated DataPeerStatus peers = 1;
+    string correlation_id = 2;
+}
+
 message ArtifactDescriptor {
     string artifact_id = 1;
     string source_id = 2;
@@ -978,6 +1014,48 @@ message ArtifactReply {
     ErrorCode error_code = 4;
     string debug_message = 5;
     ArtifactDescriptor artifact = 6;
+}
+
+enum ArtifactTransferState {
+    ARTIFACT_TRANSFER_STATE_UNKNOWN = 0;
+    ARTIFACT_TRANSFER_STATE_QUEUED = 1;
+    ARTIFACT_TRANSFER_STATE_RUNNING = 2;
+    ARTIFACT_TRANSFER_STATE_COMPLETED = 3;
+    ARTIFACT_TRANSFER_STATE_FAILED = 4;
+    ARTIFACT_TRANSFER_STATE_CANCELLED = 5;
+}
+
+message ArtifactTransferStartRequest {
+    string source_path = 1;
+    ArtifactDescriptor artifact = 2;
+    bool route_to_target = 3;
+    int32 chunk_bytes = 4;
+}
+
+message ArtifactTransferStatus {
+    string transfer_id = 1;
+    ArtifactTransferState state = 2;
+    ArtifactDescriptor artifact = 3;
+    int64 bytes_total = 4;
+    int64 bytes_transferred = 5;
+    int64 started_unix_ms = 6;
+    int64 updated_unix_ms = 7;
+    int64 completed_unix_ms = 8;
+    string message = 9;
+    ErrorCode error_code = 10;
+}
+
+message ArtifactTransferRequest {
+    string transfer_id = 1;
+}
+
+message ArtifactTransferReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    ArtifactTransferStatus transfer = 6;
 }
 
 // ---------------------------------------------------------------------------

@@ -555,6 +555,33 @@ struct MessageSubscription {
     std::uint64_t after_sequence{};
 };
 
+enum class DataPeerState {
+    kUnknown,
+    kReady,
+    kUnreachable,
+    kMisconfigured,
+};
+
+struct DataPeerStatus {
+    std::string drone_id;
+    std::string address;
+    std::string transport_security;
+    DataPeerState state{DataPeerState::kUnknown};
+    std::int64_t last_checked_unix_ms{};
+    std::int64_t last_success_unix_ms{};
+    std::int64_t last_failure_unix_ms{};
+    std::int64_t round_trip_ms{};
+    std::string message;
+};
+
+struct DataPeerListResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    std::vector<DataPeerStatus> peers;
+};
+
 struct ArtifactDescriptor {
     std::string artifact_id;
     std::string source_id;
@@ -581,6 +608,36 @@ struct ArtifactUpload {
     std::string file_path;
     ArtifactDescriptor descriptor;
     std::size_t chunk_bytes{64 * 1024};
+};
+
+enum class ArtifactTransferState {
+    kUnknown,
+    kQueued,
+    kRunning,
+    kCompleted,
+    kFailed,
+    kCancelled,
+};
+
+struct ArtifactTransferStatus {
+    std::string transfer_id;
+    ArtifactTransferState state{ArtifactTransferState::kUnknown};
+    ArtifactDescriptor descriptor;
+    std::int64_t bytes_total{};
+    std::int64_t bytes_transferred{};
+    std::int64_t started_unix_ms{};
+    std::int64_t updated_unix_ms{};
+    std::int64_t completed_unix_ms{};
+    std::string message;
+    RpcError error;
+};
+
+struct ArtifactTransferStatusResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    ArtifactTransferStatus transfer;
 };
 
 /**
@@ -801,11 +858,30 @@ class Client {
         SubscriptionOptions options = {});
     void StopMessages();
 
+    /// @brief Read configured data peers and their latest reachability status.
+    [[nodiscard]] DataPeerListResult ListDataPeers(bool refresh = false) const;
+
+    /// @brief Actively refresh reachability for all or selected data peers.
+    [[nodiscard]] DataPeerListResult RefreshDataPeers(
+        const std::vector<std::string>& drone_ids = {}) const;
+
     /// @brief Upload a file/blob to the connected agent using chunked transfer.
     [[nodiscard]] ArtifactTransferResult UploadArtifact(const ArtifactUpload& upload) const;
 
     /// @brief Route a local file/blob through the connected agent to another drone agent.
     [[nodiscard]] ArtifactTransferResult SendArtifactToDrone(const ArtifactUpload& upload) const;
+
+    /// @brief Start an agent-side artifact transfer from a path visible to the agent.
+    [[nodiscard]] ArtifactTransferStatusResult StartArtifactTransfer(
+        const ArtifactUpload& upload, bool route_to_target) const;
+
+    /// @brief Read progress for an agent-side artifact transfer.
+    [[nodiscard]] ArtifactTransferStatusResult GetArtifactTransfer(
+        const std::string& transfer_id) const;
+
+    /// @brief Request cancellation for an agent-side artifact transfer.
+    [[nodiscard]] ArtifactTransferStatusResult CancelArtifactTransfer(
+        const std::string& transfer_id) const;
 
     /// @brief Download a stored artifact from the connected agent into a file.
     [[nodiscard]] ArtifactTransferResult DownloadArtifact(const std::string& artifact_id,

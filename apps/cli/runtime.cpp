@@ -1436,8 +1436,45 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
 int RunMessage(Client& client, int argc, char** argv) {
     const auto actions = FindActionsAfterCommand(argc, argv, "message");
     if (actions.empty()) {
-        std::cerr << "message requires publish|send|subscribe\n";
+        std::cerr << "message requires publish|send|subscribe|peers\n";
         return EXIT_FAILURE;
+    }
+
+    if (actions[0] == "peers") {
+        const bool refresh = common::HasFlag(argc, argv, "--refresh");
+        const auto result = refresh ? client.RefreshDataPeers() : client.ListDataPeers(false);
+        std::cout << "Data peers: " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        const auto state_name = [](swarmkit::client::DataPeerState state) {
+            switch (state) {
+                case swarmkit::client::DataPeerState::kReady:
+                    return "ready";
+                case swarmkit::client::DataPeerState::kUnreachable:
+                    return "unreachable";
+                case swarmkit::client::DataPeerState::kMisconfigured:
+                    return "misconfigured";
+                case swarmkit::client::DataPeerState::kUnknown:
+                default:
+                    return "unknown";
+            }
+        };
+        for (const auto& peer : result.peers) {
+            std::cout << "peer=" << peer.drone_id << " address=" << peer.address
+                      << " security=" << peer.transport_security
+                      << " state=" << state_name(peer.state)
+                      << " rtt_ms=" << peer.round_trip_ms;
+            if (!peer.message.empty()) {
+                std::cout << " message=" << peer.message;
+            }
+            std::cout << "\n";
+        }
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (actions[0] == "publish" || actions[0] == "send") {
@@ -1557,9 +1594,47 @@ int RunMessage(Client& client, int argc, char** argv) {
 int RunArtifact(Client& client, int argc, char** argv) {
     const auto actions = FindActionsAfterCommand(argc, argv, "artifact");
     if (actions.empty()) {
-        std::cerr << "artifact requires upload|send|download|announce\n";
+        std::cerr << "artifact requires upload|send|start|status|cancel|download|announce\n";
         return EXIT_FAILURE;
     }
+
+    const auto transfer_state_name = [](swarmkit::client::ArtifactTransferState state) {
+        switch (state) {
+            case swarmkit::client::ArtifactTransferState::kQueued:
+                return "queued";
+            case swarmkit::client::ArtifactTransferState::kRunning:
+                return "running";
+            case swarmkit::client::ArtifactTransferState::kCompleted:
+                return "completed";
+            case swarmkit::client::ArtifactTransferState::kFailed:
+                return "failed";
+            case swarmkit::client::ArtifactTransferState::kCancelled:
+                return "cancelled";
+            case swarmkit::client::ArtifactTransferState::kUnknown:
+            default:
+                return "unknown";
+        }
+    };
+    const auto print_transfer = [&](std::string_view prefix,
+                                    const swarmkit::client::ArtifactTransferStatusResult& result) {
+        std::cout << prefix << ": " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.transfer.transfer_id.empty()) {
+            std::cout << " transfer_id=" << result.transfer.transfer_id
+                      << " state=" << transfer_state_name(result.transfer.state)
+                      << " bytes=" << result.transfer.bytes_transferred << "/"
+                      << result.transfer.bytes_total;
+        }
+        if (!result.transfer.descriptor.artifact_id.empty()) {
+            std::cout << " artifact_id=" << result.transfer.descriptor.artifact_id;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+    };
 
     if (actions[0] == "upload" || actions[0] == "send") {
         const std::string file_path = common::GetOptionValue(argc, argv, "--file");
@@ -1617,6 +1692,63 @@ int RunArtifact(Client& client, int argc, char** argv) {
             std::cout << " [corr=" << result.correlation_id << "]";
         }
         std::cout << "\n";
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (actions[0] == "start") {
+        const std::string file_path = common::GetOptionValue(argc, argv, "--file");
+        if (file_path.empty()) {
+            std::cerr << "artifact start requires --file PATH\n";
+            return EXIT_FAILURE;
+        }
+        auto labels = ParseKeyValueLabels(argc, argv, "--label");
+        if (!labels.has_value()) {
+            std::cerr << labels.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        swarmkit::client::ArtifactUpload upload;
+        upload.file_path = file_path;
+        upload.descriptor.target_id = common::GetOptionValue(argc, argv, "--target");
+        upload.descriptor.content_type =
+            common::GetOptionValue(argc, argv, "--content-type", "application/octet-stream");
+        const auto ttl_ms = ParseDurationMs(argc, argv);
+        if (!ttl_ms.has_value()) {
+            std::cerr << ttl_ms.error() << "\n";
+            return EXIT_FAILURE;
+        }
+        upload.descriptor.ttl_ms = *ttl_ms;
+        upload.descriptor.labels = std::move(*labels);
+        if (const std::string chunk_bytes = common::GetOptionValue(argc, argv, "--chunk-bytes");
+            !chunk_bytes.empty()) {
+            const auto parsed = ParseIntArg(chunk_bytes, "--chunk-bytes");
+            if (!parsed.has_value() || *parsed <= 0) {
+                std::cerr << "Invalid --chunk-bytes\n";
+                return EXIT_FAILURE;
+            }
+            upload.chunk_bytes = static_cast<std::size_t>(*parsed);
+        }
+        const bool route = common::HasFlag(argc, argv, "--route") ||
+                           !upload.descriptor.target_id.empty();
+        if (route && upload.descriptor.target_id.empty()) {
+            std::cerr << "artifact start --route requires --target DRONE_ID\n";
+            return EXIT_FAILURE;
+        }
+        const auto result = client.StartArtifactTransfer(upload, route);
+        print_transfer("Artifact transfer start", result);
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (actions[0] == "status" || actions[0] == "cancel") {
+        const std::string transfer_id = common::GetOptionValue(argc, argv, "--transfer-id");
+        if (transfer_id.empty()) {
+            std::cerr << "artifact " << actions[0] << " requires --transfer-id ID\n";
+            return EXIT_FAILURE;
+        }
+        const auto result = actions[0] == "cancel" ? client.CancelArtifactTransfer(transfer_id)
+                                                   : client.GetArtifactTransfer(transfer_id);
+        print_transfer(actions[0] == "cancel" ? "Artifact transfer cancel"
+                                              : "Artifact transfer status",
+                       result);
         return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
