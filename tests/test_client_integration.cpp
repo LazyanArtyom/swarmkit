@@ -40,6 +40,22 @@ constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
     return Client(std::move(config));
 }
 
+[[nodiscard]] std::unique_ptr<swarmkit::v1::DataService::Stub> MakeDataServiceStub(
+    const std::string& address) {
+    const testsupport::DevMtlsPaths paths = testsupport::MakeDevMtlsPaths();
+    grpc::SslCredentialsOptions options;
+    static_cast<void>(
+        core::internal::ReadTextFile(paths.root_ca_cert_path, &options.pem_root_certs));
+    static_cast<void>(
+        core::internal::ReadTextFile(paths.client_private_key_path, &options.pem_private_key));
+    static_cast<void>(
+        core::internal::ReadTextFile(paths.client_cert_chain_path, &options.pem_cert_chain));
+    grpc::ChannelArguments arguments;
+    arguments.SetSslTargetNameOverride(paths.server_authority_override);
+    return swarmkit::v1::DataService::NewStub(
+        grpc::CreateCustomChannel(address, grpc::SslCredentials(options), arguments));
+}
+
 TEST_CASE("Client integrates with agent service for ping health stats and command execution",
           "[client][integration]") {
     testsupport::AgentServerHarness harness;
@@ -296,6 +312,35 @@ TEST_CASE("Client artifacts upload download and verify hash", "[client][integrat
     std::error_code error;
     std::filesystem::remove(input_path, error);
     std::filesystem::remove(output_path, error);
+}
+
+TEST_CASE("Artifact upload rejects malformed chunk ordering", "[client][integration][data]") {
+    testsupport::AgentServerHarness harness;
+    auto stub = MakeDataServiceStub(harness.Address());
+
+    grpc::ClientContext context;
+    swarmkit::v1::ArtifactDescriptor reply;
+    auto writer = stub->UploadArtifact(&context, &reply);
+
+    swarmkit::v1::ArtifactChunk chunk;
+    chunk.set_transfer_id("bad-chunk-order-test");
+    chunk.set_offset(0);
+    chunk.set_chunk_index(1);
+    chunk.set_data("bad-order");
+    chunk.set_final_chunk(true);
+    auto* descriptor = chunk.mutable_artifact();
+    descriptor->set_source_id("test-client");
+    descriptor->set_content_type("application/octet-stream");
+    descriptor->set_filename("bad-order.bin");
+    descriptor->set_size_bytes(static_cast<std::int64_t>(chunk.data().size()));
+
+    REQUIRE(writer->Write(chunk));
+    writer->WritesDone();
+    const grpc::Status status = writer->Finish();
+
+    CHECK_FALSE(status.ok());
+    CHECK(status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+    CHECK(status.error_message().find("matching indexes") != std::string::npos);
 }
 
 TEST_CASE("Client parallel duplicate artifact uploads are idempotent",

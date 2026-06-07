@@ -20,6 +20,7 @@
 #include <iomanip>
 #include <memory>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -121,6 +122,11 @@ constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
         root /= SanitizedPathComponent(config.agent_id);
     }
     return root;
+}
+
+[[nodiscard]] bool WriteBytes(std::ostream& output, std::span<const char> bytes) {
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    return output.good();
 }
 
 [[nodiscard]] bool MessageExpired(const swarmkit::v1::DataMessage& message,
@@ -2041,6 +2047,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         std::filesystem::path tmp_path;
         std::ofstream output;
         std::int64_t received_bytes = 0;
+        int expected_chunk_index = 0;
         bool saw_descriptor = false;
         bool saw_final = false;
         const auto fail_upload = [&](grpc::StatusCode code, std::string_view message) {
@@ -2056,6 +2063,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
 
         swarmkit::v1::ArtifactChunk chunk;
         while (reader->Read(&chunk)) {
+            if (saw_final) {
+                return fail_upload(grpc::StatusCode::INVALID_ARGUMENT,
+                                   "artifact chunk received after final chunk");
+            }
             if (!saw_descriptor) {
                 if (!chunk.has_artifact()) {
                     return fail_upload(grpc::StatusCode::INVALID_ARGUMENT,
@@ -2068,9 +2079,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 if (descriptor.created_unix_ms() == 0) {
                     descriptor.set_created_unix_ms(NowUnixMs());
                 }
-                transfer_id = chunk.transfer_id().empty()
-                                  ? "transfer-" + std::to_string(descriptor.created_unix_ms())
-                                  : chunk.transfer_id();
+                transfer_id =
+                    chunk.transfer_id().empty() ? MakeCorrelationId("artifact-upload")
+                                                : chunk.transfer_id();
                 tmp_path = tmp_dir / (SanitizedPathComponent(transfer_id) + ".part");
                 output.open(tmp_path, std::ios::binary | std::ios::trunc);
                 if (!output.is_open()) {
@@ -2083,6 +2094,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 }
                 saw_descriptor = true;
             }
+            if (chunk.chunk_index() != expected_chunk_index) {
+                return fail_upload(grpc::StatusCode::INVALID_ARGUMENT,
+                                   "artifact chunks must arrive in order with matching indexes");
+            }
             if (chunk.offset() != received_bytes) {
                 return fail_upload(grpc::StatusCode::INVALID_ARGUMENT,
                                    "artifact chunks must arrive in order with matching offsets");
@@ -2092,8 +2107,13 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 return fail_upload(grpc::StatusCode::RESOURCE_EXHAUSTED,
                                    "artifact exceeds max_artifact_bytes");
             }
-            output.write(chunk.data().data(), static_cast<std::streamsize>(chunk.data().size()));
+            if (!WriteBytes(output, std::span<const char>{chunk.data().data(),
+                                                          chunk.data().size()})) {
+                return fail_upload(grpc::StatusCode::FAILED_PRECONDITION,
+                                   "failed to write artifact temp file");
+            }
             received_bytes += static_cast<std::int64_t>(chunk.data().size());
+            ++expected_chunk_index;
             saw_final = saw_final || chunk.final_chunk();
         }
         if (!saw_descriptor) {
@@ -2174,10 +2194,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             counters_.IncrementArtifactFailures();
             return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, detail);
         }
-        descriptor.set_storage_path(final_path.string());
         {
             std::lock_guard<std::mutex> lock(data_mutex_);
-            artifacts_[descriptor.artifact_id()] = descriptor;
+            artifacts_[descriptor.artifact_id()] =
+                StoredArtifact{.descriptor = descriptor, .storage_path = final_path};
         }
         PublishArtifactReceivedEvent(descriptor, "artifact-upload");
         *reply = descriptor;
@@ -2186,7 +2206,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             "rpc=UploadArtifact agent={} artifact_id={} source={} target={} bytes={} path={} "
             "result=stored",
             config_.agent_id, descriptor.artifact_id(), descriptor.source_id(),
-            descriptor.target_id(), received_bytes, descriptor.storage_path());
+            descriptor.target_id(), received_bytes, final_path.string());
         return grpc::Status::OK;
     }
 
@@ -2445,7 +2465,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         std::vector<std::string> expired_ids;
         {
             std::lock_guard<std::mutex> lock(data_mutex_);
-            for (const auto& [artifact_id, descriptor] : artifacts_) {
+            for (const auto& [artifact_id, stored] : artifacts_) {
+                const auto& descriptor = stored.descriptor;
                 const bool expired = ArtifactExpired(descriptor, now_ms);
                 if (expired && !include_expired) {
                     expired_ids.push_back(artifact_id);
@@ -2497,7 +2518,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
                 return grpc::Status::OK;
             }
-            if (ArtifactExpired(iter->second, NowUnixMs())) {
+            if (ArtifactExpired(iter->second.descriptor, NowUnixMs())) {
                 artifacts_.erase(iter);
                 reply->set_ok(false);
                 reply->set_message("artifact expired");
@@ -2505,7 +2526,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
                 return grpc::Status::OK;
             }
-            *reply->mutable_artifact() = iter->second;
+            *reply->mutable_artifact() = iter->second.descriptor;
         }
         reply->set_ok(true);
         reply->set_message("artifact found");
@@ -2526,6 +2547,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
         }
         swarmkit::v1::ArtifactDescriptor descriptor;
+        std::filesystem::path storage_path;
         {
             std::lock_guard<std::mutex> lock(data_mutex_);
             const auto iter = artifacts_.find(req->artifact_id());
@@ -2536,7 +2558,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                     config_.agent_id, req->artifact_id());
                 return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact not found");
             }
-            descriptor = iter->second;
+            descriptor = iter->second.descriptor;
+            storage_path = iter->second.storage_path;
             if (ArtifactExpired(descriptor, NowUnixMs())) {
                 artifacts_.erase(iter);
                 counters_.IncrementArtifactFailures();
@@ -2546,13 +2569,13 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact expired");
             }
         }
-        std::ifstream input(descriptor.storage_path(), std::ios::binary);
+        std::ifstream input(storage_path, std::ios::binary);
         if (!input.is_open()) {
             counters_.IncrementArtifactFailures();
             core::Logger::WarnFmt(
                 "rpc=DownloadArtifact agent={} artifact_id={} path={} result=failed "
                 "reason=file_not_found",
-                config_.agent_id, req->artifact_id(), descriptor.storage_path());
+                config_.agent_id, req->artifact_id(), storage_path.string());
             return grpc::Status(grpc::StatusCode::NOT_FOUND, "artifact file not found");
         }
         if (descriptor.size_bytes() == 0) {
@@ -2635,7 +2658,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             if (descriptor.created_unix_ms() == 0) {
                 descriptor.set_created_unix_ms(NowUnixMs());
             }
-            artifacts_[descriptor.artifact_id()] = descriptor;
+            artifacts_[descriptor.artifact_id()] =
+                StoredArtifact{.descriptor = descriptor, .storage_path = {}};
             *reply->mutable_artifact() = descriptor;
         }
         reply->set_ok(true);
@@ -2651,6 +2675,11 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
     }
 
    private:
+    struct StoredArtifact {
+        swarmkit::v1::ArtifactDescriptor descriptor;
+        std::filesystem::path storage_path;
+    };
+
     [[nodiscard]] swarmkit::v1::DataPeerStatus DefaultPeerStatus(
         const DataPeerConfig& peer) const {
         swarmkit::v1::DataPeerStatus status;
@@ -2852,7 +2881,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
     }
 
     [[nodiscard]] swarmkit::v1::ArtifactDescriptor PrepareArtifactDescriptorForPath(
-        std::filesystem::path source_path, swarmkit::v1::ArtifactDescriptor descriptor,
+        const std::filesystem::path& source_path, swarmkit::v1::ArtifactDescriptor descriptor,
         std::int64_t file_size) const {
         if (descriptor.source_id().empty()) {
             descriptor.set_source_id(config_.agent_id);
@@ -2923,7 +2952,14 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 outcome.error_code = swarmkit::v1::ERROR_CODE_REJECTED;
                 return outcome;
             }
-            output.write(buffer.data(), read);
+            if (!WriteBytes(output,
+                            std::span<const char>{buffer.data(), static_cast<std::size_t>(read)})) {
+                output.close();
+                std::filesystem::remove(tmp_path, fs_error);
+                outcome.message = "failed to write artifact temp file path=" + tmp_path.string();
+                outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+                return outcome;
+            }
             bytes += static_cast<std::int64_t>(read);
             UpdateArtifactTransfer(transfer_id, [bytes](swarmkit::v1::ArtifactTransferStatus* s) {
                 s->set_bytes_transferred(bytes);
@@ -2981,10 +3017,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             return outcome;
         }
 
-        descriptor.set_storage_path(final_path.string());
         {
             std::lock_guard<std::mutex> lock(data_mutex_);
-            artifacts_[descriptor.artifact_id()] = descriptor;
+            artifacts_[descriptor.artifact_id()] =
+                StoredArtifact{.descriptor = descriptor, .storage_path = final_path};
         }
         PublishArtifactReceivedEvent(descriptor);
         counters_.IncrementArtifactUploads(static_cast<std::uint64_t>(bytes));
@@ -3197,7 +3233,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
     mutable std::mutex data_mutex_;
     std::condition_variable data_cv_;
     std::deque<swarmkit::v1::DataMessage> message_backlog_;
-    std::unordered_map<std::string, swarmkit::v1::ArtifactDescriptor> artifacts_;
+    std::unordered_map<std::string, StoredArtifact> artifacts_;
     std::unordered_map<std::string, swarmkit::v1::DataPeerStatus> peer_statuses_;
     std::unordered_map<std::string, swarmkit::v1::ArtifactTransferStatus> artifact_transfers_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic<bool>>> artifact_transfer_cancel_;

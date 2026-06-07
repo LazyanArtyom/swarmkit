@@ -24,6 +24,7 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -78,6 +79,11 @@ constexpr std::size_t kDefaultArtifactChunkBytes = 64 * 1024;
     return std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+[[nodiscard]] bool WriteBytes(std::ostream& output, std::span<const char> bytes) {
+    output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    return output.good();
 }
 
 [[nodiscard]] RpcStatusCode ToRpcStatusCode(const grpc::Status& status) {
@@ -1269,7 +1275,6 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     proto.set_created_unix_ms(descriptor.created_unix_ms);
     proto.set_ttl_ms(descriptor.ttl_ms);
     proto.set_sha256_hex(descriptor.sha256_hex);
-    proto.set_storage_path(descriptor.storage_path);
     for (const auto& [key, value] : descriptor.labels) {
         (*proto.mutable_labels())[key] = value;
     }
@@ -1288,7 +1293,6 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     descriptor.created_unix_ms = proto.created_unix_ms();
     descriptor.ttl_ms = proto.ttl_ms();
     descriptor.sha256_hex = proto.sha256_hex();
-    descriptor.storage_path = proto.storage_path();
     for (const auto& [key, value] : proto.labels()) {
         descriptor.labels.emplace(key, value);
     }
@@ -3466,10 +3470,18 @@ ArtifactTransferResult Client::DownloadArtifact(const std::string& artifact_id,
     std::error_code fs_error;
     if (!final_path.parent_path().empty()) {
         std::filesystem::create_directories(final_path.parent_path(), fs_error);
+        if (fs_error) {
+            out.message = "failed to create artifact output directory path=" +
+                          final_path.parent_path().string() + " error=" + fs_error.message();
+            PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                               RpcStatusCode::kFailedPrecondition, out.message, out.message,
+                               correlation_id, 0);
+            return out;
+        }
     }
     std::ofstream output(tmp_path, std::ios::binary | std::ios::trunc);
     if (!output.is_open()) {
-        out.message = "failed to open artifact output file";
+        out.message = "failed to open artifact output file path=" + tmp_path.string();
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
                            RpcStatusCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
@@ -3480,10 +3492,29 @@ ArtifactTransferResult Client::DownloadArtifact(const std::string& artifact_id,
     bool saw_descriptor = false;
     bool saw_final = false;
     std::int64_t received_bytes = 0;
+    int expected_chunk_index = 0;
     while (reader->Read(&chunk)) {
+        if (saw_final) {
+            output.close();
+            std::filesystem::remove(tmp_path, fs_error);
+            out.message = "artifact download received data after final chunk";
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
+                               1);
+            return out;
+        }
         if (!saw_descriptor && chunk.has_artifact()) {
             out.descriptor = ToArtifactDescriptor(chunk.artifact());
             saw_descriptor = true;
+        }
+        if (chunk.chunk_index() != expected_chunk_index) {
+            output.close();
+            std::filesystem::remove(tmp_path, fs_error);
+            out.message = "artifact download chunk index mismatch";
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
+                               1);
+            return out;
         }
         if (chunk.offset() != received_bytes) {
             output.close();
@@ -3494,8 +3525,18 @@ ArtifactTransferResult Client::DownloadArtifact(const std::string& artifact_id,
                                1);
             return out;
         }
-        output.write(chunk.data().data(), static_cast<std::streamsize>(chunk.data().size()));
+        if (!WriteBytes(output,
+                        std::span<const char>{chunk.data().data(), chunk.data().size()})) {
+            output.close();
+            std::filesystem::remove(tmp_path, fs_error);
+            out.message = "failed to write artifact output file path=" + tmp_path.string();
+            PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                               RpcStatusCode::kFailedPrecondition, out.message, out.message,
+                               correlation_id, 1);
+            return out;
+        }
         received_bytes += static_cast<std::int64_t>(chunk.data().size());
+        ++expected_chunk_index;
         saw_final = saw_final || chunk.final_chunk();
     }
     output.flush();
@@ -3544,7 +3585,6 @@ ArtifactTransferResult Client::DownloadArtifact(const std::string& artifact_id,
 
     out.ok = true;
     out.message = "artifact downloaded";
-    out.descriptor.storage_path = final_path.string();
     PopulateSuccessError(&out.error, correlation_id, 1);
     return out;
 }

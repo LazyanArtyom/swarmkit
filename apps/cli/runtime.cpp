@@ -1404,8 +1404,7 @@ int RunArtifact(Client& client, int argc, char** argv) {
                   << indent << "created_ms  : " << descriptor.created_unix_ms << "\n"
                   << indent << "ttl_ms      : " << descriptor.ttl_ms << "\n"
                   << indent << "sha256      : " << descriptor.sha256_hex << "\n"
-                  << indent << "filename    : " << descriptor.filename << "\n"
-                  << indent << "storage_path: " << descriptor.storage_path << "\n";
+                  << indent << "filename    : " << descriptor.filename << "\n";
         if (!descriptor.labels.empty()) {
             std::cout << indent << "labels:\n";
             for (const auto& [key, value] : descriptor.labels) {

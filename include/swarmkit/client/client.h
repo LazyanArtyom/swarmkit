@@ -434,7 +434,6 @@ struct ArtifactDescriptor {
     std::int64_t ttl_ms{};
     std::string sha256_hex;
     std::unordered_map<std::string, std::string> labels;
-    std::string storage_path;
 };
 
 struct ArtifactTransferResult {

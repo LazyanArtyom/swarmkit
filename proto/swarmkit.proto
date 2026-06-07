@@ -712,7 +712,6 @@ message ArtifactDescriptor {
     int64 ttl_ms = 8;
     string sha256_hex = 9;
     map<string, string> labels = 10;
-    string storage_path = 11;
 }
 
 message ArtifactChunk {
