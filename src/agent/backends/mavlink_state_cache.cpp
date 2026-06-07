@@ -15,7 +15,7 @@ constexpr int kMinimumUsableGpsFixType = 3;
 constexpr std::uint16_t kInvalidGpsEph = UINT16_MAX;
 constexpr auto kArdupilotEkfRequiredFlags =
     static_cast<std::uint16_t>(EKF_ATTITUDE | EKF_VELOCITY_HORIZ | EKF_POS_HORIZ_REL);
-constexpr auto kPx4EstimatorRequiredFlags = static_cast<std::uint16_t>(
+constexpr auto kEstimatorRequiredFlags = static_cast<std::uint16_t>(
     ESTIMATOR_ATTITUDE | ESTIMATOR_VELOCITY_HORIZ | ESTIMATOR_POS_HORIZ_REL);
 
 [[nodiscard]] bool HasAllFlags(std::uint16_t flags, std::uint16_t required) {
@@ -125,7 +125,7 @@ void MavlinkStateCache::UpdateExtendedSysState(const mavlink_message_t& message,
 
 void MavlinkStateCache::UpdateEstimatorStatus(const mavlink_message_t& message,
                                               const mavlink_estimator_status_t& estimator) {
-    const bool healthy = HasAllFlags(estimator.flags, kPx4EstimatorRequiredFlags) &&
+    const bool healthy = HasAllFlags(estimator.flags, kEstimatorRequiredFlags) &&
                          !HasAnyFlag(estimator.flags,
                                      ESTIMATOR_GPS_GLITCH | ESTIMATOR_ACCEL_ERROR);
 

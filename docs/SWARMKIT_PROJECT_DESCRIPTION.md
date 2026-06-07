@@ -51,7 +51,7 @@ The artifact plane carries binary data:
 - logs;
 - arbitrary binary blobs.
 
-Artifacts use chunked transfer, hashing, size limits, TTL, routing to configured peers, transfer handles, progress, cancellation, and storage metadata. Large data should move through artifacts, while messages should only announce availability or carry small metadata.
+Artifacts use chunked transfer, hashing, size limits, TTL, direct routing to configured peers, transfer handles, progress, cancellation, and storage metadata. Large data should move through artifacts, while messages should only announce availability or carry small metadata.
 
 ## Agent Runtime
 
@@ -65,7 +65,7 @@ The agent is responsible for:
 - decoding telemetry into a common vehicle state model;
 - publishing reports;
 - supervising active goals;
-- routing data messages and artifacts to configured peers;
+- routing data messages and artifacts to directly configured peers;
 - tracking backend health and capabilities;
 - isolating applications from protocol-specific details.
 
@@ -111,7 +111,7 @@ SwarmKit uses an `IDroneBackend` boundary so the agent runtime remains independe
 Current backends:
 
 - `sim`: synthetic backend for tests and development;
-- `mavlink`: backend for SITL, ArduPilot/PX4-style systems, and Pixhawk through MAVLink Router.
+- `mavlink`: backend for SITL, ArduPilot systems, and Pixhawk through MAVLink Router.
 
 Backends expose structured capabilities such as velocity support, payload support, backend-specific command support, supported modes, supported telemetry fields, and numeric limits.
 
@@ -183,6 +183,7 @@ SwarmKit intentionally does not provide:
 
 - static mission upload;
 - timed trajectory upload/execution;
+- implicit multi-hop data forwarding without an explicit routing policy;
 - rotor-router state machines;
 - gossip semantics;
 - drone-show choreography;
@@ -190,4 +191,3 @@ SwarmKit intentionally does not provide:
 - cloud mission authoring.
 
 This keeps the library lightweight, flexible, and suitable as the substrate for future rotor-router and gossip projects.
-

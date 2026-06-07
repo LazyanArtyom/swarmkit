@@ -92,7 +92,7 @@ Implemented capabilities include:
 - active goal set/cancel/get and goal reports;
 - swarm fanout for commands, goals, health, stats, telemetry, and authority;
 - generic message plane for small labeled payloads;
-- generic artifact plane for chunked binary transfer with hashing, TTL, routing, progress, cancellation, and peer status;
+- generic artifact plane for chunked binary transfer with hashing, TTL, direct peer routing, progress, cancellation, and peer status;
 - agent-side JSONL report persistence and replay cursors;
 - CLI reference tool for smoke testing SDK workflows.
 
@@ -100,6 +100,7 @@ Removed/non-goal core features:
 
 - static mission upload;
 - timed trajectory upload/execution;
+- implicit multi-hop data forwarding without an explicit routing policy;
 - drone-show choreography;
 - rotor-router graph logic;
 - gossip merge semantics;
@@ -115,4 +116,3 @@ Use this framing:
 - "The deterministic coordination and cloud supervision components use SwarmKit to communicate with vehicle agents."
 - "SwarmKit abstracts MAVLink and future vehicle backends behind common command, telemetry, goal, report, message, and artifact APIs."
 - "Rotor-router and gossip are implemented above SwarmKit, not inside it."
-

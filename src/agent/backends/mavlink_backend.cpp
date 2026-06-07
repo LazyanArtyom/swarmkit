@@ -470,10 +470,6 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     [[nodiscard]] core::Result SetMode(const CmdSetMode& mode) {
-        if (config_.autopilot_profile == MavlinkAutopilotProfile::kPx4) {
-            return SetPx4Mode(mode);
-        }
-
         int custom_mode = mode.custom_mode;
         if (const core::Result result =
                 mav::MavlinkCommandExecutor::ResolveCustomMode(config_, mode, &custom_mode);
@@ -481,22 +477,6 @@ class MavlinkBackend final : public IDroneBackend {
             return result;
         }
         return SetCustomMode(custom_mode);
-    }
-
-    [[nodiscard]] core::Result SetPx4Mode(const CmdSetMode& mode) {
-        if (mode.custom_mode >= 0) {
-            return SendCommandLong(MAV_CMD_DO_SET_MODE,
-                                   static_cast<float>(MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
-                                   static_cast<float>(mode.custom_mode));
-        }
-        const auto mapped_mode = mav::Px4ModeFromName(mode.mode);
-        if (!mapped_mode.has_value()) {
-            return core::Result::Rejected("unknown PX4 mode '" + mode.mode +
-                                          "'; use --custom-mode or a known PX4 mode");
-        }
-        return SendCommandLong(
-            MAV_CMD_DO_SET_MODE, static_cast<float>(MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
-            static_cast<float>(mapped_mode->main_mode), static_cast<float>(mapped_mode->sub_mode));
     }
 
     [[nodiscard]] core::Result SendSetSpeed(float ground_mps) {
@@ -878,8 +858,6 @@ std::string_view ToString(MavlinkAutopilotProfile profile) noexcept {
             return "ardupilot-copter";
         case MavlinkAutopilotProfile::kArdupilotPlane:
             return "ardupilot-plane";
-        case MavlinkAutopilotProfile::kPx4:
-            return "px4";
     }
     return "unknown";
 }
@@ -893,12 +871,9 @@ std::expected<MavlinkAutopilotProfile, core::Result> ParseMavlinkAutopilotProfil
     if (normalized == "ardupilot-plane" || normalized == "arduplane" || normalized == "plane") {
         return MavlinkAutopilotProfile::kArdupilotPlane;
     }
-    if (normalized == "px4") {
-        return MavlinkAutopilotProfile::kPx4;
-    }
     return std::unexpected(
         core::Result::Rejected("unsupported mavlink.autopilot_profile '" + std::string(value) +
-                               "'; expected ardupilot-copter|ardupilot-plane|px4"));
+                               "'; expected ardupilot-copter|ardupilot-plane"));
 }
 
 core::Result MavlinkBackendConfig::Validate() const {

@@ -2179,6 +2179,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             std::lock_guard<std::mutex> lock(data_mutex_);
             artifacts_[descriptor.artifact_id()] = descriptor;
         }
+        PublishArtifactReceivedEvent(descriptor, "artifact-upload");
         *reply = descriptor;
         counters_.IncrementArtifactUploads(static_cast<std::uint64_t>(received_bytes));
         core::Logger::InfoFmt(
@@ -2238,7 +2239,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                 "reason=no_peer",
                 correlation_id, config_.agent_id, descriptor.target_id());
             return grpc::Status(grpc::StatusCode::NOT_FOUND,
-                                "no data peer configured for target_id=" + descriptor.target_id());
+                                "route failed before upload: no data peer configured for target_id=" +
+                                    descriptor.target_id());
         }
         if (descriptor.source_id().empty()) {
             descriptor.set_source_id(config_.agent_id);
@@ -2423,6 +2425,92 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
                               correlation_id, config_.agent_id, req->transfer_id());
         FillArtifactTransferReply(reply, true, status->message(), correlation_id,
                                   status->error_code(), *status);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ListArtifacts(grpc::ServerContext* ctx,
+                               const swarmkit::v1::ArtifactListRequest* req,
+                               swarmkit::v1::ArtifactListReply* reply) override {
+        if (ctx == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-list");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        const std::string source_id = req == nullptr ? "" : req->source_id();
+        const std::string target_id = req == nullptr ? "" : req->target_id();
+        const bool include_expired = req != nullptr && req->include_expired();
+        const std::int64_t now_ms = NowUnixMs();
+        std::vector<std::string> expired_ids;
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            for (const auto& [artifact_id, descriptor] : artifacts_) {
+                const bool expired = ArtifactExpired(descriptor, now_ms);
+                if (expired && !include_expired) {
+                    expired_ids.push_back(artifact_id);
+                    continue;
+                }
+                if (!source_id.empty() && descriptor.source_id() != source_id) {
+                    continue;
+                }
+                if (!target_id.empty() && descriptor.target_id() != target_id) {
+                    continue;
+                }
+                *reply->add_artifacts() = descriptor;
+            }
+            for (const std::string& artifact_id : expired_ids) {
+                artifacts_.erase(artifact_id);
+            }
+        }
+        reply->set_correlation_id(correlation_id);
+        core::Logger::InfoFmt(
+            "rpc=ListArtifacts corr={} agent={} count={} source_filter={} target_filter={}",
+            correlation_id, config_.agent_id, reply->artifacts_size(), source_id, target_id);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetArtifact(grpc::ServerContext* ctx,
+                             const swarmkit::v1::ArtifactRequest* req,
+                             swarmkit::v1::ArtifactReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-info");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        if (req->artifact_id().empty()) {
+            reply->set_ok(false);
+            reply->set_message("artifact_id is required");
+            reply->set_correlation_id(correlation_id);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT);
+            return grpc::Status::OK;
+        }
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            const auto iter = artifacts_.find(req->artifact_id());
+            if (iter == artifacts_.end()) {
+                reply->set_ok(false);
+                reply->set_message("artifact not found");
+                reply->set_correlation_id(correlation_id);
+                reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+                return grpc::Status::OK;
+            }
+            if (ArtifactExpired(iter->second, NowUnixMs())) {
+                artifacts_.erase(iter);
+                reply->set_ok(false);
+                reply->set_message("artifact expired");
+                reply->set_correlation_id(correlation_id);
+                reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+                return grpc::Status::OK;
+            }
+            *reply->mutable_artifact() = iter->second;
+        }
+        reply->set_ok(true);
+        reply->set_message("artifact found");
+        reply->set_correlation_id(correlation_id);
+        reply->set_error_code(swarmkit::v1::ERROR_CODE_NONE);
         return grpc::Status::OK;
     }
 
@@ -2664,6 +2752,44 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         peer_statuses_[peer.drone_id] = std::move(status);
     }
 
+    void PublishArtifactReceivedEvent(const swarmkit::v1::ArtifactDescriptor& descriptor,
+                                      std::string_view origin = "artifact-transfer") {
+        swarmkit::v1::DataMessage event;
+        event.set_message_id(MakeCorrelationId("artifact-received"));
+        event.set_source_id(config_.agent_id);
+        event.set_topic("swarmkit.artifact.received");
+        event.set_unix_time_ms(NowUnixMs());
+        event.set_ttl_ms(descriptor.ttl_ms());
+        auto& labels = *event.mutable_labels();
+        labels["artifact_id"] = descriptor.artifact_id();
+        labels["artifact_source_id"] = descriptor.source_id();
+        labels["source_id"] = descriptor.source_id();
+        labels["target_id"] = descriptor.target_id();
+        labels["content_type"] = descriptor.content_type();
+        labels["filename"] = descriptor.filename();
+        labels["size_bytes"] = std::to_string(descriptor.size_bytes());
+        labels["sha256_hex"] = descriptor.sha256_hex();
+        labels["origin"] = std::string(origin);
+        for (const auto& [key, value] : descriptor.labels()) {
+            labels["artifact.label." + key] = value;
+        }
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            event.set_sequence(++data_sequence_);
+            message_backlog_.push_back(event);
+            while (static_cast<int>(message_backlog_.size()) > config_.data.message_backlog_size) {
+                message_backlog_.pop_front();
+            }
+        }
+        data_cv_.notify_all();
+        counters_.IncrementDataMessagesPublished();
+        core::Logger::InfoFmt(
+            "event=artifact.received agent={} artifact_id={} artifact_source={} target={} "
+            "content_type={} bytes={} origin={} result=published",
+            config_.agent_id, descriptor.artifact_id(), descriptor.source_id(),
+            descriptor.target_id(), descriptor.content_type(), descriptor.size_bytes(), origin);
+    }
+
     struct ArtifactTransferOutcome {
         bool ok{false};
         swarmkit::v1::ErrorCode error_code{swarmkit::v1::ERROR_CODE_INTERNAL};
@@ -2860,6 +2986,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
             std::lock_guard<std::mutex> lock(data_mutex_);
             artifacts_[descriptor.artifact_id()] = descriptor;
         }
+        PublishArtifactReceivedEvent(descriptor);
         counters_.IncrementArtifactUploads(static_cast<std::uint64_t>(bytes));
         outcome.ok = true;
         outcome.error_code = swarmkit::v1::ERROR_CODE_NONE;
@@ -2875,7 +3002,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service,
         ArtifactTransferOutcome outcome;
         const std::optional<DataPeerConfig> peer = config_.data.FindPeer(descriptor.target_id());
         if (!peer.has_value()) {
-            outcome.message = "no data peer configured for target_id=" + descriptor.target_id();
+            outcome.message =
+                "route failed before upload: no data peer configured for target_id=" +
+                descriptor.target_id();
             outcome.error_code = swarmkit::v1::ERROR_CODE_UNAVAILABLE;
             return outcome;
         }

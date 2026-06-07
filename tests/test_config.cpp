@@ -291,10 +291,7 @@ TEST_CASE("MAVLink autopilot profile parser supports production profiles",
     REQUIRE(plane.has_value());
     CHECK(*plane == swarmkit::agent::MavlinkAutopilotProfile::kArdupilotPlane);
 
-    const auto px4 = swarmkit::agent::ParseMavlinkAutopilotProfile("px4");
-    REQUIRE(px4.has_value());
-    CHECK(*px4 == swarmkit::agent::MavlinkAutopilotProfile::kPx4);
-
+    CHECK_FALSE(swarmkit::agent::ParseMavlinkAutopilotProfile("px4").has_value());
     CHECK_FALSE(swarmkit::agent::ParseMavlinkAutopilotProfile("unknown").has_value());
 }
 

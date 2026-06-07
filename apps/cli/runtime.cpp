@@ -1390,10 +1390,29 @@ int RunMessage(Client& client, int argc, char** argv) {
 int RunArtifact(Client& client, int argc, char** argv) {
     const auto actions = FindActionsAfterCommand(argc, argv, "artifact");
     if (actions.empty()) {
-        std::cerr << "artifact requires upload|send|start|status|cancel|download|announce\n";
+        std::cerr << "artifact requires upload|send|start|status|cancel|list|info|download|announce\n";
         return EXIT_FAILURE;
     }
 
+    const auto print_descriptor = [](const swarmkit::client::ArtifactDescriptor& descriptor,
+                                     std::string_view indent) {
+        std::cout << indent << "artifact_id : " << descriptor.artifact_id << "\n"
+                  << indent << "source_id   : " << descriptor.source_id << "\n"
+                  << indent << "target_id   : " << descriptor.target_id << "\n"
+                  << indent << "content_type: " << descriptor.content_type << "\n"
+                  << indent << "size_bytes  : " << descriptor.size_bytes << "\n"
+                  << indent << "created_ms  : " << descriptor.created_unix_ms << "\n"
+                  << indent << "ttl_ms      : " << descriptor.ttl_ms << "\n"
+                  << indent << "sha256      : " << descriptor.sha256_hex << "\n"
+                  << indent << "filename    : " << descriptor.filename << "\n"
+                  << indent << "storage_path: " << descriptor.storage_path << "\n";
+        if (!descriptor.labels.empty()) {
+            std::cout << indent << "labels:\n";
+            for (const auto& [key, value] : descriptor.labels) {
+                std::cout << indent << "  " << key << "=" << value << "\n";
+            }
+        }
+    };
     const auto transfer_state_name = [](swarmkit::client::ArtifactTransferState state) {
         switch (state) {
             case swarmkit::client::ArtifactTransferState::kQueued:
@@ -1483,7 +1502,9 @@ int RunArtifact(Client& client, int argc, char** argv) {
         if (!result.descriptor.sha256_hex.empty()) {
             std::cout << " sha256=" << result.descriptor.sha256_hex;
         }
-        std::cout << " size=" << result.descriptor.size_bytes;
+        if (result.ok || result.descriptor.size_bytes > 0) {
+            std::cout << " size=" << result.descriptor.size_bytes;
+        }
         if (!result.correlation_id.empty()) {
             std::cout << " [corr=" << result.correlation_id << "]";
         }
@@ -1545,6 +1566,55 @@ int RunArtifact(Client& client, int argc, char** argv) {
         print_transfer(actions[0] == "cancel" ? "Artifact transfer cancel"
                                               : "Artifact transfer status",
                        result);
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (actions[0] == "list") {
+        std::string source_id = common::GetOptionValue(argc, argv, "--source-id");
+        if (source_id.empty()) {
+            source_id = common::GetOptionValue(argc, argv, "--source");
+        }
+        const std::string target_id = common::GetOptionValue(argc, argv, "--target");
+        const bool include_expired = common::HasFlag(argc, argv, "--include-expired");
+        const auto result = client.ListArtifacts(source_id, target_id, include_expired);
+        std::cout << "Artifact list: " << (result.ok ? "OK" : "FAILED")
+                  << " count=" << result.artifacts.size();
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        for (const auto& descriptor : result.artifacts) {
+            std::cout << "  " << descriptor.artifact_id << " source=" << descriptor.source_id
+                      << " target=" << descriptor.target_id
+                      << " content_type=" << descriptor.content_type
+                      << " size=" << descriptor.size_bytes
+                      << " sha256=" << descriptor.sha256_hex
+                      << " file=" << descriptor.filename << "\n";
+        }
+        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (actions[0] == "info") {
+        const std::string artifact_id = common::GetOptionValue(argc, argv, "--artifact-id");
+        if (artifact_id.empty()) {
+            std::cerr << "artifact info requires --artifact-id ID\n";
+            return EXIT_FAILURE;
+        }
+        const auto result = client.GetArtifact(artifact_id);
+        std::cout << "Artifact info: " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+        if (result.ok) {
+            print_descriptor(result.descriptor, "  ");
+        }
         return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 

@@ -481,6 +481,14 @@ struct ArtifactTransferStatusResult {
     ArtifactTransferStatus transfer;
 };
 
+struct ArtifactListResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    std::vector<ArtifactDescriptor> artifacts;
+};
+
 /**
  * @brief Callback types used by streaming subscriptions.
  *
@@ -723,6 +731,14 @@ class Client {
     /// @brief Request cancellation for an agent-side artifact transfer.
     [[nodiscard]] ArtifactTransferStatusResult CancelArtifactTransfer(
         const std::string& transfer_id) const;
+
+    /// @brief List artifacts stored or announced by the connected agent.
+    [[nodiscard]] ArtifactListResult ListArtifacts(std::string source_id = {},
+                                                   std::string target_id = {},
+                                                   bool include_expired = false) const;
+
+    /// @brief Inspect metadata for one stored or announced artifact.
+    [[nodiscard]] ArtifactTransferResult GetArtifact(const std::string& artifact_id) const;
 
     /// @brief Download a stored artifact from the connected agent into a file.
     [[nodiscard]] ArtifactTransferResult DownloadArtifact(const std::string& artifact_id,

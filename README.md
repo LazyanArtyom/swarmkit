@@ -6,7 +6,7 @@ Multi-agent UAV swarm control and telemetry platform.
 - **CLI** (`swarmkit-cli`) — developer tool to ping the agent, subscribe to live telemetry, and send commands.
 - **SDK** — static libraries + public headers for embedding SwarmKit into other projects (no Conan required in the consumer).
 
-The default agent backend is a built-in simulator. For ArduPilot/PX4 SITL and
+The default agent backend is a built-in simulator. For ArduPilot SITL and
 future companion-computer deployments, the agent can also use the official
 MAVLink C headers vendored under `third_party/mavlink_c_library_v2` and talk
 directly to MAVLink UDP traffic.

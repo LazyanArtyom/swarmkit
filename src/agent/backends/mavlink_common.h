@@ -122,11 +122,6 @@ struct MavlinkVehicleState {
     float relative_alt_m{};
 };
 
-struct Px4Mode {
-    int main_mode{};
-    int sub_mode{};
-};
-
 [[nodiscard]] std::int64_t NowUnixMs();
 [[nodiscard]] std::string ToLower(std::string value);
 [[nodiscard]] std::optional<std::pair<std::string, std::uint16_t>> SplitHostPort(
@@ -136,7 +131,6 @@ struct Px4Mode {
 [[nodiscard]] std::string MavResultName(std::uint8_t result);
 [[nodiscard]] std::optional<int> ArduCopterModeFromName(std::string mode);
 [[nodiscard]] std::optional<int> ArduPlaneModeFromName(std::string mode);
-[[nodiscard]] std::optional<Px4Mode> Px4ModeFromName(std::string mode);
 [[nodiscard]] std::vector<std::string> SupportedModes(MavlinkAutopilotProfile profile);
 
 }  // namespace swarmkit::agent::mavlink

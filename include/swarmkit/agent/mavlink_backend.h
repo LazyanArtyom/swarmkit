@@ -19,7 +19,6 @@ namespace swarmkit::agent {
 enum class MavlinkAutopilotProfile : std::uint8_t {
     kArdupilotCopter,
     kArdupilotPlane,
-    kPx4,
 };
 
 [[nodiscard]] std::string_view ToString(MavlinkAutopilotProfile profile) noexcept;

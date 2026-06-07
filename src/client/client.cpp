@@ -3371,6 +3371,74 @@ ArtifactTransferStatusResult Client::CancelArtifactTransfer(const std::string& t
     return out;
 }
 
+ArtifactListResult Client::ListArtifacts(std::string source_id, std::string target_id,
+                                         bool include_expired) const {
+    ArtifactListResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-list");
+    out.correlation_id = correlation_id;
+
+    swarmkit::v1::ArtifactListRequest req;
+    req.set_source_id(std::move(source_id));
+    req.set_target_id(std::move(target_id));
+    req.set_include_expired(include_expired);
+    swarmkit::v1::ArtifactListReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->ListArtifacts(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = true;
+    out.message = "artifacts listed";
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.artifacts.reserve(static_cast<std::size_t>(rep.artifacts_size()));
+    for (const auto& artifact : rep.artifacts()) {
+        out.artifacts.push_back(ToArtifactDescriptor(artifact));
+    }
+    PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
+    return out;
+}
+
+ArtifactTransferResult Client::GetArtifact(const std::string& artifact_id) const {
+    ArtifactTransferResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-info");
+    out.correlation_id = correlation_id;
+    if (artifact_id.empty()) {
+        out.message = "artifact_id is required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    swarmkit::v1::ArtifactRequest req;
+    req.set_artifact_id(artifact_id);
+    swarmkit::v1::ArtifactReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->GetArtifact(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.ok();
+    out.message = rep.message();
+    out.correlation_id = rep.correlation_id().empty() ? correlation_id : rep.correlation_id();
+    out.descriptor = ToArtifactDescriptor(rep.artifact());
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out.correlation_id, attempt_count, core::ErrorDomain::kInternal);
+    return out;
+}
+
 ArtifactTransferResult Client::DownloadArtifact(const std::string& artifact_id,
                                                 const std::string& output_path) const {
     ArtifactTransferResult out;

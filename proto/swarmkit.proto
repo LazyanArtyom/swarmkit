@@ -74,6 +74,8 @@ service DataService {
     rpc StartArtifactTransfer(ArtifactTransferStartRequest) returns (ArtifactTransferReply);
     rpc GetArtifactTransfer(ArtifactTransferRequest) returns (ArtifactTransferReply);
     rpc CancelArtifactTransfer(ArtifactTransferRequest) returns (ArtifactTransferReply);
+    rpc ListArtifacts(ArtifactListRequest) returns (ArtifactListReply);
+    rpc GetArtifact(ArtifactRequest) returns (ArtifactReply);
     rpc DownloadArtifact(ArtifactRequest) returns (stream ArtifactChunk);
     rpc AnnounceArtifact(ArtifactDescriptor) returns (ArtifactReply);
 }
@@ -724,6 +726,17 @@ message ArtifactChunk {
 
 message ArtifactRequest {
     string artifact_id = 1;
+}
+
+message ArtifactListRequest {
+    string source_id = 1;
+    string target_id = 2;
+    bool include_expired = 3;
+}
+
+message ArtifactListReply {
+    repeated ArtifactDescriptor artifacts = 1;
+    string correlation_id = 2;
 }
 
 message ArtifactReply {

@@ -45,9 +45,9 @@ namespace swarmkit::apps::cli::internal {
            value == "--timeout-ms" || value == "--label" || value == "--frame" || value == "--format" ||
            value == "--min-battery" ||
            value == "--report-file" || value == "--after-sequence" ||
-           value == "--topic" || value == "--target" || value == "--payload" ||
-           value == "--content-type" || value == "--artifact-id" || value == "--chunk-bytes" ||
-           value == "--transfer-id" ||
+           value == "--topic" || value == "--source" || value == "--source-id" ||
+           value == "--target" || value == "--payload" || value == "--content-type" ||
+           value == "--artifact-id" || value == "--chunk-bytes" || value == "--transfer-id" ||
            value == "--namespace" || value == "--name" || value == "--param" ||
            value == "--transport-security";
 }
@@ -56,7 +56,7 @@ namespace swarmkit::apps::cli::internal {
     return value == "--help" || value == "-h" || value == "--insecure" || value == "--verify" ||
            value == "--continue-on-error" || value == "--require-all" || value == "--body-frame" ||
            value == "--relative" || value == "--on" || value == "--release" ||
-           value == "--route" || value == "--refresh" ||
+           value == "--route" || value == "--refresh" || value == "--include-expired" ||
            value == "--no-console";
 }
 

@@ -22,11 +22,6 @@ namespace {
     return heartbeat;
 }
 
-[[nodiscard]] std::uint32_t MakePx4CustomMode(std::uint8_t main_mode, std::uint8_t sub_mode = 0U) {
-    return (static_cast<std::uint32_t>(main_mode) << 16U) |
-           (static_cast<std::uint32_t>(sub_mode) << 24U);
-}
-
 TEST_CASE("MAVLink mode strings decode ArduPilot Copter custom modes",
           "[agent][mavlink][telemetry]") {
     CHECK(ModeString(MakeHeartbeat(4U), MavlinkAutopilotProfile::kArdupilotCopter) == "GUIDED");
@@ -45,20 +40,6 @@ TEST_CASE("MAVLink mode strings decode ArduPilot Plane custom modes",
     CHECK(ModeString(MakeHeartbeat(20U), MavlinkAutopilotProfile::kArdupilotPlane) == "QLAND");
     CHECK(ModeString(MakeHeartbeat(123U), MavlinkAutopilotProfile::kArdupilotPlane) ==
           "ARDUPILOT_PLANE(custom=123)");
-}
-
-TEST_CASE("MAVLink mode strings decode PX4 custom mode bit fields",
-          "[agent][mavlink][telemetry]") {
-    CHECK(ModeString(MakeHeartbeat(MakePx4CustomMode(1U)), MavlinkAutopilotProfile::kPx4) ==
-          "MANUAL");
-    CHECK(ModeString(MakeHeartbeat(MakePx4CustomMode(4U, 5U)), MavlinkAutopilotProfile::kPx4) ==
-          "RTL");
-    CHECK(ModeString(MakeHeartbeat(MakePx4CustomMode(4U, 6U)), MavlinkAutopilotProfile::kPx4) ==
-          "LAND");
-    CHECK(ModeString(MakeHeartbeat(MakePx4CustomMode(6U)), MavlinkAutopilotProfile::kPx4) ==
-          "OFFBOARD");
-    CHECK(ModeString(MakeHeartbeat(MakePx4CustomMode(4U, 99U)),
-                     MavlinkAutopilotProfile::kPx4) == "AUTO(sub=99)");
 }
 
 TEST_CASE("MAVLink command ACK failure includes STATUSTEXT reason",

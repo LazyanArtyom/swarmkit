@@ -202,6 +202,7 @@ TEST_CASE("Client data messages publish and subscribe independently",
 TEST_CASE("Client artifacts upload download and verify hash", "[client][integration][data]") {
     testsupport::AgentServerHarness harness;
     Client client = MakeClient(harness.Address());
+    Client subscriber = MakeClient(harness.Address());
 
     const std::filesystem::path input_path =
         std::filesystem::temp_directory_path() / "swarmkit-artifact-input.bin";
@@ -219,6 +220,16 @@ TEST_CASE("Client artifacts upload download and verify hash", "[client][integrat
     upload.descriptor.content_type = "image/jpeg";
     upload.descriptor.labels["camera_id"] = "front";
 
+    std::mutex mutex;
+    std::vector<DataMessage> events;
+    auto stream = subscriber.StartMessages(
+        {.subscriber_id = "artifact-listener", .topics = {"swarmkit.artifact.received"}},
+        [&](const DataMessage& message) {
+            std::lock_guard<std::mutex> lock(mutex);
+            events.push_back(message);
+        });
+    REQUIRE(stream.has_value());
+
     const ArtifactTransferResult uploaded = client.UploadArtifact(upload);
     REQUIRE(uploaded.ok);
     REQUIRE_FALSE(uploaded.descriptor.artifact_id.empty());
@@ -226,6 +237,42 @@ TEST_CASE("Client artifacts upload download and verify hash", "[client][integrat
     CHECK(uploaded.descriptor.content_type == "image/jpeg");
     CHECK(uploaded.descriptor.labels.at("camera_id") == "front");
     CHECK_FALSE(uploaded.descriptor.sha256_hex.empty());
+
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            std::lock_guard<std::mutex> lock(mutex);
+            return std::ranges::any_of(events, [&](const DataMessage& event) {
+                const auto iter = event.labels.find("artifact_id");
+                return event.topic == "swarmkit.artifact.received" &&
+                       iter != event.labels.end() &&
+                       iter->second == uploaded.descriptor.artifact_id;
+            });
+        },
+        kWaitTimeout));
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto iter = std::ranges::find_if(events, [&](const DataMessage& event) {
+            const auto artifact = event.labels.find("artifact_id");
+            return artifact != event.labels.end() &&
+                   artifact->second == uploaded.descriptor.artifact_id;
+        });
+        REQUIRE(iter != events.end());
+        CHECK(iter->labels.at("content_type") == "image/jpeg");
+        CHECK(iter->labels.at("source_id") == "test-client");
+        CHECK(iter->labels.at("artifact.label.camera_id") == "front");
+    }
+
+    const ArtifactListResult listed = client.ListArtifacts();
+    REQUIRE(listed.ok);
+    CHECK(std::ranges::any_of(listed.artifacts, [&](const ArtifactDescriptor& descriptor) {
+        return descriptor.artifact_id == uploaded.descriptor.artifact_id &&
+               descriptor.content_type == "image/jpeg";
+    }));
+
+    const ArtifactTransferResult info = client.GetArtifact(uploaded.descriptor.artifact_id);
+    REQUIRE(info.ok);
+    CHECK(info.descriptor.artifact_id == uploaded.descriptor.artifact_id);
+    CHECK(info.descriptor.sha256_hex == uploaded.descriptor.sha256_hex);
 
     const ArtifactTransferResult downloaded =
         client.DownloadArtifact(uploaded.descriptor.artifact_id, output_path.string());
@@ -245,6 +292,7 @@ TEST_CASE("Client artifacts upload download and verify hash", "[client][integrat
     CHECK(stats.artifact_bytes_received_total >= payload.size());
     CHECK(stats.artifact_bytes_sent_total >= payload.size());
 
+    stream->Stop();
     std::error_code error;
     std::filesystem::remove(input_path, error);
     std::filesystem::remove(output_path, error);
@@ -476,6 +524,17 @@ TEST_CASE("Client routes artifacts to configured peer agent", "[client][integrat
     Client source_client = MakeClient(source.Address());
     Client target_client = MakeClient(target.Address());
 
+    std::mutex event_mutex;
+    std::vector<DataMessage> events;
+    auto event_stream = target_client.StartMessages(
+        {.subscriber_id = "target-artifact-listener",
+         .topics = {"swarmkit.artifact.received"}},
+        [&](const DataMessage& message) {
+            std::lock_guard<std::mutex> lock(event_mutex);
+            events.push_back(message);
+        });
+    REQUIRE(event_stream.has_value());
+
     const std::filesystem::path input_path =
         std::filesystem::temp_directory_path() / "swarmkit-peer-camera-frame.jpg";
     const std::filesystem::path output_path =
@@ -500,6 +559,38 @@ TEST_CASE("Client routes artifacts to configured peer agent", "[client][integrat
     CHECK(sent.descriptor.target_id == "drone-2");
     CHECK(sent.descriptor.labels.at("frame_id") == "123");
 
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            std::lock_guard<std::mutex> lock(event_mutex);
+            return std::ranges::any_of(events, [&](const DataMessage& event) {
+                const auto artifact = event.labels.find("artifact_id");
+                return event.topic == "swarmkit.artifact.received" &&
+                       artifact != event.labels.end() &&
+                       artifact->second == sent.descriptor.artifact_id;
+            });
+        },
+        kWaitTimeout));
+    {
+        std::lock_guard<std::mutex> lock(event_mutex);
+        const auto iter = std::ranges::find_if(events, [&](const DataMessage& event) {
+            const auto artifact = event.labels.find("artifact_id");
+            return artifact != event.labels.end() &&
+                   artifact->second == sent.descriptor.artifact_id;
+        });
+        REQUIRE(iter != events.end());
+        CHECK(iter->source_id == "drone-2");
+        CHECK(iter->labels.at("source_id") == "test-client");
+        CHECK(iter->labels.at("target_id") == "drone-2");
+        CHECK(iter->labels.at("content_type") == "image/jpeg");
+        CHECK(iter->labels.at("artifact.label.frame_id") == "123");
+    }
+
+    const ArtifactListResult listed = target_client.ListArtifacts("test-client", "drone-2");
+    REQUIRE(listed.ok);
+    CHECK(std::ranges::any_of(listed.artifacts, [&](const ArtifactDescriptor& descriptor) {
+        return descriptor.artifact_id == sent.descriptor.artifact_id;
+    }));
+
     const ArtifactTransferResult downloaded =
         target_client.DownloadArtifact(sent.descriptor.artifact_id, output_path.string());
     REQUIRE(downloaded.ok);
@@ -510,6 +601,7 @@ TEST_CASE("Client routes artifacts to configured peer agent", "[client][integrat
                                          std::istreambuf_iterator<char>()};
     CHECK(downloaded_payload == payload);
 
+    event_stream->Stop();
     std::filesystem::remove(input_path, cleanup_error);
     std::filesystem::remove(output_path, cleanup_error);
     std::filesystem::remove_all(target_store, cleanup_error);

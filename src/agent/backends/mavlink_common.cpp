@@ -16,17 +16,6 @@ namespace swarmkit::agent::mavlink {
 
 namespace {
 
-constexpr int kPx4MainModeManual = 1;
-constexpr int kPx4MainModeAltctl = 2;
-constexpr int kPx4MainModePosctl = 3;
-constexpr int kPx4MainModeAuto = 4;
-constexpr int kPx4MainModeOffboard = 6;
-constexpr int kPx4SubModeAutoTakeoff = 2;
-constexpr int kPx4SubModeAutoLoiter = 3;
-constexpr int kPx4SubModeAutoMission = 4;
-constexpr int kPx4SubModeAutoRtl = 5;
-constexpr int kPx4SubModeAutoLand = 6;
-
 [[nodiscard]] std::string CustomModeFallback(std::string_view backend, std::uint32_t custom_mode) {
     return std::string(backend) + "(custom=" + std::to_string(custom_mode) + ")";
 }
@@ -71,40 +60,6 @@ constexpr int kPx4SubModeAutoLand = 6;
         return std::nullopt;
     }
     return iter->second;
-}
-
-[[nodiscard]] std::string Px4ModeName(std::uint32_t custom_mode) {
-    const int main_mode = static_cast<int>((custom_mode >> 16U) & 0xFFU);
-    const int sub_mode = static_cast<int>((custom_mode >> 24U) & 0xFFU);
-
-    switch (main_mode) {
-        case kPx4MainModeManual:
-            return "MANUAL";
-        case kPx4MainModeAltctl:
-            return "ALTCTL";
-        case kPx4MainModePosctl:
-            return "POSCTL";
-        case kPx4MainModeOffboard:
-            return "OFFBOARD";
-        case kPx4MainModeAuto:
-            switch (sub_mode) {
-                case kPx4SubModeAutoTakeoff:
-                    return "TAKEOFF";
-                case kPx4SubModeAutoLoiter:
-                    return "LOITER";
-                case kPx4SubModeAutoMission:
-                    return "MISSION";
-                case kPx4SubModeAutoRtl:
-                    return "RTL";
-                case kPx4SubModeAutoLand:
-                    return "LAND";
-                default:
-                    return "AUTO(sub=" + std::to_string(sub_mode) + ")";
-            }
-        default:
-            return "PX4(main=" + std::to_string(main_mode) + ",sub=" + std::to_string(sub_mode) +
-                   ",custom=" + std::to_string(custom_mode) + ")";
-    }
 }
 
 }  // namespace
@@ -154,8 +109,6 @@ std::string ModeString(const mavlink_heartbeat_t& heartbeat, MavlinkAutopilotPro
                 return std::string(*mode);
             }
             return CustomModeFallback("ARDUPILOT_PLANE", heartbeat.custom_mode);
-        case MavlinkAutopilotProfile::kPx4:
-            return Px4ModeName(heartbeat.custom_mode);
     }
     return CustomModeFallback("MAVLINK", heartbeat.custom_mode);
 }
@@ -190,28 +143,6 @@ std::optional<int> ArduPlaneModeFromName(std::string mode) {
     return iter->second;
 }
 
-std::optional<Px4Mode> Px4ModeFromName(std::string mode) {
-    static const std::unordered_map<std::string, Px4Mode> kModeMap{
-        {"manual", {.main_mode = kPx4MainModeManual}},
-        {"altctl", {.main_mode = kPx4MainModeAltctl}},
-        {"posctl", {.main_mode = kPx4MainModePosctl}},
-        {"position", {.main_mode = kPx4MainModePosctl}},
-        {"auto", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoMission}},
-        {"rtl", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoRtl}},
-        {"return", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoRtl}},
-        {"land", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoLand}},
-        {"loiter", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoLoiter}},
-        {"hold", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoLoiter}},
-        {"takeoff", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoTakeoff}},
-        {"offboard", {.main_mode = kPx4MainModeOffboard}},
-    };
-    const auto iter = kModeMap.find(ToLower(std::move(mode)));
-    if (iter == kModeMap.end()) {
-        return std::nullopt;
-    }
-    return iter->second;
-}
-
 std::vector<std::string> SupportedModes(MavlinkAutopilotProfile profile) {
     switch (profile) {
         case MavlinkAutopilotProfile::kArdupilotCopter:
@@ -220,9 +151,6 @@ std::vector<std::string> SupportedModes(MavlinkAutopilotProfile profile) {
         case MavlinkAutopilotProfile::kArdupilotPlane:
             return {"manual", "circle", "stabilize", "fbwa", "fbwb", "cruise",
                     "auto",   "rtl",    "loiter",    "takeoff", "guided"};
-        case MavlinkAutopilotProfile::kPx4:
-            return {"manual", "altctl", "posctl", "auto", "rtl", "land", "loiter", "takeoff",
-                    "offboard"};
     }
     return {};
 }
