@@ -39,7 +39,6 @@
 #include "options.h"
 #include "output.h"
 #include "swarmkit/client/swarm_client.h"
-#include "swarmkit/client/trajectory_io.h"
 #include "swarmkit/commands.h"
 #include "swarmkit/core/telemetry.h"
 #include "telemetry_sink.h"
@@ -163,8 +162,7 @@ void ResetStopRequested() {
         .count();
 }
 
-int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
-               bool trajectory_only = false);
+int RunReports(Client& client, std::string_view drone_id, int argc, char** argv);
 
 [[nodiscard]] std::vector<std::string> CollectOptionValues(int argc, char** argv,
                                                            std::string_view option_name) {
@@ -1081,204 +1079,6 @@ int RunCommand(Client& client, std::string_view drone_id, std::string_view clien
     return EXIT_SUCCESS;
 }
 
-[[nodiscard]] std::string_view ExecutionStateName(swarmkit::client::ExecutionState state) {
-    using swarmkit::client::ExecutionState;
-    switch (state) {
-        case ExecutionState::kUploaded:
-            return "uploaded";
-        case ExecutionState::kValidated:
-            return "validated";
-        case ExecutionState::kReady:
-            return "ready";
-        case ExecutionState::kStarted:
-            return "started";
-        case ExecutionState::kPaused:
-            return "paused";
-        case ExecutionState::kAborted:
-            return "aborted";
-        case ExecutionState::kCompleted:
-            return "completed";
-        case ExecutionState::kFailed:
-            return "failed";
-        case ExecutionState::kUnspecified:
-            return "unspecified";
-    }
-    return "unspecified";
-}
-
-void PrintExecutionHandle(const swarmkit::client::ExecutionHandle& handle) {
-    std::cout << "Execution\n"
-              << "  execution_id         : " << handle.execution_id << "\n"
-              << "  revision             : " << handle.revision << "\n"
-              << "  drone_id             : " << handle.drone_id << "\n"
-              << "  state                : " << ExecutionStateName(handle.state) << "\n"
-              << "  uploaded_unix_ms     : " << handle.uploaded_unix_ms << "\n"
-              << "  prepared_unix_ms     : " << handle.prepared_unix_ms << "\n"
-              << "  start_unix_ms        : " << handle.start_unix_ms << "\n"
-              << "  active_segment       : " << handle.active_segment << "\n"
-              << "  last_report_sequence : " << handle.last_report_sequence << "\n"
-              << "  message              : " << handle.message << "\n";
-}
-
-void PrintValidation(const swarmkit::client::ValidateTrajectoryResult& validation) {
-    std::cout << "Validation " << (validation.ok ? "OK" : "FAILED") << "\n"
-              << "  max_required_horizontal_speed_mps : "
-              << validation.max_required_horizontal_speed_mps << "\n"
-              << "  max_required_climb_speed_mps      : " << validation.max_required_climb_speed_mps
-              << "\n"
-              << "  max_required_descent_speed_mps    : "
-              << validation.max_required_descent_speed_mps << "\n"
-              << "  first_failing_point_index         : " << validation.first_failing_point_index
-              << "\n";
-    for (const auto& issue : validation.issues) {
-        std::string_view severity = "info";
-        if (issue.severity == swarmkit::client::ValidationSeverity::kError) {
-            severity = "error";
-        } else if (issue.severity == swarmkit::client::ValidationSeverity::kWarning) {
-            severity = "warning";
-        }
-        std::cout << "  issue[" << issue.point_index << "] " << severity << " " << issue.code
-                  << ": " << issue.message << "\n";
-    }
-}
-
-int PrintExecutionResult(std::string_view label, const swarmkit::client::ExecutionResult& result) {
-    if (!result.ok) {
-        std::cerr << label << " FAILED: " << result.message;
-        if (!result.correlation_id.empty()) {
-            std::cerr << " [corr=" << result.correlation_id << "]";
-        }
-        std::cerr << "\n";
-        if (!result.validation.issues.empty()) {
-            PrintValidation(result.validation);
-        }
-        return EXIT_FAILURE;
-    }
-    std::cout << label << " OK";
-    if (!result.message.empty()) {
-        std::cout << ": " << result.message;
-    }
-    std::cout << "\n";
-    if (!result.handle.execution_id.empty()) {
-        PrintExecutionHandle(result.handle);
-    }
-    if (!result.validation.issues.empty()) {
-        PrintValidation(result.validation);
-    }
-    return EXIT_SUCCESS;
-}
-
-int RunTrajectory(Client& client, std::string_view drone_id, int argc, char** argv) {
-    const std::vector<std::string> actions = FindActionsAfterCommand(argc, argv, "trajectory");
-    if (actions.empty()) {
-        std::cerr << "trajectory requires upload, validate, prepare, start-at, pause, resume, "
-                     "abort, clear, get, list, time-sync, or reports\n";
-        return EXIT_FAILURE;
-    }
-    const std::string execution_id =
-        common::GetOptionValue(argc, argv, "--execution-id", actions.size() >= 2 ? actions[1] : "");
-    if (actions[0] == "upload" || actions[0] == "validate") {
-        const auto format = swarmkit::client::ParseTrajectoryFileFormat(
-            common::GetOptionValue(argc, argv, "--format", "auto"));
-        if (!format.has_value()) {
-            std::cerr << format.error() << "\n";
-            return EXIT_FAILURE;
-        }
-        swarmkit::client::TrajectoryLoadOptions load_options;
-        load_options.fallback_drone_id = std::string(drone_id);
-        load_options.default_execution_id = execution_id;
-        const auto plan = swarmkit::client::LoadTrajectoryPlanFile(
-            common::GetOptionValue(argc, argv, "--file"), *format, load_options);
-        if (!plan.has_value()) {
-            std::cerr << plan.error() << "\n";
-            return EXIT_FAILURE;
-        }
-        if (actions[0] == "upload") {
-            return PrintExecutionResult("Trajectory upload", client.UploadTrajectory(*plan));
-        }
-        const auto result = client.ValidateTrajectory(*plan);
-        if (result.error.code != swarmkit::client::RpcStatusCode::kOk &&
-            result.validation.issues.empty()) {
-            std::cerr << "Trajectory validate FAILED: " << result.message << "\n";
-            return EXIT_FAILURE;
-        }
-        PrintValidation(result.validation);
-        return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
-    }
-    if (actions[0] == "reports") {
-        return RunReports(client, drone_id, argc, argv, true);
-    }
-    if (actions[0] == "list") {
-        for (const auto& handle : client.ListExecutions(std::string(drone_id))) {
-            std::cout << handle.drone_id << " " << handle.execution_id << " rev=" << handle.revision
-                      << " state=" << ExecutionStateName(handle.state)
-                      << " active_segment=" << handle.active_segment << "\n";
-        }
-        return EXIT_SUCCESS;
-    }
-    if (actions[0] == "time-sync") {
-        const auto state = client.GetTimeSyncState(std::string(drone_id));
-        std::cout << "Time Sync\n"
-                  << "  drone_id              : " << state.drone_id << "\n"
-                  << "  agent_unix_time_ms    : " << state.agent_unix_time_ms << "\n"
-                  << "  vehicle_unix_time_ms  : " << state.vehicle_unix_time_ms << "\n"
-                  << "  clock_offset_ms       : " << state.clock_offset_ms << "\n"
-                  << "  sync_quality_percent  : " << state.sync_quality_percent << "\n"
-                  << "  synced                : " << (state.synced ? "true" : "false") << "\n"
-                  << "  stale                 : " << (state.stale ? "true" : "false") << "\n"
-                  << "  source                : " << state.source << "\n"
-                  << "  message               : " << state.message << "\n";
-        return EXIT_SUCCESS;
-    }
-    if (execution_id.empty()) {
-        std::cerr << "trajectory " << actions[0] << " requires --execution-id ID\n";
-        return EXIT_FAILURE;
-    }
-    if (actions[0] == "prepare") {
-        return PrintExecutionResult("Trajectory prepare",
-                                    client.PrepareTrajectory(std::string(drone_id), execution_id));
-    }
-    if (actions[0] == "start-at") {
-        const auto unix_time_ms = ParseIntArg(
-            common::GetOptionValue(argc, argv, "--unix-time-ms", kDefaultZero), "--unix-time-ms");
-        if (!unix_time_ms.has_value()) {
-            std::cerr << unix_time_ms.error() << "\n";
-            return EXIT_FAILURE;
-        }
-        return PrintExecutionResult(
-            "Execution start",
-            client.StartExecutionAt(std::string(drone_id), execution_id, *unix_time_ms));
-    }
-    if (actions[0] == "pause") {
-        return PrintExecutionResult("Execution pause",
-                                    client.PauseExecution(std::string(drone_id), execution_id));
-    }
-    if (actions[0] == "resume") {
-        return PrintExecutionResult("Execution resume",
-                                    client.ResumeExecution(std::string(drone_id), execution_id));
-    }
-    if (actions[0] == "abort") {
-        return PrintExecutionResult("Execution abort",
-                                    client.AbortExecution(std::string(drone_id), execution_id));
-    }
-    if (actions[0] == "clear") {
-        return PrintExecutionResult("Trajectory clear",
-                                    client.ClearTrajectory(std::string(drone_id), execution_id));
-    }
-    if (actions[0] == "get") {
-        const auto status = client.GetExecution(std::string(drone_id), execution_id);
-        if (!status.found) {
-            std::cerr << "Execution not found: " << status.message << "\n";
-            return EXIT_FAILURE;
-        }
-        PrintExecutionHandle(status.handle);
-        std::cout << "  points               : " << status.plan.points.size() << "\n";
-        return EXIT_SUCCESS;
-    }
-    std::cerr << "Unknown trajectory action: " << actions[0] << "\n";
-    return EXIT_FAILURE;
-}
-
 int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
     const std::vector<std::string> actions = FindActionsAfterCommand(argc, argv, "goal");
     if (actions.empty()) {
@@ -1366,8 +1166,7 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
     return EXIT_FAILURE;
 }
 
-int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
-               bool trajectory_only) {
+int RunReports(Client& client, std::string_view drone_id, int argc, char** argv) {
     const std::string format = common::GetOptionValue(argc, argv, "--format", "text");
     if (format != "text" && format != "jsonl") {
         std::cerr << "--format must be text or jsonl\n";
@@ -1405,10 +1204,7 @@ int RunReports(Client& client, std::string_view drone_id, int argc, char** argv,
     subscription.after_sequence = static_cast<std::uint64_t>(*after_sequence);
     auto report_stream = client.StartReports(
         subscription,
-        [out, &format, trajectory_only](const swarmkit::client::AgentReport& report) {
-            if (trajectory_only && !report.trajectory.has_value()) {
-                return;
-            }
+        [out, &format](const swarmkit::client::AgentReport& report) {
             if (format == "jsonl") {
                 PrintReportJsonl(report, *out);
             } else {
@@ -2116,8 +1912,6 @@ int RunCapabilities(Client& client) {
               << "  protocol                    : " << capabilities.protocol << "\n"
               << "  vehicle_class               : " << capabilities.vehicle_class << "\n"
               << "  autopilot_type              : " << capabilities.autopilot_type << "\n"
-              << "  supports_mission_upload     : "
-              << (capabilities.supports_mission_upload ? "true" : "false") << "\n"
               << "  supports_payload_control    : "
               << (capabilities.supports_payload_control ? "true" : "false") << "\n"
               << "  supports_velocity_control   : "
@@ -2126,10 +1920,6 @@ int RunCapabilities(Client& client) {
               << (capabilities.supports_flight_termination ? "true" : "false") << "\n"
               << "  supports_backend_commands   : "
               << (capabilities.supports_backend_commands ? "true" : "false") << "\n"
-              << "  supports_time_sync          : "
-              << (capabilities.supports_time_sync ? "true" : "false") << "\n"
-              << "  supports_trajectory_upload  : "
-              << (capabilities.supports_trajectory_upload ? "true" : "false") << "\n"
               << "  max_horizontal_speed_mps    : "
               << OptionalFloatText(capabilities.max_horizontal_speed_mps) << "\n"
               << "  max_climb_speed_mps         : "
@@ -2140,7 +1930,6 @@ int RunCapabilities(Client& client) {
               << OptionalFloatText(capabilities.max_altitude_m) << "\n";
     print_list("supported_modes", capabilities.supported_modes);
     print_list("supported_commands", capabilities.supported_commands);
-    print_list("supported_mission_items", capabilities.supported_mission_items);
     print_list("supported_payloads", capabilities.supported_payloads);
     print_list("supported_telemetry_fields", capabilities.supported_telemetry_fields);
     print_list("backend_command_names", capabilities.backend_command_names);
@@ -2900,10 +2689,6 @@ int RunSwarm(const ClientConfig& client_cfg, int argc, char** argv) {
     if (invocation.command == "sequence") {
         return RunSequence(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
                            client_cfg.client_id, client_cfg.priority, argc, argv);
-    }
-    if (invocation.command == "trajectory") {
-        return RunTrajectory(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId),
-                             argc, argv);
     }
     if (invocation.command == "goal") {
         return RunGoal(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId), argc,

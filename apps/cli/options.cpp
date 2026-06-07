@@ -19,8 +19,8 @@ namespace swarmkit::apps::cli::internal {
 [[nodiscard]] bool IsSubcommand(std::string_view value) {
     return value == "ping" || value == "health" || value == "stats" ||
            value == "capabilities" || value == "preflight" || value == "telemetry" ||
-           value == "command" || value == "sequence" || value == "trajectory" ||
-           value == "goal" || value == "reports" || value == "lock" || value == "unlock" ||
+           value == "command" || value == "sequence" || value == "goal" ||
+           value == "reports" || value == "lock" || value == "unlock" ||
            value == "watch-authority" || value == "message" || value == "artifact" ||
            value == "swarm";
 }
@@ -45,7 +45,6 @@ namespace swarmkit::apps::cli::internal {
            value == "--timeout-ms" || value == "--label" || value == "--frame" || value == "--format" ||
            value == "--min-battery" ||
            value == "--report-file" || value == "--after-sequence" ||
-           value == "--execution-id" || value == "--unix-time-ms" ||
            value == "--topic" || value == "--target" || value == "--payload" ||
            value == "--content-type" || value == "--artifact-id" || value == "--chunk-bytes" ||
            value == "--transfer-id" ||

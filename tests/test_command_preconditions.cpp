@@ -68,10 +68,6 @@ TEST_CASE("Autonomous commands require flight readiness by default",
     CHECK(waypoint.action == CommandPreconditionAction::kReject);
     CHECK(waypoint.result.message.find("healthy GPS") != std::string::npos);
 
-    const auto mission = EvaluateCommandPreconditions(
-        Envelope(commands::MissionCmd{commands::CmdStartMission{}}), health);
-    CHECK(mission.action == CommandPreconditionAction::kReject);
-    CHECK(mission.result.message.find("healthy GPS") != std::string::npos);
 }
 
 TEST_CASE("Bench override explicitly permits autonomous readiness bypass",

@@ -58,33 +58,17 @@ struct BackendCapabilities {
     std::string backend_name{"unknown"};
     std::string protocol{"unknown"};
     std::string vehicle_class{"unknown"};
-    bool supports_mission_upload{false};
     bool supports_payload_control{false};
     bool supports_velocity_control{false};
     bool supports_flight_termination{false};
     bool supports_backend_commands{false};
-    bool supports_time_sync{false};
-    bool supports_trajectory_upload{false};
     std::string autopilot_type{"unknown"};
     std::vector<std::string> supported_modes;
     std::vector<std::string> supported_commands;
-    std::vector<std::string> supported_mission_items;
     std::vector<std::string> supported_payloads;
     std::vector<std::string> supported_telemetry_fields;
     std::vector<std::string> backend_command_names;
     BackendNumericLimits limits;
-};
-
-struct BackendTimeSyncState {
-    std::string drone_id;
-    std::int64_t agent_unix_time_ms{};
-    std::int64_t vehicle_unix_time_ms{};
-    std::int64_t clock_offset_ms{};
-    float sync_quality_percent{};
-    bool synced{false};
-    bool stale{true};
-    std::string source{"unavailable"};
-    std::string message{"backend time synchronization unavailable"};
 };
 
 struct BackendFactoryRequest {
@@ -144,16 +128,6 @@ class IDroneBackend {
         return {};
     }
 
-    /// @brief Report proven clock synchronization with the vehicle/autopilot.
-    ///
-    /// Backends must only return synced=true when clock source, offset, drift,
-    /// and freshness are known. Agent wall-clock fallback is intentionally not
-    /// considered synchronized vehicle time.
-    [[nodiscard]] virtual BackendTimeSyncState GetTimeSyncState(const std::string& drone_id) const {
-        BackendTimeSyncState state;
-        state.drone_id = drone_id.empty() ? "default" : drone_id;
-        return state;
-    }
 };
 
 using DroneBackendPtr = std::unique_ptr<IDroneBackend>;

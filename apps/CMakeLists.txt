@@ -20,7 +20,6 @@ add_executable(swarmkit-cli
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/command_builder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/flight_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/main.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/cli/mission_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/nav_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/options.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/output.cpp

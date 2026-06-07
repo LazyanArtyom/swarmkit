@@ -14,7 +14,6 @@
 #include "common/arg_utils.h"
 #include "constants.h"
 #include "flight_command_parser.h"
-#include "mission_command_parser.h"
 #include "nav_command_parser.h"
 #include "options.h"
 #include "payload_command_parser.h"
@@ -104,13 +103,6 @@ namespace {
         action == "set-speed" || action == "goto" || action == "pause" || action == "resume" ||
         action == "set-yaw" || action == "velocity" || action == "set-home") {
         return BuildNavCommand(actions, argc, argv);
-    }
-    if (action == "mission") {
-        if (actions.size() < 2) {
-            return std::unexpected(
-                "mission requires upload, clear, start, pause, resume, or set-current");
-        }
-        return BuildMissionCommand(actions, argc, argv);
     }
     if (action == "backend-command") {
         return BuildBackendCommand(argc, argv);

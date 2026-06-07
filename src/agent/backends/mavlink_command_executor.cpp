@@ -15,12 +15,10 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
         .vehicle_class = config.autopilot_profile == MavlinkAutopilotProfile::kArdupilotPlane
                              ? "fixed-wing"
                              : "multirotor",
-        .supports_mission_upload = true,
         .supports_payload_control = false,
         .supports_velocity_control = true,
         .supports_flight_termination = config.allow_flight_termination,
         .supports_backend_commands = true,
-        .supports_trajectory_upload = true,
         .autopilot_type = std::string(ToString(config.autopilot_profile)),
         .supported_modes = SupportedModes(config.autopilot_profile),
         .supported_commands =
@@ -38,19 +36,7 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
                 "set-yaw",
                 "velocity",
                 "set-home",
-                "mission-upload",
-                "mission-clear",
-                "mission-start",
-                "set-current-mission-item",
                 "backend-command",
-            },
-        .supported_mission_items =
-            {
-                "waypoint",
-                "takeoff",
-                "land",
-                "loiter",
-                "delay",
             },
         // Peripheral presence cannot be inferred from generic MAVLink routing.
         // Payload encoders remain available as experimental commands, but are

@@ -7,7 +7,6 @@
 #include "swarmkit/agent/mavlink_backend.h"
 
 #include "mavlink_command_executor.h"
-#include "mavlink_mission_protocol.h"
 #include "mavlink_state_cache.h"
 #include "mavlink_telemetry_decoder.h"
 #include "mavlink_udp_transport.h"
@@ -117,7 +116,6 @@ class MavlinkBackend final : public IDroneBackend {
                            result = ExecuteFlightCommand(flight, envelope.context);
                        },
                        [&](const NavCmd& nav) { result = ExecuteNavCommand(nav); },
-                       [&](const MissionCmd& mission) { result = ExecuteMissionCommand(mission); },
                        [&](const PayloadCmd& payload) { result = ExecutePayloadCommand(payload); },
                        [&](const BackendCmd& backend) { result = ExecuteBackendCommand(backend); },
                    },
@@ -257,36 +255,6 @@ class MavlinkBackend final : public IDroneBackend {
             RecordStatusText(mav::StatusText{
                 .severity = status_text.severity,
                 .text = std::string(status_text.text, text_length),
-            });
-            return;
-        }
-
-        if (message.msgid == MAVLINK_MSG_ID_MISSION_REQUEST_INT) {
-            mavlink_mission_request_int_t request{};
-            mavlink_msg_mission_request_int_decode(&message, &request);
-            mission_protocol_.RecordMissionRequest(mav::MissionRequest{
-                .seq = request.seq,
-                .mission_type = request.mission_type,
-            });
-            return;
-        }
-
-        if (message.msgid == MAVLINK_MSG_ID_MISSION_REQUEST) {
-            mavlink_mission_request_t request{};
-            mavlink_msg_mission_request_decode(&message, &request);
-            mission_protocol_.RecordMissionRequest(mav::MissionRequest{
-                .seq = request.seq,
-                .mission_type = request.mission_type,
-            });
-            return;
-        }
-
-        if (message.msgid == MAVLINK_MSG_ID_MISSION_ACK) {
-            mavlink_mission_ack_t ack{};
-            mavlink_msg_mission_ack_decode(&message, &ack);
-            mission_protocol_.RecordMissionAck(mav::MissionAck{
-                .type = ack.type,
-                .mission_type = ack.mission_type,
             });
             return;
         }
@@ -680,67 +648,6 @@ class MavlinkBackend final : public IDroneBackend {
         return SendUnverifiedMavlinkMessage(message);
     }
 
-    [[nodiscard]] core::Result ExecuteMissionCommand(const MissionCmd& mission) {
-        core::Result result = core::Result::Rejected("mission command not handled");
-        std::visit(core::Overloaded{
-                       [&](const CmdUploadMission& upload) {
-                           result = mission_protocol_.UploadMission(
-                               upload, config_,
-                               [this](const mavlink_message_t& message) {
-                                   return SendMavlinkMessage(message);
-                               });
-                       },
-                       [&](const CmdClearMission&) {
-                           result = mission_protocol_.ClearMission(
-                               config_, [this](const mavlink_message_t& message) {
-                                   return SendMavlinkMessage(message);
-                               });
-                       },
-                       [&](const CmdStartMission& start) {
-                           if (config_.autopilot_profile ==
-                                   MavlinkAutopilotProfile::kArdupilotCopter ||
-                               config_.autopilot_profile ==
-                                   MavlinkAutopilotProfile::kArdupilotPlane) {
-                               if (start.last_item > 0) {
-                                   result = core::Result::Rejected(
-                                       "ArduPilot mission start does not support a last-item limit; "
-                                       "start the full mission or upload the desired subset");
-                                   return;
-                               }
-                               if (start.first_item > 0) {
-                                   result = mav::MavlinkMissionProtocol::SetCurrentMissionItem(
-                                       CmdSetCurrentMissionItem{start.first_item}, config_,
-                                       [this](const mavlink_message_t& message) {
-                                           return SendMavlinkMessage(message);
-                                       });
-                                   if (!result.IsOk()) {
-                                       return;
-                                   }
-                               }
-                               result = SetMode(CmdSetMode{.mode = "auto"});
-                               return;
-                           }
-                           result = SendCommandLong(MAV_CMD_MISSION_START,
-                                                    static_cast<float>(start.first_item),
-                                                    static_cast<float>(start.last_item));
-                       },
-                       [&](const CmdPauseMission&) {
-                           result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkPause);
-                       },
-                       [&](const CmdResumeMission&) {
-                           result = SendCommandLong(MAV_CMD_DO_PAUSE_CONTINUE, kMavlinkResume);
-                       },
-                       [&](const CmdSetCurrentMissionItem& current) {
-                           result = mav::MavlinkMissionProtocol::SetCurrentMissionItem(
-                               current, config_, [this](const mavlink_message_t& message) {
-                                   return SendMavlinkMessage(message);
-                               });
-                       },
-                   },
-                   mission);
-        return result;
-    }
-
     [[nodiscard]] core::Result ExecutePayloadCommand(const PayloadCmd& payload) {
         core::Result result = core::Result::Rejected("payload command not handled");
         std::visit(
@@ -847,7 +754,7 @@ class MavlinkBackend final : public IDroneBackend {
         if (!result.IsOk()) {
             return result;
         }
-        return core::Result::Success("MAVLink setpoint sent; execution not acknowledged");
+        return core::Result::Success("MAVLink setpoint sent; setpoint stream is not acknowledged");
     }
 
     void RecordCommandAck(const mav::CommandAck& ack) {
@@ -961,7 +868,6 @@ class MavlinkBackend final : public IDroneBackend {
     std::optional<mav::StatusText> last_status_text_;
     std::uint64_t status_text_sequence_{0};
 
-    mav::MavlinkMissionProtocol mission_protocol_;
 };
 
 }  // namespace

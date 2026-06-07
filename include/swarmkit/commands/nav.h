@@ -44,10 +44,10 @@ struct CmdGoto {
     bool use_yaw{false};
 };
 
-/// @brief Pause current guided/mission motion and hold.
+/// @brief Pause current guided motion and hold.
 struct CmdPause {};
 
-/// @brief Resume current guided/mission motion.
+/// @brief Resume current guided motion.
 struct CmdResume {};
 
 /// @brief Rotate vehicle heading.

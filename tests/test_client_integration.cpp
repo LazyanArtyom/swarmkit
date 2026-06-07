@@ -94,7 +94,6 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     REQUIRE(capabilities.ok);
     CHECK(capabilities.agent_id == "test-agent");
     CHECK(capabilities.autopilot_type == "recording");
-    CHECK(capabilities.supports_mission_upload);
     CHECK(capabilities.supports_velocity_control);
     CHECK_FALSE(capabilities.supports_payload_control);
     CHECK(std::ranges::contains(capabilities.supported_modes, "guided"));
@@ -1016,7 +1015,7 @@ TEST_CASE("Client can cancel active goal and receive cancellation report",
     reports_stream->Stop();
 }
 
-TEST_CASE("Client active goal accepts local-NED shape and reports unsupported execution",
+TEST_CASE("Client active goal accepts local-NED shape and reports unsupported backend target",
           "[client][integration][goal]") {
     testsupport::AgentServerHarness harness;
     Client client = MakeClient(harness.Address());
@@ -1040,7 +1039,7 @@ TEST_CASE("Client active goal accepts local-NED shape and reports unsupported ex
     CHECK(harness.Backend().ExecuteCallCount() == 0);
 }
 
-TEST_CASE("Client reports backend execution failure and telemetry counters",
+TEST_CASE("Client reports backend command failure and telemetry counters",
           "[client][integration]") {
     testsupport::AgentServerHarness harness;
     harness.Backend().SetExecuteHandler([](const commands::CommandEnvelope&) {

@@ -86,10 +86,6 @@ std::string_view ReportTypeName(swarmkit::client::AgentReportType type) {
             return "authority_rejected";
         case AgentReportType::kAuthorityReleased:
             return "authority_released";
-        case AgentReportType::kTrajectoryReport:
-            return "trajectory_report";
-        case AgentReportType::kTimeSyncReport:
-            return "time_sync_report";
         case AgentReportType::kUnspecified:
             return "unspecified";
     }
@@ -111,35 +107,6 @@ std::string_view SeverityName(swarmkit::client::ReportSeverity severity) {
     return "info";
 }
 
-std::string_view TrajectoryStatusName(swarmkit::client::TrajectoryReportStatus status) {
-    using swarmkit::client::TrajectoryReportStatus;
-    switch (status) {
-        case TrajectoryReportStatus::kUploaded:
-            return "uploaded";
-        case TrajectoryReportStatus::kValidated:
-            return "validated";
-        case TrajectoryReportStatus::kReady:
-            return "ready";
-        case TrajectoryReportStatus::kStarted:
-            return "started";
-        case TrajectoryReportStatus::kLate:
-            return "late";
-        case TrajectoryReportStatus::kTracking:
-            return "tracking";
-        case TrajectoryReportStatus::kDrifting:
-            return "drifting";
-        case TrajectoryReportStatus::kAborted:
-            return "aborted";
-        case TrajectoryReportStatus::kCompleted:
-            return "completed";
-        case TrajectoryReportStatus::kFailed:
-            return "failed";
-        case TrajectoryReportStatus::kUnspecified:
-            return "unspecified";
-    }
-    return "unspecified";
-}
-
 void PrintReportText(const swarmkit::client::AgentReport& report, std::ostream& out) {
     out << "[" << report.sequence << "] drone=" << report.drone_id
         << " type=" << ReportTypeName(report.type) << " severity=" << SeverityName(report.severity);
@@ -149,20 +116,6 @@ void PrintReportText(const swarmkit::client::AgentReport& report, std::ostream& 
             << " status=" << GoalStatusName(goal.status)
             << " dist=" << goal.distance_to_goal_m << "m dev=" << goal.deviation_m
             << "m alt_err=" << goal.altitude_error_m << "m";
-    }
-    if (report.trajectory.has_value()) {
-        const auto& trajectory = *report.trajectory;
-        out << " execution=" << trajectory.execution_id << " rev=" << trajectory.revision
-            << " status=" << TrajectoryStatusName(trajectory.status)
-            << " segment=" << trajectory.active_segment
-            << " dist=" << trajectory.distance_to_target_m << "m drift=" << trajectory.drift_m
-            << "m late=" << trajectory.schedule_error_ms << "ms";
-    }
-    if (report.time_sync.has_value()) {
-        const auto& sync = *report.time_sync;
-        out << " sync=" << (sync.synced ? "true" : "false")
-            << " quality=" << sync.sync_quality_percent
-            << " offset_ms=" << sync.clock_offset_ms;
     }
     if (!report.message.empty()) {
         out << " msg=" << report.message;
@@ -187,27 +140,6 @@ void PrintReportJsonl(const swarmkit::client::AgentReport& report, std::ostream&
             << ",\"deviation_radius_m\":" << goal.deviation_radius_m
             << ",\"elapsed_ms\":" << goal.elapsed_ms << ",\"timeout_ms\":" << goal.timeout_ms
             << R"(,"message":")" << JsonEscape(goal.message) << "\"}";
-    }
-    if (report.trajectory.has_value()) {
-        const auto& trajectory = *report.trajectory;
-        out << R"(,"trajectory":{"execution_id":")" << JsonEscape(trajectory.execution_id)
-            << R"(","revision":)" << trajectory.revision << R"(,"status":")"
-            << TrajectoryStatusName(trajectory.status) << R"(","active_segment":)"
-            << trajectory.active_segment << R"(,"distance_to_target_m":)"
-            << trajectory.distance_to_target_m << R"(,"drift_m":)" << trajectory.drift_m
-            << R"(,"schedule_error_ms":)" << trajectory.schedule_error_ms
-            << R"(,"message":")" << JsonEscape(trajectory.message) << "\"}";
-    }
-    if (report.time_sync.has_value()) {
-        const auto& sync = *report.time_sync;
-        out << R"(,"time_sync":{"synced":)" << (sync.synced ? "true" : "false")
-            << R"(,"stale":)" << (sync.stale ? "true" : "false")
-            << R"(,"agent_unix_time_ms":)" << sync.agent_unix_time_ms
-            << R"(,"vehicle_unix_time_ms":)" << sync.vehicle_unix_time_ms
-            << R"(,"clock_offset_ms":)" << sync.clock_offset_ms
-            << R"(,"sync_quality_percent":)" << sync.sync_quality_percent
-            << R"(,"source":")" << JsonEscape(sync.source) << R"(","message":")"
-            << JsonEscape(sync.message) << "\"}";
     }
     out << "}\n";
 }

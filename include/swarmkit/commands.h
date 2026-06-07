@@ -24,7 +24,6 @@
 
 #include "swarmkit/commands/backend.h"
 #include "swarmkit/commands/flight.h"
-#include "swarmkit/commands/mission.h"
 #include "swarmkit/commands/nav.h"
 #include "swarmkit/commands/payload.h"
 
@@ -46,7 +45,7 @@ namespace swarmkit::commands {
  */
 enum class CommandPriority : std::uint8_t {
     kOperator = 0,     ///< Default: CLI operators and SDK users.
-    kSupervisor = 10,  ///< Automated local systems (on-board mission executor).
+    kSupervisor = 10,  ///< Automated local systems and onboard planners.
     kOverride = 20,    ///< Remote deviation-correction or safety override server.
     kEmergency = 100,  ///< Bypasses arbitration; always executes immediately.
 };
@@ -83,7 +82,7 @@ enum class CommandPriority : std::uint8_t {
  * 4. Handle it in every IDroneBackend implementation (compile error if missed).
  * 5. Add proto messages and map them in server.cpp.
  */
-using Command = std::variant<FlightCmd, NavCmd, MissionCmd, PayloadCmd, BackendCmd>;
+using Command = std::variant<FlightCmd, NavCmd, PayloadCmd, BackendCmd>;
 
 /// ---------------------------------------------------------------------------
 /// CommandContext
@@ -94,7 +93,7 @@ struct CommandContext {
     std::string drone_id;   ///< Target drone identifier.
     std::string client_id;  ///< Originating client identifier (used by CommandArbiter).
     CommandPriority priority{CommandPriority::kOperator};  ///< Arbitration priority.
-    std::chrono::system_clock::time_point deadline;        ///< Execution deadline (zero = none).
+    std::chrono::system_clock::time_point deadline;        ///< Command deadline (zero = none).
     std::string correlation_id;  ///< Caller-assigned ID for tracing/deduplication.
 };
 

@@ -38,21 +38,6 @@ service AgentService {
     /// Read the currently active supervised goal for one drone.
     rpc GetActiveGoal(GetActiveGoalRequest) returns (GetActiveGoalReply);
 
-    /// Generic timed trajectory/execution lifecycle. This is intentionally
-    /// domain-neutral: mission supervisors and custom controllers can build
-    /// their own logic on top of these primitives.
-    rpc UploadTrajectory(UploadTrajectoryRequest) returns (ExecutionReply);
-    rpc ClearTrajectory(ExecutionRequest) returns (ExecutionReply);
-    rpc ValidateTrajectory(ValidateTrajectoryRequest) returns (ValidateTrajectoryReply);
-    rpc PrepareTrajectory(ExecutionRequest) returns (ExecutionReply);
-    rpc StartExecutionAt(StartExecutionAtRequest) returns (ExecutionReply);
-    rpc PauseExecution(ExecutionRequest) returns (ExecutionReply);
-    rpc ResumeExecution(ExecutionRequest) returns (ExecutionReply);
-    rpc AbortExecution(ExecutionRequest) returns (ExecutionReply);
-    rpc GetExecution(GetExecutionRequest) returns (GetExecutionReply);
-    rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsReply);
-    rpc GetTimeSyncState(TimeSyncRequest) returns (TimeSyncState);
-
     /// Subscribe to typed agent reports: goal state, command state, health, and
     /// authority events. Reports are intentionally policy-neutral so user
     /// controllers can decide their own correction behavior.
@@ -189,7 +174,6 @@ message CapabilitiesReply {
     string agent_id = 1;
     int64 unix_time_ms = 2;
     string correlation_id = 3;
-    bool supports_mission_upload = 4;
     bool supports_payload_control = 5;
     bool supports_velocity_control = 6;
     bool supports_flight_termination = 7;
@@ -199,10 +183,7 @@ message CapabilitiesReply {
     string protocol = 11;
     string vehicle_class = 12;
     bool supports_backend_commands = 13;
-    bool supports_time_sync = 14;
-    bool supports_trajectory_upload = 15;
     repeated string supported_commands = 16;
-    repeated string supported_mission_items = 17;
     repeated string supported_payloads = 18;
     repeated string supported_telemetry_fields = 19;
     repeated string backend_command_names = 20;
@@ -235,7 +216,7 @@ enum CommandPriority {
 message CommandContext {
     string drone_id = 1;         /// Target drone identifier.
     int32 priority = 2;          /// CommandPriority value (default: PRIORITY_OPERATOR).
-    int64 deadline_unix_ms = 3;  /// Execution deadline; 0 = no deadline.
+    int64 deadline_unix_ms = 3;  /// Command deadline; 0 = no deadline.
     string correlation_id = 4;   /// Caller-assigned tracing ID.
     string client_id = 5;        /// Originating client identifier (required for arbitration).
 }
@@ -306,55 +287,6 @@ message CmdSetHome {
     double lat_deg = 2;
     double lon_deg = 3;
     double alt_m = 4;
-}
-
-// --- Mission commands ---
-
-enum MissionItemType {
-    MISSION_ITEM_WAYPOINT = 0;
-    MISSION_ITEM_TAKEOFF = 1;
-    MISSION_ITEM_LAND = 2;
-    MISSION_ITEM_LOITER = 3;
-    MISSION_ITEM_DELAY = 4;
-    MISSION_ITEM_ACTION = 5;
-    MISSION_ITEM_PAYLOAD_ACTION = 6;
-}
-
-message MissionItem {
-    double lat_deg = 2;
-    double lon_deg = 3;
-    double alt_m = 4;
-    float param1 = 5;
-    float param2 = 6;
-    float param3 = 7;
-    float param4 = 8;
-    bool current = 9;
-    bool autocontinue = 10;
-    MissionItemType type = 11;
-    float hold_s = 12;
-    float acceptance_radius_m = 13;
-    float yaw_deg = 14;
-    string action_namespace = 15;
-    string action_name = 16;
-    map<string, string> params = 17;
-}
-
-message CmdUploadMission {
-    repeated MissionItem items = 1;
-}
-
-message CmdClearMission {}
-
-message CmdStartMission {
-    int32 first_item = 1;
-    int32 last_item = 2;
-}
-
-message CmdPauseMission {}
-message CmdResumeMission {}
-
-message CmdSetCurrentMissionItem {
-    int32 seq = 1;
 }
 
 // --- Payload commands ---
@@ -449,14 +381,6 @@ message Command {
         CmdVelocity velocity = 18;
         CmdSetHome set_home = 19;
 
-        // Mission
-        CmdUploadMission upload_mission = 31;
-        CmdClearMission clear_mission = 32;
-        CmdStartMission start_mission = 33;
-        CmdPauseMission pause_mission = 34;
-        CmdResumeMission resume_mission = 35;
-        CmdSetCurrentMissionItem set_current_mission_item = 36;
-
         // Payload
         CmdPhoto photo = 50;
         CmdPhotoIntervalStart photo_interval_start = 51;
@@ -526,7 +450,7 @@ message ActiveGoal {
     string drone_id = 1;
     string goal_id = 2;
     uint64 revision = 3;
-    GeoPoint target = 4;       // WGS84 target for current GPS-backed execution.
+    GeoPoint target = 4;       // WGS84 target for current GPS-backed goal.
     float speed_mps = 5;
     float acceptance_radius_m = 6;
     float deviation_radius_m = 7;
@@ -569,8 +493,6 @@ enum AgentReportType {
     AUTHORITY_LOCKED = 30;
     AUTHORITY_REJECTED = 31;
     AUTHORITY_RELEASED = 32;
-    TRAJECTORY_REPORT = 40;
-    TIME_SYNC_REPORT = 41;
 }
 
 message GoalReport {
@@ -597,8 +519,6 @@ message AgentReport {
     ReportSeverity severity = 6;
     string message = 7;
     GoalReport goal = 10;
-    TrajectoryReport trajectory = 11;
-    TimeSyncState time_sync = 12;
 }
 
 message SetActiveGoalRequest {
@@ -639,207 +559,6 @@ message GetActiveGoalReply {
     GoalStatus status = 3;
     int64 computed_timeout_ms = 4;
     string message = 5;
-}
-
-// ---------------------------------------------------------------------------
-// Generic timed trajectory / execution
-// ---------------------------------------------------------------------------
-
-message TrajectoryPoint {
-    int64 time_offset_ms = 1;
-    int64 unix_time_ms = 2;
-    GeoPoint position = 3;
-    LocalPoint local_position = 4;
-    bool use_local_position = 5;
-    float vx_mps = 6;
-    float vy_mps = 7;
-    float vz_mps = 8;
-    bool has_velocity = 9;
-    float yaw_deg = 10;
-    bool has_yaw = 11;
-    Command command = 13;  // Optional typed command dispatched at this point's scheduled time.
-}
-
-message Geofence {
-    double min_lat_deg = 1;
-    double max_lat_deg = 2;
-    double min_lon_deg = 3;
-    double max_lon_deg = 4;
-    float min_alt_m = 5;
-    float max_alt_m = 6;
-}
-
-message TrajectoryValidationPolicy {
-    float min_battery_percent = 1;
-    Geofence geofence = 2;
-    float min_spacing_m = 3;
-    bool require_gps = 4;
-    bool require_ekf_ok = 5;
-    float max_horizontal_speed_mps = 6;
-    float max_climb_speed_mps = 7;
-    float max_descent_speed_mps = 8;
-    float max_altitude_m = 9;
-    float tracking_tolerance_m = 10;
-}
-
-message TrajectoryPlan {
-    string execution_id = 1;
-    uint64 revision = 2;
-    string drone_id = 3;
-    string frame = 4;  // global|local-ned; point.use_local_position may override per point.
-    repeated TrajectoryPoint points = 5;
-    TrajectoryValidationPolicy validation = 7;
-    map<string, string> labels = 8;
-}
-
-enum ValidationSeverity {
-    VALIDATION_SEVERITY_UNSPECIFIED = 0;
-    VALIDATION_ERROR = 1;
-    VALIDATION_WARNING = 2;
-    VALIDATION_INFO = 3;
-}
-
-message ValidationIssue {
-    ValidationSeverity severity = 1;
-    string code = 2;
-    string message = 3;
-    int32 point_index = 4;  // -1 means whole plan.
-}
-
-message ValidateTrajectoryResult {
-    bool ok = 1;
-    repeated ValidationIssue issues = 2;
-    float max_required_horizontal_speed_mps = 3;
-    float max_required_climb_speed_mps = 4;
-    float max_required_descent_speed_mps = 5;
-    int32 first_failing_point_index = 6;  // -1 when none.
-}
-
-enum ExecutionState {
-    EXECUTION_STATE_UNSPECIFIED = 0;
-    EXECUTION_UPLOADED = 1;
-    EXECUTION_VALIDATED = 2;
-    EXECUTION_READY = 3;
-    EXECUTION_STARTED = 4;
-    EXECUTION_PAUSED = 5;
-    EXECUTION_ABORTED = 6;
-    EXECUTION_COMPLETED = 7;
-    EXECUTION_FAILED = 8;
-}
-
-message ExecutionHandle {
-    string execution_id = 1;
-    uint64 revision = 2;
-    string drone_id = 3;
-    ExecutionState state = 4;
-    int64 uploaded_unix_ms = 5;
-    int64 prepared_unix_ms = 6;
-    int64 start_unix_ms = 7;
-    int32 active_segment = 8;
-    uint64 last_report_sequence = 9;
-    string message = 10;
-}
-
-enum TrajectoryReportStatus {
-    TRAJECTORY_STATUS_UNSPECIFIED = 0;
-    TRAJECTORY_UPLOADED = 1;
-    TRAJECTORY_VALIDATED = 2;
-    TRAJECTORY_READY = 3;
-    TRAJECTORY_STARTED = 4;
-    TRAJECTORY_LATE = 5;
-    TRAJECTORY_TRACKING = 6;
-    TRAJECTORY_DRIFTING = 7;
-    TRAJECTORY_ABORTED = 8;
-    TRAJECTORY_COMPLETED = 9;
-    TRAJECTORY_FAILED = 10;
-}
-
-message TrajectoryReport {
-    string drone_id = 1;
-    string execution_id = 2;
-    uint64 revision = 3;
-    TrajectoryReportStatus status = 4;
-    int32 active_segment = 5;
-    double distance_to_target_m = 6;
-    double drift_m = 7;
-    int64 schedule_error_ms = 8;
-    string message = 9;
-}
-
-message TimeSyncState {
-    string drone_id = 1;
-    int64 agent_unix_time_ms = 2;
-    int64 vehicle_unix_time_ms = 3;
-    int64 clock_offset_ms = 4;
-    float sync_quality_percent = 5;
-    bool synced = 6;
-    bool stale = 7;
-    string source = 8;
-    string message = 9;
-}
-
-message UploadTrajectoryRequest {
-    CommandContext ctx = 1;
-    TrajectoryPlan plan = 2;
-}
-
-message ValidateTrajectoryRequest {
-    CommandContext ctx = 1;
-    TrajectoryPlan plan = 2;
-}
-
-message ExecutionRequest {
-    CommandContext ctx = 1;
-    string execution_id = 2;
-}
-
-message StartExecutionAtRequest {
-    CommandContext ctx = 1;
-    string execution_id = 2;
-    int64 unix_time_ms = 3;  // 0 => start immediately.
-}
-
-message GetExecutionRequest {
-    string drone_id = 1;
-    string execution_id = 2;
-}
-
-message ListExecutionsRequest {
-    string drone_id = 1;  // Empty/all returns every execution known to this agent.
-}
-
-message TimeSyncRequest {
-    string drone_id = 1;
-}
-
-message ExecutionReply {
-    bool ok = 1;
-    string message = 2;
-    string correlation_id = 3;
-    ErrorCode error_code = 4;
-    string debug_message = 5;
-    ExecutionHandle handle = 6;
-    ValidateTrajectoryResult validation = 7;
-}
-
-message ValidateTrajectoryReply {
-    bool ok = 1;
-    string message = 2;
-    string correlation_id = 3;
-    ErrorCode error_code = 4;
-    string debug_message = 5;
-    ValidateTrajectoryResult validation = 6;
-}
-
-message GetExecutionReply {
-    bool found = 1;
-    ExecutionHandle handle = 2;
-    TrajectoryPlan plan = 3;
-    string message = 4;
-}
-
-message ListExecutionsReply {
-    repeated ExecutionHandle executions = 1;
 }
 
 message ReportSubscription {
@@ -1178,6 +897,5 @@ message TelemetryFrame {
     bool estimator_attitude_ok = 36;
     string active_command_id = 37;
     string active_goal_id = 38;
-    string active_execution_id = 39;
     string correlation_id = 40;
 }

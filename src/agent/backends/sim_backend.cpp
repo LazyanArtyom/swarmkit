@@ -186,42 +186,6 @@ class SimBackend final : public IDroneBackend {
                 },
                 /// @}
 
-                /// @name Mission commands
-                /// @{
-                [&](const MissionCmd& mission) {
-                    std::visit(core::Overloaded{
-                                   [&](const CmdUploadMission& upload) {
-                                       core::Logger::InfoFmt(
-                                           "SimBackend: UPLOAD_MISSION items={}  drone={}",
-                                           upload.items.size(), context.drone_id);
-                                   },
-                                   [&](const CmdClearMission&) {
-                                       core::Logger::InfoFmt("SimBackend: CLEAR_MISSION  drone={}",
-                                                             context.drone_id);
-                                   },
-                                   [&](const CmdStartMission& start) {
-                                       core::Logger::InfoFmt(
-                                           "SimBackend: START_MISSION first={} last={}  drone={}",
-                                           start.first_item, start.last_item, context.drone_id);
-                                   },
-                                   [&](const CmdPauseMission&) {
-                                       core::Logger::InfoFmt("SimBackend: PAUSE_MISSION  drone={}",
-                                                             context.drone_id);
-                                   },
-                                   [&](const CmdResumeMission&) {
-                                       core::Logger::InfoFmt("SimBackend: RESUME_MISSION  drone={}",
-                                                             context.drone_id);
-                                   },
-                                   [&](const CmdSetCurrentMissionItem& current) {
-                                       core::Logger::InfoFmt(
-                                           "SimBackend: SET_CURRENT_MISSION_ITEM seq={}  drone={}",
-                                           current.seq, context.drone_id);
-                                   },
-                               },
-                               mission);
-                },
-                /// @}
-
                 /// @name Payload commands
                 /// @{
                 [&](const PayloadCmd& payload) {
@@ -404,20 +368,15 @@ class SimBackend final : public IDroneBackend {
             .backend_name = "sim",
             .protocol = "sim",
             .vehicle_class = "multirotor",
-            .supports_mission_upload = true,
             .supports_payload_control = true,
             .supports_velocity_control = true,
             .supports_flight_termination = false,
             .supports_backend_commands = true,
-            .supports_time_sync = false,
-            .supports_trajectory_upload = true,
             .autopilot_type = "sim",
             .supported_modes = {"sim", "guided", "hold", "land", "rtl"},
             .supported_commands =
-                {"arm", "force-arm", "disarm", "takeoff", "land", "goto", "velocity",
-                 "mission", "payload", "backend-command"},
-            .supported_mission_items =
-                {"waypoint", "takeoff", "land", "loiter", "delay", "action", "payload_action"},
+                {"arm", "force-arm", "disarm", "takeoff", "land", "goto", "velocity", "payload",
+                 "backend-command"},
             .supported_payloads = {"camera", "gimbal", "servo", "relay", "gripper"},
             .supported_telemetry_fields =
                 {"position", "altitude", "velocity", "battery", "mode", "gps", "health",

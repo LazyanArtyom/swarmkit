@@ -8,7 +8,6 @@ add_library(swarmkit_client STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/client.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/config_io.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/swarm_client.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/trajectory_io.cpp
 )
 
 target_include_directories(swarmkit_client PUBLIC

@@ -188,30 +188,6 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
     return Execute();
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateMissionCommand(
-    const commands::CmdStartMission& /*unused*/, const BackendHealth& health,
-    bool allow_unsafe_bench_commands) {
-    return RequireAutonomousReadiness(health, "mission start", allow_unsafe_bench_commands);
-}
-
-[[nodiscard]] CommandPreconditionDecision EvaluateMissionCommand(
-    const commands::CmdPauseMission& /*unused*/, const BackendHealth& health,
-    bool allow_unsafe_bench_commands) {
-    return RequireAutonomousReadiness(health, "mission pause", allow_unsafe_bench_commands);
-}
-
-[[nodiscard]] CommandPreconditionDecision EvaluateMissionCommand(
-    const commands::CmdResumeMission& /*unused*/, const BackendHealth& health,
-    bool allow_unsafe_bench_commands) {
-    return RequireAutonomousReadiness(health, "mission resume", allow_unsafe_bench_commands);
-}
-
-template <typename T>
-[[nodiscard]] CommandPreconditionDecision EvaluateMissionCommand(
-    const T& /*unused*/, const BackendHealth& /*unused*/, bool /*allow_unsafe_bench_commands*/) {
-    return Execute();
-}
-
 }  // namespace
 
 core::Result ValidateAutonomousReadiness(const BackendHealth& health, std::string_view operation,
@@ -262,13 +238,6 @@ CommandPreconditionDecision EvaluateCommandPreconditions(const CommandEnvelope& 
                         return EvaluateNavCommand(command, health, allow_unsafe_bench_commands);
                     },
                     nav);
-            },
-            [&](const commands::MissionCmd& mission) {
-                return std::visit(
-                    [&](const auto& command) {
-                        return EvaluateMissionCommand(command, health, allow_unsafe_bench_commands);
-                    },
-                    mission);
             },
             [](const auto&) { return Execute(); },
         },

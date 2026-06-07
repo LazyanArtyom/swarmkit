@@ -15,7 +15,6 @@ add_executable(swarmkit_tests
     test_sim_backend.cpp
     test_mavlink_common.cpp
     test_swarm_client.cpp
-    test_trajectory_io.cpp
 )
 
 target_include_directories(swarmkit_tests PRIVATE

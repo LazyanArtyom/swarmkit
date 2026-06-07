@@ -43,19 +43,6 @@ struct SwarmConfig {
     [[nodiscard]] core::Result Validate() const;
 };
 
-enum class SwarmPartialFailurePolicy : std::uint8_t {
-    kAllOrAbort,
-    kBestEffort,
-    kQuorum,
-    kLandFailed,
-    kHoldFailed,
-};
-
-enum class SwarmExecutionSynchronization : std::uint8_t {
-    kParallelFanout,
-    kProtocolStartAt,
-};
-
 struct SwarmFanoutOptions {
     /// Maximum worker threads used for one swarm fanout. 0 uses the SDK default.
     std::size_t max_parallelism{};
@@ -66,51 +53,6 @@ struct SwarmFanoutOptions {
 
     /// Request cancellation of queued work after the first failed task result.
     bool cancel_remaining_on_failure{false};
-};
-
-struct SwarmExecutionOptions {
-    SwarmPartialFailurePolicy partial_failure_policy{SwarmPartialFailurePolicy::kAllOrAbort};
-    SwarmExecutionSynchronization synchronization{SwarmExecutionSynchronization::kProtocolStartAt};
-    SwarmFanoutOptions fanout{};
-    std::size_t quorum{};
-    std::chrono::milliseconds start_delay{200};
-    std::chrono::milliseconds max_clock_offset{50};
-    float min_time_sync_quality_percent{95.0F};
-    float max_drift_m{2.0F};
-    bool require_time_sync{true};
-    bool verify{false};
-    CommandWaitOptions wait_options{};
-};
-
-struct SwarmDroneReadiness {
-    bool registered{false};
-    bool uploaded{false};
-    bool prepared{false};
-    bool time_sync_ok{false};
-    bool ready{false};
-    std::string message;
-    RpcError error;
-    ExecutionHandle handle;
-    TimeSyncState time_sync;
-};
-
-struct SwarmExecutionReport {
-    bool ok{false};
-    std::string message;
-    RpcError error;
-    std::size_t requested{};
-    std::size_t succeeded{};
-    std::size_t failed{};
-    std::int64_t scheduled_start_unix_ms{};
-    std::unordered_map<std::string, CommandResult> results;
-    std::unordered_map<std::string, CommandResult> recovery_results;
-    std::unordered_map<std::string, ExecutionResult> upload_results;
-    std::unordered_map<std::string, ExecutionResult> prepare_results;
-    std::unordered_map<std::string, ExecutionResult> start_results;
-    std::unordered_map<std::string, ExecutionResult> abort_results;
-    std::unordered_map<std::string, TimeSyncState> time_sync_states;
-    std::unordered_map<std::string, SwarmDroneReadiness> readiness;
-    std::unordered_map<std::string, commands::Command> planned_commands;
 };
 
 using SwarmSubscriptionResults = std::unordered_map<std::string, SubscriptionResult>;
@@ -162,10 +104,10 @@ using SwarmSubscriptionResults = std::unordered_map<std::string, SubscriptionRes
  *   };
  *   swarm.SendCommand(waypoint);
  *
- *   // Arm all drones through the synchronized swarm execution path
+ *   // Arm all drones through direct bounded fanout
  *   swarmkit::commands::CommandContext swarm_context;
  *   swarm_context.priority = swarmkit::commands::CommandPriority::kSupervisor;
- *   swarm.ExecuteSynchronizedCommand(
+ *   swarm.BroadcastCommand(
  *       swarmkit::commands::FlightCmd{swarmkit::commands::CmdArm{}}, swarm_context);
  * @endcode
  */
@@ -255,29 +197,6 @@ class SwarmClient {
         const CommandWaitOptions& options = {},
         const SwarmFanoutOptions& fanout_options = {}) const;
 
-    /**
-     * @brief Execute one concrete command across the fleet from a synchronized protocol start.
-     *
-     * @details This is the production swarm path for commands such as takeoff
-     * and goto that should start together. In kProtocolStartAt mode the manager
-     * uploads per-drone timed command plans, prepares them, validates time-sync
-     * quality/readiness, then sends one shared StartExecutionAt timestamp.
-     */
-    [[nodiscard]] SwarmExecutionReport ExecuteSynchronizedCommand(
-        const commands::Command& command, const commands::CommandContext& context,
-        const SwarmExecutionOptions& options = {}) const;
-
-    /**
-     * @brief Execute a planner-produced per-drone command plan.
-     *
-     * @details Higher-level path planners can translate their own route,
-     * velocity, or mission decisions into concrete per-drone commands and use
-     * this manager entry point for synchronized execution and failure policy.
-     */
-    [[nodiscard]] SwarmExecutionReport ExecutePlannedCommands(
-        const std::unordered_map<std::string, commands::Command>& planned_commands,
-        const commands::CommandContext& context, const SwarmExecutionOptions& options = {}) const;
-
     /// @}
 
     /// @name Active goals
@@ -286,28 +205,6 @@ class SwarmClient {
     [[nodiscard]] GoalResult SetActiveGoal(ActiveGoal goal) const;
     [[nodiscard]] std::unordered_map<std::string, GoalResult> SetActiveGoals(
         const std::unordered_map<std::string, ActiveGoal>& goals,
-        const SwarmFanoutOptions& fanout_options = {}) const;
-
-    /// @}
-
-    /// @name Generic trajectory / execution coordination
-    /// @{
-
-    [[nodiscard]] ExecutionResult UploadTrajectory(const TrajectoryPlan& plan) const;
-    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> UploadTrajectories(
-        const std::vector<TrajectoryPlan>& plans,
-        const SwarmFanoutOptions& fanout_options = {}) const;
-    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> ValidateTrajectories(
-        const std::vector<TrajectoryPlan>& plans,
-        const SwarmFanoutOptions& fanout_options = {}) const;
-    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> PrepareAll(
-        const std::string& execution_id, const SwarmFanoutOptions& fanout_options = {}) const;
-    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> StartAllAt(
-        const std::string& execution_id, std::int64_t unix_time_ms,
-        const SwarmFanoutOptions& fanout_options = {}) const;
-    [[nodiscard]] std::unordered_map<std::string, ExecutionResult> AbortAll(
-        const std::string& execution_id, const SwarmFanoutOptions& fanout_options = {}) const;
-    [[nodiscard]] std::unordered_map<std::string, std::vector<ExecutionHandle>> ListAllExecutions(
         const SwarmFanoutOptions& fanout_options = {}) const;
 
     /// @}

@@ -197,7 +197,6 @@ std::optional<Px4Mode> Px4ModeFromName(std::string mode) {
         {"posctl", {.main_mode = kPx4MainModePosctl}},
         {"position", {.main_mode = kPx4MainModePosctl}},
         {"auto", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoMission}},
-        {"mission", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoMission}},
         {"rtl", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoRtl}},
         {"return", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoRtl}},
         {"land", {.main_mode = kPx4MainModeAuto, .sub_mode = kPx4SubModeAutoLand}},
@@ -222,8 +221,8 @@ std::vector<std::string> SupportedModes(MavlinkAutopilotProfile profile) {
             return {"manual", "circle", "stabilize", "fbwa", "fbwb", "cruise",
                     "auto",   "rtl",    "loiter",    "takeoff", "guided"};
         case MavlinkAutopilotProfile::kPx4:
-            return {"manual", "altctl", "posctl", "auto", "mission", "rtl",
-                    "land",   "loiter", "takeoff", "offboard"};
+            return {"manual", "altctl", "posctl", "auto", "rtl", "land", "loiter", "takeoff",
+                    "offboard"};
     }
     return {};
 }
@@ -252,43 +251,6 @@ std::string MavResultName(std::uint8_t result) {
             return "UNSUPPORTED_MAV_FRAME";
         case MAV_RESULT_NOT_IN_CONTROL:
             return "NOT_IN_CONTROL";
-        default:
-            return "UNKNOWN(" + std::to_string(result) + ")";
-    }
-}
-
-std::string MissionResultName(std::uint8_t result) {
-    switch (result) {
-        case MAV_MISSION_ACCEPTED:
-            return "ACCEPTED";
-        case MAV_MISSION_ERROR:
-            return "ERROR";
-        case MAV_MISSION_UNSUPPORTED_FRAME:
-            return "UNSUPPORTED_FRAME";
-        case MAV_MISSION_UNSUPPORTED:
-            return "UNSUPPORTED";
-        case MAV_MISSION_NO_SPACE:
-            return "NO_SPACE";
-        case MAV_MISSION_INVALID:
-            return "INVALID";
-        case MAV_MISSION_INVALID_PARAM1:
-            return "INVALID_PARAM1";
-        case MAV_MISSION_INVALID_PARAM2:
-            return "INVALID_PARAM2";
-        case MAV_MISSION_INVALID_PARAM3:
-            return "INVALID_PARAM3";
-        case MAV_MISSION_INVALID_PARAM4:
-            return "INVALID_PARAM4";
-        case MAV_MISSION_INVALID_PARAM5_X:
-            return "INVALID_PARAM5_X";
-        case MAV_MISSION_INVALID_PARAM6_Y:
-            return "INVALID_PARAM6_Y";
-        case MAV_MISSION_INVALID_PARAM7:
-            return "INVALID_PARAM7";
-        case MAV_MISSION_INVALID_SEQUENCE:
-            return "INVALID_SEQUENCE";
-        case MAV_MISSION_DENIED:
-            return "DENIED";
         default:
             return "UNKNOWN(" + std::to_string(result) + ")";
     }

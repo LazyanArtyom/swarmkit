@@ -145,7 +145,6 @@ struct TelemetryFrame {
     bool estimator_attitude_ok{false};
     std::string active_command_id;
     std::string active_goal_id;
-    std::string active_execution_id;
     std::string correlation_id;
 
     [[nodiscard]] bool HasPosition() const { return validity.position; }

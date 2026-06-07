@@ -34,7 +34,6 @@ inline constexpr float kMillimetresPerMetre = 1000.0F;
 inline constexpr float kCentimetresPerMetre = 100.0F;
 inline constexpr float kRadiansToDegrees = 57.29577951308232F;
 inline constexpr float kUnknownBattery = -1.0F;
-inline constexpr std::uint16_t kMissionUploadMaxItems = 1000;
 inline constexpr int kHeartbeatStaleTimeoutMs = 3000;
 inline constexpr int kTelemetryStaleTimeoutMs = 5000;
 
@@ -98,16 +97,6 @@ struct MavlinkCommandAckResult {
     [[nodiscard]] core::Result ToCoreResult() const;
 };
 
-struct MissionRequest {
-    std::uint16_t seq{};
-    std::uint8_t mission_type{MAV_MISSION_TYPE_MISSION};
-};
-
-struct MissionAck {
-    std::uint8_t type{};
-    std::uint8_t mission_type{MAV_MISSION_TYPE_MISSION};
-};
-
 struct MavlinkVehicleState {
     std::int64_t last_heartbeat_unix_ms{};
     std::int64_t last_telemetry_unix_ms{};
@@ -145,7 +134,6 @@ struct Px4Mode {
 [[nodiscard]] std::string ModeString(const mavlink_heartbeat_t& heartbeat,
                                      MavlinkAutopilotProfile profile);
 [[nodiscard]] std::string MavResultName(std::uint8_t result);
-[[nodiscard]] std::string MissionResultName(std::uint8_t result);
 [[nodiscard]] std::optional<int> ArduCopterModeFromName(std::string mode);
 [[nodiscard]] std::optional<int> ArduPlaneModeFromName(std::string mode);
 [[nodiscard]] std::optional<Px4Mode> Px4ModeFromName(std::string mode);
