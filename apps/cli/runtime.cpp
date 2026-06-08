@@ -1575,9 +1575,27 @@ int RunArtifact(Client& client, int argc, char** argv) {
         }
         const std::string target_id = common::GetOptionValue(argc, argv, "--target");
         const bool include_expired = common::HasFlag(argc, argv, "--include-expired");
-        const auto result = client.ListArtifacts(source_id, target_id, include_expired);
+        swarmkit::client::ArtifactListOptions options;
+        options.source_id = source_id;
+        options.target_id = target_id;
+        options.include_expired = include_expired;
+        options.page_token = common::GetOptionValue(argc, argv, "--page-token");
+        if (const std::string page_size = common::GetOptionValue(argc, argv, "--page-size");
+            !page_size.empty()) {
+            const auto parsed = ParseIntArg(page_size, "--page-size");
+            if (!parsed.has_value() || *parsed <= 0) {
+                std::cerr << "Invalid --page-size\n";
+                return EXIT_FAILURE;
+            }
+            options.page_size = *parsed;
+        }
+        const auto result = client.ListArtifacts(options);
         std::cout << "Artifact list: " << (result.ok ? "OK" : "FAILED")
-                  << " count=" << result.artifacts.size();
+                  << " count=" << result.artifacts.size()
+                  << " total=" << result.total_count;
+        if (!result.next_page_token.empty()) {
+            std::cout << " next_page_token=" << result.next_page_token;
+        }
         if (!result.message.empty()) {
             std::cout << " " << result.message;
         }

@@ -117,6 +117,7 @@ void PrintUsage() {
            "                  [--chunk-bytes N] [--duration-ms TTL_MS] [--label KEY=VALUE ...]\n"
            "  artifact status --transfer-id ID | artifact cancel --transfer-id ID\n"
            "  artifact list [--source-id ID] [--target ID] [--include-expired]\n"
+           "                [--page-size N] [--page-token TOKEN]\n"
            "  artifact info --artifact-id ID\n"
            "  artifact download --artifact-id ID --file PATH\n"
            "  artifact announce --artifact-id ID [--target ID] [--content-type TYPE]\n"

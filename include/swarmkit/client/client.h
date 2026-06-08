@@ -415,6 +415,16 @@ struct DataPeerStatus {
     std::string message;
 };
 
+struct DataPeerConfig {
+    std::string drone_id;
+    std::string address;
+    std::string transport_security{"auto"};
+    std::string root_ca_cert_path;
+    std::string cert_chain_path;
+    std::string private_key_path;
+    std::string server_authority_override;
+};
+
 struct DataPeerListResult {
     bool ok{false};
     std::string message;
@@ -486,6 +496,16 @@ struct ArtifactListResult {
     std::string correlation_id;
     RpcError error;
     std::vector<ArtifactDescriptor> artifacts;
+    std::string next_page_token;
+    int total_count{};
+};
+
+struct ArtifactListOptions {
+    std::string source_id;
+    std::string target_id;
+    bool include_expired{false};
+    int page_size{};
+    std::string page_token;
 };
 
 /**
@@ -713,6 +733,12 @@ class Client {
     [[nodiscard]] DataPeerListResult RefreshDataPeers(
         const std::vector<std::string>& drone_ids = {}) const;
 
+    /// @brief Add or replace one data peer in the agent's runtime registry.
+    [[nodiscard]] DataPeerListResult UpsertDataPeer(const DataPeerConfig& peer) const;
+
+    /// @brief Remove one data peer from the agent's runtime registry.
+    [[nodiscard]] DataPeerListResult RemoveDataPeer(const std::string& drone_id) const;
+
     /// @brief Upload a file/blob to the connected agent using chunked transfer.
     [[nodiscard]] ArtifactTransferResult UploadArtifact(const ArtifactUpload& upload) const;
 
@@ -735,6 +761,7 @@ class Client {
     [[nodiscard]] ArtifactListResult ListArtifacts(std::string source_id = {},
                                                    std::string target_id = {},
                                                    bool include_expired = false) const;
+    [[nodiscard]] ArtifactListResult ListArtifacts(const ArtifactListOptions& options) const;
 
     /// @brief Inspect metadata for one stored or announced artifact.
     [[nodiscard]] ArtifactTransferResult GetArtifact(const std::string& artifact_id) const;
@@ -742,6 +769,10 @@ class Client {
     /// @brief Download a stored artifact from the connected agent into a file.
     [[nodiscard]] ArtifactTransferResult DownloadArtifact(const std::string& artifact_id,
                                                           const std::string& output_path) const;
+
+    /// @brief Resume a partially downloaded artifact from output_path.part when possible.
+    [[nodiscard]] ArtifactTransferResult ResumeArtifactDownload(const std::string& artifact_id,
+                                                                const std::string& output_path) const;
 
     /// @brief Announce an artifact descriptor without uploading bytes.
     [[nodiscard]] ArtifactTransferResult AnnounceArtifact(ArtifactDescriptor descriptor) const;

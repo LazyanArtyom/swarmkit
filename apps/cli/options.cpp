@@ -48,6 +48,7 @@ namespace swarmkit::apps::cli::internal {
            value == "--topic" || value == "--source" || value == "--source-id" ||
            value == "--target" || value == "--payload" || value == "--content-type" ||
            value == "--artifact-id" || value == "--chunk-bytes" || value == "--transfer-id" ||
+           value == "--page-size" || value == "--page-token" ||
            value == "--namespace" || value == "--name" || value == "--param" ||
            value == "--transport-security";
 }

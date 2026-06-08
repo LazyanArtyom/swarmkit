@@ -314,6 +314,104 @@ TEST_CASE("Client artifacts upload download and verify hash", "[client][integrat
     std::filesystem::remove(output_path, error);
 }
 
+TEST_CASE("Agent reloads durable artifact index from storage",
+          "[client][integration][data]") {
+    const std::filesystem::path store =
+        std::filesystem::temp_directory_path() / "swarmkit-durable-artifacts";
+    const std::filesystem::path input_path =
+        std::filesystem::temp_directory_path() / "swarmkit-durable-input.bin";
+    const std::filesystem::path output_path =
+        std::filesystem::temp_directory_path() / "swarmkit-durable-output.bin";
+    std::error_code error;
+    std::filesystem::remove_all(store, error);
+    const std::string payload = "durable-frame-bytes";
+    {
+        std::ofstream output(input_path, std::ios::binary | std::ios::trunc);
+        output << payload;
+    }
+
+    swarmkit::agent::AgentConfig config;
+    config.agent_id = "durable-agent";
+    config.data.artifact_dir = store.string();
+    config.safety.allow_unsafe_bench_commands = true;
+    const testsupport::DevMtlsPaths paths = testsupport::MakeDevMtlsPaths();
+    config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    config.security.cert_chain_path = paths.server_cert_chain_path;
+    config.security.private_key_path = paths.server_private_key_path;
+
+    std::string artifact_id;
+    {
+        testsupport::AgentServerHarness harness(config);
+        Client client = MakeClient(harness.Address());
+        ArtifactUpload upload;
+        upload.file_path = input_path.string();
+        upload.descriptor.content_type = "application/octet-stream";
+        const ArtifactTransferResult uploaded = client.UploadArtifact(upload);
+        REQUIRE(uploaded.ok);
+        artifact_id = uploaded.descriptor.artifact_id;
+    }
+
+    {
+        testsupport::AgentServerHarness harness(config);
+        Client client = MakeClient(harness.Address());
+        const ArtifactListResult listed = client.ListArtifacts();
+        REQUIRE(listed.ok);
+        CHECK(std::ranges::any_of(listed.artifacts, [&](const ArtifactDescriptor& descriptor) {
+            return descriptor.artifact_id == artifact_id;
+        }));
+        const ArtifactTransferResult downloaded =
+            client.DownloadArtifact(artifact_id, output_path.string());
+        REQUIRE(downloaded.ok);
+        std::ifstream input(output_path, std::ios::binary);
+        const std::string downloaded_payload{std::istreambuf_iterator<char>(input),
+                                             std::istreambuf_iterator<char>()};
+        CHECK(downloaded_payload == payload);
+    }
+
+    std::filesystem::remove(input_path, error);
+    std::filesystem::remove(output_path, error);
+    std::filesystem::remove_all(store, error);
+}
+
+TEST_CASE("Client resumes artifact download from partial file",
+          "[client][integration][data]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+    const std::filesystem::path input_path =
+        std::filesystem::temp_directory_path() / "swarmkit-resume-input.bin";
+    const std::filesystem::path output_path =
+        std::filesystem::temp_directory_path() / "swarmkit-resume-output.bin";
+    const std::filesystem::path partial_path =
+        output_path.parent_path() / (output_path.filename().string() + ".part");
+    const std::string payload = "resumable-artifact-payload";
+    {
+        std::ofstream output(input_path, std::ios::binary | std::ios::trunc);
+        output << payload;
+    }
+    {
+        std::ofstream partial(partial_path, std::ios::binary | std::ios::trunc);
+        partial << payload.substr(0, 9);
+    }
+    ArtifactUpload upload;
+    upload.file_path = input_path.string();
+    upload.chunk_bytes = 5;
+    const ArtifactTransferResult uploaded = client.UploadArtifact(upload);
+    REQUIRE(uploaded.ok);
+
+    const ArtifactTransferResult resumed =
+        client.ResumeArtifactDownload(uploaded.descriptor.artifact_id, output_path.string());
+    REQUIRE(resumed.ok);
+    std::ifstream input(output_path, std::ios::binary);
+    const std::string downloaded_payload{std::istreambuf_iterator<char>(input),
+                                         std::istreambuf_iterator<char>()};
+    CHECK(downloaded_payload == payload);
+
+    std::error_code error;
+    std::filesystem::remove(input_path, error);
+    std::filesystem::remove(output_path, error);
+    std::filesystem::remove(partial_path, error);
+}
+
 TEST_CASE("Artifact upload rejects malformed chunk ordering", "[client][integration][data]") {
     testsupport::AgentServerHarness harness;
     auto stub = MakeDataServiceStub(harness.Address());
@@ -531,6 +629,49 @@ TEST_CASE("Client refreshes configured data peer reachability", "[client][integr
     CHECK(peers.peers.front().state == DataPeerState::kReady);
     CHECK(peers.peers.front().last_success_unix_ms > 0);
     CHECK(peers.peers.front().message.find("ready") != std::string::npos);
+}
+
+TEST_CASE("Client updates runtime data peer registry", "[client][integration][data]") {
+    const testsupport::DevMtlsPaths paths = testsupport::MakeDevMtlsPaths();
+    swarmkit::agent::AgentConfig target_config;
+    target_config.agent_id = "drone-2";
+    target_config.safety.allow_unsafe_bench_commands = true;
+    target_config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    target_config.security.cert_chain_path = paths.server_cert_chain_path;
+    target_config.security.private_key_path = paths.server_private_key_path;
+    testsupport::AgentServerHarness target(target_config);
+
+    swarmkit::agent::AgentConfig source_config;
+    source_config.agent_id = "drone-1";
+    source_config.safety.allow_unsafe_bench_commands = true;
+    source_config.security.root_ca_cert_path = paths.root_ca_cert_path;
+    source_config.security.cert_chain_path = paths.server_cert_chain_path;
+    source_config.security.private_key_path = paths.server_private_key_path;
+    testsupport::AgentServerHarness source(source_config);
+
+    Client source_client = MakeClient(source.Address());
+    DataPeerConfig peer;
+    peer.drone_id = "drone-2";
+    peer.address = target.Address();
+    peer.transport_security = "mtls";
+    peer.root_ca_cert_path = paths.root_ca_cert_path;
+    peer.cert_chain_path = paths.client_cert_chain_path;
+    peer.private_key_path = paths.client_private_key_path;
+    peer.server_authority_override = paths.server_authority_override;
+
+    const DataPeerListResult upserted = source_client.UpsertDataPeer(peer);
+    REQUIRE(upserted.ok);
+    REQUIRE(upserted.peers.size() == 1);
+    CHECK(upserted.peers.front().drone_id == "drone-2");
+
+    const DataPeerListResult refreshed = source_client.RefreshDataPeers({"drone-2"});
+    REQUIRE(refreshed.ok);
+    REQUIRE(refreshed.peers.size() == 1);
+    CHECK(refreshed.peers.front().state == DataPeerState::kReady);
+
+    const DataPeerListResult removed = source_client.RemoveDataPeer("drone-2");
+    REQUIRE(removed.ok);
+    CHECK(removed.peers.empty());
 }
 
 TEST_CASE("Client routes artifacts to configured peer agent", "[client][integration][data]") {
