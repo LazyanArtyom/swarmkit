@@ -13,7 +13,15 @@
 
 namespace swarmkit::agent::internal {
 
+struct AgentServiceBundle {
+    std::unique_ptr<swarmkit::v1::AgentService::Service> agent_service;
+    std::unique_ptr<swarmkit::v1::DataService::Service> data_service;
+};
+
 [[nodiscard]] std::unique_ptr<swarmkit::v1::AgentService::Service> MakeAgentServiceForTesting(
+    const AgentConfig& config, DroneBackendPtr backend);
+
+[[nodiscard]] std::unique_ptr<AgentServiceBundle> MakeAgentServicesForTesting(
     const AgentConfig& config, DroneBackendPtr backend);
 
 }  // namespace swarmkit::agent::internal

@@ -18,6 +18,7 @@ swarmkit_enable_sanitizers(swarmkit-agent)
 add_executable(swarmkit-cli
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/app.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/command_builder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/data_runtime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/flight_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/nav_command_parser.cpp

@@ -6,6 +6,7 @@
 
 add_library(swarmkit_agent STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/server.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/config.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/arbiter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/active_goal_supervisor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backend_factory.cpp

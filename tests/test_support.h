@@ -227,7 +227,7 @@ class AgentServerHarness {
     explicit AgentServerHarness(const agent::AgentConfig& config) {
         auto backend = std::make_unique<RecordingBackend>();
         backend_ = backend.get();
-        service_ = agent::internal::MakeAgentServiceForTesting(config, std::move(backend));
+        services_ = agent::internal::MakeAgentServicesForTesting(config, std::move(backend));
 
         grpc::ServerBuilder builder;
         int selected_port = 0;
@@ -250,11 +250,8 @@ class AgentServerHarness {
             GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
         builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options),
                                  &selected_port);
-        builder.RegisterService(service_.get());
-        if (auto* data_service = dynamic_cast<swarmkit::v1::DataService::Service*>(service_.get());
-            data_service != nullptr) {
-            builder.RegisterService(data_service);
-        }
+        builder.RegisterService(services_->agent_service.get());
+        builder.RegisterService(services_->data_service.get());
         server_ = builder.BuildAndStart();
         address_ = "127.0.0.1:" + std::to_string(selected_port);
     }
@@ -290,7 +287,7 @@ class AgentServerHarness {
     }
 
     RecordingBackend* backend_{nullptr};
-    std::unique_ptr<swarmkit::v1::AgentService::Service> service_;
+    std::unique_ptr<agent::internal::AgentServiceBundle> services_;
     std::unique_ptr<grpc::Server> server_;
     std::string address_;
 };
