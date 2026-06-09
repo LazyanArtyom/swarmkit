@@ -671,7 +671,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         peer_registry_.FillReply(correlation_id, removed, removed ? "data peer removed"
                                                                   : "data peer not found",
                                 removed ? swarmkit::v1::ERROR_CODE_NONE
-                                        : swarmkit::v1::ERROR_CODE_UNAVAILABLE,
+                                        : swarmkit::v1::ERROR_CODE_NOT_FOUND,
                                 reply);
         return grpc::Status::OK;
     }
@@ -706,7 +706,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             reply->set_ok(false);
             reply->set_message("no data peer configured for target_id=" + message.target_id());
             reply->set_correlation_id(correlation_id);
-            reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_NOT_FOUND);
             core::Logger::WarnFmt(
                 "rpc=SendMessageToDrone corr={} agent={} target={} topic={} result=rejected "
                 "reason=no_peer",
@@ -1176,7 +1176,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         const auto status = transfer_manager_.Find(req->transfer_id());
         if (!status.has_value()) {
             FillArtifactTransferReply(reply, false, "artifact transfer not found", correlation_id,
-                                      swarmkit::v1::ERROR_CODE_UNAVAILABLE, {});
+                                      swarmkit::v1::ERROR_CODE_NOT_FOUND, {});
             return grpc::Status::OK;
         }
         FillArtifactTransferReply(reply, true, status->message(), correlation_id,
@@ -1198,7 +1198,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         const auto status = transfer_manager_.Cancel(req->transfer_id());
         if (!status.has_value()) {
             FillArtifactTransferReply(reply, false, "artifact transfer not found", correlation_id,
-                                      swarmkit::v1::ERROR_CODE_UNAVAILABLE, {});
+                                      swarmkit::v1::ERROR_CODE_NOT_FOUND, {});
             return grpc::Status::OK;
         }
         core::Logger::InfoFmt("rpc=CancelArtifactTransfer corr={} agent={} transfer_id={}",
@@ -1270,7 +1270,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             reply->set_ok(false);
             reply->set_message("artifact not found");
             reply->set_correlation_id(correlation_id);
-            reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_NOT_FOUND);
             return grpc::Status::OK;
         }
         if (ArtifactExpired(stored->descriptor, NowUnixMs())) {
@@ -1278,7 +1278,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             reply->set_ok(false);
             reply->set_message("artifact expired");
             reply->set_correlation_id(correlation_id);
-            reply->set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_NOT_FOUND);
             return grpc::Status::OK;
         }
         *reply->mutable_artifact() = stored->descriptor;
@@ -1536,7 +1536,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         if (fs_error) {
             outcome.message = "failed to create artifact temp dir path=" + tmp_dir.string() +
                               " error=" + fs_error.message();
-            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
             return outcome;
         }
         const std::filesystem::path tmp_path =
@@ -1544,7 +1544,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         std::ofstream output(tmp_path, std::ios::binary | std::ios::trunc);
         if (!output.is_open()) {
             outcome.message = "failed to open artifact temp file path=" + tmp_path.string();
-            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
             return outcome;
         }
 
@@ -1577,7 +1577,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
                 output.close();
                 std::filesystem::remove(tmp_path, fs_error);
                 outcome.message = "failed to write artifact temp file path=" + tmp_path.string();
-                outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+                outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
                 return outcome;
             }
             bytes += static_cast<std::int64_t>(read);
@@ -1598,7 +1598,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         if (!descriptor.sha256_hex().empty() && descriptor.sha256_hex() != sha256_hex) {
             std::filesystem::remove(tmp_path, fs_error);
             outcome.message = "artifact sha256 mismatch";
-            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
             return outcome;
         }
         descriptor.set_sha256_hex(sha256_hex);
@@ -1614,7 +1614,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             std::filesystem::remove(tmp_path, fs_error);
             outcome.message = "failed to create artifact final dir path=" + final_dir.string() +
                               " error=" + fs_error.message();
-            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
             return outcome;
         }
         const std::filesystem::path final_path =
@@ -1633,14 +1633,14 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             outcome.message = "failed to finalize artifact tmp_path=" + tmp_path.string() +
                               " final_path=" + final_path.string() +
                               " error=" + fs_error.message();
-            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
             return outcome;
         }
         if (const core::Result persisted = artifact_store_.PersistMetadata(descriptor, final_path);
             !persisted.IsOk()) {
             std::filesystem::remove(final_path, fs_error);
             outcome.message = persisted.message;
-            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
             return outcome;
         }
 
@@ -1664,7 +1664,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             outcome.message =
                 "route failed before upload: no data peer configured for target_id=" +
                 descriptor.target_id();
-            outcome.error_code = swarmkit::v1::ERROR_CODE_UNAVAILABLE;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_NOT_FOUND;
             return outcome;
         }
         std::ifstream input(source_path, std::ios::binary);

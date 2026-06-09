@@ -192,6 +192,16 @@ constexpr std::size_t kDefaultArtifactChunkBytes = 64 * 1024;
             return RpcStatusCode::kInvalidArgument;
         case ProtoCode::ERROR_CODE_REJECTED:
             return RpcStatusCode::kRejected;
+        case ProtoCode::ERROR_CODE_PERMISSION_DENIED:
+            return RpcStatusCode::kPermissionDenied;
+        case ProtoCode::ERROR_CODE_NOT_FOUND:
+            return RpcStatusCode::kNotFound;
+        case ProtoCode::ERROR_CODE_ALREADY_EXISTS:
+            return RpcStatusCode::kAlreadyExists;
+        case ProtoCode::ERROR_CODE_FAILED_PRECONDITION:
+            return RpcStatusCode::kFailedPrecondition;
+        case ProtoCode::ERROR_CODE_UNSUPPORTED:
+            return RpcStatusCode::kUnsupported;
         case ProtoCode::ERROR_CODE_UNAVAILABLE:
             return RpcStatusCode::kUnavailable;
         case ProtoCode::ERROR_CODE_DEADLINE_EXCEEDED:
@@ -202,6 +212,8 @@ constexpr std::size_t kDefaultArtifactChunkBytes = 64 * 1024;
             return RpcStatusCode::kInternal;
         case ProtoCode::ERROR_CODE_BACKEND_FAILURE:
             return RpcStatusCode::kBackendFailure;
+        case ProtoCode::ERROR_CODE_UNKNOWN:
+            return RpcStatusCode::kUnknown;
         case ProtoCode::ERROR_CODE_UNSPECIFIED:
             return RpcStatusCode::kUnknown;
     }

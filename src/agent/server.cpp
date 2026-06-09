@@ -621,17 +621,39 @@ void PopulateTelemetryProto(const core::TelemetryFrame& frame,
 /// @name Proto conversion helpers
 /// @{
 
-[[nodiscard]] swarmkit::v1::ErrorCode ToProtoErrorCode(core::StatusCode code) {
+[[nodiscard]] swarmkit::v1::ErrorCode ToProtoErrorCode(core::ErrorCode code) {
     using ProtoCode = swarmkit::v1::ErrorCode;
     switch (code) {
-        case core::StatusCode::kOk:
+        case core::ErrorCode::kOk:
             return ProtoCode::ERROR_CODE_NONE;
-        case core::StatusCode::kRejected:
+        case core::ErrorCode::kInvalidArgument:
+            return ProtoCode::ERROR_CODE_INVALID_ARGUMENT;
+        case core::ErrorCode::kRejected:
             return ProtoCode::ERROR_CODE_REJECTED;
-        case core::StatusCode::kFailed:
+        case core::ErrorCode::kPermissionDenied:
+            return ProtoCode::ERROR_CODE_PERMISSION_DENIED;
+        case core::ErrorCode::kNotFound:
+            return ProtoCode::ERROR_CODE_NOT_FOUND;
+        case core::ErrorCode::kAlreadyExists:
+            return ProtoCode::ERROR_CODE_ALREADY_EXISTS;
+        case core::ErrorCode::kFailedPrecondition:
+            return ProtoCode::ERROR_CODE_FAILED_PRECONDITION;
+        case core::ErrorCode::kUnsupported:
+            return ProtoCode::ERROR_CODE_UNSUPPORTED;
+        case core::ErrorCode::kUnavailable:
+            return ProtoCode::ERROR_CODE_UNAVAILABLE;
+        case core::ErrorCode::kDeadlineExceeded:
+            return ProtoCode::ERROR_CODE_DEADLINE_EXCEEDED;
+        case core::ErrorCode::kCancelled:
+            return ProtoCode::ERROR_CODE_CANCELLED;
+        case core::ErrorCode::kBackendFailure:
+            return ProtoCode::ERROR_CODE_BACKEND_FAILURE;
+        case core::ErrorCode::kInternal:
             return ProtoCode::ERROR_CODE_INTERNAL;
+        case core::ErrorCode::kUnknown:
+            return ProtoCode::ERROR_CODE_UNKNOWN;
     }
-    return ProtoCode::ERROR_CODE_INTERNAL;
+    return ProtoCode::ERROR_CODE_UNKNOWN;
 }
 
 [[nodiscard]] swarmkit::v1::CommandReply::Status ToProtoStatus(core::StatusCode code) {
@@ -1159,7 +1181,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                                          config_.safety.allow_unsafe_bench_commands);
         if (kPrecondition.action != CommandPreconditionAction::kExecute) {
             reply->set_correlation_id(envelope.context.correlation_id);
-            reply->set_error_code(ToProtoErrorCode(kPrecondition.result.code));
+            reply->set_error_code(ToProtoErrorCode(kPrecondition.result.error.code));
             reply->set_debug_message(kPrecondition.result.message);
             if (kPrecondition.action == CommandPreconditionAction::kAlreadySatisfied) {
                 reply->set_status(swarmkit::v1::CommandReply::OK);
@@ -1208,7 +1230,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_status(ToProtoStatus(kGrant.result.code));
             reply->set_message(kGrant.result.message);
             reply->set_correlation_id(envelope.context.correlation_id);
-            reply->set_error_code(ToProtoErrorCode(kGrant.result.code));
+            reply->set_error_code(ToProtoErrorCode(kGrant.result.error.code));
             reply->set_debug_message(kGrant.result.message);
             PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_REJECTED,
                                  swarmkit::v1::REPORT_WARNING, kGrant.result.message);
@@ -1225,7 +1247,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         const core::Result kExecResult = backend_->Execute(envelope);
         reply->set_correlation_id(envelope.context.correlation_id);
-        reply->set_error_code(ToProtoErrorCode(kExecResult.code));
+        reply->set_error_code(ToProtoErrorCode(kExecResult.error.code));
         if (kExecResult.IsOk()) {
             reply->set_status(swarmkit::v1::CommandReply::OK);
             reply->set_message(kExecResult.message);
@@ -1302,7 +1324,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_ok(false);
             reply->set_message(message);
             reply->set_correlation_id(context.correlation_id);
-            reply->set_error_code(swarmkit::v1::ERROR_CODE_REJECTED);
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_UNSUPPORTED);
             reply->set_debug_message(message);
             *reply->mutable_goal() = goal;
             PublishGoalFailure(goal, context.correlation_id, message);
@@ -1315,7 +1337,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_ok(false);
             reply->set_message(arbiter_result.message);
             reply->set_correlation_id(context.correlation_id);
-            reply->set_error_code(ToProtoErrorCode(arbiter_result.code));
+            reply->set_error_code(ToProtoErrorCode(arbiter_result.error.code));
             reply->set_debug_message(arbiter_result.message);
             PublishSimpleReport(context.drone_id, context.correlation_id,
                                 swarmkit::v1::AUTHORITY_REJECTED,
@@ -1339,7 +1361,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_ok(false);
             reply->set_message(readiness.message);
             reply->set_correlation_id(context.correlation_id);
-            reply->set_error_code(ToProtoErrorCode(readiness.code));
+            reply->set_error_code(ToProtoErrorCode(readiness.error.code));
             reply->set_debug_message(readiness.message);
             *reply->mutable_goal() = goal;
             PublishGoalFailure(goal, context.correlation_id, readiness.message);
@@ -1397,7 +1419,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_ok(false);
             reply->set_message(arbiter_result.message);
             reply->set_correlation_id(context.correlation_id);
-            reply->set_error_code(ToProtoErrorCode(arbiter_result.code));
+            reply->set_error_code(ToProtoErrorCode(arbiter_result.error.code));
             reply->set_debug_message(arbiter_result.message);
             PublishSimpleReport(context.drone_id, context.correlation_id,
                                 swarmkit::v1::AUTHORITY_REJECTED,
@@ -1410,7 +1432,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_ok(result.IsOk());
         reply->set_message(result.message);
         reply->set_correlation_id(context.correlation_id);
-        reply->set_error_code(ToProtoErrorCode(result.code));
+        reply->set_error_code(ToProtoErrorCode(result.error.code));
         reply->set_debug_message(result.message);
         return grpc::Status::OK;
     }
@@ -1487,7 +1509,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_ok(kResult.IsOk());
         reply->set_message(kResult.message);
         reply->set_correlation_id(lock_context.correlation_id);
-        reply->set_error_code(ToProtoErrorCode(kResult.code));
+        reply->set_error_code(ToProtoErrorCode(kResult.error.code));
         reply->set_debug_message(kResult.message);
 
         if (kResult.IsOk()) {
