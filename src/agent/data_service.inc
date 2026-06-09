@@ -402,7 +402,40 @@ class ArtifactTransferManager {
     using Worker = std::function<void(std::string, swarmkit::v1::ArtifactTransferStartRequest,
                                       std::stop_token)>;
 
-    [[nodiscard]] swarmkit::v1::ArtifactTransferStatus Start(
+    struct StartResult {
+        bool accepted{false};
+        swarmkit::v1::ArtifactTransferStatus status;
+    };
+
+    explicit ArtifactTransferManager(const DataPlaneConfig& config)
+        : max_concurrent_(std::max(1, config.max_concurrent_artifact_transfers)),
+          max_queued_(std::max(0, config.max_queued_artifact_transfers)),
+          max_per_peer_(std::max(1, config.max_concurrent_artifact_transfers_per_peer)),
+          peer_bytes_per_second_(std::max(0, config.artifact_peer_bytes_per_second)) {
+        workers_.reserve(static_cast<std::size_t>(max_concurrent_));
+        for (int index = 0; index < max_concurrent_; ++index) {
+            workers_.emplace_back([this](std::stop_token stop_token) {
+                WorkerLoop(stop_token);
+            });
+        }
+    }
+
+    ~ArtifactTransferManager() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            shutting_down_ = true;
+            for (auto& [unused, runtime] : transfers_) {
+                static_cast<void>(unused);
+                runtime.stop_source.request_stop();
+            }
+        }
+        cv_.notify_all();
+    }
+
+    ArtifactTransferManager(const ArtifactTransferManager&) = delete;
+    ArtifactTransferManager& operator=(const ArtifactTransferManager&) = delete;
+
+    [[nodiscard]] StartResult Start(
         const swarmkit::v1::ArtifactTransferStartRequest& request, std::int64_t file_size,
         Worker worker) {
         const std::string transfer_id = MakeCorrelationId("artifact-transfer");
@@ -416,16 +449,41 @@ class ArtifactTransferManager {
         status.set_message("queued");
         status.set_error_code(swarmkit::v1::ERROR_CODE_NONE);
 
-        std::jthread thread([worker = std::move(worker), transfer_id,
-                             request](std::stop_token stop_token) mutable {
-            worker(transfer_id, request, stop_token);
-        });
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            transfers_[transfer_id].status = status;
-            transfers_[transfer_id].worker = std::move(thread);
+        const std::string peer_key = PeerKey(request);
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (shutting_down_) {
+            status.set_state(swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED);
+            status.set_message("artifact transfer manager is shutting down");
+            status.set_error_code(swarmkit::v1::ERROR_CODE_UNAVAILABLE);
+            status.set_completed_unix_ms(NowUnixMs());
+            return StartResult{.accepted = false, .status = std::move(status)};
         }
-        return status;
+        if (RunningCountLocked() >= static_cast<std::size_t>(max_concurrent_) &&
+            queue_.size() >= static_cast<std::size_t>(max_queued_)) {
+            status.set_state(swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED);
+            status.set_message("artifact transfer queue is full");
+            status.set_error_code(swarmkit::v1::ERROR_CODE_REJECTED);
+            status.set_completed_unix_ms(NowUnixMs());
+            return StartResult{.accepted = false, .status = std::move(status)};
+        }
+        if (!peer_key.empty() &&
+            PeerActiveCountLocked(peer_key) >= static_cast<std::size_t>(max_per_peer_)) {
+            status.set_state(swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED);
+            status.set_message("artifact transfer peer concurrency limit reached for " + peer_key);
+            status.set_error_code(swarmkit::v1::ERROR_CODE_REJECTED);
+            status.set_completed_unix_ms(NowUnixMs());
+            return StartResult{.accepted = false, .status = std::move(status)};
+        }
+
+        Runtime runtime;
+        runtime.status = status;
+        runtime.request = request;
+        runtime.worker = std::move(worker);
+        runtime.peer_key = peer_key;
+        transfers_.emplace(transfer_id, std::move(runtime));
+        queue_.push_back(transfer_id);
+        cv_.notify_one();
+        return StartResult{.accepted = true, .status = std::move(status)};
     }
 
     [[nodiscard]] std::optional<swarmkit::v1::ArtifactTransferStatus> Find(
@@ -445,7 +503,7 @@ class ArtifactTransferManager {
         if (iter == transfers_.end()) {
             return std::nullopt;
         }
-        iter->second.worker.request_stop();
+        iter->second.stop_source.request_stop();
         if (iter->second.status.state() != swarmkit::v1::ARTIFACT_TRANSFER_STATE_COMPLETED &&
             iter->second.status.state() != swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED &&
             iter->second.status.state() != swarmkit::v1::ARTIFACT_TRANSFER_STATE_CANCELLED) {
@@ -453,6 +511,7 @@ class ArtifactTransferManager {
             iter->second.status.set_message("cancel requested");
             iter->second.status.set_updated_unix_ms(NowUnixMs());
         }
+        cv_.notify_all();
         return iter->second.status;
     }
 
@@ -481,14 +540,147 @@ class ArtifactTransferManager {
         });
     }
 
+    [[nodiscard]] bool ThrottlePeerBandwidth(std::string_view peer_key, std::size_t bytes,
+                                             std::stop_token stop_token) {
+        if (peer_key.empty() || bytes == 0 || peer_bytes_per_second_ <= 0) {
+            return !stop_token.stop_requested();
+        }
+
+        const auto reservation = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(
+                static_cast<double>(bytes) / static_cast<double>(peer_bytes_per_second_)));
+        std::chrono::steady_clock::time_point release_at;
+        {
+            std::lock_guard<std::mutex> lock(bandwidth_mutex_);
+            const std::string key(peer_key);
+            const auto now = std::chrono::steady_clock::now();
+            auto& next_available = peer_next_send_time_[key];
+            if (next_available < now) {
+                next_available = now;
+            }
+            next_available += reservation;
+            release_at = next_available;
+        }
+
+        while (!stop_token.stop_requested()) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= release_at) {
+                return true;
+            }
+            const auto remaining = release_at - now;
+            std::this_thread::sleep_for(
+                std::min<std::chrono::steady_clock::duration>(
+                    remaining, std::chrono::milliseconds{25}));
+        }
+        return false;
+    }
+
    private:
+    [[nodiscard]] static bool Terminal(
+        const swarmkit::v1::ArtifactTransferStatus& status) {
+        return status.state() == swarmkit::v1::ARTIFACT_TRANSFER_STATE_COMPLETED ||
+               status.state() == swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED ||
+               status.state() == swarmkit::v1::ARTIFACT_TRANSFER_STATE_CANCELLED;
+    }
+
+    [[nodiscard]] static std::string PeerKey(
+        const swarmkit::v1::ArtifactTransferStartRequest& request) {
+        if (!request.route_to_target()) {
+            return {};
+        }
+        return request.artifact().target_id();
+    }
+
+    [[nodiscard]] std::size_t RunningCountLocked() const {
+        std::size_t count = 0;
+        for (const auto& [unused, runtime] : transfers_) {
+            static_cast<void>(unused);
+            if (runtime.status.state() == swarmkit::v1::ARTIFACT_TRANSFER_STATE_RUNNING) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    [[nodiscard]] std::size_t PeerActiveCountLocked(std::string_view peer_key) const {
+        std::size_t count = 0;
+        for (const auto& [unused, runtime] : transfers_) {
+            static_cast<void>(unused);
+            if (runtime.peer_key == peer_key && !Terminal(runtime.status)) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    void WorkerLoop(std::stop_token worker_stop) {
+        while (!worker_stop.stop_requested()) {
+            std::string transfer_id;
+            swarmkit::v1::ArtifactTransferStartRequest request;
+            Worker worker;
+            std::stop_token task_stop;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                cv_.wait_for(lock, std::chrono::milliseconds{100}, [&] {
+                    return shutting_down_ || !queue_.empty() || worker_stop.stop_requested();
+                });
+                if ((shutting_down_ || worker_stop.stop_requested()) && queue_.empty()) {
+                    return;
+                }
+                if (queue_.empty()) {
+                    continue;
+                }
+                transfer_id = std::move(queue_.front());
+                queue_.pop_front();
+                auto iter = transfers_.find(transfer_id);
+                if (iter == transfers_.end() || Terminal(iter->second.status)) {
+                    cv_.notify_all();
+                    continue;
+                }
+                iter->second.status.set_state(swarmkit::v1::ARTIFACT_TRANSFER_STATE_RUNNING);
+                iter->second.status.set_message("running");
+                iter->second.status.set_updated_unix_ms(NowUnixMs());
+                request = iter->second.request;
+                worker = iter->second.worker;
+                task_stop = iter->second.stop_source.get_token();
+            }
+
+            try {
+                worker(transfer_id, request, task_stop);
+            } catch (const std::exception& exc) {
+                Complete(transfer_id, swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED,
+                         swarmkit::v1::ERROR_CODE_INTERNAL,
+                         "artifact transfer worker exception: " + std::string(exc.what()), {});
+            } catch (...) {
+                Complete(transfer_id, swarmkit::v1::ARTIFACT_TRANSFER_STATE_FAILED,
+                         swarmkit::v1::ERROR_CODE_INTERNAL,
+                         "artifact transfer worker exception", {});
+            }
+            cv_.notify_all();
+        }
+    }
+
     struct Runtime {
         swarmkit::v1::ArtifactTransferStatus status;
-        std::jthread worker;
+        swarmkit::v1::ArtifactTransferStartRequest request;
+        Worker worker;
+        std::stop_source stop_source;
+        std::string peer_key;
     };
 
+    int max_concurrent_{1};
+    int max_queued_{0};
+    int max_per_peer_{1};
+    int peer_bytes_per_second_{0};
     mutable std::mutex mutex_;
+    std::condition_variable cv_;
+    bool shutting_down_{false};
+    std::deque<std::string> queue_;
     std::unordered_map<std::string, Runtime> transfers_;
+    std::vector<std::jthread> workers_;
+    std::mutex bandwidth_mutex_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point>
+        peer_next_send_time_;
 };
 
 class DataServiceImpl final : public swarmkit::v1::DataService::Service {
@@ -498,7 +690,8 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
           counters_(std::move(counters)),
           artifact_store_(config_),
           peer_registry_(config_),
-          data_router_(config_, &peer_registry_) {}
+          data_router_(config_, &peer_registry_),
+          transfer_manager_(config_.data) {}
 
     ~DataServiceImpl() override = default;
 
@@ -1146,13 +1339,25 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         }
 
         swarmkit::v1::ArtifactTransferStartRequest request = *req;
-        swarmkit::v1::ArtifactTransferStatus status = transfer_manager_.Start(
+        ArtifactTransferManager::StartResult start_result = transfer_manager_.Start(
             request, static_cast<std::int64_t>(file_size),
             [this](std::string transfer_id, swarmkit::v1::ArtifactTransferStartRequest request,
                    std::stop_token stop_token) {
                 RunArtifactTransfer(std::move(transfer_id), std::move(request), stop_token);
             });
+        const swarmkit::v1::ArtifactTransferStatus& status = start_result.status;
         const std::string transfer_id = status.transfer_id();
+        if (!start_result.accepted) {
+            core::Logger::WarnFmt(
+                "rpc=StartArtifactTransfer corr={} agent={} transfer_id={} source_path={} "
+                "target={} route={} bytes={} result=rejected error={}",
+                correlation_id, config_.agent_id, transfer_id, req->source_path(),
+                req->artifact().target_id(), req->route_to_target(), file_size,
+                status.message());
+            FillArtifactTransferReply(reply, false, status.message(), correlation_id,
+                                      status.error_code(), status);
+            return grpc::Status::OK;
+        }
         core::Logger::InfoFmt(
             "rpc=StartArtifactTransfer corr={} agent={} transfer_id={} source_path={} "
             "target={} route={} bytes={} result=queued",
@@ -1703,6 +1908,16 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             const std::streamsize read = input.gcount();
             if (read <= 0) {
                 break;
+            }
+            if (!transfer_manager_.ThrottlePeerBandwidth(peer->drone_id,
+                                                         static_cast<std::size_t>(read),
+                                                         stop_token)) {
+                peer_ctx.TryCancel();
+                writer->WritesDone();
+                static_cast<void>(writer->Finish());
+                outcome.message = "artifact transfer cancelled";
+                outcome.error_code = swarmkit::v1::ERROR_CODE_CANCELLED;
+                return outcome;
             }
             swarmkit::v1::ArtifactChunk chunk;
             chunk.set_transfer_id(std::string(transfer_id));

@@ -207,6 +207,10 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "    max_message_payload_bytes: 12345\n";
     output << "    artifact_chunk_bytes: 4096\n";
     output << "    max_artifact_bytes: 98765\n";
+    output << "    max_concurrent_artifact_transfers: 3\n";
+    output << "    max_queued_artifact_transfers: 11\n";
+    output << "    max_concurrent_artifact_transfers_per_peer: 2\n";
+    output << "    artifact_peer_bytes_per_second: 8192\n";
     output << "    peers:\n";
     output << "      - drone_id: drone-2\n";
     output << "        address: 127.0.0.1:50062\n";
@@ -254,6 +258,10 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->data.max_message_payload_bytes == 12345);
     CHECK(kLoaded->data.artifact_chunk_bytes == 4096);
     CHECK(kLoaded->data.max_artifact_bytes == 98765);
+    CHECK(kLoaded->data.max_concurrent_artifact_transfers == 3);
+    CHECK(kLoaded->data.max_queued_artifact_transfers == 11);
+    CHECK(kLoaded->data.max_concurrent_artifact_transfers_per_peer == 2);
+    CHECK(kLoaded->data.artifact_peer_bytes_per_second == 8192);
     REQUIRE(kLoaded->data.peers.size() == 1);
     CHECK(kLoaded->data.peers.front().drone_id == "drone-2");
     CHECK(kLoaded->data.peers.front().address == "127.0.0.1:50062");

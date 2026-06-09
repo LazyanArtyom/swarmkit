@@ -44,6 +44,14 @@ constexpr std::string_view kAgentEnvDataMaxMessagePayloadBytes =
     "DATA_MAX_MESSAGE_PAYLOAD_BYTES";
 constexpr std::string_view kAgentEnvDataArtifactChunkBytes = "DATA_ARTIFACT_CHUNK_BYTES";
 constexpr std::string_view kAgentEnvDataMaxArtifactBytes = "DATA_MAX_ARTIFACT_BYTES";
+constexpr std::string_view kAgentEnvDataMaxConcurrentArtifactTransfers =
+    "DATA_MAX_CONCURRENT_ARTIFACT_TRANSFERS";
+constexpr std::string_view kAgentEnvDataMaxQueuedArtifactTransfers =
+    "DATA_MAX_QUEUED_ARTIFACT_TRANSFERS";
+constexpr std::string_view kAgentEnvDataMaxConcurrentArtifactTransfersPerPeer =
+    "DATA_MAX_CONCURRENT_ARTIFACT_TRANSFERS_PER_PEER";
+constexpr std::string_view kAgentEnvDataArtifactPeerBytesPerSecond =
+    "DATA_ARTIFACT_PEER_BYTES_PER_SECOND";
 constexpr std::string_view kAgentEnvRootCaCertPath = "ROOT_CA_CERT_PATH";
 constexpr std::string_view kAgentEnvCertChainPath = "CERT_CHAIN_PATH";
 constexpr std::string_view kAgentEnvPrivateKeyPath = "PRIVATE_KEY_PATH";
@@ -205,6 +213,20 @@ core::Result DataPlaneConfig::Validate() const {
     if (max_artifact_bytes <= 0) {
         return core::Result::Rejected("data.max_artifact_bytes must be > 0");
     }
+    if (max_concurrent_artifact_transfers <= 0) {
+        return core::Result::Rejected(
+            "data.max_concurrent_artifact_transfers must be > 0");
+    }
+    if (max_queued_artifact_transfers < 0) {
+        return core::Result::Rejected("data.max_queued_artifact_transfers must be >= 0");
+    }
+    if (max_concurrent_artifact_transfers_per_peer <= 0) {
+        return core::Result::Rejected(
+            "data.max_concurrent_artifact_transfers_per_peer must be > 0");
+    }
+    if (artifact_peer_bytes_per_second < 0) {
+        return core::Result::Rejected("data.artifact_peer_bytes_per_second must be >= 0");
+    }
     std::vector<std::string> seen;
     for (const auto& peer : peers) {
         if (const core::Result result = peer.Validate(); !result.IsOk()) {
@@ -285,6 +307,14 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyIntEnv(prefix, kAgentEnvDataMaxMessagePayloadBytes, &data.max_message_payload_bytes);
     ApplyIntEnv(prefix, kAgentEnvDataArtifactChunkBytes, &data.artifact_chunk_bytes);
     ApplyIntEnv(prefix, kAgentEnvDataMaxArtifactBytes, &data.max_artifact_bytes);
+    ApplyIntEnv(prefix, kAgentEnvDataMaxConcurrentArtifactTransfers,
+                &data.max_concurrent_artifact_transfers);
+    ApplyIntEnv(prefix, kAgentEnvDataMaxQueuedArtifactTransfers,
+                &data.max_queued_artifact_transfers);
+    ApplyIntEnv(prefix, kAgentEnvDataMaxConcurrentArtifactTransfersPerPeer,
+                &data.max_concurrent_artifact_transfers_per_peer);
+    ApplyIntEnv(prefix, kAgentEnvDataArtifactPeerBytesPerSecond,
+                &data.artifact_peer_bytes_per_second);
 
     ApplyStringEnv(prefix, kAgentEnvRootCaCertPath, &security.root_ca_cert_path);
     ApplyStringEnv(prefix, kAgentEnvCertChainPath, &security.cert_chain_path);
@@ -524,6 +554,51 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         if (max_artifact_bytes->has_value()) {
             config.data.max_artifact_bytes =
                 max_artifact_bytes->value_or(config.data.max_artifact_bytes);
+        }
+
+        const auto max_concurrent_artifact_transfers =
+            core::yaml::ReadOptionalScalar<int>(data, "max_concurrent_artifact_transfers");
+        if (!max_concurrent_artifact_transfers.has_value()) {
+            return std::unexpected(max_concurrent_artifact_transfers.error());
+        }
+        if (max_concurrent_artifact_transfers->has_value()) {
+            config.data.max_concurrent_artifact_transfers =
+                max_concurrent_artifact_transfers->value_or(
+                    config.data.max_concurrent_artifact_transfers);
+        }
+
+        const auto max_queued_artifact_transfers =
+            core::yaml::ReadOptionalScalar<int>(data, "max_queued_artifact_transfers");
+        if (!max_queued_artifact_transfers.has_value()) {
+            return std::unexpected(max_queued_artifact_transfers.error());
+        }
+        if (max_queued_artifact_transfers->has_value()) {
+            config.data.max_queued_artifact_transfers =
+                max_queued_artifact_transfers->value_or(
+                    config.data.max_queued_artifact_transfers);
+        }
+
+        const auto max_concurrent_artifact_transfers_per_peer =
+            core::yaml::ReadOptionalScalar<int>(
+                data, "max_concurrent_artifact_transfers_per_peer");
+        if (!max_concurrent_artifact_transfers_per_peer.has_value()) {
+            return std::unexpected(max_concurrent_artifact_transfers_per_peer.error());
+        }
+        if (max_concurrent_artifact_transfers_per_peer->has_value()) {
+            config.data.max_concurrent_artifact_transfers_per_peer =
+                max_concurrent_artifact_transfers_per_peer->value_or(
+                    config.data.max_concurrent_artifact_transfers_per_peer);
+        }
+
+        const auto artifact_peer_bytes_per_second =
+            core::yaml::ReadOptionalScalar<int>(data, "artifact_peer_bytes_per_second");
+        if (!artifact_peer_bytes_per_second.has_value()) {
+            return std::unexpected(artifact_peer_bytes_per_second.error());
+        }
+        if (artifact_peer_bytes_per_second->has_value()) {
+            config.data.artifact_peer_bytes_per_second =
+                artifact_peer_bytes_per_second->value_or(
+                    config.data.artifact_peer_bytes_per_second);
         }
 
         const YAML::Node peers = data["peers"];

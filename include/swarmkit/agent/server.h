@@ -41,6 +41,10 @@ inline constexpr int kDefaultDataMessageBacklogSize = 1000;
 inline constexpr int kDefaultDataMessageMaxPayloadBytes = 256 * 1024;
 inline constexpr int kDefaultArtifactChunkBytes = 64 * 1024;
 inline constexpr int kDefaultMaxArtifactBytes = 100 * 1024 * 1024;
+inline constexpr int kDefaultMaxConcurrentArtifactTransfers = 2;
+inline constexpr int kDefaultMaxQueuedArtifactTransfers = 16;
+inline constexpr int kDefaultMaxConcurrentArtifactTransfersPerPeer = 1;
+inline constexpr int kDefaultArtifactPeerBytesPerSecond = 0;
 
 struct VehicleProfile {
     std::string profile_id{"generic-quad"};
@@ -110,6 +114,11 @@ struct DataPlaneConfig {
     int max_message_payload_bytes{kDefaultDataMessageMaxPayloadBytes};
     int artifact_chunk_bytes{kDefaultArtifactChunkBytes};
     int max_artifact_bytes{kDefaultMaxArtifactBytes};
+    int max_concurrent_artifact_transfers{kDefaultMaxConcurrentArtifactTransfers};
+    int max_queued_artifact_transfers{kDefaultMaxQueuedArtifactTransfers};
+    int max_concurrent_artifact_transfers_per_peer{
+        kDefaultMaxConcurrentArtifactTransfersPerPeer};
+    int artifact_peer_bytes_per_second{kDefaultArtifactPeerBytesPerSecond};
     std::vector<DataPeerConfig> peers;
 
     [[nodiscard]] core::Result Validate() const;
