@@ -277,6 +277,8 @@ struct ActiveGoal {
     std::string goal_id;
     std::uint64_t revision{};
     GeoPoint target{};
+    /// Future backend support: accepted by the API shape, but current
+    /// MAVLink execution still requires a global GPS target.
     LocalPoint local_target{};
     bool use_local_target{false};
     std::string target_frame{"global"};
@@ -458,6 +460,26 @@ struct ArtifactUpload {
     std::string file_path;
     ArtifactDescriptor descriptor;
     std::size_t chunk_bytes{64 * 1024};
+};
+
+struct ArtifactUploadSession {
+    std::string upload_id;
+    ArtifactDescriptor descriptor;
+    std::int64_t bytes_received{};
+    int next_chunk_index{};
+    std::int64_t created_unix_ms{};
+    std::int64_t updated_unix_ms{};
+    std::int64_t expires_unix_ms{};
+    bool committed{false};
+};
+
+struct ArtifactUploadSessionResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    RpcError error;
+    ArtifactUploadSession upload;
+    ArtifactDescriptor descriptor;
 };
 
 enum class ArtifactTransferState {
@@ -744,6 +766,26 @@ class Client {
 
     /// @brief Route a local file/blob through the connected agent to another drone agent.
     [[nodiscard]] ArtifactTransferResult SendArtifactToDrone(const ArtifactUpload& upload) const;
+
+    /// @brief Create a resumable upload session on the connected agent.
+    [[nodiscard]] ArtifactUploadSessionResult CreateArtifactUpload(
+        ArtifactDescriptor descriptor, std::int64_t ttl_ms = 0) const;
+
+    /// @brief Append one chunk to a resumable upload session.
+    [[nodiscard]] ArtifactUploadSessionResult UploadArtifactChunk(
+        const std::string& upload_id, std::string_view data, std::int64_t offset,
+        int chunk_index) const;
+
+    /// @brief Inspect resumable upload progress.
+    [[nodiscard]] ArtifactUploadSessionResult GetUploadStatus(
+        const std::string& upload_id) const;
+
+    /// @brief Finalize a complete upload session into a stored artifact.
+    [[nodiscard]] ArtifactUploadSessionResult CommitArtifactUpload(
+        const std::string& upload_id) const;
+
+    /// @brief Cancel and delete an in-progress upload session.
+    [[nodiscard]] ArtifactUploadSessionResult CancelUpload(const std::string& upload_id) const;
 
     /// @brief Start an agent-side artifact transfer from a path visible to the agent.
     [[nodiscard]] ArtifactTransferStatusResult StartArtifactTransfer(

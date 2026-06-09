@@ -229,6 +229,38 @@ enum class ArtifactStreamRoute : std::uint8_t {
     kPeerRoute,
 };
 
+[[nodiscard]] ArtifactUploadSession ToArtifactUploadSession(
+    const swarmkit::v1::ArtifactUploadSession& proto) {
+    return ArtifactUploadSession{
+        .upload_id = proto.upload_id(),
+        .descriptor = ToArtifactDescriptor(proto.artifact()),
+        .bytes_received = proto.bytes_received(),
+        .next_chunk_index = proto.next_chunk_index(),
+        .created_unix_ms = proto.created_unix_ms(),
+        .updated_unix_ms = proto.updated_unix_ms(),
+        .expires_unix_ms = proto.expires_unix_ms(),
+        .committed = proto.committed(),
+    };
+}
+
+void PopulateArtifactUploadSessionResult(ArtifactUploadSessionResult* out,
+                                         const swarmkit::v1::ArtifactUploadReply& rep,
+                                         std::string_view fallback_correlation_id,
+                                         int attempt_count) {
+    if (out == nullptr) {
+        return;
+    }
+    out->ok = rep.ok();
+    out->message = rep.message();
+    out->correlation_id =
+        rep.correlation_id().empty() ? std::string(fallback_correlation_id)
+                                     : rep.correlation_id();
+    out->upload = ToArtifactUploadSession(rep.upload());
+    out->descriptor = ToArtifactDescriptor(rep.artifact());
+    PopulateReplyError(&out->error, rep.error_code(), rep.message(), rep.debug_message(),
+                       out->correlation_id, attempt_count, core::ErrorDomain::kInternal);
+}
+
 [[nodiscard]] ArtifactTransferResult StreamArtifactFile(const ClientConfig& config,
                                                         swarmkit::v1::DataService::Stub& data_stub,
                                                         const ArtifactUpload& upload,
@@ -359,6 +391,139 @@ ArtifactTransferResult Client::UploadArtifact(const ArtifactUpload& upload) cons
 ArtifactTransferResult Client::SendArtifactToDrone(const ArtifactUpload& upload) const {
     return StreamArtifactFile(impl_->config, *impl_->data_stub, upload,
                               ArtifactStreamRoute::kPeerRoute);
+}
+
+ArtifactUploadSessionResult Client::CreateArtifactUpload(ArtifactDescriptor descriptor,
+                                                         std::int64_t ttl_ms) const {
+    ArtifactUploadSessionResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-upload-create");
+    out.correlation_id = correlation_id;
+    if (descriptor.source_id.empty()) {
+        descriptor.source_id = impl_->config.client_id;
+    }
+    if (descriptor.created_unix_ms == 0) {
+        descriptor.created_unix_ms = NowUnixMs();
+    }
+
+    swarmkit::v1::CreateArtifactUploadRequest req;
+    *req.mutable_artifact() = ToProtoArtifactDescriptor(descriptor);
+    req.set_ttl_ms(ttl_ms);
+    swarmkit::v1::ArtifactUploadReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->CreateArtifactUpload(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    PopulateArtifactUploadSessionResult(&out, rep, correlation_id, attempt_count);
+    return out;
+}
+
+ArtifactUploadSessionResult Client::UploadArtifactChunk(const std::string& upload_id,
+                                                        std::string_view data,
+                                                        std::int64_t offset,
+                                                        int chunk_index) const {
+    ArtifactUploadSessionResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-upload-chunk");
+    out.correlation_id = correlation_id;
+    if (upload_id.empty()) {
+        out.message = "upload_id is required";
+        PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
+                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           correlation_id, 0);
+        return out;
+    }
+
+    swarmkit::v1::ArtifactChunk req;
+    req.set_transfer_id(upload_id);
+    req.set_offset(offset);
+    req.set_chunk_index(chunk_index);
+    req.set_data(data.data(), data.size());
+    swarmkit::v1::ArtifactUploadReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->UploadArtifactChunk(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    PopulateArtifactUploadSessionResult(&out, rep, correlation_id, attempt_count);
+    return out;
+}
+
+ArtifactUploadSessionResult Client::GetUploadStatus(const std::string& upload_id) const {
+    ArtifactUploadSessionResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-upload-status");
+    out.correlation_id = correlation_id;
+    swarmkit::v1::ArtifactUploadRequest req;
+    req.set_upload_id(upload_id);
+    swarmkit::v1::ArtifactUploadReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->GetUploadStatus(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    PopulateArtifactUploadSessionResult(&out, rep, correlation_id, attempt_count);
+    return out;
+}
+
+ArtifactUploadSessionResult Client::CommitArtifactUpload(const std::string& upload_id) const {
+    ArtifactUploadSessionResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-upload-commit");
+    out.correlation_id = correlation_id;
+    swarmkit::v1::ArtifactUploadRequest req;
+    req.set_upload_id(upload_id);
+    swarmkit::v1::ArtifactUploadReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->CommitArtifactUpload(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    PopulateArtifactUploadSessionResult(&out, rep, correlation_id, attempt_count);
+    return out;
+}
+
+ArtifactUploadSessionResult Client::CancelUpload(const std::string& upload_id) const {
+    ArtifactUploadSessionResult out;
+    const std::string correlation_id = MakeCorrelationId("artifact-upload-cancel");
+    out.correlation_id = correlation_id;
+    swarmkit::v1::ArtifactUploadRequest req;
+    req.set_upload_id(upload_id);
+    swarmkit::v1::ArtifactUploadReply rep;
+    int attempt_count = 0;
+    const grpc::Status status =
+        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
+                             [this, &req, &rep](grpc::ClientContext* context) {
+                                 return impl_->data_stub->CancelUpload(context, req, &rep);
+                             });
+    if (!status.ok()) {
+        PopulateTransportError(&out.error, status, correlation_id, attempt_count);
+        out.message = out.error.user_message;
+        return out;
+    }
+    PopulateArtifactUploadSessionResult(&out, rep, correlation_id, attempt_count);
+    return out;
 }
 
 ArtifactTransferStatusResult Client::StartArtifactTransfer(const ArtifactUpload& upload,

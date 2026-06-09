@@ -441,6 +441,62 @@ TEST_CASE("Artifact upload rejects malformed chunk ordering", "[client][integrat
     CHECK(status.error_message().find("matching indexes") != std::string::npos);
 }
 
+TEST_CASE("Client resumes artifact upload sessions and commits artifact",
+          "[client][integration][data]") {
+    testsupport::AgentServerHarness harness;
+    Client client = MakeClient(harness.Address());
+
+    const std::filesystem::path output_path =
+        std::filesystem::temp_directory_path() / "swarmkit-upload-session-output.bin";
+    const std::string payload = "session-upload-resume-payload";
+
+    ArtifactDescriptor descriptor;
+    descriptor.source_id = "test-client";
+    descriptor.content_type = "application/octet-stream";
+    descriptor.filename = "session-upload.bin";
+    descriptor.size_bytes = static_cast<std::int64_t>(payload.size());
+
+    const ArtifactUploadSessionResult created = client.CreateArtifactUpload(descriptor);
+    REQUIRE(created.ok);
+    REQUIRE_FALSE(created.upload.upload_id.empty());
+    CHECK(created.upload.bytes_received == 0);
+
+    const std::string first = payload.substr(0, 9);
+    const ArtifactUploadSessionResult first_chunk =
+        client.UploadArtifactChunk(created.upload.upload_id, first, 0, 0);
+    REQUIRE(first_chunk.ok);
+    CHECK(first_chunk.upload.bytes_received == static_cast<std::int64_t>(first.size()));
+    CHECK(first_chunk.upload.next_chunk_index == 1);
+
+    const ArtifactUploadSessionResult status =
+        client.GetUploadStatus(created.upload.upload_id);
+    REQUIRE(status.ok);
+    CHECK(status.upload.bytes_received == static_cast<std::int64_t>(first.size()));
+
+    const std::string second = payload.substr(first.size());
+    const ArtifactUploadSessionResult second_chunk = client.UploadArtifactChunk(
+        created.upload.upload_id, second, static_cast<std::int64_t>(first.size()), 1);
+    REQUIRE(second_chunk.ok);
+    CHECK(second_chunk.upload.bytes_received == static_cast<std::int64_t>(payload.size()));
+
+    const ArtifactUploadSessionResult committed =
+        client.CommitArtifactUpload(created.upload.upload_id);
+    REQUIRE(committed.ok);
+    REQUIRE_FALSE(committed.descriptor.artifact_id.empty());
+    CHECK(committed.descriptor.size_bytes == static_cast<std::int64_t>(payload.size()));
+
+    const ArtifactTransferResult downloaded =
+        client.DownloadArtifact(committed.descriptor.artifact_id, output_path.string());
+    REQUIRE(downloaded.ok);
+    std::ifstream input(output_path, std::ios::binary);
+    const std::string downloaded_payload{std::istreambuf_iterator<char>(input),
+                                         std::istreambuf_iterator<char>()};
+    CHECK(downloaded_payload == payload);
+
+    std::error_code error;
+    std::filesystem::remove(output_path, error);
+}
+
 TEST_CASE("Client parallel duplicate artifact uploads are idempotent",
           "[client][integration][data]") {
     swarmkit::agent::AgentConfig config;

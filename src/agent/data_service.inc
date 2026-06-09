@@ -4,6 +4,8 @@
 // This file is part of SwarmKit.
 // See LICENSE.md in the repository root for full license terms.
 
+constexpr std::int64_t kDefaultArtifactUploadSessionTtlMs = 60 * 60 * 1000;
+
 class ArtifactStore {
    public:
     struct StoredArtifact {
@@ -685,6 +687,18 @@ class ArtifactTransferManager {
 
 class DataServiceImpl final : public swarmkit::v1::DataService::Service {
    public:
+    struct UploadSession {
+        std::string upload_id;
+        swarmkit::v1::ArtifactDescriptor descriptor;
+        std::filesystem::path tmp_path;
+        std::int64_t bytes_received{0};
+        int next_chunk_index{0};
+        std::int64_t created_unix_ms{0};
+        std::int64_t updated_unix_ms{0};
+        std::int64_t expires_unix_ms{0};
+        bool committed{false};
+    };
+
     DataServiceImpl(AgentConfig config, std::shared_ptr<internal::RuntimeCounters> counters)
         : config_(std::move(config)),
           counters_(std::move(counters)),
@@ -1200,6 +1214,283 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         return grpc::Status::OK;
     }
 
+    grpc::Status CreateArtifactUpload(grpc::ServerContext* ctx,
+                                      const swarmkit::v1::CreateArtifactUploadRequest* req,
+                                      swarmkit::v1::ArtifactUploadReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-upload-create");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+
+        swarmkit::v1::ArtifactDescriptor descriptor = req->artifact();
+        if (descriptor.source_id().empty()) {
+            descriptor.set_source_id(config_.agent_id);
+        }
+        if (descriptor.created_unix_ms() == 0) {
+            descriptor.set_created_unix_ms(NowUnixMs());
+        }
+        if (descriptor.filename().empty()) {
+            descriptor.set_filename("artifact-upload.bin");
+        }
+        if (descriptor.size_bytes() < 0) {
+            FillArtifactUploadReply(reply, false, "artifact.size_bytes must be >= 0",
+                                    correlation_id,
+                                    swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT, {}, {});
+            return grpc::Status::OK;
+        }
+        if (descriptor.size_bytes() > config_.data.max_artifact_bytes) {
+            FillArtifactUploadReply(reply, false, "artifact exceeds max_artifact_bytes",
+                                    correlation_id, swarmkit::v1::ERROR_CODE_REJECTED, {}, {});
+            return grpc::Status::OK;
+        }
+
+        std::filesystem::path tmp_dir = artifact_store_.TempDir();
+        std::error_code fs_error;
+        std::filesystem::create_directories(tmp_dir, fs_error);
+        if (fs_error) {
+            const std::string message =
+                "failed to create artifact temp dir path=" + tmp_dir.string() +
+                " error=" + fs_error.message();
+            counters_->IncrementArtifactFailures();
+            FillArtifactUploadReply(reply, false, message, correlation_id,
+                                    swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION, {}, {});
+            return grpc::Status::OK;
+        }
+
+        UploadSession session;
+        session.upload_id = MakeCorrelationId("artifact-upload-session");
+        session.descriptor = descriptor;
+        session.tmp_path = tmp_dir / (SanitizedPathComponent(session.upload_id) + ".part");
+        session.created_unix_ms = NowUnixMs();
+        session.updated_unix_ms = session.created_unix_ms;
+        const std::int64_t ttl_ms =
+            req->ttl_ms() > 0 ? req->ttl_ms() : kDefaultArtifactUploadSessionTtlMs;
+        session.expires_unix_ms = session.created_unix_ms + ttl_ms;
+
+        std::ofstream output(session.tmp_path, std::ios::binary | std::ios::trunc);
+        if (!output.is_open()) {
+            const std::string message =
+                "failed to open upload session temp file path=" + session.tmp_path.string();
+            counters_->IncrementArtifactFailures();
+            FillArtifactUploadReply(reply, false, message, correlation_id,
+                                    swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION, {}, {});
+            return grpc::Status::OK;
+        }
+        output.close();
+
+        const auto proto_session = ToProtoUploadSession(session);
+        {
+            std::lock_guard<std::mutex> lock(upload_mutex_);
+            upload_sessions_[session.upload_id] = std::move(session);
+        }
+        FillArtifactUploadReply(reply, true, "artifact upload session created", correlation_id,
+                                swarmkit::v1::ERROR_CODE_NONE, proto_session, {});
+        return grpc::Status::OK;
+    }
+
+    grpc::Status UploadArtifactChunk(grpc::ServerContext* ctx,
+                                     const swarmkit::v1::ArtifactChunk* req,
+                                     swarmkit::v1::ArtifactUploadReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-upload-chunk");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        if (req->transfer_id().empty()) {
+            FillArtifactUploadReply(reply, false, "chunk.transfer_id upload_id is required",
+                                    correlation_id,
+                                    swarmkit::v1::ERROR_CODE_INVALID_ARGUMENT, {}, {});
+            return grpc::Status::OK;
+        }
+
+        std::filesystem::path tmp_path;
+        UploadSession session;
+        {
+            std::lock_guard<std::mutex> lock(upload_mutex_);
+            auto iter = upload_sessions_.find(req->transfer_id());
+            if (iter == upload_sessions_.end()) {
+                FillArtifactUploadReply(reply, false, "artifact upload session not found",
+                                        correlation_id, swarmkit::v1::ERROR_CODE_NOT_FOUND, {},
+                                        {});
+                return grpc::Status::OK;
+            }
+            if (UploadSessionExpired(iter->second)) {
+                const std::filesystem::path expired_path = iter->second.tmp_path;
+                upload_sessions_.erase(iter);
+                std::error_code remove_error;
+                std::filesystem::remove(expired_path, remove_error);
+                FillArtifactUploadReply(reply, false, "artifact upload session expired",
+                                        correlation_id, swarmkit::v1::ERROR_CODE_NOT_FOUND, {},
+                                        {});
+                return grpc::Status::OK;
+            }
+            if (iter->second.committed) {
+                FillArtifactUploadReply(reply, false, "artifact upload already committed",
+                                        correlation_id,
+                                        swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION,
+                                        ToProtoUploadSession(iter->second), {});
+                return grpc::Status::OK;
+            }
+            if (req->offset() != iter->second.bytes_received ||
+                req->chunk_index() != iter->second.next_chunk_index) {
+                FillArtifactUploadReply(reply, false,
+                                        "artifact upload chunk offset/index does not match session",
+                                        correlation_id,
+                                        swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION,
+                                        ToProtoUploadSession(iter->second), {});
+                return grpc::Status::OK;
+            }
+            const std::int64_t next_size =
+                iter->second.bytes_received + static_cast<std::int64_t>(req->data().size());
+            if (next_size > config_.data.max_artifact_bytes ||
+                (iter->second.descriptor.size_bytes() > 0 &&
+                 next_size > iter->second.descriptor.size_bytes())) {
+                FillArtifactUploadReply(reply, false, "artifact exceeds configured/declared size",
+                                        correlation_id, swarmkit::v1::ERROR_CODE_REJECTED,
+                                        ToProtoUploadSession(iter->second), {});
+                return grpc::Status::OK;
+            }
+            tmp_path = iter->second.tmp_path;
+            session = iter->second;
+        }
+
+        std::ofstream output(tmp_path, std::ios::binary | std::ios::app);
+        if (!output.is_open()) {
+            counters_->IncrementArtifactFailures();
+            FillArtifactUploadReply(reply, false,
+                                    "failed to open upload session temp file path=" +
+                                        tmp_path.string(),
+                                    correlation_id,
+                                    swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION, {}, {});
+            return grpc::Status::OK;
+        }
+        if (!WriteBytes(output, std::span<const char>{req->data().data(), req->data().size()})) {
+            counters_->IncrementArtifactFailures();
+            FillArtifactUploadReply(reply, false, "failed to write upload session chunk",
+                                    correlation_id,
+                                    swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION, {}, {});
+            return grpc::Status::OK;
+        }
+        output.close();
+
+        swarmkit::v1::ArtifactUploadSession proto_session;
+        {
+            std::lock_guard<std::mutex> lock(upload_mutex_);
+            auto iter = upload_sessions_.find(req->transfer_id());
+            if (iter == upload_sessions_.end()) {
+                FillArtifactUploadReply(reply, false, "artifact upload session not found",
+                                        correlation_id, swarmkit::v1::ERROR_CODE_NOT_FOUND, {},
+                                        {});
+                return grpc::Status::OK;
+            }
+            iter->second.bytes_received += static_cast<std::int64_t>(req->data().size());
+            ++iter->second.next_chunk_index;
+            iter->second.updated_unix_ms = NowUnixMs();
+            proto_session = ToProtoUploadSession(iter->second);
+        }
+        FillArtifactUploadReply(reply, true, "artifact upload chunk accepted", correlation_id,
+                                swarmkit::v1::ERROR_CODE_NONE, proto_session, {});
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetUploadStatus(grpc::ServerContext* ctx,
+                                 const swarmkit::v1::ArtifactUploadRequest* req,
+                                 swarmkit::v1::ArtifactUploadReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-upload-status");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        const auto session = FindUploadSession(req->upload_id(), true);
+        if (!session.has_value()) {
+            FillArtifactUploadReply(reply, false, "artifact upload session not found",
+                                    correlation_id, swarmkit::v1::ERROR_CODE_NOT_FOUND, {}, {});
+            return grpc::Status::OK;
+        }
+        FillArtifactUploadReply(reply, true, "artifact upload session found", correlation_id,
+                                swarmkit::v1::ERROR_CODE_NONE,
+                                ToProtoUploadSession(*session), {});
+        return grpc::Status::OK;
+    }
+
+    grpc::Status CommitArtifactUpload(grpc::ServerContext* ctx,
+                                      const swarmkit::v1::ArtifactUploadRequest* req,
+                                      swarmkit::v1::ArtifactUploadReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-upload-commit");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        const auto session = FindUploadSession(req->upload_id(), true);
+        if (!session.has_value()) {
+            FillArtifactUploadReply(reply, false, "artifact upload session not found",
+                                    correlation_id, swarmkit::v1::ERROR_CODE_NOT_FOUND, {}, {});
+            return grpc::Status::OK;
+        }
+        if (session->descriptor.size_bytes() > 0 &&
+            session->bytes_received != session->descriptor.size_bytes()) {
+            FillArtifactUploadReply(reply, false, "artifact upload is incomplete",
+                                    correlation_id,
+                                    swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION,
+                                    ToProtoUploadSession(*session), {});
+            return grpc::Status::OK;
+        }
+
+        ArtifactTransferOutcome outcome = CommitUploadSession(*session);
+        if (!outcome.ok) {
+            counters_->IncrementArtifactFailures();
+            FillArtifactUploadReply(reply, false, outcome.message, correlation_id,
+                                    outcome.error_code, ToProtoUploadSession(*session), {});
+            return grpc::Status::OK;
+        }
+        {
+            std::lock_guard<std::mutex> lock(upload_mutex_);
+            upload_sessions_.erase(req->upload_id());
+        }
+        FillArtifactUploadReply(reply, true, "artifact upload committed", correlation_id,
+                                swarmkit::v1::ERROR_CODE_NONE, {}, outcome.descriptor);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status CancelUpload(grpc::ServerContext* ctx,
+                              const swarmkit::v1::ArtifactUploadRequest* req,
+                              swarmkit::v1::ArtifactUploadReply* reply) override {
+        if (ctx == nullptr || req == nullptr || reply == nullptr) {
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/reply");
+        }
+        const std::string correlation_id = ResolveCorrelationId(ctx, "", "artifact-upload-cancel");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, nullptr); !auth.IsOk()) {
+            return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth.message);
+        }
+        std::filesystem::path tmp_path;
+        {
+            std::lock_guard<std::mutex> lock(upload_mutex_);
+            auto iter = upload_sessions_.find(req->upload_id());
+            if (iter == upload_sessions_.end()) {
+                FillArtifactUploadReply(reply, false, "artifact upload session not found",
+                                        correlation_id, swarmkit::v1::ERROR_CODE_NOT_FOUND, {},
+                                        {});
+                return grpc::Status::OK;
+            }
+            tmp_path = iter->second.tmp_path;
+            upload_sessions_.erase(iter);
+        }
+        std::error_code remove_error;
+        std::filesystem::remove(tmp_path, remove_error);
+        FillArtifactUploadReply(reply, true, "artifact upload cancelled", correlation_id,
+                                swarmkit::v1::ERROR_CODE_NONE, {}, {});
+        return grpc::Status::OK;
+    }
+
     grpc::Status SendArtifactToDrone(grpc::ServerContext* ctx,
                                      grpc::ServerReader<swarmkit::v1::ArtifactChunk>* reader,
                                      swarmkit::v1::ArtifactDescriptor* reply) override {
@@ -1705,6 +1996,145 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
         }
     }
 
+    [[nodiscard]] bool UploadSessionExpired(const UploadSession& session) const {
+        return session.expires_unix_ms > 0 && NowUnixMs() > session.expires_unix_ms;
+    }
+
+    [[nodiscard]] swarmkit::v1::ArtifactUploadSession ToProtoUploadSession(
+        const UploadSession& session) const {
+        swarmkit::v1::ArtifactUploadSession proto;
+        proto.set_upload_id(session.upload_id);
+        *proto.mutable_artifact() = session.descriptor;
+        proto.set_bytes_received(session.bytes_received);
+        proto.set_next_chunk_index(session.next_chunk_index);
+        proto.set_created_unix_ms(session.created_unix_ms);
+        proto.set_updated_unix_ms(session.updated_unix_ms);
+        proto.set_expires_unix_ms(session.expires_unix_ms);
+        proto.set_committed(session.committed);
+        return proto;
+    }
+
+    void FillArtifactUploadReply(swarmkit::v1::ArtifactUploadReply* reply, bool ok,
+                                 std::string_view message, std::string_view correlation_id,
+                                 swarmkit::v1::ErrorCode error_code,
+                                 const swarmkit::v1::ArtifactUploadSession& session,
+                                 const swarmkit::v1::ArtifactDescriptor& artifact) const {
+        if (reply == nullptr) {
+            return;
+        }
+        reply->set_ok(ok);
+        reply->set_message(std::string(message));
+        reply->set_correlation_id(std::string(correlation_id));
+        reply->set_error_code(error_code);
+        reply->set_debug_message(std::string(message));
+        if (!session.upload_id().empty()) {
+            *reply->mutable_upload() = session;
+        }
+        if (!artifact.artifact_id().empty()) {
+            *reply->mutable_artifact() = artifact;
+        }
+    }
+
+    [[nodiscard]] std::optional<UploadSession> FindUploadSession(std::string_view upload_id,
+                                                                 bool cleanup_expired) {
+        if (upload_id.empty()) {
+            return std::nullopt;
+        }
+        std::filesystem::path expired_path;
+        {
+            std::lock_guard<std::mutex> lock(upload_mutex_);
+            auto iter = upload_sessions_.find(std::string(upload_id));
+            if (iter == upload_sessions_.end()) {
+                return std::nullopt;
+            }
+            if (UploadSessionExpired(iter->second)) {
+                expired_path = iter->second.tmp_path;
+                if (cleanup_expired) {
+                    upload_sessions_.erase(iter);
+                } else {
+                    return iter->second;
+                }
+            } else {
+                return iter->second;
+            }
+        }
+        if (!expired_path.empty()) {
+            std::error_code remove_error;
+            std::filesystem::remove(expired_path, remove_error);
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] ArtifactTransferOutcome CommitUploadSession(const UploadSession& session) {
+        ArtifactTransferOutcome outcome;
+        swarmkit::v1::ArtifactDescriptor descriptor = session.descriptor;
+        const std::string sha256_hex = core::internal::Sha256FileHex(session.tmp_path);
+        if (sha256_hex.empty()) {
+            outcome.message = "failed to hash artifact";
+            outcome.error_code = swarmkit::v1::ERROR_CODE_INTERNAL;
+            return outcome;
+        }
+        if (!descriptor.sha256_hex().empty() && descriptor.sha256_hex() != sha256_hex) {
+            outcome.message = "artifact sha256 mismatch";
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
+            return outcome;
+        }
+        descriptor.set_sha256_hex(sha256_hex);
+        if (descriptor.artifact_id().empty()) {
+            descriptor.set_artifact_id(sha256_hex);
+        }
+        descriptor.set_size_bytes(session.bytes_received);
+        if (descriptor.filename().empty()) {
+            descriptor.set_filename(descriptor.artifact_id() + ".bin");
+        }
+
+        std::error_code fs_error;
+        const std::filesystem::path final_dir = artifact_store_.Root() /
+                                                SanitizedPathComponent(descriptor.source_id()) /
+                                                SanitizedPathComponent(descriptor.artifact_id());
+        std::filesystem::create_directories(final_dir, fs_error);
+        if (fs_error) {
+            outcome.message = "failed to create artifact final dir path=" + final_dir.string() +
+                              " error=" + fs_error.message();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
+            return outcome;
+        }
+        const std::filesystem::path final_path =
+            final_dir / SanitizedPathComponent(descriptor.filename());
+        std::filesystem::rename(session.tmp_path, final_path, fs_error);
+        if (fs_error) {
+            std::error_code exists_error;
+            if (std::filesystem::exists(final_path, exists_error) &&
+                core::internal::Sha256FileHex(final_path) == sha256_hex) {
+                std::filesystem::remove(session.tmp_path, exists_error);
+                fs_error.clear();
+            }
+        }
+        if (fs_error) {
+            outcome.message = "failed to finalize artifact tmp_path=" + session.tmp_path.string() +
+                              " final_path=" + final_path.string() +
+                              " error=" + fs_error.message();
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
+            return outcome;
+        }
+        if (const core::Result persisted = artifact_store_.PersistMetadata(descriptor, final_path);
+            !persisted.IsOk()) {
+            std::filesystem::remove(final_path, fs_error);
+            outcome.message = persisted.message;
+            outcome.error_code = swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION;
+            return outcome;
+        }
+
+        artifact_store_.Put(descriptor, final_path);
+        PublishArtifactReceivedEvent(descriptor, "artifact-upload-session");
+        counters_->IncrementArtifactUploads(static_cast<std::uint64_t>(session.bytes_received));
+        outcome.ok = true;
+        outcome.error_code = swarmkit::v1::ERROR_CODE_NONE;
+        outcome.message = "artifact upload committed";
+        outcome.descriptor = descriptor;
+        return outcome;
+    }
+
     [[nodiscard]] swarmkit::v1::ArtifactDescriptor PrepareArtifactDescriptorForPath(
         const std::filesystem::path& source_path, swarmkit::v1::ArtifactDescriptor descriptor,
         std::int64_t file_size) const {
@@ -2023,6 +2453,8 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
     mutable std::mutex data_mutex_;
     std::condition_variable data_cv_;
     std::deque<swarmkit::v1::DataMessage> message_backlog_;
+    std::mutex upload_mutex_;
+    std::unordered_map<std::string, UploadSession> upload_sessions_;
     ArtifactStore artifact_store_;
     PeerRegistry peer_registry_;
     DataRouter data_router_;

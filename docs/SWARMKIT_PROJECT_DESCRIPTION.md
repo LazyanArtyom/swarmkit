@@ -131,6 +131,8 @@ Active goals are the preferred movement primitive for dynamic planners. A client
 
 The agent supervises progress from telemetry and emits goal reports. Applications remain responsible for choosing the next target, updating graph state, and deciding correction policies.
 
+Local-NED active goals are intentionally API-shaped for future indoor/low-GPS backends, but current MAVLink execution and goal monitoring only support global GPS targets. Current agents reject local-NED goals clearly instead of pretending to execute them.
+
 ## MAVLink and SITL Support
 
 The MAVLink backend uses generated MAVLink C headers to parse telemetry and pack outgoing commands.

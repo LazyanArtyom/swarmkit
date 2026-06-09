@@ -73,6 +73,11 @@ service DataService {
     rpc RemoveDataPeer(DataPeerRemoveRequest) returns (DataPeerListReply);
     rpc UploadArtifact(stream ArtifactChunk) returns (ArtifactDescriptor);
     rpc SendArtifactToDrone(stream ArtifactChunk) returns (ArtifactDescriptor);
+    rpc CreateArtifactUpload(CreateArtifactUploadRequest) returns (ArtifactUploadReply);
+    rpc UploadArtifactChunk(ArtifactChunk) returns (ArtifactUploadReply);
+    rpc GetUploadStatus(ArtifactUploadRequest) returns (ArtifactUploadReply);
+    rpc CommitArtifactUpload(ArtifactUploadRequest) returns (ArtifactUploadReply);
+    rpc CancelUpload(ArtifactUploadRequest) returns (ArtifactUploadReply);
     rpc StartArtifactTransfer(ArtifactTransferStartRequest) returns (ArtifactTransferReply);
     rpc GetArtifactTransfer(ArtifactTransferRequest) returns (ArtifactTransferReply);
     rpc CancelArtifactTransfer(ArtifactTransferRequest) returns (ArtifactTransferReply);
@@ -466,9 +471,10 @@ message ActiveGoal {
     float deviation_radius_m = 7;
     int64 timeout_ms = 8;  // 0 => agent computes from vehicle profile.
     map<string, string> labels = 9;  // Freeform user metadata, not sent to MAVLink.
-    LocalPoint local_target = 10;     // Future local-NED target support.
+    // Future backend support: current MAVLink execution requires global GPS goals.
+    LocalPoint local_target = 10;
     bool use_local_target = 11;
-    string target_frame = 12;         // global|local-ned; empty means global.
+    string target_frame = 12;  // global|local-ned; local-ned is currently API-shaped only.
 }
 
 enum GoalStatus {
@@ -746,6 +752,36 @@ message ArtifactChunk {
     int32 chunk_index = 4;
     bytes data = 5;
     bool final_chunk = 6;
+}
+
+message CreateArtifactUploadRequest {
+    ArtifactDescriptor artifact = 1;
+    int64 ttl_ms = 2;
+}
+
+message ArtifactUploadRequest {
+    string upload_id = 1;
+}
+
+message ArtifactUploadSession {
+    string upload_id = 1;
+    ArtifactDescriptor artifact = 2;
+    int64 bytes_received = 3;
+    int32 next_chunk_index = 4;
+    int64 created_unix_ms = 5;
+    int64 updated_unix_ms = 6;
+    int64 expires_unix_ms = 7;
+    bool committed = 8;
+}
+
+message ArtifactUploadReply {
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    ArtifactUploadSession upload = 6;
+    ArtifactDescriptor artifact = 7;
 }
 
 message ArtifactRequest {
