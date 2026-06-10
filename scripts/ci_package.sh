@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Artyom Lazyan. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
+#
+# This file is part of SwarmKit.
+# See LICENSE.md in the repository root for full license terms.
+#
+# Build, test, stage, and package SwarmKit SDK/tools tarballs.
+#
+# Usage:
+#   ./scripts/ci_package.sh --preset mac-release --platform mac-arm64
+#   ./scripts/ci_package.sh --preset linux-release --platform linux-x86_64
+set -euo pipefail
+
+preset=""
+platform_tag=""
+dist_dir="dist"
+
+usage() {
+    cat >&2 <<'EOF'
+Usage: scripts/ci_package.sh --preset PRESET --platform PLATFORM [--dist DIR]
+
+Examples:
+  scripts/ci_package.sh --preset mac-release --platform mac-arm64
+  scripts/ci_package.sh --preset linux-release --platform linux-x86_64
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --preset)
+            preset="${2:-}"
+            shift 2
+            ;;
+        --platform)
+            platform_tag="${2:-}"
+            shift 2
+            ;;
+        --dist)
+            dist_dir="${2:-}"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "ERROR: unknown argument: $1" >&2
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+if [[ -z "${preset}" || -z "${platform_tag}" ]]; then
+    usage
+    exit 2
+fi
+
+version="$(tr -d ' \t\r\n' < VERSION)"
+build_type="Release"
+build_dir="build/${preset}"
+conan_root="build/conan"
+generators_dir="${conan_root}/build/${build_type}/generators"
+
+mkdir -p "${dist_dir}"
+
+conan_install() {
+    local with_tests="$1"
+    shift
+    rm -rf "${generators_dir}"
+    conan install . \
+        -of "${conan_root}" \
+        -s build_type="${build_type}" \
+        -s compiler.cppstd=23 \
+        -o "&:with_tests=${with_tests}" \
+        -o "&:with_tools=True" \
+        --build=missing "$@"
+}
+
+bundle_cmake_deps() {
+    local stage_root="$1"
+    local dest_dir="${stage_root}/lib/cmake/SwarmKit/deps"
+    local tp_abs
+    tp_abs="$(cd "${stage_root}" && pwd)/third_party/full_deploy/host"
+
+    mkdir -p "${dest_dir}"
+
+    for cmake_file in "${generators_dir}"/*.cmake; do
+        local fname
+        fname="$(basename "${cmake_file}")"
+        case "${fname}" in
+            conan_toolchain.cmake|conandeps_legacy.cmake) continue ;;
+        esac
+
+        if [[ "${fname}" == *-data.cmake ]]; then
+            sed "s|${tp_abs}|\${_swarmkit_tp}|g" "${cmake_file}" > "${dest_dir}/${fname}"
+        else
+            cp "${cmake_file}" "${dest_dir}/${fname}"
+        fi
+    done
+
+    local count
+    count="$(find "${dest_dir}" -maxdepth 1 -name '*.cmake' -type f | wc -l | tr -d ' ')"
+    echo "  Bundled ${count} CMake dependency files -> ${dest_dir}"
+}
+
+package_component() {
+    local component="$1"
+    local base="swarmkit-${version}-${component}-${platform_tag}"
+    local stage_root="${build_dir}/stage/${base}"
+    local out="${dist_dir}/${base}.tar.gz"
+
+    rm -rf "${stage_root}"
+    mkdir -p "${stage_root}"
+
+    cmake --install "${build_dir}" --prefix "${stage_root}" --component "${component}"
+
+    if [[ "${component}" == "sdk" ]]; then
+        conan_install False \
+            --deployer=full_deploy \
+            --deployer-folder "${stage_root}/third_party"
+
+        if ! find "${stage_root}/lib" -maxdepth 1 -name 'libswarmkit_*.a' -type f | grep -q .; then
+            echo "ERROR: SDK install produced no SwarmKit libs under ${stage_root}/lib/" >&2
+            exit 2
+        fi
+
+        if [[ ! -d "${stage_root}/third_party/full_deploy" ]]; then
+            echo "ERROR: full_deploy did not create ${stage_root}/third_party/full_deploy/" >&2
+            exit 2
+        fi
+
+        bundle_cmake_deps "${stage_root}"
+    fi
+
+    tar -czf "${out}" -C "${build_dir}/stage" "${base}"
+    echo "Created: ${out}"
+}
+
+conan_install True
+cmake --preset "${preset}"
+cmake --build --preset "${preset}"
+ctest --preset "${preset}" --output-on-failure
+
+package_component sdk
+package_component tools
+
+echo ""
+echo "Artifacts in ${dist_dir}:"
+find "${dist_dir}" -maxdepth 1 -name "*${platform_tag}*.tar.gz" -type f -print | sort

@@ -212,8 +212,9 @@ ctest --preset linux-release --output-on-failure
 
 ## Package (CI / release)
 
-Each script runs the full pipeline: Conan install → CMake configure → build → test → produce tarballs/zips in `dist/`.
+Each script runs the full pipeline: Conan install → CMake configure → build → test → produce SDK and tools tarballs in `dist/`.
 Package filenames use the current project version from the root `VERSION` file.
+The platform-specific scripts are thin wrappers over `scripts/ci_package.sh`.
 
 ### macOS ARM64
 
@@ -243,6 +244,13 @@ dist/swarmkit-<version>-tools-linux-x86_64.tar.gz
 
 **In VSCode** press **F8** to run the full package pipeline for the current platform.
 
+The generic package entry point is also available:
+
+```bash
+./scripts/ci_package.sh --preset mac-release --platform mac-arm64
+./scripts/ci_package.sh --preset linux-release --platform linux-x86_64
+```
+
 ---
 
 ## Tools package
@@ -262,16 +270,18 @@ They depend only on system libraries and run on any machine of the same OS and a
 
 ## SDK installation
 
-Extract the SDK to a location of your choice, e.g. `~/swarmkit-sdk`:
+Deploy the SDK to a location of your choice, e.g. `~/swarmkit-sdk`:
 
 ```bash
-#macOS
-tar xzf swarmkit-<version>-sdk-mac-arm64.tar.gz \
-    -C ~/swarmkit-sdk --strip-components=1
+# macOS auto-detects the newest mac-arm64 SDK tarball in dist/
+./scripts/deploy_sdk_mac.sh --prefix ~/swarmkit-sdk
 
-#Linux
-tar xzf swarmkit-<version>-sdk-linux-x86_64.tar.gz \
-    -C ~/swarmkit-sdk --strip-components=1
+# Generic deploy script
+./scripts/deploy_sdk.sh --platform mac-arm64 --prefix ~/swarmkit-sdk
+./scripts/deploy_sdk.sh --platform linux-x86_64 --prefix ~/swarmkit-sdk
+
+# Or pass an explicit tarball
+./scripts/deploy_sdk.sh --prefix ~/swarmkit-sdk dist/swarmkit-<version>-sdk-mac-arm64.tar.gz
 ```
 
 SDK layout:
@@ -299,51 +309,52 @@ SDK layout:
 
 ---
 
-## Build the integration test tools against the SDK
+## Verify the SDK package with the probe app
 
-`apps/test_tools/` is a standalone project that links against the installed SDK **without Conan**.
-It produces three binaries for end-to-end swarm testing:
+`apps/test_tools/` is a standalone SDK consumer project. It intentionally builds
+outside the main SwarmKit build and links only through the installed package via
+`find_package(SwarmKit REQUIRED)`. It does not use Conan directly.
+
+It builds one binary:
 
 | Binary | Purpose |
 |--------|---------|
-| `swarmkit-test-agents` | Spawns 3 `swarmkit-agent` processes (drone-1…3 on ports 50061–50063) and muxes their output. macOS / Linux only. |
-| `swarmkit-test-client` | Connects 3 low-priority (`kOperator`) clients to the agents and sends a rotating command cycle. Demonstrates preemption. |
-| `swarmkit-test-server` | Connects a single `SwarmClient` at `kOverride` priority, subscribes to telemetry from all agents, writes frames to a CSV file, and accepts interactive commands from stdin. |
+| `swarmkit-sdk-ping` | Creates a `swarmkit::client::Client` and calls `Ping()` on an agent. |
+
+Build the probe against a deployed SDK:
 
 ```bash
-#macOS / Linux
-cmake -B apps/test_tools/build -DCMAKE_PREFIX_PATH=~/swarmkit-sdk -DCMAKE_BUILD_TYPE=Release -S apps/test_tools
-cmake --build apps/test_tools/build
+cmake -S apps/test_tools \
+    -B /tmp/swarmkit-sdk-probe-build \
+    -DCMAKE_PREFIX_PATH=~/swarmkit-sdk \
+    -DCMAKE_BUILD_TYPE=Release
+
+cmake --build /tmp/swarmkit-sdk-probe-build
 ```
 
-**Typical local workflow (4 terminals):**
+Run it against a local insecure agent:
 
 ```bash
-#Terminal 1 — start all 3 agents (uses swarmkit-agent from PATH or explicit path)
-./apps/test_tools/build/swarmkit-test-agents ./build/mac-release/apps/swarmkit-agent
-#wait for "SwarmKit Test Agents ready" before starting the next terminals
+# Terminal 1
+./build/mac-release/apps/swarmkit-agent \
+    --insecure \
+    --id sdk-probe-agent \
+    --bind 127.0.0.1:50061
 
-#Terminal 2 — low - priority operator clients(will be preempted)
-./apps/test_tools/build/swarmkit-test-client \
-  --swarm-config testdata/swarm_config.yaml \
-  --address-mode local
-
-#Terminal 3 — high - priority server : telemetry CSV + interactive commands
-./apps/test_tools/build/swarmkit-test-server \
-  --swarm-config testdata/swarm_config.yaml \
-  --address-mode local
-#stdin : drone - 1 arm
-#stdin : all takeoff 30
-#stdin : drone - 2 waypoint 40.18 44.51 50
-#stdin : drone - 1 lock
-#stdin : drone - 1 unlock
-
-#Terminal 4 — CLI at Supervisor priority(overrides test - client, below test - server)
-./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml 127.0.0.1:50061 command --drone drone-1 arm
-./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml 127.0.0.1:50061 command --drone drone-1 takeoff --alt 20
+# Terminal 2
+/tmp/swarmkit-sdk-probe-build/swarmkit-sdk-ping \
+    --addr 127.0.0.1:50061 \
+    --insecure
 ```
 
-`testdata/swarm_config.yaml` contains both remote swarm addresses and localhost
-development addresses. For local testing on one machine, use `--address-mode local`
-so the tools connect to `127.0.0.1:50061..50063` instead of the example
-`192.168.10.x` addresses.
+Expected output:
+
+```text
+Ping OK
+  agent_id : sdk-probe-agent
+  version  : <version>
+  time_ms  : <unix-ms>
+```
+
+For TLS/mTLS probes, omit `--insecure` and pass `--ca-cert`, `--client-cert`,
+`--client-key`, and optionally `--server-name`.
