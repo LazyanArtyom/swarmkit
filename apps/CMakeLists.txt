@@ -18,13 +18,21 @@ swarmkit_enable_sanitizers(swarmkit-agent)
 add_executable(swarmkit-cli
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/app.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/command_builder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/cli/data_runtime.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/data_artifact_runtime.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/data_message_runtime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/flight_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/nav_command_parser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/options.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/output.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/payload_command_parser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime_authority.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime_command.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime_goal.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime_health.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime_reports.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime_swarm.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime_telemetry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/runtime.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/telemetry_sink.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cli/usage.cpp

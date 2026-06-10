@@ -23,7 +23,6 @@ class SwarmkitConan(ConanFile):
         "protobuf/5.27.0",
         "spdlog/1.17.0",
         "yaml-cpp/0.8.0",
-        "catch2/3.8.0",
     )
 
     generators = ("CMakeToolchain", "CMakeDeps", "VirtualRunEnv")
@@ -33,6 +32,10 @@ class SwarmkitConan(ConanFile):
 
     def layout(self):
         cmake_layout(self)
+
+    def requirements(self):
+        if self.options.with_tests:
+            self.test_requires("catch2/3.8.0")
 
     def build(self):
         cmake = CMake(self)
