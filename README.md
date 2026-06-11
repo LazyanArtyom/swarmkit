@@ -301,19 +301,20 @@ SDK layout:
 
 ---
 
-## Verify the SDK package with the probe app
+## Verify the SDK package with test tools
 
 `apps/test_tools/` is a standalone SDK consumer project. It intentionally builds
 outside the main SwarmKit build and links only through the installed package via
 `find_package(SwarmKit REQUIRED)`. It does not use Conan directly.
 
-It builds one binary:
+It builds two binaries:
 
 | Binary | Purpose |
 |--------|---------|
 | `swarmkit-sdk-ping` | Creates a `swarmkit::client::Client` and calls `Ping()` on an agent. |
+| `swarmkit-sdk-control` | Interactive SDK shell for commands, telemetry, reports, authority, goals, messages, artifacts, and raw-key flight control. |
 
-Build the probe against a deployed SDK:
+Build the tools against a deployed SDK:
 
 ```bash
 cmake -S apps/test_tools \
@@ -350,3 +351,26 @@ Ping OK
 
 For TLS/mTLS probes, omit `--insecure` and pass `--ca-cert`, `--client-cert`,
 `--client-key`, and optionally `--server-name`.
+
+Run the interactive control shell:
+
+```bash
+/tmp/swarmkit-sdk-probe-build/swarmkit-sdk-control \
+    --addr 127.0.0.1:50061 \
+    --drone drone-1 \
+    --insecure
+```
+
+Inside the shell:
+
+```text
+arm --wait
+takeoff 5 --wait
+telemetry start 5 quiet
+controller
+```
+
+In controller mode, use arrow keys or `W/S` for forward/back, left/right arrows
+or `Q/E` for yaw, `A/D` for strafe, `R/F` for climb/descent, `Space` for stop,
+`H` for hold, `1`/`0` for arm/disarm, `T` for takeoff, `L` for land, and `Esc`
+to return to the shell.

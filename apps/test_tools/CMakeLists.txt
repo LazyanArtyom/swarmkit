@@ -20,3 +20,6 @@ find_package(SwarmKit REQUIRED)
 
 add_executable(swarmkit-sdk-ping sdk_ping_probe.cpp)
 target_link_libraries(swarmkit-sdk-ping PRIVATE swarmkit::client)
+
+add_executable(swarmkit-sdk-control sdk_control_shell.cpp)
+target_link_libraries(swarmkit-sdk-control PRIVATE swarmkit::client)
