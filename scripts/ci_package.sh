@@ -8,6 +8,7 @@
 # Build, test, stage, and package SwarmKit SDK/tools tarballs.
 #
 # Usage:
+#   ./scripts/ci_package.sh
 #   ./scripts/ci_package.sh --preset mac-release --platform mac-arm64
 #   ./scripts/ci_package.sh --preset linux-release --platform linux-x86_64
 set -euo pipefail
@@ -18,12 +19,67 @@ dist_dir="dist"
 
 usage() {
     cat >&2 <<'EOF'
-Usage: scripts/ci_package.sh --preset PRESET --platform PLATFORM [--dist DIR]
+Usage: scripts/ci_package.sh [--preset PRESET] [--platform PLATFORM] [--dist DIR]
 
 Examples:
+  scripts/ci_package.sh
   scripts/ci_package.sh --preset mac-release --platform mac-arm64
   scripts/ci_package.sh --preset linux-release --platform linux-x86_64
+
+When --preset and --platform are omitted, the script auto-detects the host:
+  macOS ARM64    -> --preset mac-release --platform mac-arm64
+  Linux x86_64   -> --preset linux-release --platform linux-x86_64
 EOF
+}
+
+detect_host_platform() {
+    local os
+    local arch
+
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "${os}:${arch}" in
+        Darwin:arm64|Darwin:aarch64)
+            printf '%s\n' "mac-arm64"
+            ;;
+        Linux:x86_64|Linux:amd64)
+            printf '%s\n' "linux-x86_64"
+            ;;
+        *)
+            echo "ERROR: unsupported host platform ${os}/${arch}; pass --preset and --platform explicitly." >&2
+            return 1
+            ;;
+    esac
+}
+
+default_preset_for_platform() {
+    case "$1" in
+        mac-arm64)
+            printf '%s\n' "mac-release"
+            ;;
+        linux-x86_64)
+            printf '%s\n' "linux-release"
+            ;;
+        *)
+            echo "ERROR: no default release preset for platform '$1'; pass --preset explicitly." >&2
+            return 1
+            ;;
+    esac
+}
+
+default_platform_for_preset() {
+    case "$1" in
+        mac-release)
+            printf '%s\n' "mac-arm64"
+            ;;
+        linux-release)
+            printf '%s\n' "linux-x86_64"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 while [[ $# -gt 0 ]]; do
@@ -52,9 +108,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "${preset}" || -z "${platform_tag}" ]]; then
-    usage
-    exit 2
+if [[ -z "${platform_tag}" ]]; then
+    if [[ -n "${preset}" ]]; then
+        platform_tag="$(default_platform_for_preset "${preset}")" || {
+            echo "ERROR: no default platform for preset '${preset}'; pass --platform explicitly." >&2
+            exit 2
+        }
+    else
+        platform_tag="$(detect_host_platform)" || exit 2
+    fi
+fi
+
+if [[ -z "${preset}" ]]; then
+    preset="$(default_preset_for_platform "${platform_tag}")" || exit 2
 fi
 
 version="$(tr -d ' \t\r\n' < VERSION)"

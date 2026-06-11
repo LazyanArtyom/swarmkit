@@ -18,12 +18,38 @@ usage() {
 Usage: scripts/deploy_sdk.sh [--prefix DIR] [--platform TAG] [TARBALL]
 
 Examples:
+  scripts/deploy_sdk.sh --prefix /tmp/swarmkit-sdk
   scripts/deploy_sdk.sh --platform mac-arm64 --prefix /tmp/swarmkit-sdk
   scripts/deploy_sdk.sh dist/swarmkit-0.1.0-sdk-mac-arm64.tar.gz
+
+When --platform and TARBALL are omitted, the script auto-detects the host:
+  macOS ARM64    -> --platform mac-arm64
+  Linux x86_64   -> --platform linux-x86_64
 
 Environment:
   SWARMKIT_SDK_PREFIX  Default install prefix. Defaults to ~/swarmkit-sdk.
 EOF
+}
+
+detect_host_platform() {
+    local os
+    local arch
+
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "${os}:${arch}" in
+        Darwin:arm64|Darwin:aarch64)
+            printf '%s\n' "mac-arm64"
+            ;;
+        Linux:x86_64|Linux:amd64)
+            printf '%s\n' "linux-x86_64"
+            ;;
+        *)
+            echo "ERROR: unsupported host platform ${os}/${arch}; pass --platform or a tarball explicitly." >&2
+            return 1
+            ;;
+    esac
 }
 
 while [[ $# -gt 0 ]]; do
@@ -62,15 +88,15 @@ if [[ -z "${prefix}" ]]; then
 fi
 
 if [[ -z "${tarball}" ]]; then
-    if [[ -n "${platform_tag}" ]]; then
-        tarball="$(find "${dist_dir}" -maxdepth 1 -name "swarmkit-*-sdk-${platform_tag}.tar.gz" -type f -print | sort | tail -1)"
-    else
-        tarball="$(find "${dist_dir}" -maxdepth 1 -name "swarmkit-*-sdk-*.tar.gz" -type f -print | sort | tail -1)"
+    if [[ -z "${platform_tag}" ]]; then
+        platform_tag="$(detect_host_platform)" || exit 2
     fi
+
+    tarball="$(find "${dist_dir}" -maxdepth 1 -name "swarmkit-*-sdk-${platform_tag}.tar.gz" -type f -print | sort | tail -1)"
 fi
 
 if [[ -z "${tarball}" || ! -f "${tarball}" ]]; then
-    echo "ERROR: SDK tarball not found. Build one with scripts/ci_package_*.sh first." >&2
+    echo "ERROR: SDK tarball not found. Build one with scripts/ci_package.sh first." >&2
     exit 1
 fi
 

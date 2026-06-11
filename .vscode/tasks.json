@@ -110,8 +110,7 @@
         {
             "label": "package-release",
             "type": "shell",
-            "linux":   { "command": "bash", "args": ["-lc", "chmod +x scripts/ci_package_linux_x86_64.sh && ./scripts/ci_package_linux_x86_64.sh"] },
-            "osx":     { "command": "bash", "args": ["-lc", "chmod +x scripts/ci_package_mac_arm64.sh  && ./scripts/ci_package_mac_arm64.sh"] },
+            "command": "./scripts/ci_package.sh",
             "dependsOn": ["run-tests-release"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []
@@ -122,8 +121,7 @@
         {
             "label": "deploy-sdk",
             "type": "shell",
-            "osx":     { "command": "bash", "args": ["-lc", "chmod +x scripts/deploy_sdk_mac.sh && ./scripts/deploy_sdk_mac.sh"] },
-            "linux":   { "command": "bash", "args": ["-lc", "echo 'deploy_sdk_mac.sh is macOS only; skipping.'"] },
+            "command": "./scripts/deploy_sdk.sh",
             "dependsOn": ["package-release"],
             "presentation": { "reveal": "always", "panel": "shared" },
             "problemMatcher": []

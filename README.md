@@ -212,31 +212,23 @@ ctest --preset linux-release --output-on-failure
 
 ## Package (CI / release)
 
-Each script runs the full pipeline: Conan install → CMake configure → build → test → produce SDK and tools tarballs in `dist/`.
+The package script runs the full pipeline: Conan install → CMake configure → build → test → produce SDK and tools tarballs in `dist/`.
 Package filenames use the current project version from the root `VERSION` file.
-The platform-specific scripts are thin wrappers over `scripts/ci_package.sh`.
-
-### macOS ARM64
+When `--preset` and `--platform` are omitted, `scripts/ci_package.sh`
+auto-detects the current supported host platform:
 
 ```bash
-chmod +x scripts/ci_package_mac_arm64.sh
-./scripts/ci_package_mac_arm64.sh
+chmod +x scripts/ci_package.sh
+./scripts/ci_package.sh
 ```
 
-Produces:
+On macOS ARM64 this produces:
 ```
 dist/swarmkit-<version>-sdk-mac-arm64.tar.gz
 dist/swarmkit-<version>-tools-mac-arm64.tar.gz
 ```
 
-### Linux x86\_64
-
-```bash
-chmod +x scripts/ci_package_linux_x86_64.sh
-./scripts/ci_package_linux_x86_64.sh
-```
-
-Produces:
+On Linux x86\_64 this produces:
 ```
 dist/swarmkit-<version>-sdk-linux-x86_64.tar.gz
 dist/swarmkit-<version>-tools-linux-x86_64.tar.gz
@@ -244,7 +236,7 @@ dist/swarmkit-<version>-tools-linux-x86_64.tar.gz
 
 **In VSCode** press **F8** to run the full package pipeline for the current platform.
 
-The generic package entry point is also available:
+For explicit CI jobs, pass the preset and platform:
 
 ```bash
 ./scripts/ci_package.sh --preset mac-release --platform mac-arm64
@@ -273,10 +265,10 @@ They depend only on system libraries and run on any machine of the same OS and a
 Deploy the SDK to a location of your choice, e.g. `~/swarmkit-sdk`:
 
 ```bash
-# macOS auto-detects the newest mac-arm64 SDK tarball in dist/
-./scripts/deploy_sdk_mac.sh --prefix ~/swarmkit-sdk
+# Auto-detects the newest SDK tarball for the current supported host platform
+./scripts/deploy_sdk.sh --prefix ~/swarmkit-sdk
 
-# Generic deploy script
+# Or choose a platform explicitly
 ./scripts/deploy_sdk.sh --platform mac-arm64 --prefix ~/swarmkit-sdk
 ./scripts/deploy_sdk.sh --platform linux-x86_64 --prefix ~/swarmkit-sdk
 
