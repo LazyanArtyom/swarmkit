@@ -61,7 +61,7 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
                 "home_origin",
                 "accuracy",
                 "estimator",
-        },
+            },
         .backend_command_names = {"mavlink.command-long"},
     };
 }
@@ -89,6 +89,14 @@ core::Result MavlinkCommandExecutor::ResolveCustomMode(const MavlinkBackendConfi
 
     *custom_mode = *mapped_mode;
     return core::Result::Success();
+}
+
+MavlinkCommandLongSpec MavlinkCommandExecutor::ArmDisarmCommand(bool arm, bool force) {
+    MavlinkCommandLongSpec spec;
+    spec.command = MAV_CMD_COMPONENT_ARM_DISARM;
+    spec.params[0] = arm ? 1.0F : 0.0F;
+    spec.params[1] = force ? kMavlinkForceArmDisarmMagic : 0.0F;
+    return spec;
 }
 
 }  // namespace swarmkit::agent::mavlink

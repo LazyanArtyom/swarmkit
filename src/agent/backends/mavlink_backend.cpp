@@ -6,11 +6,6 @@
 
 #include "swarmkit/agent/mavlink_backend.h"
 
-#include "mavlink_command_executor.h"
-#include "mavlink_state_cache.h"
-#include "mavlink_telemetry_decoder.h"
-#include "mavlink_udp_transport.h"
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -32,6 +27,10 @@
 #include <variant>
 #include <vector>
 
+#include "mavlink_command_executor.h"
+#include "mavlink_state_cache.h"
+#include "mavlink_telemetry_decoder.h"
+#include "mavlink_udp_transport.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/overloaded.h"
 
@@ -48,7 +47,6 @@ namespace {
 
 constexpr float kMavlinkDefaultSpeed = -1.0F;
 constexpr float kMavlinkDefaultThrottle = -1.0F;
-constexpr float kMavlinkForceArmDisarmMagic = 21196.0F;
 constexpr float kMavlinkPause = 0.0F;
 constexpr float kMavlinkResume = 1.0F;
 constexpr int kVelocityCommandPeriodMs = 200;
@@ -267,7 +265,7 @@ class MavlinkBackend final : public IDroneBackend {
         {
             std::lock_guard<std::mutex> lock(telemetry_mutex_);
             decode_result = telemetry_decoder_.Decode(message, &telemetry_cache_, &state_cache_,
-                                                       config_.autopilot_profile);
+                                                      config_.autopilot_profile);
         }
 
         if (decode_result.should_publish) {
@@ -373,18 +371,20 @@ class MavlinkBackend final : public IDroneBackend {
                             return;
                         }
                     }
-                    result = SendCommandLong(MAV_CMD_COMPONENT_ARM_DISARM, 1.0F);
+                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
+                        /*arm=*/true, /*force=*/false));
                 },
                 [&](const CmdForceArm&) {
                     if (context.priority != CommandPriority::kEmergency) {
                         result = core::Result::Rejected("force-arm requires emergency priority");
                         return;
                     }
-                    result = SendCommandLong(MAV_CMD_COMPONENT_ARM_DISARM, 1.0F,
-                                             kMavlinkForceArmDisarmMagic);
+                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
+                        /*arm=*/true, /*force=*/true));
                 },
                 [&](const CmdDisarm&) {
-                    result = SendCommandLong(MAV_CMD_COMPONENT_ARM_DISARM, 0.0F);
+                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
+                        /*arm=*/false, /*force=*/false));
                 },
                 [&](const CmdTakeoff& takeoff) {
                     if (config_.set_guided_before_takeoff) {
@@ -407,8 +407,8 @@ class MavlinkBackend final : public IDroneBackend {
                         result = core::Result::Rejected("force-disarm requires emergency priority");
                         return;
                     }
-                    result = SendCommandLong(MAV_CMD_COMPONENT_ARM_DISARM, 0.0F,
-                                             kMavlinkForceArmDisarmMagic);
+                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
+                        /*arm=*/false, /*force=*/true));
                 },
                 [&](const CmdFlightTerminate&) {
                     if (context.priority != CommandPriority::kEmergency) {
@@ -561,6 +561,13 @@ class MavlinkBackend final : public IDroneBackend {
             .ToCoreResult();
     }
 
+    [[nodiscard]] core::Result SendCommandLong(const mav::MavlinkCommandLongSpec& spec,
+                                               bool wait_for_ack = true) {
+        return SendCommandLong(spec.command, spec.params[0], spec.params[1], spec.params[2],
+                               spec.params[3], spec.params[4], spec.params[5], spec.params[6],
+                               wait_for_ack);
+    }
+
     [[nodiscard]] mav::MavlinkCommandAckResult SendCommandLongDetailed(
         std::uint16_t command, float param1 = 0.0F, float param2 = 0.0F, float param3 = 0.0F,
         float param4 = 0.0F, float param5 = 0.0F, float param6 = 0.0F, float param7 = 0.0F,
@@ -577,6 +584,11 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         mavlink_message_t message{};
+        core::Logger::DebugFmt(
+            "MavlinkBackend: sending COMMAND_LONG command={} params=[{:.3f},{:.3f},{:.3f},{:.3f},"
+            "{:.3f},{:.3f},{:.3f}] target={}/{}",
+            command, param1, param2, param3, param4, param5, param6, param7, config_.target_system,
+            config_.target_component);
         mavlink_msg_command_long_pack(config_.source_system, config_.source_component, &message,
                                       config_.target_system, config_.target_component, command, 0,
                                       param1, param2, param3, param4, param5, param6, param7);
@@ -623,8 +635,8 @@ class MavlinkBackend final : public IDroneBackend {
             config_.target_component, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, type_mask,
             static_cast<std::int32_t>(std::llround(lat_deg * mav::kDegE7)),
             static_cast<std::int32_t>(std::llround(lon_deg * mav::kDegE7)),
-            static_cast<float>(alt_m),
-            0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, yaw_deg.value_or(0.0F), 0.0F);
+            static_cast<float>(alt_m), 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, yaw_deg.value_or(0.0F),
+            0.0F);
         return SendUnverifiedMavlinkMessage(message);
     }
 
@@ -691,34 +703,34 @@ class MavlinkBackend final : public IDroneBackend {
 
     [[nodiscard]] core::Result ExecuteBackendCommand(const BackendCmd& backend) {
         core::Result result = core::Result::Rejected("backend command not handled");
-        std::visit(
-            core::Overloaded{[&](const CmdBackendCommand& command) {
-                if (command.backend_namespace != "mavlink") {
-                    result = core::Result::Rejected("MAVLink backend command namespace must be "
-                                                    "'mavlink'");
-                    return;
-                }
-                if (command.name != "command-long") {
-                    result = core::Result::Rejected("unsupported MAVLink backend command '" +
-                                                    command.name + "'");
-                    return;
-                }
-                const auto mav_command = CommandParam(command.params);
-                if (!mav_command.has_value()) {
-                    result = core::Result::Rejected(
-                        "mavlink command-long requires numeric param 'command'");
-                    return;
-                }
-                result = SendCommandLong(
-                    *mav_command, FloatParam(command.params, "param1").value_or(0.0F),
-                    FloatParam(command.params, "param2").value_or(0.0F),
-                    FloatParam(command.params, "param3").value_or(0.0F),
-                    FloatParam(command.params, "param4").value_or(0.0F),
-                    FloatParam(command.params, "param5").value_or(0.0F),
-                    FloatParam(command.params, "param6").value_or(0.0F),
-                    FloatParam(command.params, "param7").value_or(0.0F));
-            }},
-            backend);
+        std::visit(core::Overloaded{[&](const CmdBackendCommand& command) {
+                       if (command.backend_namespace != "mavlink") {
+                           result = core::Result::Rejected(
+                               "MAVLink backend command namespace must be "
+                               "'mavlink'");
+                           return;
+                       }
+                       if (command.name != "command-long") {
+                           result = core::Result::Rejected("unsupported MAVLink backend command '" +
+                                                           command.name + "'");
+                           return;
+                       }
+                       const auto mav_command = CommandParam(command.params);
+                       if (!mav_command.has_value()) {
+                           result = core::Result::Rejected(
+                               "mavlink command-long requires numeric param 'command'");
+                           return;
+                       }
+                       result = SendCommandLong(
+                           *mav_command, FloatParam(command.params, "param1").value_or(0.0F),
+                           FloatParam(command.params, "param2").value_or(0.0F),
+                           FloatParam(command.params, "param3").value_or(0.0F),
+                           FloatParam(command.params, "param4").value_or(0.0F),
+                           FloatParam(command.params, "param5").value_or(0.0F),
+                           FloatParam(command.params, "param6").value_or(0.0F),
+                           FloatParam(command.params, "param7").value_or(0.0F));
+                   }},
+                   backend);
         return result;
     }
 
@@ -746,8 +758,7 @@ class MavlinkBackend final : public IDroneBackend {
         ack_cv_.notify_all();
         core::Logger::DebugFmt(
             "MavlinkBackend: COMMAND_ACK command={} result={} param2={} target={}/{}", ack.command,
-            mav::MavResultName(ack.result), ack.result_param2,
-            static_cast<int>(ack.target_system),
+            mav::MavResultName(ack.result), ack.result_param2, static_cast<int>(ack.target_system),
             static_cast<int>(ack.target_component));
     }
 
@@ -766,8 +777,7 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     [[nodiscard]] mav::MavlinkCommandAckResult WaitForCommandAck(
-        std::uint16_t command, std::uint64_t start_sequence,
-        std::uint64_t status_start_sequence) {
+        std::uint16_t command, std::uint64_t start_sequence, std::uint64_t status_start_sequence) {
         std::unique_lock<std::mutex> lock(ack_mutex_);
         const bool got_ack =
             ack_cv_.wait_for(lock, std::chrono::milliseconds{config_.command_ack_timeout_ms}, [&] {
@@ -798,13 +808,11 @@ class MavlinkBackend final : public IDroneBackend {
         return result;
     }
 
-    [[nodiscard]] std::optional<mav::StatusText> WaitForStatusText(
-        std::uint64_t start_sequence) {
+    [[nodiscard]] std::optional<mav::StatusText> WaitForStatusText(std::uint64_t start_sequence) {
         std::unique_lock<std::mutex> lock(status_text_mutex_);
-        const bool got_status =
-            status_text_cv_.wait_for(lock, std::chrono::milliseconds{500}, [&] {
-                return status_text_sequence_ != start_sequence && last_status_text_.has_value();
-            });
+        const bool got_status = status_text_cv_.wait_for(lock, std::chrono::milliseconds{500}, [&] {
+            return status_text_sequence_ != start_sequence && last_status_text_.has_value();
+        });
         if (!got_status) {
             return std::nullopt;
         }
@@ -847,7 +855,6 @@ class MavlinkBackend final : public IDroneBackend {
     std::condition_variable status_text_cv_;
     std::optional<mav::StatusText> last_status_text_;
     std::uint64_t status_text_sequence_{0};
-
 };
 
 }  // namespace
@@ -871,9 +878,9 @@ std::expected<MavlinkAutopilotProfile, core::Result> ParseMavlinkAutopilotProfil
     if (normalized == "ardupilot-plane" || normalized == "arduplane" || normalized == "plane") {
         return MavlinkAutopilotProfile::kArdupilotPlane;
     }
-    return std::unexpected(
-        core::Result::Rejected("unsupported mavlink.autopilot_profile '" + std::string(value) +
-                               "'; expected ardupilot-copter|ardupilot-plane"));
+    return std::unexpected(core::Result::Rejected("unsupported mavlink.autopilot_profile '" +
+                                                  std::string(value) +
+                                                  "'; expected ardupilot-copter|ardupilot-plane"));
 }
 
 core::Result MavlinkBackendConfig::Validate() const {

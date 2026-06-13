@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <optional>
 
 #include "mavlink_common.h"
@@ -15,12 +17,20 @@
 
 namespace swarmkit::agent::mavlink {
 
+inline constexpr float kMavlinkForceArmDisarmMagic = 21196.0F;
+
+struct MavlinkCommandLongSpec {
+    std::uint16_t command{};
+    std::array<float, 7> params{};
+};
+
 class MavlinkCommandExecutor {
    public:
     [[nodiscard]] static BackendCapabilities Capabilities(const MavlinkBackendConfig& config);
     [[nodiscard]] static core::Result ResolveCustomMode(const MavlinkBackendConfig& config,
                                                         const commands::CmdSetMode& mode,
                                                         int* custom_mode);
+    [[nodiscard]] static MavlinkCommandLongSpec ArmDisarmCommand(bool arm, bool force);
 };
 
 }  // namespace swarmkit::agent::mavlink

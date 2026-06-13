@@ -1672,8 +1672,22 @@ class ControlShell {
 
     [[nodiscard]] static std::string TelemetrySummary(const swarmkit::core::TelemetryFrame& frame) {
         std::ostringstream out;
-        out << "drone=" << frame.drone_id << " armed=" << BoolName(frame.armed)
-            << " landed=" << BoolName(frame.landed) << " mode=" << frame.mode;
+        out << "drone=" << frame.drone_id;
+        if (frame.validity.armed) {
+            out << " armed=" << BoolName(frame.armed);
+        } else {
+            out << " armed=unknown";
+        }
+        if (frame.validity.landed) {
+            out << " landed=" << BoolName(frame.landed);
+        } else {
+            out << " landed=unknown";
+        }
+        if (frame.validity.mode) {
+            out << " mode=" << frame.mode;
+        } else {
+            out << " mode=unknown";
+        }
         if (frame.HasPosition()) {
             out << " lat=" << frame.lat_deg << " lon=" << frame.lon_deg;
         }
