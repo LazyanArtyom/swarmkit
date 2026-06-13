@@ -791,7 +791,7 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     [[nodiscard]] core::Result SendUnverifiedMavlinkMessage(const mavlink_message_t& message) {
-        const core::Result result = SendMavlinkMessage(message);
+        core::Result result = SendMavlinkMessage(message);
         if (!result.IsOk()) {
             return result;
         }

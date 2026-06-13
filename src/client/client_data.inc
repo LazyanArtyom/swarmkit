@@ -87,16 +87,18 @@ PublishMessageResult Client::SendMessageToDrone(DataMessage message) const {
     return out;
 }
 
-std::expected<Subscription, RpcError> Client::StartMessages(
-    MessageSubscription subscription, DataMessageHandler on_message, TelemetryErrorHandler on_error,
-    SubscriptionEventHandler on_event, SubscriptionOptions options) {
+std::expected<Subscription, RpcError> Client::StartMessages(MessageSubscription subscription,
+                                                            DataMessageHandler on_message,
+                                                            TelemetryErrorHandler on_error,
+                                                            SubscriptionEventHandler on_event,
+                                                            SubscriptionOptions options) {
     if (subscription.subscriber_id.empty()) {
         subscription.subscriber_id = impl_->config.client_id;
     }
     if (!on_message) {
-        return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kMessages, RpcStatusCode::kInvalidArgument,
-            "message subscription callback must not be empty"));
+        return std::unexpected(
+            MakeSubscriptionStartError(SubscriptionKind::kMessages, RpcStatusCode::kInvalidArgument,
+                                       "message subscription callback must not be empty"));
     }
 
     auto generation = PrepareSubscriptionStart(impl_->messages, SubscriptionKind::kMessages,
@@ -108,13 +110,12 @@ std::expected<Subscription, RpcError> Client::StartMessages(
 
     try {
         const auto stream = impl_->messages;
-        stream->worker =
-            std::thread([this, stream, subscription = std::move(subscription),
-                         on_message = std::move(on_message), on_error = stream->on_error]() mutable {
-                RunMessageLoop(DataClientRuntime{.config = impl_->config,
-                                                 .stub = *impl_->data_stub},
-                               *stream, subscription, on_message, on_error);
-            });
+        stream->worker = std::thread([this, stream, subscription = std::move(subscription),
+                                      on_message = std::move(on_message),
+                                      on_error = stream->on_error]() mutable {
+            RunMessageLoop(DataClientRuntime{.config = impl_->config, .stub = *impl_->data_stub},
+                           *stream, subscription, on_message, on_error);
+        });
     } catch (const std::system_error& exc) {
         CancelAndJoinStream(*impl_->messages);
         return std::unexpected(MakeSubscriptionStartError(
@@ -253,8 +254,7 @@ void PopulateArtifactUploadSessionResult(ArtifactUploadSessionResult* out,
     out->ok = rep.ok();
     out->message = rep.message();
     out->correlation_id =
-        rep.correlation_id().empty() ? std::string(fallback_correlation_id)
-                                     : rep.correlation_id();
+        rep.correlation_id().empty() ? std::string(fallback_correlation_id) : rep.correlation_id();
     out->upload = ToArtifactUploadSession(rep.upload());
     out->descriptor = ToArtifactDescriptor(rep.artifact());
     PopulateReplyError(&out->error, rep.error_code(), rep.message(), rep.debug_message(),
@@ -363,9 +363,8 @@ void PopulateArtifactUploadSessionResult(ArtifactUploadSessionResult* out,
     if (!wrote_all && status.ok()) {
         out.message = routed ? "artifact route stream closed before all chunks were accepted"
                              : "artifact upload stream closed before all chunks were accepted";
-        PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
-                           RpcStatusCode::kUnavailable, out.message, out.message, correlation_id,
-                           1);
+        PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kUnavailable,
+                           out.message, out.message, correlation_id, 1);
         return out;
     }
     if (!status.ok()) {
@@ -425,8 +424,7 @@ ArtifactUploadSessionResult Client::CreateArtifactUpload(ArtifactDescriptor desc
 }
 
 ArtifactUploadSessionResult Client::UploadArtifactChunk(const std::string& upload_id,
-                                                        std::string_view data,
-                                                        std::int64_t offset,
+                                                        std::string_view data, std::int64_t offset,
                                                         int chunk_index) const {
     ArtifactUploadSessionResult out;
     const std::string correlation_id = MakeCorrelationId("artifact-upload-chunk");
@@ -630,12 +628,11 @@ ArtifactTransferStatusResult Client::CancelArtifactTransfer(const std::string& t
     req.set_transfer_id(transfer_id);
     swarmkit::v1::ArtifactTransferReply rep;
     int attempt_count = 0;
-    const grpc::Status status =
-        InvokeUnaryWithRetry(impl_->config, correlation_id, &attempt_count,
-                             [this, &req, &rep](grpc::ClientContext* context) {
-                                 return impl_->data_stub->CancelArtifactTransfer(context, req,
-                                                                                 &rep);
-                             });
+    const grpc::Status status = InvokeUnaryWithRetry(
+        impl_->config, correlation_id, &attempt_count,
+        [this, &req, &rep](grpc::ClientContext* context) {
+            return impl_->data_stub->CancelArtifactTransfer(context, req, &rep);
+        });
     if (!status.ok()) {
         PopulateTransportError(&out.error, status, correlation_id, attempt_count);
         out.message = out.error.user_message;
@@ -732,11 +729,9 @@ ArtifactTransferResult Client::GetArtifact(const std::string& artifact_id) const
 
 namespace {
 
-[[nodiscard]] ArtifactTransferResult DownloadArtifactToFile(const ClientConfig& config,
-                                                            swarmkit::v1::DataService::Stub& data_stub,
-                                                            std::string_view artifact_id,
-                                                            const std::filesystem::path& final_path,
-                                                            bool resume) {
+[[nodiscard]] ArtifactTransferResult DownloadArtifactToFile(
+    const ClientConfig& config, swarmkit::v1::DataService::Stub& data_stub,
+    std::string_view artifact_id, const std::filesystem::path& final_path, bool resume) {
     ArtifactTransferResult out;
     const std::string correlation_id =
         MakeCorrelationId(resume ? "artifact-download-resume" : "artifact-download");
@@ -799,9 +794,8 @@ namespace {
             output.close();
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download received data after final chunk";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
-                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
-                               1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
+                               out.message, out.message, correlation_id, 1);
             return out;
         }
         if (!saw_descriptor && chunk.has_artifact()) {
@@ -812,22 +806,19 @@ namespace {
             output.close();
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download chunk index mismatch";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
-                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
-                               1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
+                               out.message, out.message, correlation_id, 1);
             return out;
         }
         if (chunk.offset() != received_bytes) {
             output.close();
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download chunk offset mismatch";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
-                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
-                               1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
+                               out.message, out.message, correlation_id, 1);
             return out;
         }
-        if (!WriteBytes(output,
-                        std::span<const char>{chunk.data().data(), chunk.data().size()})) {
+        if (!WriteBytes(output, std::span<const char>{chunk.data().data(), chunk.data().size()})) {
             output.close();
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "failed to write artifact output file path=" + tmp_path.string();
@@ -853,8 +844,8 @@ namespace {
     if (!saw_descriptor || !saw_final) {
         std::filesystem::remove(tmp_path, fs_error);
         out.message = "artifact download ended before descriptor/final chunk";
-        PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
-                           RpcStatusCode::kInternal, out.message, out.message, correlation_id, 1);
+        PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
+                           out.message, out.message, correlation_id, 1);
         return out;
     }
     if (!out.descriptor.sha256_hex.empty()) {
@@ -862,9 +853,8 @@ namespace {
         if (downloaded_hash != out.descriptor.sha256_hex) {
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download sha256 mismatch";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
-                               RpcStatusCode::kInternal, out.message, out.message, correlation_id,
-                               1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
+                               out.message, out.message, correlation_id, 1);
             return out;
         }
     }
@@ -885,8 +875,7 @@ namespace {
     }
 
     out.ok = true;
-    out.message = resume && start_offset > 0 ? "artifact download resumed"
-                                             : "artifact downloaded";
+    out.message = resume && start_offset > 0 ? "artifact download resumed" : "artifact downloaded";
     PopulateSuccessError(&out.error, correlation_id, 1);
     return out;
 }
@@ -905,7 +894,7 @@ ArtifactTransferResult Client::ResumeArtifactDownload(const std::string& artifac
                                   std::filesystem::path(output_path), true);
 }
 
-ArtifactTransferResult Client::AnnounceArtifact(ArtifactDescriptor descriptor) const {
+ArtifactTransferResult Client::AnnounceArtifact(const ArtifactDescriptor& descriptor) const {
     ArtifactTransferResult out;
     const std::string correlation_id = MakeCorrelationId("artifact-announce");
 

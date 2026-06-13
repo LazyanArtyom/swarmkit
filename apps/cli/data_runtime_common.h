@@ -47,8 +47,8 @@ inline void ResetStopRequested() {
     StopRequestedFlag() = 0;
 }
 
-[[nodiscard]] inline std::vector<std::string> FindActionsAfterCommand(int argc, char** argv,
-                                                               std::string_view command_name) {
+[[nodiscard]] inline std::vector<std::string> FindActionsAfterCommand(
+    int argc, char** argv, std::string_view command_name) {
     int command_index = -1;
     for (int index = 1; index < argc; ++index) {
         const std::string_view current_arg = argv[index];
@@ -80,7 +80,7 @@ inline void ResetStopRequested() {
 }
 
 [[nodiscard]] inline std::vector<std::string> CollectOptionValues(int argc, char** argv,
-                                                           std::string_view option_name) {
+                                                                  std::string_view option_name) {
     std::vector<std::string> values;
     for (int index = 1; index + 1 < argc; ++index) {
         if (std::string_view(argv[index]) == option_name) {
@@ -90,9 +90,10 @@ inline void ResetStopRequested() {
     return values;
 }
 
-[[nodiscard]] inline std::expected<std::string, std::string> ReadSmallPayload(int argc, char** argv) {
-    if (const std::string payload = common::GetOptionValue(argc, argv, "--payload");
-        !payload.empty()) {
+[[nodiscard]] inline std::expected<std::string, std::string> ReadSmallPayload(int argc,
+                                                                              char** argv) {
+    std::string payload = common::GetOptionValue(argc, argv, "--payload");
+    if (!payload.empty()) {
         return payload;
     }
     const std::string file_path = common::GetOptionValue(argc, argv, "--file");
@@ -106,7 +107,8 @@ inline void ResetStopRequested() {
     return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
 }
 
-[[nodiscard]] inline std::expected<std::int64_t, std::string> ParseDurationMs(int argc, char** argv) {
+[[nodiscard]] inline std::expected<std::int64_t, std::string> ParseDurationMs(int argc,
+                                                                              char** argv) {
     const auto duration = ParseIntArg(
         common::GetOptionValue(argc, argv, "--duration-ms", kDefaultZero), "--duration-ms");
     if (!duration.has_value()) {

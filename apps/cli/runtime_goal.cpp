@@ -38,10 +38,10 @@ ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
     }
     std::string target_frame = common::GetOptionValue(argc, argv, "--frame", "global");
     target_frame = ToLowerAscii(std::move(target_frame));
-    const bool use_local_target =
-        target_frame == "local-ned" || !common::GetOptionValue(argc, argv, "--x").empty() ||
-        !common::GetOptionValue(argc, argv, "--y").empty() ||
-        !common::GetOptionValue(argc, argv, "--z").empty();
+    const bool use_local_target = target_frame == "local-ned" ||
+                                  !common::GetOptionValue(argc, argv, "--x").empty() ||
+                                  !common::GetOptionValue(argc, argv, "--y").empty() ||
+                                  !common::GetOptionValue(argc, argv, "--z").empty();
     if (use_local_target) {
         target_frame = "local-ned";
     }
@@ -52,19 +52,19 @@ ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
     swarmkit::client::GeoPoint target;
     swarmkit::client::LocalPoint local_target;
     if (use_local_target) {
-        const auto x = ParseDoubleArg(common::GetOptionValue(argc, argv, "--x"), "--x");
-        const auto y = ParseDoubleArg(common::GetOptionValue(argc, argv, "--y"), "--y");
-        const auto z = ParseDoubleArg(common::GetOptionValue(argc, argv, "--z"), "--z");
-        if (!x.has_value()) {
-            return std::unexpected(x.error());
+        const auto x_m = ParseDoubleArg(common::GetOptionValue(argc, argv, "--x"), "--x");
+        const auto y_m = ParseDoubleArg(common::GetOptionValue(argc, argv, "--y"), "--y");
+        const auto z_m = ParseDoubleArg(common::GetOptionValue(argc, argv, "--z"), "--z");
+        if (!x_m.has_value()) {
+            return std::unexpected(x_m.error());
         }
-        if (!y.has_value()) {
-            return std::unexpected(y.error());
+        if (!y_m.has_value()) {
+            return std::unexpected(y_m.error());
         }
-        if (!z.has_value()) {
-            return std::unexpected(z.error());
+        if (!z_m.has_value()) {
+            return std::unexpected(z_m.error());
         }
-        local_target = swarmkit::client::LocalPoint{.x_m = *x, .y_m = *y, .z_m = *z};
+        local_target = swarmkit::client::LocalPoint{.x_m = *x_m, .y_m = *y_m, .z_m = *z_m};
     } else {
         const auto lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat"), "--lat");
         const auto lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon"), "--lon");

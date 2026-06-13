@@ -276,9 +276,9 @@ template <typename TaskFn>
 [[nodiscard]] std::unordered_map<std::string, GoalResult> RunGoalTasks(
     const std::vector<std::pair<std::string, std::shared_ptr<Client>>>& clients,
     const SwarmFanoutOptions& fanout_options, TaskFn&& task_fn) {
-    return RunBoundedClientTasks<GoalResult>(
-        clients, fanout_options, std::forward<TaskFn>(task_fn), CancelledGoalResult,
-        ExceptionGoalResult, [](const GoalResult& result) { return result.ok; });
+    return RunBoundedClientTasks<GoalResult>(clients, fanout_options, std::forward<TaskFn>(task_fn),
+                                             CancelledGoalResult, ExceptionGoalResult,
+                                             [](const GoalResult& result) { return result.ok; });
 }
 
 template <typename TaskFn>
@@ -503,13 +503,13 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommandAndW
                            });
 }
 
-GoalResult SwarmClient::SetActiveGoal(ActiveGoal goal) const {
+GoalResult SwarmClient::SetActiveGoal(const ActiveGoal& goal) const {
     if (goal.drone_id.empty()) {
         GoalResult out;
         out.ok = false;
         out.message = "goal.drone_id is required";
-        out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInvalidArgument,
-                                   out.message);
+        out.error =
+            MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInvalidArgument, out.message);
         return out;
     }
 
@@ -552,13 +552,13 @@ std::unordered_map<std::string, GoalResult> SwarmClient::SetActiveGoals(
         target_clients.emplace_back(drone_id, client_iter->second);
     }
 
-    auto goal_results = RunGoalTasks(
-        target_clients, fanout_options,
-        [&goals](const std::string& drone_id, const std::shared_ptr<Client>& client) {
-            ActiveGoal goal = goals.at(drone_id);
-            goal.drone_id = drone_id;
-            return client->SetActiveGoal(goal);
-        });
+    auto goal_results =
+        RunGoalTasks(target_clients, fanout_options,
+                     [&goals](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+                         ActiveGoal goal = goals.at(drone_id);
+                         goal.drone_id = drone_id;
+                         return client->SetActiveGoal(goal);
+                     });
     for (auto& [drone_id, result] : goal_results) {
         results.emplace(drone_id, std::move(result));
     }

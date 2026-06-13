@@ -7,6 +7,7 @@
 #include "swarmkit/client/client.h"
 
 #include <grpcpp/grpcpp.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -49,7 +50,7 @@ namespace {
 
 constexpr std::string_view kCorrelationMetadataKey = "x-correlation-id";
 constexpr double kEarthRadiusM = 6371000.0;
-constexpr std::size_t kDefaultArtifactChunkBytes = 64 * 1024;
+constexpr std::size_t kDefaultArtifactChunkBytes = std::size_t{64} * std::size_t{1024};
 
 [[nodiscard]] std::int64_t NowUnixMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -212,9 +213,8 @@ constexpr std::size_t kDefaultArtifactChunkBytes = 64 * 1024;
             return RpcStatusCode::kInternal;
         case ProtoCode::ERROR_CODE_BACKEND_FAILURE:
             return RpcStatusCode::kBackendFailure;
-        case ProtoCode::ERROR_CODE_UNKNOWN:
-            return RpcStatusCode::kUnknown;
         case ProtoCode::ERROR_CODE_UNSPECIFIED:
+        case ProtoCode::ERROR_CODE_UNKNOWN:
             return RpcStatusCode::kUnknown;
     }
     return RpcStatusCode::kUnknown;
@@ -715,9 +715,8 @@ void ResetStreamContext(StreamState& stream_state) {
             return core::ErrorDomain::kTelemetry;
         case SubscriptionKind::kAuthority:
             return core::ErrorDomain::kAuthority;
-        case SubscriptionKind::kReports:
-            return core::ErrorDomain::kInternal;
         case SubscriptionKind::kMessages:
+        case SubscriptionKind::kReports:
             return core::ErrorDomain::kInternal;
     }
     return core::ErrorDomain::kInternal;
@@ -1091,17 +1090,15 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
         frame.accuracy.attitude_valid = accuracy.attitude_valid();
         frame.accuracy.attitude_deg = accuracy.attitude_deg();
         frame.accuracy.position_covariance_valid = accuracy.position_covariance_valid();
-        for (int index = 0;
-             index < accuracy.position_covariance_size() &&
-             index < static_cast<int>(frame.accuracy.position_covariance.size());
+        for (int index = 0; index < accuracy.position_covariance_size() &&
+                            index < static_cast<int>(frame.accuracy.position_covariance.size());
              ++index) {
             frame.accuracy.position_covariance[static_cast<std::size_t>(index)] =
                 accuracy.position_covariance(index);
         }
         frame.accuracy.velocity_covariance_valid = accuracy.velocity_covariance_valid();
-        for (int index = 0;
-             index < accuracy.velocity_covariance_size() &&
-             index < static_cast<int>(frame.accuracy.velocity_covariance.size());
+        for (int index = 0; index < accuracy.velocity_covariance_size() &&
+                            index < static_cast<int>(frame.accuracy.velocity_covariance.size());
              ++index) {
             frame.accuracy.velocity_covariance[static_cast<std::size_t>(index)] =
                 accuracy.velocity_covariance(index);
@@ -1145,8 +1142,7 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
         std::clamp((sin_half_lat * sin_half_lat) +
                        (std::cos(rlat_one) * std::cos(rlat_two) * sin_half_lon * sin_half_lon),
                    0.0, 1.0);
-    return kEarthRadiusM * 2.0 *
-           std::atan2(std::sqrt(haversine), std::sqrt(1.0 - haversine));
+    return kEarthRadiusM * 2.0 * std::atan2(std::sqrt(haversine), std::sqrt(1.0 - haversine));
 }
 
 [[nodiscard]] AuthorityEventInfo ToAuthorityEventInfo(
@@ -1251,8 +1247,7 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     return status;
 }
 
-[[nodiscard]] swarmkit::v1::DataPeerConfig ToProtoDataPeerConfig(
-    const DataPeerConfig& peer) {
+[[nodiscard]] swarmkit::v1::DataPeerConfig ToProtoDataPeerConfig(const DataPeerConfig& peer) {
     swarmkit::v1::DataPeerConfig proto;
     proto.set_drone_id(peer.drone_id);
     proto.set_address(peer.address);
@@ -1336,19 +1331,21 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     return status;
 }
 
-void PopulateDataPeerListResult(DataPeerListResult* out,
-                                const swarmkit::v1::DataPeerListReply& rep,
-                                std::string_view fallback_correlation_id,
-                                int attempt_count) {
+void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::DataPeerListReply& rep,
+                                std::string_view fallback_correlation_id, int attempt_count) {
     if (out == nullptr) {
         return;
     }
     out->ok = rep.ok();
-    out->message = rep.message().empty()
-                       ? (rep.ok() ? "data peers listed" : "data peer operation failed")
-                       : rep.message();
-    out->correlation_id = rep.correlation_id().empty() ? std::string(fallback_correlation_id)
-                                                       : rep.correlation_id();
+    if (!rep.message().empty()) {
+        out->message = rep.message();
+    } else if (rep.ok()) {
+        out->message = "data peers listed";
+    } else {
+        out->message = "data peer operation failed";
+    }
+    out->correlation_id =
+        rep.correlation_id().empty() ? std::string(fallback_correlation_id) : rep.correlation_id();
     out->peers.reserve(static_cast<std::size_t>(rep.peers_size()));
     for (const auto& peer : rep.peers()) {
         out->peers.push_back(ToDataPeerStatus(peer));
@@ -1591,10 +1588,9 @@ void PopulateDataPeerListResult(DataPeerListResult* out,
         }
         if (on_message) {
             auto message = ToDataMessage(proto_message);
-            static_cast<void>(EnqueueCallback(message_stream,
-                                              [on_message, message = std::move(message)]() {
-                                                  on_message(message);
-                                              }));
+            static_cast<void>(EnqueueCallback(
+                message_stream,
+                [on_message, message = std::move(message)]() { on_message(message); }));
         }
     }
 
@@ -1764,8 +1760,8 @@ void RunMessageLoop(DataClientRuntime runtime, StreamState& message_stream,
         if (!ShouldRetryStream(runtime.config.stream_reconnect_policy, retry_state.attempt_number,
                                final_status)) {
             EmitSubscriptionEvent(
-                message_stream, SubscriptionLifecycleState::kFailed,
-                final_status.error_message(), retry_state.attempt_number,
+                message_stream, SubscriptionLifecycleState::kFailed, final_status.error_message(),
+                retry_state.attempt_number,
                 MakeStreamError(final_status, stream_id, retry_state.attempt_number));
             MaybeReportStreamFailure(message_stream, final_status);
             break;
@@ -2683,9 +2679,9 @@ std::expected<Subscription, RpcError> Client::StartReports(ReportSubscription su
                                        "report subscription callback must not be empty"));
     }
 
-    auto generation = PrepareSubscriptionStart(impl_->reports, SubscriptionKind::kReports,
-                                               subscription.drone_id, std::move(on_error),
-                                               std::move(on_event), options);
+    auto generation =
+        PrepareSubscriptionStart(impl_->reports, SubscriptionKind::kReports, subscription.drone_id,
+                                 std::move(on_error), std::move(on_event), options);
     if (!generation.has_value()) {
         return std::unexpected(std::move(generation.error()));
     }

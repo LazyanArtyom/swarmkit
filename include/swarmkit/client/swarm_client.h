@@ -202,7 +202,7 @@ class SwarmClient {
     /// @name Active goals
     /// @{
 
-    [[nodiscard]] GoalResult SetActiveGoal(ActiveGoal goal) const;
+    [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoal& goal) const;
     [[nodiscard]] std::unordered_map<std::string, GoalResult> SetActiveGoals(
         const std::unordered_map<std::string, ActiveGoal>& goals,
         const SwarmFanoutOptions& fanout_options = {}) const;

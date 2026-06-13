@@ -13,13 +13,13 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <expected>
-#include <random>
 #include <optional>
+#include <random>
 #include <string>
 #include <string_view>
 
@@ -149,16 +149,16 @@ class CorrelationIdGenerator {
         const std::uint64_t kSequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
         const auto kNow = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch());
-        return std::string(prefix) + "-" + std::to_string(kNow.count()) + "-" +
-               process_nonce_ + "-" + std::to_string(kSequence);
+        return std::string(prefix) + "-" + std::to_string(kNow.count()) + "-" + process_nonce_ +
+               "-" + std::to_string(kSequence);
     }
 
    private:
     [[nodiscard]] static std::string MakeProcessNonce() {
         std::random_device random;
-        const std::uint64_t hi = (static_cast<std::uint64_t>(random()) << 32U) ^ random();
-        const std::uint64_t lo = (static_cast<std::uint64_t>(random()) << 32U) ^ random();
-        return std::to_string(hi) + std::to_string(lo);
+        const std::uint64_t high_bits = (static_cast<std::uint64_t>(random()) << 32U) ^ random();
+        const std::uint64_t low_bits = (static_cast<std::uint64_t>(random()) << 32U) ^ random();
+        return std::to_string(high_bits) + std::to_string(low_bits);
     }
 
     std::string process_nonce_{MakeProcessNonce()};

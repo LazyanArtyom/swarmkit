@@ -5,18 +5,20 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include "data_runtime.h"
-
 #include "data_runtime_common.h"
 
 namespace swarmkit::apps::cli::internal {
 
+using data_runtime_detail::FindActionsAfterCommand;
+using data_runtime_detail::ParseDurationMs;
+using data_runtime_detail::ParseKeyValueLabels;
 using swarmkit::client::Client;
-using namespace data_runtime_detail;
 
 int RunArtifact(Client& client, int argc, char** argv) {
     const auto actions = FindActionsAfterCommand(argc, argv, "artifact");
     if (actions.empty()) {
-        std::cerr << "artifact requires upload|send|start|status|cancel|list|info|download|announce\n";
+        std::cerr
+            << "artifact requires upload|send|start|status|cancel|list|info|download|announce\n";
         return EXIT_FAILURE;
     }
 
@@ -169,8 +171,8 @@ int RunArtifact(Client& client, int argc, char** argv) {
             }
             upload.chunk_bytes = static_cast<std::size_t>(*parsed);
         }
-        const bool route = common::HasFlag(argc, argv, "--route") ||
-                           !upload.descriptor.target_id.empty();
+        const bool route =
+            common::HasFlag(argc, argv, "--route") || !upload.descriptor.target_id.empty();
         if (route && upload.descriptor.target_id.empty()) {
             std::cerr << "artifact start --route requires --target DRONE_ID\n";
             return EXIT_FAILURE;
@@ -188,9 +190,9 @@ int RunArtifact(Client& client, int argc, char** argv) {
         }
         const auto result = actions[0] == "cancel" ? client.CancelArtifactTransfer(transfer_id)
                                                    : client.GetArtifactTransfer(transfer_id);
-        print_transfer(actions[0] == "cancel" ? "Artifact transfer cancel"
-                                              : "Artifact transfer status",
-                       result);
+        print_transfer(
+            actions[0] == "cancel" ? "Artifact transfer cancel" : "Artifact transfer status",
+            result);
         return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
@@ -217,8 +219,7 @@ int RunArtifact(Client& client, int argc, char** argv) {
         }
         const auto result = client.ListArtifacts(options);
         std::cout << "Artifact list: " << (result.ok ? "OK" : "FAILED")
-                  << " count=" << result.artifacts.size()
-                  << " total=" << result.total_count;
+                  << " count=" << result.artifacts.size() << " total=" << result.total_count;
         if (!result.next_page_token.empty()) {
             std::cout << " next_page_token=" << result.next_page_token;
         }
@@ -233,8 +234,7 @@ int RunArtifact(Client& client, int argc, char** argv) {
             std::cout << "  " << descriptor.artifact_id << " source=" << descriptor.source_id
                       << " target=" << descriptor.target_id
                       << " content_type=" << descriptor.content_type
-                      << " size=" << descriptor.size_bytes
-                      << " sha256=" << descriptor.sha256_hex
+                      << " size=" << descriptor.size_bytes << " sha256=" << descriptor.sha256_hex
                       << " file=" << descriptor.filename << "\n";
         }
         return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
@@ -307,7 +307,7 @@ int RunArtifact(Client& client, int argc, char** argv) {
         }
         descriptor.ttl_ms = *ttl_ms;
         descriptor.labels = std::move(*labels);
-        const auto result = client.AnnounceArtifact(std::move(descriptor));
+        const auto result = client.AnnounceArtifact(descriptor);
         std::cout << "Artifact announce: " << (result.ok ? "OK" : "FAILED");
         if (!result.message.empty()) {
             std::cout << " " << result.message;

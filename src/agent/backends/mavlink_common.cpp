@@ -10,6 +10,7 @@
 #include <cctype>
 #include <chrono>
 #include <exception>
+#include <ranges>
 #include <unordered_map>
 
 namespace swarmkit::agent::mavlink {
@@ -212,20 +213,20 @@ std::optional<CommandAck> FindCommandAckAfter(const std::deque<SequencedCommandA
                                               std::uint16_t command, std::uint64_t start_sequence,
                                               std::uint8_t source_system,
                                               std::uint8_t source_component) {
-    for (auto iter = history.rbegin(); iter != history.rend(); ++iter) {
-        if (iter->sequence <= start_sequence) {
+    for (const SequencedCommandAck& entry : history | std::views::reverse) {
+        if (entry.sequence <= start_sequence) {
             break;
         }
-        if (iter->ack.command != command) {
+        if (entry.ack.command != command) {
             continue;
         }
-        if (!CommandAckTargets(iter->ack, source_system, source_component)) {
+        if (!CommandAckTargets(entry.ack, source_system, source_component)) {
             continue;
         }
-        if (iter->ack.result == MAV_RESULT_IN_PROGRESS) {
+        if (entry.ack.result == MAV_RESULT_IN_PROGRESS) {
             continue;
         }
-        return iter->ack;
+        return entry.ack;
     }
     return std::nullopt;
 }

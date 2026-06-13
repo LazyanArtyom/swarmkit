@@ -119,8 +119,8 @@ inline void ResetStopRequested() {
     StopRequestedFlag() = 0;
 }
 
-[[nodiscard]] inline std::vector<std::string> FindActionsAfterCommand(int argc, char** argv,
-                                                               std::string_view command_name) {
+[[nodiscard]] inline std::vector<std::string> FindActionsAfterCommand(
+    int argc, char** argv, std::string_view command_name) {
     int command_index = -1;
     for (int index = 1; index < argc; ++index) {
         const std::string_view current_arg = argv[index];
@@ -157,13 +157,12 @@ inline void ResetStopRequested() {
         .count();
 }
 
-
 [[nodiscard]] inline double DegToRad(double degrees) {
     return degrees * std::numbers::pi / 180.0;
 }
 
 [[nodiscard]] inline double DistanceMeters(double lat_a_deg, double lon_a_deg, double lat_b_deg,
-                                    double lon_b_deg) {
+                                           double lon_b_deg) {
     constexpr double kEarthRadiusMeters = 6371000.0;
     const double lat_a = DegToRad(lat_a_deg);
     const double lat_b = DegToRad(lat_b_deg);
@@ -190,7 +189,7 @@ inline void ResetStopRequested() {
 }
 
 [[nodiscard]] inline bool FrameMatchesWaitCondition(const swarmkit::core::TelemetryFrame& frame,
-                                             const WaitCondition& condition) {
+                                                    const WaitCondition& condition) {
     if (condition.wait_heartbeat && frame.unix_time_ms <= 0) {
         return false;
     }
@@ -209,8 +208,7 @@ inline void ResetStopRequested() {
         std::abs(frame.rel_alt_m - *condition.target_alt_m) > condition.alt_tolerance_m) {
         return false;
     }
-    if (condition.lat_deg.has_value() && condition.lon_deg.has_value() &&
-        !frame.HasPosition()) {
+    if (condition.lat_deg.has_value() && condition.lon_deg.has_value() && !frame.HasPosition()) {
         return false;
     }
     if (condition.lat_deg.has_value() && condition.lon_deg.has_value() &&
@@ -218,8 +216,7 @@ inline void ResetStopRequested() {
             condition.position_radius_m) {
         return false;
     }
-    if (condition.battery_min_percent.has_value() &&
-        !frame.HasBattery()) {
+    if (condition.battery_min_percent.has_value() && !frame.HasBattery()) {
         return false;
     }
     if (condition.battery_min_percent.has_value() &&
@@ -258,7 +255,7 @@ class SequenceTelemetryMonitor {
 
     SequenceTelemetryMonitor() = default;
 
-    [[nodiscard]] inline bool StartSingle(Client& client, const std::string& drone_id, int rate_hz) {
+    [[nodiscard]] bool StartSingle(Client& client, const std::string& drone_id, int rate_hz) {
         Stop();
         auto subscription = client.StartTelemetry(
             {.drone_id = drone_id, .rate_hertz = rate_hz},
@@ -275,7 +272,7 @@ class SequenceTelemetryMonitor {
         return true;
     }
 
-    [[nodiscard]] inline bool StartSwarm(SwarmRuntime& runtime, int rate_hz) {
+    [[nodiscard]] bool StartSwarm(SwarmRuntime& runtime, int rate_hz) {
         Stop();
         auto subscriptions = runtime.client->StartAllTelemetry(
             rate_hz, [this](const swarmkit::core::TelemetryFrame& frame) { StoreFrame(frame); },
@@ -314,7 +311,7 @@ class SequenceTelemetryMonitor {
         swarm_subscriptions_.clear();
     }
 
-    [[nodiscard]] inline bool WaitFor(const std::vector<std::string>& drone_ids,
+    [[nodiscard]] bool WaitFor(const std::vector<std::string>& drone_ids,
                                const WaitCondition& condition, std::string* detail) {
         const auto deadline =
             std::chrono::steady_clock::now() + std::chrono::milliseconds{condition.timeout_ms};
@@ -356,7 +353,7 @@ class SequenceTelemetryMonitor {
         cv_.notify_all();
     }
 
-    [[nodiscard]] inline std::optional<swarmkit::core::TelemetryFrame> FindFrameLocked(
+    [[nodiscard]] std::optional<swarmkit::core::TelemetryFrame> FindFrameLocked(
         const std::string& drone_id) const {
         if (const auto iter = frames_.find(drone_id); iter != frames_.end()) {
             return iter->second;
@@ -375,7 +372,8 @@ class SequenceTelemetryMonitor {
     std::optional<swarmkit::core::TelemetryFrame> only_frame_;
 };
 
-[[nodiscard]] inline std::expected<std::int64_t, std::string> ParseDurationMs(int argc, char** argv) {
+[[nodiscard]] inline std::expected<std::int64_t, std::string> ParseDurationMs(int argc,
+                                                                              char** argv) {
     const auto duration = ParseIntArg(
         common::GetOptionValue(argc, argv, "--duration-ms", kDefaultZero), "--duration-ms");
     if (!duration.has_value()) {
@@ -387,7 +385,8 @@ class SequenceTelemetryMonitor {
     return static_cast<std::int64_t>(*duration);
 }
 
-[[nodiscard]] inline std::expected<std::string, std::string> ParseSequenceFilePath(int argc, char** argv) {
+[[nodiscard]] inline std::expected<std::string, std::string> ParseSequenceFilePath(int argc,
+                                                                                   char** argv) {
     std::string path = common::GetOptionValue(argc, argv, "--file");
     if (path.empty()) {
         return std::unexpected("sequence requires --file PATH");
@@ -407,13 +406,15 @@ class SequenceTelemetryMonitor {
     return out;
 }
 
-inline void ReadOptionalWaitFloat(const YAML::Node& node, const char* key, std::optional<float>* out) {
+inline void ReadOptionalWaitFloat(const YAML::Node& node, const char* key,
+                                  std::optional<float>* out) {
     if (out != nullptr && node && node[key]) {
         *out = node[key].as<float>();
     }
 }
 
-inline void ReadOptionalWaitDouble(const YAML::Node& node, const char* key, std::optional<double>* out) {
+inline void ReadOptionalWaitDouble(const YAML::Node& node, const char* key,
+                                   std::optional<double>* out) {
     if (out != nullptr && node && node[key]) {
         *out = node[key].as<double>();
     }
@@ -437,7 +438,8 @@ inline void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* conditi
     }
 }
 
-[[nodiscard]] inline std::expected<WaitCondition, std::string> ParseWaitCondition(const YAML::Node& node) {
+[[nodiscard]] inline std::expected<WaitCondition, std::string> ParseWaitCondition(
+    const YAML::Node& node) {
     WaitCondition condition;
     try {
         if (!node || !node.IsMap()) {
@@ -552,7 +554,8 @@ inline void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* conditi
     }
 }
 
-[[nodiscard]] inline std::string RelativeAltitudeText(const swarmkit::client::HealthStatus& status) {
+[[nodiscard]] inline std::string RelativeAltitudeText(
+    const swarmkit::client::HealthStatus& status) {
     if (!status.has_relative_altitude) {
         return "unknown";
     }
@@ -576,7 +579,8 @@ inline void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* conditi
     return timestamp_ms <= 0 || now_ms - timestamp_ms > kSwarmHealthStaleAfterMs;
 }
 
-[[nodiscard]] inline std::string TimestampAgeMsText(std::int64_t timestamp_ms, std::int64_t now_ms) {
+[[nodiscard]] inline std::string TimestampAgeMsText(std::int64_t timestamp_ms,
+                                                    std::int64_t now_ms) {
     if (timestamp_ms <= 0) {
         return "unknown";
     }
@@ -584,7 +588,7 @@ inline void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* conditi
 }
 
 [[nodiscard]] inline std::string SwarmHealthReason(const swarmkit::client::HealthStatus& status,
-                                            bool heartbeat_stale, bool telemetry_stale) {
+                                                   bool heartbeat_stale, bool telemetry_stale) {
     if (!status.ok) {
         if (!status.message.empty()) {
             return status.message;
@@ -712,7 +716,7 @@ ParseCommandWaitOptions(int argc, char** argv) {
 }
 
 [[nodiscard]] inline bool PrintCommandResult(std::string_view label,
-                                      const swarmkit::client::CommandResult& result) {
+                                             const swarmkit::client::CommandResult& result) {
     std::cout << label << ": " << (result.ok ? "OK" : "FAILED");
     if (!result.message.empty()) {
         std::cout << " " << result.message;
@@ -737,9 +741,9 @@ ParseCommandWaitOptions(int argc, char** argv) {
     return result.ok;
 }
 
-[[nodiscard]] inline std::vector<std::string> StepTargetDrones(const SequenceStep& step,
-                                                        std::string_view default_drone_id,
-                                                        const std::vector<std::string>& swarm_ids) {
+[[nodiscard]] inline std::vector<std::string> StepTargetDrones(
+    const SequenceStep& step, std::string_view default_drone_id,
+    const std::vector<std::string>& swarm_ids) {
     if (step.broadcast) {
         if (swarm_ids.empty()) {
             return {std::string(default_drone_id)};
@@ -753,9 +757,9 @@ ParseCommandWaitOptions(int argc, char** argv) {
 }
 
 [[nodiscard]] inline bool WaitForConditions(SequenceTelemetryMonitor& monitor,
-                                     const std::vector<std::string>& drone_ids,
-                                     const std::vector<WaitCondition>& conditions,
-                                     std::size_t step_index) {
+                                            const std::vector<std::string>& drone_ids,
+                                            const std::vector<WaitCondition>& conditions,
+                                            std::size_t step_index) {
     for (const WaitCondition& condition : conditions) {
         std::string detail;
         if (!monitor.WaitFor(drone_ids, condition, &detail)) {

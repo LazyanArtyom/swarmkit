@@ -398,7 +398,7 @@ struct MessageSubscription {
     std::uint64_t after_sequence{};
 };
 
-enum class DataPeerState {
+enum class DataPeerState : std::uint8_t {
     kUnknown,
     kReady,
     kUnreachable,
@@ -459,7 +459,7 @@ struct ArtifactTransferResult {
 struct ArtifactUpload {
     std::string file_path;
     ArtifactDescriptor descriptor;
-    std::size_t chunk_bytes{64 * 1024};
+    std::size_t chunk_bytes{std::size_t{64} * std::size_t{1024}};
 };
 
 struct ArtifactUploadSession {
@@ -482,7 +482,7 @@ struct ArtifactUploadSessionResult {
     ArtifactDescriptor descriptor;
 };
 
-enum class ArtifactTransferState {
+enum class ArtifactTransferState : std::uint8_t {
     kUnknown,
     kQueued,
     kRunning,
@@ -742,10 +742,11 @@ class Client {
     [[nodiscard]] PublishMessageResult SendMessageToDrone(DataMessage message) const;
 
     /// @brief Subscribe to app-defined data-plane messages.
-    [[nodiscard]] SubscriptionResult StartMessages(
-        MessageSubscription subscription, DataMessageHandler on_message,
-        TelemetryErrorHandler on_error = {}, SubscriptionEventHandler on_event = {},
-        SubscriptionOptions options = {});
+    [[nodiscard]] SubscriptionResult StartMessages(MessageSubscription subscription,
+                                                   DataMessageHandler on_message,
+                                                   TelemetryErrorHandler on_error = {},
+                                                   SubscriptionEventHandler on_event = {},
+                                                   SubscriptionOptions options = {});
     void StopMessages();
 
     /// @brief Read configured data peers and their latest reachability status.
@@ -768,17 +769,17 @@ class Client {
     [[nodiscard]] ArtifactTransferResult SendArtifactToDrone(const ArtifactUpload& upload) const;
 
     /// @brief Create a resumable upload session on the connected agent.
-    [[nodiscard]] ArtifactUploadSessionResult CreateArtifactUpload(
-        ArtifactDescriptor descriptor, std::int64_t ttl_ms = 0) const;
+    [[nodiscard]] ArtifactUploadSessionResult CreateArtifactUpload(ArtifactDescriptor descriptor,
+                                                                   std::int64_t ttl_ms = 0) const;
 
     /// @brief Append one chunk to a resumable upload session.
-    [[nodiscard]] ArtifactUploadSessionResult UploadArtifactChunk(
-        const std::string& upload_id, std::string_view data, std::int64_t offset,
-        int chunk_index) const;
+    [[nodiscard]] ArtifactUploadSessionResult UploadArtifactChunk(const std::string& upload_id,
+                                                                  std::string_view data,
+                                                                  std::int64_t offset,
+                                                                  int chunk_index) const;
 
     /// @brief Inspect resumable upload progress.
-    [[nodiscard]] ArtifactUploadSessionResult GetUploadStatus(
-        const std::string& upload_id) const;
+    [[nodiscard]] ArtifactUploadSessionResult GetUploadStatus(const std::string& upload_id) const;
 
     /// @brief Finalize a complete upload session into a stored artifact.
     [[nodiscard]] ArtifactUploadSessionResult CommitArtifactUpload(
@@ -788,8 +789,8 @@ class Client {
     [[nodiscard]] ArtifactUploadSessionResult CancelUpload(const std::string& upload_id) const;
 
     /// @brief Start an agent-side artifact transfer from a path visible to the agent.
-    [[nodiscard]] ArtifactTransferStatusResult StartArtifactTransfer(
-        const ArtifactUpload& upload, bool route_to_target) const;
+    [[nodiscard]] ArtifactTransferStatusResult StartArtifactTransfer(const ArtifactUpload& upload,
+                                                                     bool route_to_target) const;
 
     /// @brief Read progress for an agent-side artifact transfer.
     [[nodiscard]] ArtifactTransferStatusResult GetArtifactTransfer(
@@ -813,11 +814,12 @@ class Client {
                                                           const std::string& output_path) const;
 
     /// @brief Resume a partially downloaded artifact from output_path.part when possible.
-    [[nodiscard]] ArtifactTransferResult ResumeArtifactDownload(const std::string& artifact_id,
-                                                                const std::string& output_path) const;
+    [[nodiscard]] ArtifactTransferResult ResumeArtifactDownload(
+        const std::string& artifact_id, const std::string& output_path) const;
 
     /// @brief Announce an artifact descriptor without uploading bytes.
-    [[nodiscard]] ArtifactTransferResult AnnounceArtifact(ArtifactDescriptor descriptor) const;
+    [[nodiscard]] ArtifactTransferResult AnnounceArtifact(
+        const ArtifactDescriptor& descriptor) const;
 
     /**
      * @brief Acquire exclusive command authority for @p drone_id.

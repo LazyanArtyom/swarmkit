@@ -92,8 +92,7 @@ std::string TelemetryCsvLine(const swarmkit::core::TelemetryFrame& frame) {
          << CsvScalar(frame.accuracy.horizontal_position_valid,
                       frame.accuracy.horizontal_position_m)
          << "," << CsvScalar(frame.validity.estimator, static_cast<int>(frame.estimator_state))
-         << "," << CsvField(frame.active_goal_id) << "," << CsvField(frame.correlation_id)
-         << "\n";
+         << "," << CsvField(frame.active_goal_id) << "," << CsvField(frame.correlation_id) << "\n";
     return line.str();
 }
 
@@ -130,18 +129,22 @@ std::expected<std::unique_ptr<TelemetrySink>, std::string> TelemetrySink::FromAr
 void TelemetrySink::Write(const swarmkit::core::TelemetryFrame& frame) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (console_enabled_) {
+        std::string_view estimator_text = "unknown";
+        if (frame.validity.estimator) {
+            estimator_text = frame.ekf_ok ? "ok" : "bad";
+        }
         std::cout << std::fixed << std::setprecision(kTelemetryCoordPrecision) << "["
                   << frame.unix_time_ms << "]"
                   << " drone=" << frame.drone_id
                   << " lat=" << ConsoleScalar(frame.validity.position, frame.lat_deg)
                   << " lon=" << ConsoleScalar(frame.validity.position, frame.lon_deg)
-                  << std::setprecision(kTelemetryValuePrecision)
-                  << " alt=" << ConsoleScalar(frame.validity.relative_altitude, frame.rel_alt_m, "m")
+                  << std::setprecision(kTelemetryValuePrecision) << " alt="
+                  << ConsoleScalar(frame.validity.relative_altitude, frame.rel_alt_m, "m")
                   << " bat=" << ConsoleScalar(frame.validity.battery, frame.battery_percent, "%")
                   << " gps_fix=" << ConsoleScalar(frame.validity.gps, frame.gps_fix_type)
                   << " sats=" << ConsoleScalar(frame.validity.gps, frame.satellites_visible)
                   << " hdop=" << ConsoleScalar(frame.validity.gps_hdop, frame.gps_hdop)
-                  << " ekf=" << (frame.validity.estimator ? (frame.ekf_ok ? "ok" : "bad") : "unknown")
+                  << " ekf=" << estimator_text
                   << " armed=" << ConsoleBool(frame.validity.armed, frame.armed)
                   << " landed=" << ConsoleBool(frame.validity.landed, frame.landed)
                   << " failsafe=" << ConsoleBool(frame.validity.failsafe, frame.failsafe)

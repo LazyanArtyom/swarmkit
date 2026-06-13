@@ -7,6 +7,7 @@
 #include "swarmkit/agent/server.h"
 
 #include <grpcpp/grpcpp.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -83,11 +84,11 @@ constexpr std::string_view kArtifactMetadataFilename = "artifact.pb";
         return "artifact";
     }
     for (char& character : value) {
-        const bool ok = (character >= 'a' && character <= 'z') ||
-                        (character >= 'A' && character <= 'Z') ||
-                        (character >= '0' && character <= '9') || character == '.' ||
-                        character == '-' || character == '_';
-        if (!ok) {
+        const bool allowed = (character >= 'a' && character <= 'z') ||
+                             (character >= 'A' && character <= 'Z') ||
+                             (character >= '0' && character <= '9') || character == '.' ||
+                             character == '-' || character == '_';
+        if (!allowed) {
             character = '_';
         }
     }
@@ -107,8 +108,7 @@ constexpr std::string_view kArtifactMetadataFilename = "artifact.pb";
     return output.good();
 }
 
-[[nodiscard]] bool MessageExpired(const swarmkit::v1::DataMessage& message,
-                                  std::int64_t now_ms) {
+[[nodiscard]] bool MessageExpired(const swarmkit::v1::DataMessage& message, std::int64_t now_ms) {
     return message.ttl_ms() > 0 && message.unix_time_ms() > 0 &&
            now_ms - message.unix_time_ms() > message.ttl_ms();
 }
@@ -149,8 +149,8 @@ constexpr std::string_view kArtifactMetadataFilename = "artifact.pb";
     return grpc::SslCredentials(options);
 }
 
-[[nodiscard]] std::shared_ptr<grpc::Channel> MakePeerChannel(
-    const DataPeerConfig& peer, const AgentSecurityConfig& fallback) {
+[[nodiscard]] std::shared_ptr<grpc::Channel> MakePeerChannel(const DataPeerConfig& peer,
+                                                             const AgentSecurityConfig& fallback) {
     const auto credentials = MakePeerChannelCredentials(peer, fallback);
     if (peer.server_authority_override.empty() ||
         EffectivePeerTransportSecurity(peer, fallback) == core::TransportSecurityMode::kInsecure) {
@@ -189,22 +189,21 @@ constexpr std::string_view kArtifactMetadataFilename = "artifact.pb";
     if (sub.topics().empty()) {
         return true;
     }
-    return std::ranges::any_of(sub.topics(), [&message](const std::string& topic) {
-        return topic == message.topic();
-    });
+    return std::ranges::any_of(
+        sub.topics(), [&message](const std::string& topic) { return topic == message.topic(); });
 }
 
 [[nodiscard]] bool HasFreshTimestamp(std::int64_t unix_time_ms) {
     return unix_time_ms > 0;
 }
 
-void AddReadinessCheck(swarmkit::v1::HealthReply* reply, std::string_view name, bool ok,
+void AddReadinessCheck(swarmkit::v1::HealthReply* reply, std::string_view name, bool check_ok,
                        std::string detail, swarmkit::v1::ReadinessCheckSeverity severity) {
     auto* check = reply->add_readiness_checks();
     check->set_name(std::string(name));
-    check->set_ok(ok);
+    check->set_ok(check_ok);
     check->set_detail(std::move(detail));
-    check->set_severity(ok ? swarmkit::v1::READINESS_INFO : severity);
+    check->set_severity(check_ok ? swarmkit::v1::READINESS_INFO : severity);
 }
 
 void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::HealthReply* reply) {
@@ -219,7 +218,8 @@ void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::He
         ready && heartbeat_ok && telemetry_ok && health.gps_ok && health.ekf_ok && not_failsafe;
     reply->set_autonomous_ready(checks_ok);
 
-    AddReadinessCheck(reply, "backend", ready, ready ? health.message : "not ready: " + health.message,
+    AddReadinessCheck(reply, "backend", ready,
+                      ready ? health.message : "not ready: " + health.message,
                       swarmkit::v1::READINESS_ERROR);
     AddReadinessCheck(reply, "heartbeat", heartbeat_ok,
                       heartbeat_ok ? "heartbeat observed" : "no vehicle heartbeat observed",
@@ -228,12 +228,12 @@ void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::He
                       telemetry_ok ? "telemetry observed" : "no vehicle telemetry observed",
                       swarmkit::v1::READINESS_ERROR);
     AddReadinessCheck(reply, "gps", health.gps_ok,
-                      "fix_type=" + std::to_string(health.gps_fix_type) + " sats=" +
-                          std::to_string(health.satellites_visible) + " hdop=" +
-                          std::to_string(health.gps_hdop),
+                      "fix_type=" + std::to_string(health.gps_fix_type) +
+                          " sats=" + std::to_string(health.satellites_visible) +
+                          " hdop=" + std::to_string(health.gps_hdop),
                       swarmkit::v1::READINESS_ERROR);
-    AddReadinessCheck(reply, "ekf", health.ekf_ok,
-                      health.ekf_ok ? "healthy" : "unhealthy", swarmkit::v1::READINESS_ERROR);
+    AddReadinessCheck(reply, "ekf", health.ekf_ok, health.ekf_ok ? "healthy" : "unhealthy",
+                      swarmkit::v1::READINESS_ERROR);
     AddReadinessCheck(reply, "failsafe", not_failsafe,
                       health.failsafe ? "failsafe active" : "inactive",
                       swarmkit::v1::READINESS_ERROR);
@@ -344,8 +344,7 @@ void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::He
     }
 }
 
-void PopulateTelemetryProto(const core::TelemetryFrame& frame,
-                            swarmkit::v1::TelemetryFrame* out) {
+void PopulateTelemetryProto(const core::TelemetryFrame& frame, swarmkit::v1::TelemetryFrame* out) {
     if (out == nullptr) {
         return;
     }
@@ -1026,9 +1025,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         counters_->IncrementRuntimeStatsRequests();
 
         // Sync telemetry counters from the manager into the atomic counters.
-        counters_->SetTelemetryCounters(telemetry_.TotalSubscriptionCount(),
-                                       telemetry_.ActiveStreamCount(), telemetry_.FramesSentTotal(),
-                                       telemetry_.BackendFailureCount());
+        counters_->SetTelemetryCounters(
+            telemetry_.TotalSubscriptionCount(), telemetry_.ActiveStreamCount(),
+            telemetry_.FramesSentTotal(), telemetry_.BackendFailureCount());
 
         const internal::CounterSnapshot kSnap = counters_->Snapshot();
         const std::string kCorrelationId = ResolveCorrelationId(ctx, "", "stats");
@@ -1176,9 +1175,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
         envelope.command = std::move(convert_result.value());
 
-        const CommandPreconditionDecision kPrecondition =
-            EvaluateCommandPreconditions(envelope, backend_->GetHealth(),
-                                         config_.safety.allow_unsafe_bench_commands);
+        const CommandPreconditionDecision kPrecondition = EvaluateCommandPreconditions(
+            envelope, backend_->GetHealth(), config_.safety.allow_unsafe_bench_commands);
         if (kPrecondition.action != CommandPreconditionAction::kExecute) {
             reply->set_correlation_id(envelope.context.correlation_id);
             reply->set_error_code(ToProtoErrorCode(kPrecondition.result.error.code));
@@ -1218,7 +1216,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             }
         }
 
-        const CommandArbiter::GrantResult kGrant = arbiter_.CheckAndGrantDetailed(envelope.context, ttl);
+        const CommandArbiter::GrantResult kGrant =
+            arbiter_.CheckAndGrantDetailed(envelope.context, ttl);
         if (!kGrant.IsOk()) {
             counters_->IncrementCommandRejected();
             core::Logger::WarnFmt(
@@ -1243,7 +1242,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             envelope.context.client_id, static_cast<int>(envelope.context.priority), ctx->peer(),
             kCmdName);
         PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_ACCEPTED,
-                             swarmkit::v1::REPORT_INFO, "authority granted; dispatching to backend");
+                             swarmkit::v1::REPORT_INFO,
+                             "authority granted; dispatching to backend");
 
         const core::Result kExecResult = backend_->Execute(envelope);
         reply->set_correlation_id(envelope.context.correlation_id);
@@ -1251,10 +1251,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         if (kExecResult.IsOk()) {
             reply->set_status(swarmkit::v1::CommandReply::OK);
             reply->set_message(kExecResult.message);
-            PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_ACKED,
-                                 swarmkit::v1::REPORT_INFO,
-                                 kExecResult.message.empty() ? "command executed"
-                                                             : kExecResult.message);
+            PublishCommandReport(
+                envelope.context, kCmdName, swarmkit::v1::COMMAND_ACKED, swarmkit::v1::REPORT_INFO,
+                kExecResult.message.empty() ? "command executed" : kExecResult.message);
         } else {
             counters_->IncrementCommandFailed();
             counters_->IncrementBackendFailures();
@@ -1268,10 +1267,10 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                                                            : kExecResult.message);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_BACKEND_FAILURE);
             reply->set_debug_message(kExecResult.message);
-            PublishCommandReport(envelope.context, kCmdName, swarmkit::v1::COMMAND_FAILED,
-                                 swarmkit::v1::REPORT_ERROR,
-                                 kExecResult.message.empty() ? "command execution failed"
-                                                             : kExecResult.message);
+            PublishCommandReport(
+                envelope.context, kCmdName, swarmkit::v1::COMMAND_FAILED,
+                swarmkit::v1::REPORT_ERROR,
+                kExecResult.message.empty() ? "command execution failed" : kExecResult.message);
         }
         if (kGrant.granted_for_call) {
             arbiter_.Release(envelope.context.drone_id, envelope.context.client_id);
@@ -1294,7 +1293,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         CommandContext context = ToCoreContext(req->ctx());
         context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "goal");
-        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, &context.client_id);
+        if (const core::Result auth_result =
+                AuthorizePeer(ctx, config_.security, &context.client_id);
             !auth_result.IsOk()) {
             return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
         }
@@ -1331,8 +1331,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status::OK;
         }
 
-        const core::Result arbiter_result =
-            arbiter_.CheckAndGrant(context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
+        const core::Result arbiter_result = arbiter_.CheckAndGrant(
+            context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
         if (!arbiter_result.IsOk()) {
             reply->set_ok(false);
             reply->set_message(arbiter_result.message);
@@ -1340,8 +1340,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_error_code(ToProtoErrorCode(arbiter_result.error.code));
             reply->set_debug_message(arbiter_result.message);
             PublishSimpleReport(context.drone_id, context.correlation_id,
-                                swarmkit::v1::AUTHORITY_REJECTED,
-                                swarmkit::v1::REPORT_WARNING, arbiter_result.message);
+                                swarmkit::v1::AUTHORITY_REJECTED, swarmkit::v1::REPORT_WARNING,
+                                arbiter_result.message);
             return grpc::Status::OK;
         }
 
@@ -1393,8 +1393,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
-    grpc::Status CancelGoal(grpc::ServerContext* ctx,
-                            const swarmkit::v1::CancelGoalRequest* req,
+    grpc::Status CancelGoal(grpc::ServerContext* ctx, const swarmkit::v1::CancelGoalRequest* req,
                             swarmkit::v1::CancelGoalReply* reply) override {
         if (req == nullptr || reply == nullptr) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null request/response");
@@ -1405,7 +1404,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
 
         CommandContext context = ToCoreContext(req->ctx());
         context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "cancel-goal");
-        if (const core::Result auth_result = AuthorizePeer(ctx, config_.security, &context.client_id);
+        if (const core::Result auth_result =
+                AuthorizePeer(ctx, config_.security, &context.client_id);
             !auth_result.IsOk()) {
             return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, auth_result.message);
         }
@@ -1413,8 +1413,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, validation.message);
         }
 
-        const core::Result arbiter_result =
-            arbiter_.CheckAndGrant(context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
+        const core::Result arbiter_result = arbiter_.CheckAndGrant(
+            context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
         if (!arbiter_result.IsOk()) {
             reply->set_ok(false);
             reply->set_message(arbiter_result.message);
@@ -1422,8 +1422,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_error_code(ToProtoErrorCode(arbiter_result.error.code));
             reply->set_debug_message(arbiter_result.message);
             PublishSimpleReport(context.drone_id, context.correlation_id,
-                                swarmkit::v1::AUTHORITY_REJECTED,
-                                swarmkit::v1::REPORT_WARNING, arbiter_result.message);
+                                swarmkit::v1::AUTHORITY_REJECTED, swarmkit::v1::REPORT_WARNING,
+                                arbiter_result.message);
             return grpc::Status::OK;
         }
 
@@ -1695,9 +1695,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
-    grpc::Status SubscribeReports(
-        grpc::ServerContext* ctx, const swarmkit::v1::ReportSubscription* req,
-        grpc::ServerWriter<swarmkit::v1::AgentReport>* writer) override {
+    grpc::Status SubscribeReports(grpc::ServerContext* ctx,
+                                  const swarmkit::v1::ReportSubscription* req,
+                                  grpc::ServerWriter<swarmkit::v1::AgentReport>* writer) override {
         if (ctx == nullptr || req == nullptr || writer == nullptr) {
             return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "null context/request/writer");
         }

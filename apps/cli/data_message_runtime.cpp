@@ -5,13 +5,19 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include "data_runtime.h"
-
 #include "data_runtime_common.h"
 
 namespace swarmkit::apps::cli::internal {
 
+using data_runtime_detail::CollectOptionValues;
+using data_runtime_detail::FindActionsAfterCommand;
+using data_runtime_detail::IsStopRequested;
+using data_runtime_detail::OnDataSignal;
+using data_runtime_detail::ParseDurationMs;
+using data_runtime_detail::ParseKeyValueLabels;
+using data_runtime_detail::ReadSmallPayload;
+using data_runtime_detail::ResetStopRequested;
 using swarmkit::client::Client;
-using namespace data_runtime_detail;
 
 int RunMessage(Client& client, int argc, char** argv) {
     const auto actions = FindActionsAfterCommand(argc, argv, "message");
@@ -47,8 +53,7 @@ int RunMessage(Client& client, int argc, char** argv) {
         for (const auto& peer : result.peers) {
             std::cout << "peer=" << peer.drone_id << " address=" << peer.address
                       << " security=" << peer.transport_security
-                      << " state=" << state_name(peer.state)
-                      << " rtt_ms=" << peer.round_trip_ms;
+                      << " state=" << state_name(peer.state) << " rtt_ms=" << peer.round_trip_ms;
             if (!peer.message.empty()) {
                 std::cout << " message=" << peer.message;
             }
@@ -90,9 +95,8 @@ int RunMessage(Client& client, int argc, char** argv) {
             std::cerr << "message send requires --target DRONE_ID\n";
             return EXIT_FAILURE;
         }
-        const auto result =
-            routed_send ? client.SendMessageToDrone(std::move(message))
-                        : client.PublishMessage(std::move(message));
+        const auto result = routed_send ? client.SendMessageToDrone(std::move(message))
+                                        : client.PublishMessage(std::move(message));
         std::cout << (routed_send ? "Message send: " : "Message publish: ")
                   << (result.ok ? "OK" : "FAILED");
         if (!result.message.empty()) {
@@ -131,7 +135,8 @@ int RunMessage(Client& client, int argc, char** argv) {
         subscription.topics = CollectOptionValues(argc, argv, "--topic");
         subscription.after_sequence = static_cast<std::uint64_t>(*after_sequence);
         if (subscription.target_id.empty()) {
-            std::cerr << "Note: no --target set; targeted messages for another id may not appear.\n";
+            std::cerr
+                << "Note: no --target set; targeted messages for another id may not appear.\n";
         }
 
         std::mutex output_mutex;
@@ -149,7 +154,9 @@ int RunMessage(Client& client, int argc, char** argv) {
                 }
                 std::cout << " payload=" << message.payload << "\n";
             },
-            [](const std::string& error) { std::cerr << "message stream error: " << error << "\n"; });
+            [](const std::string& error) {
+                std::cerr << "message stream error: " << error << "\n";
+            });
         if (!stream.has_value()) {
             std::cerr << "Message subscribe failed: " << stream.error().user_message << "\n";
             return EXIT_FAILURE;
@@ -157,8 +164,8 @@ int RunMessage(Client& client, int argc, char** argv) {
 
         const auto start = std::chrono::steady_clock::now();
         while (!IsStopRequested()) {
-            if (*duration_ms > 0 &&
-                std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(*duration_ms)) {
+            if (*duration_ms > 0 && std::chrono::steady_clock::now() - start >=
+                                        std::chrono::milliseconds(*duration_ms)) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds{100});

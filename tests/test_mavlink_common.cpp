@@ -119,9 +119,10 @@ TEST_CASE("MAVLink command ACK lookup survives later unrelated ACKs",
 
     const auto ack = FindCommandAckAfter(history, MAV_CMD_COMPONENT_ARM_DISARM, 1, kSourceSystem,
                                          kSourceComponent);
+    const CommandAck matched_ack = ack.value_or(CommandAck{});
     REQUIRE(ack.has_value());
-    CHECK(ack->command == MAV_CMD_COMPONENT_ARM_DISARM);
-    CHECK(ack->result == MAV_RESULT_ACCEPTED);
+    CHECK(matched_ack.command == MAV_CMD_COMPONENT_ARM_DISARM);
+    CHECK(matched_ack.result == MAV_RESULT_ACCEPTED);
 }
 
 TEST_CASE("MAVLink command ACK lookup ignores in-progress ACKs", "[agent][mavlink][commands]") {
