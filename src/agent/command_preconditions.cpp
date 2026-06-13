@@ -45,23 +45,23 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
 [[nodiscard]] CommandPreconditionDecision RequireAutonomousReadiness(
     const BackendHealth& health, std::string_view operation, bool allow_unsafe_bench_commands,
     AutonomousReadinessRequirements requirements = {}) {
-    const core::Result result = ValidateAutonomousReadiness(
-        health, operation, allow_unsafe_bench_commands, requirements);
+    const core::Result result =
+        ValidateAutonomousReadiness(health, operation, allow_unsafe_bench_commands, requirements);
     return result.IsOk() ? Execute() : Reject(result.message);
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdArm& /*unused*/,
-                                                                const BackendHealth& health,
-                                                                bool /*allow_unsafe_bench_commands*/) {
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
+    const commands::CmdArm& /*unused*/, const BackendHealth& health,
+    bool /*allow_unsafe_bench_commands*/) {
     if (health.armed) {
         return AlreadySatisfied("arm already satisfied: vehicle is already armed");
     }
     return Execute();
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdDisarm& /*unused*/,
-                                                                const BackendHealth& health,
-                                                                bool /*allow_unsafe_bench_commands*/) {
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
+    const commands::CmdDisarm& /*unused*/, const BackendHealth& health,
+    bool /*allow_unsafe_bench_commands*/) {
     if (!health.armed) {
         return AlreadySatisfied("disarm already satisfied: vehicle is already disarmed");
     }
@@ -86,17 +86,18 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
     }
     if (health.has_relative_altitude &&
         health.relative_alt_m + kTakeoffAltitudeToleranceM >= static_cast<float>(takeoff.alt_m)) {
-        return AlreadySatisfied("takeoff already satisfied: vehicle is at or above target altitude");
+        return AlreadySatisfied(
+            "takeoff already satisfied: vehicle is at or above target altitude");
     }
-    if (!health.landed) {
+    if (!health.landed && health.has_relative_altitude && !RelativeAltitudeConfirmsLanded(health)) {
         return AlreadySatisfied("takeoff already satisfied: vehicle is already airborne");
     }
     return RequireAutonomousReadiness(health, "takeoff", allow_unsafe_bench_commands);
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdLand& /*unused*/,
-                                                                const BackendHealth& health,
-                                                                bool /*allow_unsafe_bench_commands*/) {
+[[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
+    const commands::CmdLand& /*unused*/, const BackendHealth& health,
+    bool /*allow_unsafe_bench_commands*/) {
     if (!health.armed && RelativeAltitudeConfirmsLanded(health)) {
         return AlreadySatisfied(
             "land already satisfied: vehicle is disarmed and relative altitude is near ground");
@@ -146,27 +147,27 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
     return RequireAutonomousReadiness(health, "hold", allow_unsafe_bench_commands);
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(
-    const commands::CmdGoto& /*unused*/, const BackendHealth& health,
-    bool allow_unsafe_bench_commands) {
+[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(const commands::CmdGoto& /*unused*/,
+                                                             const BackendHealth& health,
+                                                             bool allow_unsafe_bench_commands) {
     return RequireAutonomousReadiness(health, "goto", allow_unsafe_bench_commands);
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(
-    const commands::CmdPause& /*unused*/, const BackendHealth& health,
-    bool allow_unsafe_bench_commands) {
+[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(const commands::CmdPause& /*unused*/,
+                                                             const BackendHealth& health,
+                                                             bool allow_unsafe_bench_commands) {
     return RequireAutonomousReadiness(health, "pause", allow_unsafe_bench_commands);
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(
-    const commands::CmdResume& /*unused*/, const BackendHealth& health,
-    bool allow_unsafe_bench_commands) {
+[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(const commands::CmdResume& /*unused*/,
+                                                             const BackendHealth& health,
+                                                             bool allow_unsafe_bench_commands) {
     return RequireAutonomousReadiness(health, "resume", allow_unsafe_bench_commands);
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(
-    const commands::CmdSetYaw& /*unused*/, const BackendHealth& health,
-    bool allow_unsafe_bench_commands) {
+[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(const commands::CmdSetYaw& /*unused*/,
+                                                             const BackendHealth& health,
+                                                             bool allow_unsafe_bench_commands) {
     return RequireAutonomousReadiness(health, "set-yaw", allow_unsafe_bench_commands);
 }
 
@@ -182,9 +183,9 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
     return Execute();
 }
 
-[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(
-    const commands::CmdSetHome& /*unused*/, const BackendHealth& /*unused*/,
-    bool /*allow_unsafe_bench_commands*/) {
+[[nodiscard]] CommandPreconditionDecision EvaluateNavCommand(const commands::CmdSetHome& /*unused*/,
+                                                             const BackendHealth& /*unused*/,
+                                                             bool /*allow_unsafe_bench_commands*/) {
     return Execute();
 }
 
@@ -217,8 +218,8 @@ core::Result ValidateAutonomousReadiness(const BackendHealth& health, std::strin
 }
 
 CommandPreconditionDecision EvaluateCommandPreconditions(const CommandEnvelope& envelope,
-                                                        const BackendHealth& health,
-                                                        bool allow_unsafe_bench_commands) {
+                                                         const BackendHealth& health,
+                                                         bool allow_unsafe_bench_commands) {
     if (!HasVehicleState(health)) {
         return Execute();
     }

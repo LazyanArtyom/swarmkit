@@ -5,7 +5,6 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <string>
 #include <utility>
 
@@ -60,14 +59,12 @@ TEST_CASE("Autonomous commands require flight readiness by default",
     CHECK(takeoff.result.message.find("must be armed") != std::string::npos);
 
     health.armed = true;
-    const auto waypoint = EvaluateCommandPreconditions(
-        Envelope(commands::NavCmd{commands::CmdSetWaypoint{.lat_deg = 40.0,
-                                                            .lon_deg = 44.0,
-                                                            .alt_m = 5.0}}),
-        health);
+    const auto waypoint =
+        EvaluateCommandPreconditions(Envelope(commands::NavCmd{commands::CmdSetWaypoint{
+                                         .lat_deg = 40.0, .lon_deg = 44.0, .alt_m = 5.0}}),
+                                     health);
     CHECK(waypoint.action == CommandPreconditionAction::kReject);
     CHECK(waypoint.result.message.find("healthy GPS") != std::string::npos);
-
 }
 
 TEST_CASE("Bench override explicitly permits autonomous readiness bypass",
@@ -136,10 +133,44 @@ TEST_CASE("Disarm precondition allows armed bench vehicle near ground",
     armed_high.landed = false;
     armed_high.has_relative_altitude = true;
     armed_high.relative_alt_m = 3.0F;
-    const CommandPreconditionDecision decision =
-        EvaluateCommandPreconditions(envelope, armed_high);
+    const CommandPreconditionDecision decision = EvaluateCommandPreconditions(envelope, armed_high);
     CHECK(decision.action == CommandPreconditionAction::kReject);
     CHECK(decision.result.message.find("appears airborne") != std::string::npos);
+}
+
+TEST_CASE("Takeoff precondition does not skip armed near-ground bench state",
+          "[agent][commands][preconditions]") {
+    const CommandEnvelope envelope =
+        Envelope(commands::FlightCmd{commands::CmdTakeoff{.alt_m = 1.0}});
+
+    BackendHealth armed_near_ground = HealthWithVehicleState();
+    armed_near_ground.armed = true;
+    armed_near_ground.landed = false;
+    armed_near_ground.gps_ok = true;
+    armed_near_ground.ekf_ok = true;
+    armed_near_ground.has_relative_altitude = true;
+    armed_near_ground.relative_alt_m = 0.1F;
+
+    CHECK(EvaluateCommandPreconditions(envelope, armed_near_ground).action ==
+          CommandPreconditionAction::kExecute);
+}
+
+TEST_CASE("Takeoff precondition skips when relative altitude confirms airborne",
+          "[agent][commands][preconditions]") {
+    const CommandEnvelope envelope =
+        Envelope(commands::FlightCmd{commands::CmdTakeoff{.alt_m = 5.0}});
+
+    BackendHealth airborne = HealthWithVehicleState();
+    airborne.armed = true;
+    airborne.landed = false;
+    airborne.gps_ok = true;
+    airborne.ekf_ok = true;
+    airborne.has_relative_altitude = true;
+    airborne.relative_alt_m = 1.2F;
+
+    const CommandPreconditionDecision decision = EvaluateCommandPreconditions(envelope, airborne);
+    CHECK(decision.action == CommandPreconditionAction::kAlreadySatisfied);
+    CHECK(decision.result.message.find("already airborne") != std::string::npos);
 }
 
 }  // namespace
