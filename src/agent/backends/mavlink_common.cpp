@@ -22,20 +22,13 @@ namespace {
 
 [[nodiscard]] std::optional<std::string_view> ArduCopterModeName(std::uint32_t custom_mode) {
     static const std::unordered_map<std::uint32_t, std::string_view> kModeMap{
-        {0, "STABILIZE"}, {1, "ACRO"},          {2, "ALT_HOLD"},     {3, "AUTO"},
-        {4, "GUIDED"},    {5, "LOITER"},        {6, "RTL"},          {7, "CIRCLE"},
-        {9, "LAND"},      {11, "DRIFT"},        {13, "SPORT"},       {14, "FLIP"},
-        {15, "AUTOTUNE"}, {16, "POSHOLD"},      {17, "BRAKE"},       {18, "THROW"},
-        {19, "AVOID_ADSB"},
-        {20, "GUIDED_NOGPS"},
-        {21, "SMART_RTL"},
-        {22, "FLOWHOLD"},
-        {23, "FOLLOW"},
-        {24, "ZIGZAG"},
-        {25, "SYSTEMID"},
-        {26, "AUTOROTATE"},
-        {27, "AUTO_RTL"},
-        {28, "TURTLE"},
+        {0, "STABILIZE"},   {1, "ACRO"},          {2, "ALT_HOLD"},   {3, "AUTO"},
+        {4, "GUIDED"},      {5, "LOITER"},        {6, "RTL"},        {7, "CIRCLE"},
+        {9, "LAND"},        {11, "DRIFT"},        {13, "SPORT"},     {14, "FLIP"},
+        {15, "AUTOTUNE"},   {16, "POSHOLD"},      {17, "BRAKE"},     {18, "THROW"},
+        {19, "AVOID_ADSB"}, {20, "GUIDED_NOGPS"}, {21, "SMART_RTL"}, {22, "FLOWHOLD"},
+        {23, "FOLLOW"},     {24, "ZIGZAG"},       {25, "SYSTEMID"},  {26, "AUTOROTATE"},
+        {27, "AUTO_RTL"},   {28, "TURTLE"},
     };
     const auto iter = kModeMap.find(custom_mode);
     if (iter == kModeMap.end()) {
@@ -46,13 +39,30 @@ namespace {
 
 [[nodiscard]] std::optional<std::string_view> ArduPlaneModeName(std::uint32_t custom_mode) {
     static const std::unordered_map<std::uint32_t, std::string_view> kModeMap{
-        {0, "MANUAL"},      {1, "CIRCLE"},     {2, "STABILIZE"}, {3, "TRAINING"},
-        {4, "ACRO"},        {5, "FBWA"},       {6, "FBWB"},      {7, "CRUISE"},
-        {8, "AUTOTUNE"},    {10, "AUTO"},      {11, "RTL"},      {12, "LOITER"},
-        {13, "TAKEOFF"},    {14, "AVOID_ADSB"},
-        {15, "GUIDED"},     {16, "INITIALISING"},
-        {17, "QSTABILIZE"}, {18, "QHOVER"},    {19, "QLOITER"},  {20, "QLAND"},
-        {21, "QRTL"},       {22, "QAUTOTUNE"}, {23, "QACRO"},    {24, "THERMAL"},
+        {0, "MANUAL"},
+        {1, "CIRCLE"},
+        {2, "STABILIZE"},
+        {3, "TRAINING"},
+        {4, "ACRO"},
+        {5, "FBWA"},
+        {6, "FBWB"},
+        {7, "CRUISE"},
+        {8, "AUTOTUNE"},
+        {10, "AUTO"},
+        {11, "RTL"},
+        {12, "LOITER"},
+        {13, "TAKEOFF"},
+        {14, "AVOID_ADSB"},
+        {15, "GUIDED"},
+        {16, "INITIALISING"},
+        {17, "QSTABILIZE"},
+        {18, "QHOVER"},
+        {19, "QLOITER"},
+        {20, "QLAND"},
+        {21, "QRTL"},
+        {22, "QAUTOTUNE"},
+        {23, "QACRO"},
+        {24, "THERMAL"},
         {25, "LOITERALTQLAND"},
     };
     const auto iter = kModeMap.find(custom_mode);
@@ -146,10 +156,10 @@ std::optional<int> ArduPlaneModeFromName(std::string mode) {
 std::vector<std::string> SupportedModes(MavlinkAutopilotProfile profile) {
     switch (profile) {
         case MavlinkAutopilotProfile::kArdupilotCopter:
-            return {"stabilize", "acro",  "alt-hold", "auto",  "guided", "guided-nogps",
-                    "loiter",    "rtl",   "land",     "brake", "smart-rtl"};
+            return {"stabilize", "acro", "alt-hold", "auto",  "guided",   "guided-nogps",
+                    "loiter",    "rtl",  "land",     "brake", "smart-rtl"};
         case MavlinkAutopilotProfile::kArdupilotPlane:
-            return {"manual", "circle", "stabilize", "fbwa", "fbwb", "cruise",
+            return {"manual", "circle", "stabilize", "fbwa",    "fbwb",  "cruise",
                     "auto",   "rtl",    "loiter",    "takeoff", "guided"};
     }
     return {};
@@ -190,6 +200,36 @@ bool MavlinkCommandAckResult::IsUnsupported() const {
             ack.result == MAV_RESULT_COMMAND_UNSUPPORTED_MAV_FRAME);
 }
 
+bool CommandAckTargets(const CommandAck& ack, std::uint8_t source_system,
+                       std::uint8_t source_component) {
+    if (ack.target_system == 0 && ack.target_component == 0) {
+        return true;
+    }
+    return ack.target_system == source_system && ack.target_component == source_component;
+}
+
+std::optional<CommandAck> FindCommandAckAfter(const std::deque<SequencedCommandAck>& history,
+                                              std::uint16_t command, std::uint64_t start_sequence,
+                                              std::uint8_t source_system,
+                                              std::uint8_t source_component) {
+    for (auto iter = history.rbegin(); iter != history.rend(); ++iter) {
+        if (iter->sequence <= start_sequence) {
+            break;
+        }
+        if (iter->ack.command != command) {
+            continue;
+        }
+        if (!CommandAckTargets(iter->ack, source_system, source_component)) {
+            continue;
+        }
+        if (iter->ack.result == MAV_RESULT_IN_PROGRESS) {
+            continue;
+        }
+        return iter->ack;
+    }
+    return std::nullopt;
+}
+
 core::Result MavlinkCommandAckResult::ToCoreResult() const {
     if (!send_result.IsOk()) {
         return send_result;
@@ -198,11 +238,10 @@ core::Result MavlinkCommandAckResult::ToCoreResult() const {
         return core::Result::Success();
     }
 
-    std::string detail = "COMMAND_ACK command=" + std::to_string(ack.command) +
-                         " result=" + MavResultName(ack.result) +
-                         " param2=" + std::to_string(ack.result_param2) +
-                         " target=" + std::to_string(ack.target_system) + "/" +
-                         std::to_string(ack.target_component);
+    std::string detail =
+        "COMMAND_ACK command=" + std::to_string(ack.command) +
+        " result=" + MavResultName(ack.result) + " param2=" + std::to_string(ack.result_param2) +
+        " target=" + std::to_string(ack.target_system) + "/" + std::to_string(ack.target_component);
     if (has_status_text && !status_text.text.empty()) {
         detail += " reason=\"" + status_text.text + "\"";
     }

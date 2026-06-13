@@ -657,7 +657,7 @@ class ControlShell {
         std::lock_guard<std::mutex> lock(output_mutex_);
         std::cout
             << "Core:\n"
-            << "  ping | health | stats | capabilities | config\n"
+            << "  ping | health | stats | capabilities | modes | config\n"
             << "  drone ID | priority operator|supervisor|override|emergency\n"
             << "  set speed MPS | set climb MPS | set pulse MS | set yaw-step DEG | set "
                "takeoff-alt M\n"
@@ -665,7 +665,9 @@ class ControlShell {
             << "  arm [--wait] | force-arm | disarm | force-disarm | terminate\n"
             << "  launch [ALT] | fly [ALT]   # guided + arm/wait + takeoff/wait; fly enters "
                "controller\n"
-            << "  mode NAME [CUSTOM_MODE] | takeoff [ALT] [--wait] | land [--wait]\n"
+            << "  mode NAME [CUSTOM_MODE] | modes | takeoff [ALT] [--wait] | land [--wait]\n"
+            << "  common ArduCopter modes: stabilize, acro, alt-hold, auto, guided, "
+               "guided-nogps, loiter, rtl, land, brake, smart-rtl\n"
             << "  rtl | hold | pause | resume | speed MPS | yaw DEG [RATE] [relative]\n"
             << "  velocity VX VY VZ [DURATION_MS] [body|local]\n"
             << "  forward [MPS] | back [MPS] | strafe-left [MPS] | strafe-right [MPS] | up [MPS] | "
@@ -801,6 +803,10 @@ class ControlShell {
             DoCapabilities();
             return true;
         }
+        if (command == "modes") {
+            DoModes();
+            return true;
+        }
         if (command == "config") {
             DoConfig();
             return true;
@@ -911,6 +917,35 @@ class ControlShell {
         PrintStringList("  commands", result.supported_commands);
         PrintStringList("  telemetry", result.supported_telemetry_fields);
         PrintStringList("  backend", result.backend_command_names);
+    }
+
+    void DoModes() {
+        const HealthStatus health = client_.GetHealth();
+        const BackendCapabilities capabilities = client_.GetCapabilities();
+        std::lock_guard<std::mutex> lock(output_mutex_);
+        std::cout << "Modes:";
+        if (health.ok && !health.mode.empty()) {
+            std::cout << " current=" << health.mode;
+        }
+        if (!capabilities.ok) {
+            std::cout << " FAILED";
+            const std::string error_message = capabilities.error.Message();
+            if (!error_message.empty()) {
+                std::cout << " " << error_message;
+            }
+            if (!capabilities.correlation_id.empty()) {
+                std::cout << " [corr=" << capabilities.correlation_id << "]";
+            }
+            std::cout << "\n";
+            return;
+        }
+        for (const auto& mode : capabilities.supported_modes) {
+            std::cout << " " << mode;
+        }
+        if (!capabilities.correlation_id.empty()) {
+            std::cout << " [corr=" << capabilities.correlation_id << "]";
+        }
+        std::cout << "\n";
     }
 
     void PrintStringList(std::string_view label, const std::vector<std::string>& values) const {

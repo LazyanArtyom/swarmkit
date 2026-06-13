@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <exception>
 #include <limits>
 #include <mutex>
@@ -50,6 +51,19 @@ constexpr float kMavlinkDefaultThrottle = -1.0F;
 constexpr float kMavlinkPause = 0.0F;
 constexpr float kMavlinkResume = 1.0F;
 constexpr int kVelocityCommandPeriodMs = 200;
+constexpr std::size_t kMaxCommandAckHistory = 32;
+constexpr std::size_t kMaxArmStateHistory = 16;
+constexpr auto kArmStateConfirmationGrace = std::chrono::milliseconds{1000};
+
+struct SequencedArmState {
+    std::uint64_t sequence{};
+    bool armed{false};
+};
+
+struct ArmStateObservation {
+    bool observed_desired_after_start{false};
+    bool current_desired{false};
+};
 
 [[nodiscard]] std::optional<float> FloatParam(
     const std::unordered_map<std::string, std::string>& params, const std::string& name) {
@@ -267,6 +281,9 @@ class MavlinkBackend final : public IDroneBackend {
             decode_result = telemetry_decoder_.Decode(message, &telemetry_cache_, &state_cache_,
                                                       config_.autopilot_profile);
         }
+        if (message.msgid == MAVLINK_MSG_ID_HEARTBEAT) {
+            RecordArmState(state_cache_.Snapshot().armed);
+        }
 
         if (decode_result.should_publish) {
             PublishTelemetry();
@@ -371,20 +388,17 @@ class MavlinkBackend final : public IDroneBackend {
                             return;
                         }
                     }
-                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
-                        /*arm=*/true, /*force=*/false));
+                    result = SendArmDisarmCommand(/*arm=*/true, /*force=*/false);
                 },
                 [&](const CmdForceArm&) {
                     if (context.priority != CommandPriority::kEmergency) {
                         result = core::Result::Rejected("force-arm requires emergency priority");
                         return;
                     }
-                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
-                        /*arm=*/true, /*force=*/true));
+                    result = SendArmDisarmCommand(/*arm=*/true, /*force=*/true);
                 },
                 [&](const CmdDisarm&) {
-                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
-                        /*arm=*/false, /*force=*/false));
+                    result = SendArmDisarmCommand(/*arm=*/false, /*force=*/false);
                 },
                 [&](const CmdTakeoff& takeoff) {
                     if (config_.set_guided_before_takeoff) {
@@ -407,8 +421,7 @@ class MavlinkBackend final : public IDroneBackend {
                         result = core::Result::Rejected("force-disarm requires emergency priority");
                         return;
                     }
-                    result = SendCommandLong(mav::MavlinkCommandExecutor::ArmDisarmCommand(
-                        /*arm=*/false, /*force=*/true));
+                    result = SendArmDisarmCommand(/*arm=*/false, /*force=*/true);
                 },
                 [&](const CmdFlightTerminate&) {
                     if (context.priority != CommandPriority::kEmergency) {
@@ -551,6 +564,33 @@ class MavlinkBackend final : public IDroneBackend {
                                static_cast<float>(home.lon_deg), static_cast<float>(home.alt_m));
     }
 
+    [[nodiscard]] core::Result SendArmDisarmCommand(bool arm, bool force) {
+        const std::uint64_t arm_state_start_sequence = ArmStateSequence();
+        const mav::MavlinkCommandLongSpec spec =
+            mav::MavlinkCommandExecutor::ArmDisarmCommand(arm, force);
+        mav::MavlinkCommandAckResult ack_result = SendCommandLongDetailed(spec);
+        if (!ack_result.ack_timed_out) {
+            return ack_result.ToCoreResult();
+        }
+
+        const ArmStateObservation observation =
+            WaitForArmStateObservation(arm, arm_state_start_sequence, kArmStateConfirmationGrace);
+        const std::string desired_state = arm ? "armed" : "disarmed";
+        if (observation.current_desired) {
+            return core::Result::Success(
+                "COMMAND_ACK timed out for arm/disarm command, but "
+                "vehicle is " +
+                desired_state + " by heartbeat");
+        }
+        if (observation.observed_desired_after_start) {
+            return core::Result::Failed(
+                "COMMAND_ACK timed out for arm/disarm command; vehicle "
+                "became " +
+                desired_state + " but is no longer " + desired_state);
+        }
+        return ack_result.ToCoreResult();
+    }
+
     [[nodiscard]] core::Result SendCommandLong(std::uint16_t command, float param1 = 0.0F,
                                                float param2 = 0.0F, float param3 = 0.0F,
                                                float param4 = 0.0F, float param5 = 0.0F,
@@ -566,6 +606,13 @@ class MavlinkBackend final : public IDroneBackend {
         return SendCommandLong(spec.command, spec.params[0], spec.params[1], spec.params[2],
                                spec.params[3], spec.params[4], spec.params[5], spec.params[6],
                                wait_for_ack);
+    }
+
+    [[nodiscard]] mav::MavlinkCommandAckResult SendCommandLongDetailed(
+        const mav::MavlinkCommandLongSpec& spec, bool wait_for_ack = true) {
+        return SendCommandLongDetailed(spec.command, spec.params[0], spec.params[1], spec.params[2],
+                                       spec.params[3], spec.params[4], spec.params[5],
+                                       spec.params[6], wait_for_ack);
     }
 
     [[nodiscard]] mav::MavlinkCommandAckResult SendCommandLongDetailed(
@@ -752,8 +799,14 @@ class MavlinkBackend final : public IDroneBackend {
     void RecordCommandAck(const mav::CommandAck& ack) {
         {
             std::lock_guard<std::mutex> lock(ack_mutex_);
-            last_ack_ = ack;
-            ++ack_sequence_;
+            const std::uint64_t sequence = ++ack_sequence_;
+            ack_history_.push_back(mav::SequencedCommandAck{
+                .sequence = sequence,
+                .ack = ack,
+            });
+            while (ack_history_.size() > kMaxCommandAckHistory) {
+                ack_history_.pop_front();
+            }
         }
         ack_cv_.notify_all();
         core::Logger::DebugFmt(
@@ -779,22 +832,23 @@ class MavlinkBackend final : public IDroneBackend {
     [[nodiscard]] mav::MavlinkCommandAckResult WaitForCommandAck(
         std::uint16_t command, std::uint64_t start_sequence, std::uint64_t status_start_sequence) {
         std::unique_lock<std::mutex> lock(ack_mutex_);
-        const bool got_ack =
-            ack_cv_.wait_for(lock, std::chrono::milliseconds{config_.command_ack_timeout_ms}, [&] {
-                if (ack_sequence_ == start_sequence || !last_ack_.has_value()) {
-                    return false;
-                }
-                const mav::CommandAck ack = last_ack_.value_or(mav::CommandAck{});
-                return ack.command == command && AckTargetsThisBackend(ack) &&
-                       ack.result != MAV_RESULT_IN_PROGRESS;
-            });
-
-        if (!got_ack) {
-            return {.send_result = core::Result::Failed(
-                        "timed out waiting for COMMAND_ACK command=" + std::to_string(command))};
+        std::optional<mav::CommandAck> matched_ack =
+            FindCommandAckAfterLocked(command, start_sequence);
+        if (!matched_ack.has_value()) {
+            static_cast<void>(ack_cv_.wait_for(
+                lock, std::chrono::milliseconds{config_.command_ack_timeout_ms}, [&] {
+                    matched_ack = FindCommandAckAfterLocked(command, start_sequence);
+                    return matched_ack.has_value();
+                }));
         }
 
-        const mav::CommandAck ack = last_ack_.value_or(mav::CommandAck{});
+        if (!matched_ack.has_value()) {
+            return {.send_result = core::Result::Failed(
+                        "timed out waiting for COMMAND_ACK command=" + std::to_string(command)),
+                    .ack_timed_out = true};
+        }
+
+        const mav::CommandAck ack = *matched_ack;
         lock.unlock();
 
         mav::MavlinkCommandAckResult result{.ack = ack, .has_ack = true};
@@ -808,6 +862,12 @@ class MavlinkBackend final : public IDroneBackend {
         return result;
     }
 
+    [[nodiscard]] std::optional<mav::CommandAck> FindCommandAckAfterLocked(
+        std::uint16_t command, std::uint64_t start_sequence) const {
+        return mav::FindCommandAckAfter(ack_history_, command, start_sequence,
+                                        config_.source_system, config_.source_component);
+    }
+
     [[nodiscard]] std::optional<mav::StatusText> WaitForStatusText(std::uint64_t start_sequence) {
         std::unique_lock<std::mutex> lock(status_text_mutex_);
         const bool got_status = status_text_cv_.wait_for(lock, std::chrono::milliseconds{500}, [&] {
@@ -819,12 +879,60 @@ class MavlinkBackend final : public IDroneBackend {
         return last_status_text_;
     }
 
-    [[nodiscard]] bool AckTargetsThisBackend(const mav::CommandAck& ack) const {
-        if (ack.target_system == 0 && ack.target_component == 0) {
-            return true;
+    [[nodiscard]] std::uint64_t ArmStateSequence() const {
+        std::lock_guard<std::mutex> lock(arm_state_mutex_);
+        return arm_state_sequence_;
+    }
+
+    void RecordArmState(bool armed) {
+        {
+            std::lock_guard<std::mutex> lock(arm_state_mutex_);
+            if (!arm_state_history_.empty() && arm_state_history_.back().armed == armed) {
+                return;
+            }
+            const std::uint64_t sequence = ++arm_state_sequence_;
+            arm_state_history_.push_back(SequencedArmState{
+                .sequence = sequence,
+                .armed = armed,
+            });
+            while (arm_state_history_.size() > kMaxArmStateHistory) {
+                arm_state_history_.pop_front();
+            }
         }
-        return ack.target_system == config_.source_system &&
-               ack.target_component == config_.source_component;
+        arm_state_cv_.notify_all();
+    }
+
+    [[nodiscard]] ArmStateObservation WaitForArmStateObservation(
+        bool desired_armed, std::uint64_t start_sequence, std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(arm_state_mutex_);
+        auto observation = ArmStateObservationLocked(desired_armed, start_sequence);
+        if (!observation.observed_desired_after_start) {
+            static_cast<void>(arm_state_cv_.wait_for(lock, timeout, [&] {
+                observation = ArmStateObservationLocked(desired_armed, start_sequence);
+                return observation.observed_desired_after_start;
+            }));
+            observation = ArmStateObservationLocked(desired_armed, start_sequence);
+        }
+        lock.unlock();
+        observation.current_desired = state_cache_.Snapshot().armed == desired_armed;
+        return observation;
+    }
+
+    [[nodiscard]] ArmStateObservation ArmStateObservationLocked(
+        bool desired_armed, std::uint64_t start_sequence) const {
+        ArmStateObservation observation;
+        for (const SequencedArmState& state : arm_state_history_) {
+            if (state.sequence <= start_sequence) {
+                continue;
+            }
+            if (state.armed == desired_armed) {
+                observation.observed_desired_after_start = true;
+            }
+        }
+        if (!arm_state_history_.empty()) {
+            observation.current_desired = arm_state_history_.back().armed == desired_armed;
+        }
+        return observation;
     }
 
     MavlinkBackendConfig config_;
@@ -849,12 +957,16 @@ class MavlinkBackend final : public IDroneBackend {
 
     std::mutex ack_mutex_;
     std::condition_variable ack_cv_;
-    std::optional<mav::CommandAck> last_ack_;
+    std::deque<mav::SequencedCommandAck> ack_history_;
     std::uint64_t ack_sequence_{0};
     std::mutex status_text_mutex_;
     std::condition_variable status_text_cv_;
     std::optional<mav::StatusText> last_status_text_;
     std::uint64_t status_text_sequence_{0};
+    mutable std::mutex arm_state_mutex_;
+    std::condition_variable arm_state_cv_;
+    std::deque<SequencedArmState> arm_state_history_;
+    std::uint64_t arm_state_sequence_{0};
 };
 
 }  // namespace

@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <deque>
 #include <string>
 
 #include "mavlink_command_executor.h"
@@ -77,6 +78,68 @@ TEST_CASE("MAVLink arm/disarm command specs use ArduPilot force magic",
     CHECK(force_disarm.command == MAV_CMD_COMPONENT_ARM_DISARM);
     CHECK(force_disarm.params[0] == 0.0F);
     CHECK(force_disarm.params[1] == kMavlinkForceArmDisarmMagic);
+}
+
+TEST_CASE("MAVLink command ACK lookup survives later unrelated ACKs",
+          "[agent][mavlink][commands]") {
+    constexpr std::uint8_t kSourceSystem = 245;
+    constexpr std::uint8_t kSourceComponent = 191;
+    std::deque<SequencedCommandAck> history{
+        SequencedCommandAck{
+            .sequence = 1,
+            .ack =
+                CommandAck{
+                    .command = MAV_CMD_SET_MESSAGE_INTERVAL,
+                    .result = MAV_RESULT_ACCEPTED,
+                    .target_system = 0,
+                    .target_component = 0,
+                },
+        },
+        SequencedCommandAck{
+            .sequence = 2,
+            .ack =
+                CommandAck{
+                    .command = MAV_CMD_COMPONENT_ARM_DISARM,
+                    .result = MAV_RESULT_ACCEPTED,
+                    .target_system = kSourceSystem,
+                    .target_component = kSourceComponent,
+                },
+        },
+        SequencedCommandAck{
+            .sequence = 3,
+            .ack =
+                CommandAck{
+                    .command = MAV_CMD_SET_MESSAGE_INTERVAL,
+                    .result = MAV_RESULT_ACCEPTED,
+                    .target_system = 0,
+                    .target_component = 0,
+                },
+        },
+    };
+
+    const auto ack = FindCommandAckAfter(history, MAV_CMD_COMPONENT_ARM_DISARM, 1, kSourceSystem,
+                                         kSourceComponent);
+    REQUIRE(ack.has_value());
+    CHECK(ack->command == MAV_CMD_COMPONENT_ARM_DISARM);
+    CHECK(ack->result == MAV_RESULT_ACCEPTED);
+}
+
+TEST_CASE("MAVLink command ACK lookup ignores in-progress ACKs", "[agent][mavlink][commands]") {
+    std::deque<SequencedCommandAck> history{
+        SequencedCommandAck{
+            .sequence = 1,
+            .ack =
+                CommandAck{
+                    .command = MAV_CMD_COMPONENT_ARM_DISARM,
+                    .result = MAV_RESULT_IN_PROGRESS,
+                    .target_system = 0,
+                    .target_component = 0,
+                },
+        },
+    };
+
+    const auto ack = FindCommandAckAfter(history, MAV_CMD_COMPONENT_ARM_DISARM, 0, 245, 191);
+    CHECK_FALSE(ack.has_value());
 }
 
 }  // namespace

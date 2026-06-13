@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <optional>
 #include <string>
@@ -81,6 +82,11 @@ struct CommandAck {
     std::uint8_t target_component{};
 };
 
+struct SequencedCommandAck {
+    std::uint64_t sequence{};
+    CommandAck ack;
+};
+
 struct StatusText {
     std::uint8_t severity{};
     std::string text;
@@ -91,6 +97,7 @@ struct MavlinkCommandAckResult {
     StatusText status_text;
     bool has_ack{false};
     bool has_status_text{false};
+    bool ack_timed_out{false};
     core::Result send_result{core::Result::Success()};
 
     [[nodiscard]] bool IsUnsupported() const;
@@ -129,6 +136,11 @@ struct MavlinkVehicleState {
 [[nodiscard]] std::string ModeString(const mavlink_heartbeat_t& heartbeat,
                                      MavlinkAutopilotProfile profile);
 [[nodiscard]] std::string MavResultName(std::uint8_t result);
+[[nodiscard]] bool CommandAckTargets(const CommandAck& ack, std::uint8_t source_system,
+                                     std::uint8_t source_component);
+[[nodiscard]] std::optional<CommandAck> FindCommandAckAfter(
+    const std::deque<SequencedCommandAck>& history, std::uint16_t command,
+    std::uint64_t start_sequence, std::uint8_t source_system, std::uint8_t source_component);
 [[nodiscard]] std::optional<int> ArduCopterModeFromName(std::string mode);
 [[nodiscard]] std::optional<int> ArduPlaneModeFromName(std::string mode);
 [[nodiscard]] std::vector<std::string> SupportedModes(MavlinkAutopilotProfile profile);
