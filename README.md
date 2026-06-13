@@ -364,11 +364,14 @@ Run the interactive control shell:
 Inside the shell:
 
 ```text
-arm --wait
-takeoff 5 --wait
+launch 5
 telemetry start 5 quiet
 controller
 ```
+
+For a one-command handoff into raw-key control, use `fly 5`. Payload smoke
+commands are also exposed, for example `payload photo 0` or
+`payload gimbal -20 0 90`.
 
 In controller mode, use arrow keys or `W/S` for forward/back, left/right arrows
 or `Q/E` for yaw, `A/D` for strafe, `R/F` for climb/descent, `Space` for stop,

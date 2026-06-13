@@ -66,12 +66,21 @@ using swarmkit::commands::CmdDisarm;
 using swarmkit::commands::CmdFlightTerminate;
 using swarmkit::commands::CmdForceArm;
 using swarmkit::commands::CmdForceDisarm;
+using swarmkit::commands::CmdGimbalPoint;
 using swarmkit::commands::CmdGoto;
+using swarmkit::commands::CmdGripper;
 using swarmkit::commands::CmdHoldPosition;
 using swarmkit::commands::CmdLand;
 using swarmkit::commands::CmdPause;
+using swarmkit::commands::CmdPhoto;
+using swarmkit::commands::CmdPhotoIntervalStart;
+using swarmkit::commands::CmdPhotoIntervalStop;
+using swarmkit::commands::CmdRelay;
 using swarmkit::commands::CmdResume;
 using swarmkit::commands::CmdReturnHome;
+using swarmkit::commands::CmdRoiClear;
+using swarmkit::commands::CmdRoiLocation;
+using swarmkit::commands::CmdServo;
 using swarmkit::commands::CmdSetHome;
 using swarmkit::commands::CmdSetMode;
 using swarmkit::commands::CmdSetSpeed;
@@ -79,11 +88,14 @@ using swarmkit::commands::CmdSetWaypoint;
 using swarmkit::commands::CmdSetYaw;
 using swarmkit::commands::CmdTakeoff;
 using swarmkit::commands::CmdVelocity;
+using swarmkit::commands::CmdVideoStart;
+using swarmkit::commands::CmdVideoStop;
 using swarmkit::commands::Command;
 using swarmkit::commands::CommandEnvelope;
 using swarmkit::commands::CommandPriority;
 using swarmkit::commands::FlightCmd;
 using swarmkit::commands::NavCmd;
+using swarmkit::commands::PayloadCmd;
 
 struct AppOptions {
     ClientConfig config;
@@ -651,6 +663,8 @@ class ControlShell {
                "takeoff-alt M\n"
             << "\nFlight and nav:\n"
             << "  arm [--wait] | force-arm | disarm | force-disarm | terminate\n"
+            << "  launch [ALT] | fly [ALT]   # guided + arm/wait + takeoff/wait; fly enters "
+               "controller\n"
             << "  mode NAME [CUSTOM_MODE] | takeoff [ALT] [--wait] | land [--wait]\n"
             << "  rtl | hold | pause | resume | speed MPS | yaw DEG [RATE] [relative]\n"
             << "  velocity VX VY VZ [DURATION_MS] [body|local]\n"
@@ -658,6 +672,13 @@ class ControlShell {
                "down [MPS]\n"
             << "  goto LAT LON ALT [SPEED] [--wait] | waypoint LAT LON ALT [SPEED]\n"
             << "  home current | home LAT LON ALT\n"
+            << "\nPayload:\n"
+            << "  payload photo [CAMERA] | payload interval-start INTERVAL_S [COUNT] [CAMERA]\n"
+            << "  payload interval-stop [CAMERA] | payload video-start [STREAM] [CAMERA]\n"
+            << "  payload video-stop [STREAM] [CAMERA] | payload gimbal PITCH ROLL YAW\n"
+            << "  payload roi LAT LON ALT [GIMBAL] | payload roi-clear [GIMBAL]\n"
+            << "  payload servo SERVO PWM | payload relay RELAY on|off | payload gripper ID "
+               "release|grab\n"
             << "\nSubscriptions and authority:\n"
             << "  telemetry start [RATE] [quiet] | telemetry stop | telemetry show\n"
             << "  reports start [AFTER_SEQUENCE] | reports stop\n"
@@ -800,9 +821,10 @@ class ControlShell {
             RunController();
             return true;
         }
-        if (HandleFlight(tokens) || HandleNav(tokens) || HandleSubscriptions(tokens) ||
-            HandleAuthority(tokens) || HandleGoal(tokens) || HandleMessages(tokens) ||
-            HandlePeers(tokens) || HandleArtifacts(tokens) || HandleUploadSession(tokens)) {
+        if (HandleFlight(tokens) || HandleNav(tokens) || HandlePayload(tokens) ||
+            HandleSubscriptions(tokens) || HandleAuthority(tokens) || HandleGoal(tokens) ||
+            HandleMessages(tokens) || HandlePeers(tokens) || HandleArtifacts(tokens) ||
+            HandleUploadSession(tokens)) {
             return true;
         }
 
@@ -990,6 +1012,15 @@ class ControlShell {
     [[nodiscard]] bool HandleFlight(const std::vector<std::string>& tokens) {
         const std::string command = Lower(tokens[0]);
         const bool wait = HasToken(tokens, "--wait");
+        if (command == "launch" || command == "fly") {
+            const auto alt = ParseTakeoffAltitude(tokens, 1);
+            if (!alt.has_value()) {
+                PrintLine("ERROR: " + alt.error());
+                return true;
+            }
+            RunLaunch(*alt, command == "fly");
+            return true;
+        }
         if (command == "arm") {
             const CommandResult result =
                 wait ? client_.ArmAndWait(drone_id_, wait_options_)
@@ -1021,26 +1052,14 @@ class ControlShell {
             return true;
         }
         if (command == "takeoff") {
-            double alt = default_takeoff_alt_m_;
-            if (tokens.size() >= 2 && tokens[1] != "--wait") {
-                const auto parsed = ParseDouble(tokens[1], "alt");
-                if (!parsed.has_value()) {
-                    PrintLine("ERROR: " + parsed.error());
-                    return true;
-                }
-                alt = *parsed;
-            }
-            if (const auto value = ValueAfter(tokens, "--alt"); value.has_value()) {
-                const auto parsed = ParseDouble(*value, "--alt");
-                if (!parsed.has_value()) {
-                    PrintLine("ERROR: " + parsed.error());
-                    return true;
-                }
-                alt = *parsed;
+            const auto alt = ParseTakeoffAltitude(tokens, 1);
+            if (!alt.has_value()) {
+                PrintLine("ERROR: " + alt.error());
+                return true;
             }
             const CommandResult result =
-                wait ? client_.TakeoffAndWait(drone_id_, alt, wait_options_)
-                     : client_.SendCommand(MakeEnvelope(FlightCmd{CmdTakeoff{.alt_m = alt}}));
+                wait ? client_.TakeoffAndWait(drone_id_, *alt, wait_options_)
+                     : client_.SendCommand(MakeEnvelope(FlightCmd{CmdTakeoff{.alt_m = *alt}}));
             PrintCommandResult("takeoff", result);
             return true;
         }
@@ -1063,6 +1082,51 @@ class ControlShell {
             return true;
         }
         return false;
+    }
+
+    [[nodiscard]] std::expected<double, std::string> ParseTakeoffAltitude(
+        const std::vector<std::string>& tokens, std::size_t first_positional) const {
+        double alt = default_takeoff_alt_m_;
+        if (const auto value = ValueAfter(tokens, "--alt"); value.has_value()) {
+            const auto parsed = ParseDouble(*value, "--alt");
+            if (!parsed.has_value()) {
+                return std::unexpected(parsed.error());
+            }
+            alt = *parsed;
+        } else if (tokens.size() > first_positional &&
+                   !tokens[first_positional].starts_with("--")) {
+            const auto parsed = ParseDouble(tokens[first_positional], "alt");
+            if (!parsed.has_value()) {
+                return std::unexpected(parsed.error());
+            }
+            alt = *parsed;
+        }
+        if (alt <= 0.0) {
+            return std::unexpected("takeoff altitude must be positive");
+        }
+        return alt;
+    }
+
+    void RunLaunch(double alt_m, bool enter_controller) {
+        if (!SendCommand(FlightCmd{CmdSetMode{.mode = "guided"}}, "guided")) {
+            return;
+        }
+        const CommandResult arm = client_.ArmAndWait(drone_id_, wait_options_);
+        PrintCommandResult("arm", arm);
+        if (!arm.ok) {
+            return;
+        }
+        const CommandResult takeoff = client_.TakeoffAndWait(drone_id_, alt_m, wait_options_);
+        PrintCommandResult("takeoff", takeoff);
+        if (!takeoff.ok) {
+            return;
+        }
+        if (!telemetry_) {
+            StartTelemetryStream(5, false);
+        }
+        if (enter_controller) {
+            RunController();
+        }
     }
 
     [[nodiscard]] bool HandleNav(const std::vector<std::string>& tokens) {
@@ -1298,6 +1362,205 @@ class ControlShell {
             backend.params[item.substr(0, equals)] = item.substr(equals + 1);
         }
         static_cast<void>(SendCommand(BackendCmd{backend}, "backend"));
+    }
+
+    [[nodiscard]] bool HandlePayload(const std::vector<std::string>& tokens) {
+        if (Lower(tokens[0]) != "payload") {
+            return false;
+        }
+        if (tokens.size() < 2) {
+            PrintLine(
+                "usage: payload photo|interval-start|interval-stop|video-start|video-stop|"
+                "gimbal|roi|roi-clear|servo|relay|gripper ...");
+            return true;
+        }
+        const std::string action = Lower(tokens[1]);
+        if (action == "photo") {
+            const auto camera = OptionalInt(tokens, 2, 0, "camera");
+            if (!camera.has_value()) {
+                PrintLine("ERROR: " + camera.error());
+                return true;
+            }
+            static_cast<void>(SendCommand(PayloadCmd{CmdPhoto{.camera_id = *camera}}, "photo"));
+            return true;
+        }
+        if (action == "interval-start") {
+            if (tokens.size() < 3) {
+                PrintLine("usage: payload interval-start INTERVAL_S [COUNT] [CAMERA]");
+                return true;
+            }
+            const auto interval = ParseFloat(tokens[2], "interval_s");
+            const auto count = OptionalInt(tokens, 3, 0, "count");
+            const auto camera = OptionalInt(tokens, 4, 0, "camera");
+            if (!interval.has_value() || !count.has_value() || !camera.has_value()) {
+                PrintLine("ERROR: invalid interval-start argument");
+                return true;
+            }
+            static_cast<void>(
+                SendCommand(PayloadCmd{CmdPhotoIntervalStart{
+                                .interval_s = *interval, .count = *count, .camera_id = *camera}},
+                            "photo-interval-start"));
+            return true;
+        }
+        if (action == "interval-stop") {
+            const auto camera = OptionalInt(tokens, 2, 0, "camera");
+            if (!camera.has_value()) {
+                PrintLine("ERROR: " + camera.error());
+                return true;
+            }
+            static_cast<void>(SendCommand(PayloadCmd{CmdPhotoIntervalStop{.camera_id = *camera}},
+                                          "photo-interval-stop"));
+            return true;
+        }
+        if (action == "video-start") {
+            const auto stream = OptionalInt(tokens, 2, 0, "stream");
+            const auto camera = OptionalInt(tokens, 3, 0, "camera");
+            if (!stream.has_value() || !camera.has_value()) {
+                PrintLine("ERROR: invalid video-start argument");
+                return true;
+            }
+            static_cast<void>(
+                SendCommand(PayloadCmd{CmdVideoStart{.stream_id = *stream, .camera_id = *camera}},
+                            "video-start"));
+            return true;
+        }
+        if (action == "video-stop") {
+            const auto stream = OptionalInt(tokens, 2, 0, "stream");
+            const auto camera = OptionalInt(tokens, 3, 0, "camera");
+            if (!stream.has_value() || !camera.has_value()) {
+                PrintLine("ERROR: invalid video-stop argument");
+                return true;
+            }
+            static_cast<void>(
+                SendCommand(PayloadCmd{CmdVideoStop{.stream_id = *stream, .camera_id = *camera}},
+                            "video-stop"));
+            return true;
+        }
+        if (action == "gimbal") {
+            if (tokens.size() < 5) {
+                PrintLine("usage: payload gimbal PITCH ROLL YAW");
+                return true;
+            }
+            const auto pitch = ParseFloat(tokens[2], "pitch");
+            const auto roll = ParseFloat(tokens[3], "roll");
+            const auto yaw = ParseFloat(tokens[4], "yaw");
+            if (!pitch.has_value() || !roll.has_value() || !yaw.has_value()) {
+                PrintLine("ERROR: invalid gimbal argument");
+                return true;
+            }
+            static_cast<void>(SendCommand(
+                PayloadCmd{CmdGimbalPoint{.pitch_deg = *pitch, .roll_deg = *roll, .yaw_deg = *yaw}},
+                "gimbal"));
+            return true;
+        }
+        if (action == "roi") {
+            if (tokens.size() < 5) {
+                PrintLine("usage: payload roi LAT LON ALT [GIMBAL]");
+                return true;
+            }
+            const auto lat = ParseDouble(tokens[2], "lat");
+            const auto lon = ParseDouble(tokens[3], "lon");
+            const auto alt = ParseDouble(tokens[4], "alt");
+            const auto gimbal = OptionalInt(tokens, 5, 0, "gimbal");
+            if (!lat.has_value() || !lon.has_value() || !alt.has_value() || !gimbal.has_value()) {
+                PrintLine("ERROR: invalid roi argument");
+                return true;
+            }
+            static_cast<void>(SendCommand(
+                PayloadCmd{CmdRoiLocation{
+                    .lat_deg = *lat, .lon_deg = *lon, .alt_m = *alt, .gimbal_id = *gimbal}},
+                "roi"));
+            return true;
+        }
+        if (action == "roi-clear") {
+            const auto gimbal = OptionalInt(tokens, 2, 0, "gimbal");
+            if (!gimbal.has_value()) {
+                PrintLine("ERROR: " + gimbal.error());
+                return true;
+            }
+            static_cast<void>(
+                SendCommand(PayloadCmd{CmdRoiClear{.gimbal_id = *gimbal}}, "roi-clear"));
+            return true;
+        }
+        if (action == "servo") {
+            if (tokens.size() < 4) {
+                PrintLine("usage: payload servo SERVO PWM");
+                return true;
+            }
+            const auto servo = ParseInt(tokens[2], "servo");
+            const auto pwm = ParseInt(tokens[3], "pwm");
+            if (!servo.has_value() || !pwm.has_value()) {
+                PrintLine("ERROR: invalid servo argument");
+                return true;
+            }
+            static_cast<void>(
+                SendCommand(PayloadCmd{CmdServo{.servo = *servo, .pwm = *pwm}}, "servo"));
+            return true;
+        }
+        if (action == "relay") {
+            if (tokens.size() < 4) {
+                PrintLine("usage: payload relay RELAY on|off");
+                return true;
+            }
+            const auto relay = ParseInt(tokens[2], "relay");
+            const auto enabled = ParseOnOff(tokens[3]);
+            if (!relay.has_value() || !enabled.has_value()) {
+                PrintLine("ERROR: invalid relay argument");
+                return true;
+            }
+            static_cast<void>(
+                SendCommand(PayloadCmd{CmdRelay{.relay = *relay, .enabled = *enabled}}, "relay"));
+            return true;
+        }
+        if (action == "gripper") {
+            if (tokens.size() < 4) {
+                PrintLine("usage: payload gripper ID release|grab");
+                return true;
+            }
+            const auto gripper = ParseInt(tokens[2], "gripper");
+            const auto release = ParseReleaseGrab(tokens[3]);
+            if (!gripper.has_value() || !release.has_value()) {
+                PrintLine("ERROR: invalid gripper argument");
+                return true;
+            }
+            static_cast<void>(SendCommand(
+                PayloadCmd{CmdGripper{.gripper = *gripper, .release = *release}}, "gripper"));
+            return true;
+        }
+
+        PrintLine("unknown payload action: " + action);
+        return true;
+    }
+
+    [[nodiscard]] std::expected<int, std::string> OptionalInt(
+        const std::vector<std::string>& tokens, std::size_t index, int fallback,
+        std::string_view name) const {
+        if (tokens.size() <= index) {
+            return fallback;
+        }
+        return ParseInt(tokens[index], name);
+    }
+
+    [[nodiscard]] std::expected<bool, std::string> ParseOnOff(std::string_view value) const {
+        const std::string lower = Lower(std::string{value});
+        if (lower == "on" || lower == "true" || lower == "1" || lower == "yes") {
+            return true;
+        }
+        if (lower == "off" || lower == "false" || lower == "0" || lower == "no") {
+            return false;
+        }
+        return std::unexpected("expected on/off");
+    }
+
+    [[nodiscard]] std::expected<bool, std::string> ParseReleaseGrab(std::string_view value) const {
+        const std::string lower = Lower(std::string{value});
+        if (lower == "release" || lower == "open" || lower == "drop") {
+            return true;
+        }
+        if (lower == "grab" || lower == "close" || lower == "hold") {
+            return false;
+        }
+        return std::unexpected("expected release/grab");
     }
 
     [[nodiscard]] bool HandleSubscriptions(const std::vector<std::string>& tokens) {
