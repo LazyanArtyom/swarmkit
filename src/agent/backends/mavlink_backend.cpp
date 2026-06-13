@@ -641,7 +641,9 @@ class MavlinkBackend final : public IDroneBackend {
                                       param1, param2, param3, param4, param5, param6, param7);
         core::Result send_result = SendMavlinkMessage(message);
         if (!send_result.IsOk() || !wait_for_ack) {
-            return {.send_result = std::move(send_result)};
+            mav::MavlinkCommandAckResult result;
+            result.send_result = std::move(send_result);
+            return result;
         }
         return WaitForCommandAck(command, ack_start_sequence, status_start_sequence);
     }
@@ -843,15 +845,19 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         if (!matched_ack.has_value()) {
-            return {.send_result = core::Result::Failed(
-                        "timed out waiting for COMMAND_ACK command=" + std::to_string(command)),
-                    .ack_timed_out = true};
+            mav::MavlinkCommandAckResult result;
+            result.ack_timed_out = true;
+            result.send_result = core::Result::Failed("timed out waiting for COMMAND_ACK command=" +
+                                                      std::to_string(command));
+            return result;
         }
 
         const mav::CommandAck ack = *matched_ack;
         lock.unlock();
 
-        mav::MavlinkCommandAckResult result{.ack = ack, .has_ack = true};
+        mav::MavlinkCommandAckResult result;
+        result.ack = ack;
+        result.has_ack = true;
         if (ack.result != MAV_RESULT_ACCEPTED) {
             if (auto status_text = WaitForStatusText(status_start_sequence);
                 status_text.has_value()) {
