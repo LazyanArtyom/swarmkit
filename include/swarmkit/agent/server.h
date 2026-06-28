@@ -46,47 +46,55 @@ inline constexpr int kDefaultMaxQueuedArtifactTransfers = 16;
 inline constexpr int kDefaultMaxConcurrentArtifactTransfersPerPeer = 1;
 inline constexpr int kDefaultArtifactPeerBytesPerSecond = 0;
 
+/// @brief Vehicle limits and readiness thresholds used by agent-side verification.
 struct VehicleProfile {
-    std::string profile_id{"generic-quad"};
-    float cruise_speed_mps{kDefaultCruiseSpeedMps};
-    float climb_speed_mps{kDefaultClimbSpeedMps};
-    float descent_speed_mps{kDefaultDescentSpeedMps};
-    float max_altitude_m{kDefaultMaxAltitudeM};
-    float min_battery_percent{kDefaultMinBatteryPercent};
-    float battery_reserve_percent{kDefaultBatteryReservePercent};
-    float tracking_tolerance_m{kDefaultTrackingToleranceM};
-    int goal_margin_ms{kDefaultGoalMarginMs};
-    int takeoff_timeout_margin_ms{kDefaultTakeoffTimeoutMarginMs};
-    int land_timeout_margin_ms{kDefaultLandTimeoutMarginMs};
-    int max_goal_timeout_ms{kDefaultMaxGoalTimeoutMs};
-    int min_gps_fix_type{kDefaultMinGpsFixType};
-    int min_satellites_visible{kDefaultMinSatellitesVisible};
-    float max_gps_hdop{kDefaultMaxGpsHdop};
+    std::string profile_id{"generic-quad"};            ///< Human-readable profile id.
+    float cruise_speed_mps{kDefaultCruiseSpeedMps};    ///< Horizontal cruise speed in m/s.
+    float climb_speed_mps{kDefaultClimbSpeedMps};      ///< Climb speed in m/s.
+    float descent_speed_mps{kDefaultDescentSpeedMps};  ///< Descent speed in m/s.
+    float max_altitude_m{kDefaultMaxAltitudeM};  ///< Maximum normal target altitude in metres.
+    float min_battery_percent{kDefaultMinBatteryPercent};  ///< Minimum battery for readiness.
+    float battery_reserve_percent{kDefaultBatteryReservePercent};  ///< Reserved battery margin.
+    float tracking_tolerance_m{kDefaultTrackingToleranceM};  ///< Goal tracking tolerance in metres.
+    int goal_margin_ms{kDefaultGoalMarginMs};  ///< Added timeout margin for goal estimates.
+    int takeoff_timeout_margin_ms{kDefaultTakeoffTimeoutMarginMs};  ///< Takeoff timeout margin.
+    int land_timeout_margin_ms{kDefaultLandTimeoutMarginMs};        ///< Landing timeout margin.
+    int max_goal_timeout_ms{kDefaultMaxGoalTimeoutMs};  ///< Maximum computed goal timeout.
+    int min_gps_fix_type{kDefaultMinGpsFixType};  ///< Minimum backend GPS fix type for readiness.
+    int min_satellites_visible{kDefaultMinSatellitesVisible};  ///< Minimum satellite count.
+    float max_gps_hdop{kDefaultMaxGpsHdop};  ///< Maximum acceptable horizontal dilution.
 
+    /// @brief Validate speed, altitude, battery, timeout, and GPS thresholds.
     [[nodiscard]] core::Result Validate() const;
 };
 
+/// @brief TLS/mTLS configuration for the agent gRPC server.
 struct AgentSecurityConfig {
     core::TransportSecurityMode transport_security{core::TransportSecurityMode::kAuto};
-    std::string root_ca_cert_path;
-    std::string cert_chain_path;
-    std::string private_key_path;
-    std::vector<std::string> allowed_client_ids;
+    std::string root_ca_cert_path;                ///< Root CA for verifying mTLS clients.
+    std::string cert_chain_path;                  ///< Server certificate chain path.
+    std::string private_key_path;                 ///< Server private key path.
+    std::vector<std::string> allowed_client_ids;  ///< Optional mTLS client allow-list.
 
+    /// @brief Resolve kAuto into the effective server transport mode.
     [[nodiscard]] core::TransportSecurityMode EffectiveTransportSecurity() const;
+
+    /// @brief Validate certificate paths and allowed-client constraints.
     [[nodiscard]] core::Result Validate() const;
 };
 
+/// @brief Persistent report stream storage configuration.
 struct ReportPersistenceConfig {
-    std::string log_file;
-    std::string sequence_state_file;
-    int backlog_size{kDefaultReportBacklogSize};
-    int max_log_file_size_bytes{kDefaultReportLogMaxFileSizeBytes};
-    int max_log_files{kDefaultReportLogMaxFiles};
-    bool flush_each_write{true};
-    bool fsync_each_write{false};
-    bool replay_from_log{true};
+    std::string log_file;             ///< JSONL report log path; empty disables file persistence.
+    std::string sequence_state_file;  ///< Optional cursor/sequence state path.
+    int backlog_size{kDefaultReportBacklogSize};  ///< In-memory replay backlog size.
+    int max_log_file_size_bytes{kDefaultReportLogMaxFileSizeBytes};  ///< Rotation threshold.
+    int max_log_files{kDefaultReportLogMaxFiles};  ///< Number of rotated report logs to keep.
+    bool flush_each_write{true};   ///< Flush stream buffers after every report write.
+    bool fsync_each_write{false};  ///< Force fsync after every write; expensive but durable.
+    bool replay_from_log{true};    ///< Replay persisted reports at startup when possible.
 
+    /// @brief Validate backlog and rotation limits.
     [[nodiscard]] core::Result Validate() const;
 };
 
@@ -96,32 +104,39 @@ struct SafetyPolicy {
     bool allow_unsafe_bench_commands{false};
 };
 
+/// @brief Runtime data-plane peer configuration for inter-agent routing.
 struct DataPeerConfig {
-    std::string drone_id;
-    std::string address;
+    std::string drone_id;  ///< Peer drone identifier.
+    std::string address;   ///< Peer agent address in host:port format.
     core::TransportSecurityMode transport_security{core::TransportSecurityMode::kAuto};
-    std::string root_ca_cert_path;
-    std::string cert_chain_path;
-    std::string private_key_path;
-    std::string server_authority_override;
+    std::string root_ca_cert_path;          ///< Root CA path for TLS/mTLS peer connections.
+    std::string cert_chain_path;            ///< Client certificate chain for mTLS peer connections.
+    std::string private_key_path;           ///< Client private key for mTLS peer connections.
+    std::string server_authority_override;  ///< Optional TLS authority override.
 
+    /// @brief Validate drone id and address fields.
     [[nodiscard]] core::Result Validate() const;
 };
 
+/// @brief Agent-side message and artifact transfer configuration.
 struct DataPlaneConfig {
-    std::string artifact_dir{"/tmp/swarmkit-artifacts"};
-    int message_backlog_size{kDefaultDataMessageBacklogSize};
-    int max_message_payload_bytes{kDefaultDataMessageMaxPayloadBytes};
-    int artifact_chunk_bytes{kDefaultArtifactChunkBytes};
-    int max_artifact_bytes{kDefaultMaxArtifactBytes};
+    std::string artifact_dir{"/tmp/swarmkit-artifacts"};       ///< Stored artifact root directory.
+    int message_backlog_size{kDefaultDataMessageBacklogSize};  ///< In-memory message backlog.
+    int max_message_payload_bytes{kDefaultDataMessageMaxPayloadBytes};  ///< Message size limit.
+    int artifact_chunk_bytes{kDefaultArtifactChunkBytes};  ///< Default artifact chunk size.
+    int max_artifact_bytes{kDefaultMaxArtifactBytes};      ///< Maximum accepted artifact size.
     int max_concurrent_artifact_transfers{kDefaultMaxConcurrentArtifactTransfers};
     int max_queued_artifact_transfers{kDefaultMaxQueuedArtifactTransfers};
-    int max_concurrent_artifact_transfers_per_peer{
-        kDefaultMaxConcurrentArtifactTransfersPerPeer};
+    int max_concurrent_artifact_transfers_per_peer{kDefaultMaxConcurrentArtifactTransfersPerPeer};
     int artifact_peer_bytes_per_second{kDefaultArtifactPeerBytesPerSecond};
-    std::vector<DataPeerConfig> peers;
+    std::vector<DataPeerConfig> peers;  ///< Configured peers for routed data/artifact traffic.
 
+    /// @brief Validate data-plane limits and peer definitions.
     [[nodiscard]] core::Result Validate() const;
+
+    /// @brief Find a configured data peer by drone id.
+    /// @param drone_id Peer drone identifier.
+    /// @return Peer config when present.
     [[nodiscard]] std::optional<DataPeerConfig> FindPeer(std::string_view drone_id) const;
 };
 
@@ -140,13 +155,20 @@ struct AgentConfig {
     SafetyPolicy safety{};
     AgentSecurityConfig security{};
 
+    /// @brief Validate address, telemetry, authority, profile, data, reports, and security.
     [[nodiscard]] core::Result Validate() const;
+
+    /// @brief Overlay matching environment variables onto this config.
+    /// @param prefix Environment prefix, normally "SWARMKIT_AGENT_".
     void ApplyEnvironment(std::string_view prefix = "SWARMKIT_AGENT_");
 };
 
 /// @brief Load agent configuration from a YAML file.
 ///
 /// Supports either a root-level agent map or an `agent:` section.
+///
+/// @param path YAML file path.
+/// @return Parsed AgentConfig, or a validation/loading error.
 [[nodiscard]] std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(
     const std::string& path);
 
@@ -154,6 +176,10 @@ struct AgentConfig {
 ///
 /// Blocks until the server shuts down.  Returns 0 on clean exit, non-zero on
 /// error (e.g. port already in use, null backend).
+///
+/// @param config Validated agent server configuration.
+/// @param backend Owning backend pointer. Must not be null.
+/// @return Process-style exit code.
 [[nodiscard]] int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend);
 
 }  // namespace swarmkit::agent

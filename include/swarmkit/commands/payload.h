@@ -16,60 +16,71 @@ namespace swarmkit::commands {
 /// Populated as hardware integrations are added.
 /// ---------------------------------------------------------------------------
 
+/// @brief Capture one still image.
 struct CmdPhoto {
-    int camera_id{};
+    int camera_id{};  ///< Camera identifier; 0 lets the backend choose the default camera.
 };
 
+/// @brief Start periodic still-image capture.
 struct CmdPhotoIntervalStart {
-    float interval_s{};
-    int count{};  ///< 0 = keep capturing until stopped.
-    int camera_id{};
+    float interval_s{};  ///< Interval between captures in seconds.
+    int count{};         ///< Number of captures; 0 = keep capturing until stopped.
+    int camera_id{};     ///< Camera identifier; 0 lets the backend choose the default camera.
 };
 
+/// @brief Stop periodic still-image capture.
 struct CmdPhotoIntervalStop {
-    int camera_id{};
+    int camera_id{};  ///< Camera identifier; 0 lets the backend choose the default camera.
 };
 
+/// @brief Start video recording or streaming.
 struct CmdVideoStart {
-    int stream_id{};
-    int camera_id{};
+    int stream_id{};  ///< Backend-defined stream or recording identifier.
+    int camera_id{};  ///< Camera identifier; 0 lets the backend choose the default camera.
 };
 
+/// @brief Stop video recording or streaming.
 struct CmdVideoStop {
-    int stream_id{};
-    int camera_id{};
+    int stream_id{};  ///< Backend-defined stream or recording identifier.
+    int camera_id{};  ///< Camera identifier; 0 lets the backend choose the default camera.
 };
 
+/// @brief Point a gimbal by Euler angles.
 struct CmdGimbalPoint {
-    float pitch_deg{};
-    float roll_deg{};
-    float yaw_deg{};
+    float pitch_deg{};  ///< Pitch angle in degrees.
+    float roll_deg{};   ///< Roll angle in degrees.
+    float yaw_deg{};    ///< Yaw angle in degrees.
 };
 
+/// @brief Point a gimbal at a geographic region of interest.
 struct CmdRoiLocation {
-    double lat_deg{};
-    double lon_deg{};
-    double alt_m{};
-    int gimbal_id{};
+    double lat_deg{};  ///< ROI latitude in decimal degrees.
+    double lon_deg{};  ///< ROI longitude in decimal degrees.
+    double alt_m{};    ///< ROI altitude in metres.
+    int gimbal_id{};   ///< Gimbal identifier; 0 lets the backend choose the default gimbal.
 };
 
+/// @brief Clear the active region of interest.
 struct CmdRoiClear {
-    int gimbal_id{};
+    int gimbal_id{};  ///< Gimbal identifier; 0 lets the backend choose the default gimbal.
 };
 
+/// @brief Set a PWM value on a servo output.
 struct CmdServo {
-    int servo{};
-    int pwm{};
+    int servo{};  ///< Servo output number.
+    int pwm{};    ///< Pulse width in microseconds.
 };
 
+/// @brief Set a relay output state.
 struct CmdRelay {
-    int relay{};
-    bool enabled{};
+    int relay{};     ///< Relay output number.
+    bool enabled{};  ///< true to enable/close, false to disable/open.
 };
 
+/// @brief Control a gripper payload.
 struct CmdGripper {
-    int gripper{};
-    bool release{};
+    int gripper{};   ///< Gripper identifier.
+    bool release{};  ///< true to release, false to grip/close.
 };
 
 /**

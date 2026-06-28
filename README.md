@@ -210,6 +210,25 @@ ctest --preset linux-release --output-on-failure
 
 ---
 
+## Documentation
+
+The documentation site is built with Doxygen, Sphinx, Breathe, MyST, and Furo:
+
+```bash
+cd docs
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+make html
+open build/html/index.html
+```
+
+Install Doxygen first (`brew install doxygen` on macOS, or
+`sudo apt-get install doxygen graphviz` on Ubuntu/Debian). The full build notes
+live in `docs/README.md`.
+
+---
+
 ## Package (CI / release)
 
 The package script runs the full pipeline: Conan install → CMake configure → build → test → produce SDK and tools tarballs in `dist/`.

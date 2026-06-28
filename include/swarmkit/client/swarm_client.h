@@ -24,22 +24,26 @@
 namespace swarmkit::client {
 
 enum class SwarmAddressPreference : std::uint8_t {
-    kPrimary,
-    kPreferLocal,
+    kPrimary,      ///< Use SwarmDroneConfig::address.
+    kPreferLocal,  ///< Use local_address when non-empty, otherwise address.
 };
 
+/// @brief One drone endpoint in a swarm topology file.
 struct SwarmDroneConfig {
-    std::string drone_id;
-    std::string address;
-    std::string local_address;
+    std::string drone_id;       ///< Logical drone id used for routing.
+    std::string address;        ///< Primary agent address in host:port format.
+    std::string local_address;  ///< Optional local/test agent address in host:port format.
 
+    /// @brief Validate drone id and address fields.
     [[nodiscard]] core::Result Validate() const;
 };
 
+/// @brief Swarm topology plus default per-agent client settings.
 struct SwarmConfig {
-    ClientConfig default_client_config{};
-    std::vector<SwarmDroneConfig> drones;
+    ClientConfig default_client_config{};  ///< Default config copied to every drone client.
+    std::vector<SwarmDroneConfig> drones;  ///< Fleet entries keyed by drone_id.
 
+    /// @brief Validate default client config, non-empty fleet, and unique drone IDs.
     [[nodiscard]] core::Result Validate() const;
 };
 
@@ -62,6 +66,9 @@ using SwarmSubscriptionResults = std::unordered_map<std::string, SubscriptionRes
 /// Expected shape:
 /// - optional `client:` section for default per-agent ClientConfig values
 /// - `swarm.drones:` or root-level `drones:` sequence for agent endpoints
+///
+/// @param path YAML file path.
+/// @return Parsed SwarmConfig, or a validation/loading error.
 [[nodiscard]] std::expected<SwarmConfig, core::Result> LoadSwarmConfigFromFile(
     const std::string& path);
 
@@ -171,6 +178,10 @@ class SwarmClient {
      * higher-priority client holds authority over the target drone.
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
+    /// @brief Route a command and wait until health or telemetry proves completion.
+    /// @param envelope Command payload and routing context.
+    /// @param options Verification policy and timeout.
+    /// @return CommandResult for dispatch plus verification outcome.
     [[nodiscard]] CommandResult SendCommandAndWait(const commands::CommandEnvelope& envelope,
                                                    const CommandWaitOptions& options = {}) const;
 
@@ -202,7 +213,15 @@ class SwarmClient {
     /// @name Active goals
     /// @{
 
+    /// @brief Set or replace an active goal on the drone named by goal.drone_id.
+    /// @param goal Goal target, acceptance/deviation radii, timeout, and labels.
+    /// @return GoalResult from the target drone agent.
     [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoal& goal) const;
+
+    /// @brief Set active goals across multiple drones with bounded parallelism.
+    /// @param goals Map from drone_id to goal. Each goal.drone_id is overwritten from the key.
+    /// @param fanout_options Parallelism and cancellation options.
+    /// @return Map of drone_id to GoalResult.
     [[nodiscard]] std::unordered_map<std::string, GoalResult> SetActiveGoals(
         const std::unordered_map<std::string, ActiveGoal>& goals,
         const SwarmFanoutOptions& fanout_options = {}) const;
@@ -233,6 +252,7 @@ class SwarmClient {
      * @brief Acquire authority for every registered drone with bounded parallelism.
      *
      * @param ttl_ms Authority time-to-live in milliseconds.  0 = no expiry.
+     * @param fanout_options Parallelism and cancellation options.
      * @returns Map of drone_id to CommandResult.
      */
     [[nodiscard]] std::unordered_map<std::string, CommandResult> LockAll(
@@ -269,6 +289,8 @@ class SwarmClient {
      * @param on_frame   Callback invoked for every received TelemetryFrame.
      * @param on_error   Callback invoked once per drone when a stream ends
      *                   due to an error.
+     * @param on_event   Optional stream lifecycle/backpressure callback.
+     * @param options    Backpressure and replacement options.
      *
      * @details Starts one background stream per drone at @p rate_hertz and
      * returns a per-drone result map. Frames from all drones funnel into the
@@ -295,10 +317,19 @@ class SwarmClient {
     /// @name Reports
     /// @{
 
+    /// @brief Start report subscriptions for all currently registered drones.
+    /// @param on_report Callback invoked for every agent report.
+    /// @param on_error Callback invoked when a stream ends due to an error.
+    /// @param after_sequence Replay reports after this sequence number.
+    /// @param on_event Optional stream lifecycle callback.
+    /// @param options Backpressure and replacement options.
+    /// @return Per-drone subscription results.
     [[nodiscard]] SwarmSubscriptionResults StartAllReports(
         const AgentReportHandler& on_report, const TelemetryErrorHandler& on_error = {},
         std::uint64_t after_sequence = 0, const SubscriptionEventHandler& on_event = {},
         SubscriptionOptions options = {});
+
+    /// @brief Stop report subscriptions for all registered drones.
     void StopAllReports();
 
     /// @}

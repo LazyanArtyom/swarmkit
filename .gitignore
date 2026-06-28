@@ -32,6 +32,9 @@ build/conan/
 conan.lock
 graph_info.json
 
+# Python virtual environments
+.venv/
+
 # ---- IDE / Editor ----
 .idea/
 *.code-workspace

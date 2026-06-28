@@ -36,12 +36,12 @@ struct CmdSetSpeed {
 
 /// @brief Reposition the vehicle in guided mode.
 struct CmdGoto {
-    double lat_deg{};
-    double lon_deg{};
-    double alt_m{};
-    float speed_mps{};
-    float yaw_deg{};
-    bool use_yaw{false};
+    double lat_deg{};     ///< Target latitude in decimal degrees.
+    double lon_deg{};     ///< Target longitude in decimal degrees.
+    double alt_m{};       ///< Target altitude in metres AGL.
+    float speed_mps{};    ///< Optional travel speed in m/s; 0 = backend default.
+    float yaw_deg{};      ///< Optional target heading in degrees.
+    bool use_yaw{false};  ///< true when yaw_deg should be applied.
 };
 
 /// @brief Pause current guided motion and hold.
@@ -52,9 +52,9 @@ struct CmdResume {};
 
 /// @brief Rotate vehicle heading.
 struct CmdSetYaw {
-    float yaw_deg{};
-    float rate_deg_s{};
-    bool relative{false};
+    float yaw_deg{};       ///< Target or relative yaw in degrees.
+    float rate_deg_s{};    ///< Yaw rate in degrees per second; 0 = backend default.
+    bool relative{false};  ///< true = yaw_deg is relative to current heading.
 };
 
 /// @brief Send a local/body velocity setpoint for manual-style control.
@@ -68,10 +68,10 @@ struct CmdVelocity {
 
 /// @brief Set home to current location or explicit coordinates.
 struct CmdSetHome {
-    bool use_current{true};
-    double lat_deg{};
-    double lon_deg{};
-    double alt_m{};
+    bool use_current{true};  ///< true = use current vehicle position.
+    double lat_deg{};        ///< Explicit home latitude in decimal degrees.
+    double lon_deg{};        ///< Explicit home longitude in decimal degrees.
+    double alt_m{};          ///< Explicit home altitude in metres.
 };
 
 /**

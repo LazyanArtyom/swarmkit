@@ -42,26 +42,53 @@ using RpcStatusCode = core::ErrorCode;
 using RpcError = core::SwarmError;
 
 struct RetryPolicy {
+    /// Maximum attempts for one unary RPC, including the first try.
     int max_attempts{kDefaultRetryMaxAttempts};
+
+    /// Initial retry delay in milliseconds after a transient transport failure.
     int initial_backoff_ms{kDefaultRetryInitialBackoffMs};
+
+    /// Maximum retry delay in milliseconds after exponential backoff.
     int max_backoff_ms{kDefaultRetryMaxBackoffMs};
 };
 
+/// @brief Reconnect policy for long-lived streaming RPCs.
 struct StreamReconnectPolicy {
+    /// Whether telemetry, authority, report, and message streams reconnect automatically.
     bool enabled{kDefaultStreamReconnectEnabled};
+
+    /// Initial reconnect delay in milliseconds.
     int initial_backoff_ms{kDefaultStreamReconnectInitialBackoffMs};
+
+    /// Maximum reconnect delay in milliseconds after backoff.
     int max_backoff_ms{kDefaultStreamReconnectMaxBackoffMs};
+
+    /// Maximum reconnect attempts; 0 means retry forever until stopped.
     int max_attempts{kUnlimitedStreamReconnectAttempts};  // 0 = unlimited.
 };
 
+/// @brief TLS/mTLS configuration for client-to-agent gRPC channels.
 struct ClientSecurityConfig {
+    /// Transport mode. kAuto infers insecure, TLS, or mTLS from certificate fields.
     core::TransportSecurityMode transport_security{core::TransportSecurityMode::kAuto};
+
+    /// Root CA certificate path for TLS or mTLS.
     std::string root_ca_cert_path;
+
+    /// Client certificate chain path for mTLS.
     std::string cert_chain_path;
+
+    /// Client private key path for mTLS.
     std::string private_key_path;
+
+    /// Optional TLS authority/server-name override, useful for local test certificates.
     std::string server_authority_override;
 
+    /// @brief Resolve kAuto into the effective transport mode.
     [[nodiscard]] core::TransportSecurityMode EffectiveTransportSecurity() const;
+
+    /// @brief Validate certificate path combinations for the effective mode.
+    /// @return Success when the transport config is usable, otherwise Rejected.
     [[nodiscard]] core::Result Validate() const;
 };
 
@@ -88,13 +115,21 @@ struct ClientConfig {
     /// Transport security parameters.
     ClientSecurityConfig security{};
 
+    /// @brief Validate address, client identity, retry, reconnect, priority, and security fields.
+    /// @return Success when the config can be used to construct Client.
     [[nodiscard]] core::Result Validate() const;
+
+    /// @brief Overlay matching environment variables onto this config.
+    /// @param prefix Environment prefix, normally "SWARMKIT_CLIENT_".
     void ApplyEnvironment(std::string_view prefix = "SWARMKIT_CLIENT_");
 };
 
 /// @brief Load client configuration from a YAML file.
 ///
 /// Supports either a root-level client map or a `client:` section.
+///
+/// @param path YAML file path.
+/// @return Parsed ClientConfig, or a validation/loading error.
 [[nodiscard]] std::expected<ClientConfig, core::Result> LoadClientConfigFromFile(
     const std::string& path);
 
@@ -694,12 +729,15 @@ class Client {
     [[nodiscard]] PingResult Ping() const;
 
     /// @brief Read current agent health/readiness state.
+    /// @return HealthStatus with ok=false and error populated on failure.
     [[nodiscard]] HealthStatus GetHealth() const;
 
     /// @brief Read current agent runtime counters for observability.
+    /// @return RuntimeStats with counters, readiness, and typed error details.
     [[nodiscard]] RuntimeStats GetRuntimeStats() const;
 
     /// @brief Discover backend/autopilot features this agent can execute.
+    /// @return BackendCapabilities reported by the connected agent backend.
     [[nodiscard]] BackendCapabilities GetCapabilities() const;
 
     /**
@@ -713,32 +751,75 @@ class Client {
      * client currently holds authority over the target drone.
      */
     [[nodiscard]] CommandResult SendCommand(const commands::CommandEnvelope& envelope) const;
+    /**
+     * @brief Send a command and wait until health or telemetry proves completion.
+     *
+     * @param envelope Command payload and routing context.
+     * @param options Verification policy and timeout.
+     * @return CommandResult for dispatch plus verification outcome.
+     */
     [[nodiscard]] CommandResult SendCommandAndWait(const commands::CommandEnvelope& envelope,
                                                    const CommandWaitOptions& options = {}) const;
+
+    /// @brief Arm a drone and wait for the armed state.
+    /// @param drone_id Target drone identifier.
+    /// @param options Verification policy and timeout.
+    /// @return CommandResult for dispatch plus verification outcome.
     [[nodiscard]] CommandResult ArmAndWait(const std::string& drone_id,
                                            const CommandWaitOptions& options = {}) const;
+
+    /// @brief Take off to an altitude above launch/home and wait for completion.
+    /// @param drone_id Target drone identifier.
+    /// @param alt_m Target altitude in metres AGL.
+    /// @param options Verification policy and timeout.
+    /// @return CommandResult for dispatch plus verification outcome.
     [[nodiscard]] CommandResult TakeoffAndWait(const std::string& drone_id, double alt_m,
                                                const CommandWaitOptions& options = {}) const;
+
+    /// @brief Fly to a global GPS target and wait for position convergence.
+    /// @param drone_id Target drone identifier.
+    /// @param lat_deg Target latitude in decimal degrees.
+    /// @param lon_deg Target longitude in decimal degrees.
+    /// @param alt_m Target altitude in metres AGL.
+    /// @param speed_mps Optional horizontal speed in metres per second; 0 uses backend default.
+    /// @param options Verification policy and timeout.
+    /// @return CommandResult for dispatch plus verification outcome.
     [[nodiscard]] CommandResult GotoAndWait(const std::string& drone_id, double lat_deg,
                                             double lon_deg, double alt_m, float speed_mps = 0.0F,
                                             const CommandWaitOptions& options = {}) const;
+
+    /// @brief Land a drone and wait for landed/disarmed-safe state where available.
+    /// @param drone_id Target drone identifier.
+    /// @param options Verification policy and timeout.
+    /// @return CommandResult for dispatch plus verification outcome.
     [[nodiscard]] CommandResult LandAndWait(const std::string& drone_id,
                                             const CommandWaitOptions& options = {}) const;
 
     /// @brief Set or replace the agent-supervised active goal for a drone.
+    /// @param goal Goal target, acceptance/deviation radii, timeout, and labels.
+    /// @return GoalResult with computed timeout and stored goal on success.
     [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoal& goal) const;
 
     /// @brief Cancel the current active goal for a drone.
+    /// @param drone_id Target drone identifier.
+    /// @param goal_id Optional goal id guard; empty cancels the current goal.
+    /// @return CommandResult describing cancellation.
     [[nodiscard]] CommandResult CancelGoal(const std::string& drone_id,
                                            const std::string& goal_id = {}) const;
 
     /// @brief Read the current active goal state known by the agent.
+    /// @param drone_id Target drone identifier.
+    /// @return ActiveGoalStatus with has_goal=false when no goal is active.
     [[nodiscard]] ActiveGoalStatus GetActiveGoal(const std::string& drone_id) const;
 
     /// @brief Publish a small app-defined data-plane message.
+    /// @param message Message topic, target, labels, TTL, and payload.
+    /// @return PublishMessageResult with assigned sequence on success.
     [[nodiscard]] PublishMessageResult PublishMessage(DataMessage message) const;
 
     /// @brief Route a small app-defined data-plane message to another drone agent.
+    /// @param message Message whose target_id identifies the destination peer.
+    /// @return PublishMessageResult with assigned sequence or routing error.
     [[nodiscard]] PublishMessageResult SendMessageToDrone(DataMessage message) const;
 
     /// @brief Subscribe to app-defined data-plane messages.
@@ -747,12 +828,17 @@ class Client {
                                                    TelemetryErrorHandler on_error = {},
                                                    SubscriptionEventHandler on_event = {},
                                                    SubscriptionOptions options = {});
+    /// @brief Cancel the active message subscription, if one exists.
     void StopMessages();
 
     /// @brief Read configured data peers and their latest reachability status.
+    /// @param refresh When true, ask the agent to refresh peer reachability first.
+    /// @return DataPeerListResult with all configured peers.
     [[nodiscard]] DataPeerListResult ListDataPeers(bool refresh = false) const;
 
     /// @brief Actively refresh reachability for all or selected data peers.
+    /// @param drone_ids Optional subset of peer drone IDs; empty refreshes all.
+    /// @return DataPeerListResult with updated reachability state.
     [[nodiscard]] DataPeerListResult RefreshDataPeers(
         const std::vector<std::string>& drone_ids = {}) const;
 
@@ -860,6 +946,8 @@ class Client {
      * @param on_frame     Called for every received TelemetryFrame.
      * @param on_error     Called once when the stream ends due to an error;
      *                     not called on a clean StopTelemetry() cancellation.
+     * @param on_event     Optional lifecycle/backpressure event callback.
+     * @param options      Backpressure and replacement options.
      *
      * @details If a subscription is already active it is stopped first.
      * StartTelemetry() returns a RAII Subscription handle and typed start errors;

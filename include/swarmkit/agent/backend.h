@@ -26,54 +26,57 @@ using swarmkit::commands::CommandEnvelope;
 using swarmkit::commands::CommandPriority;
 
 struct BackendHealth {
-    bool ready{true};
-    std::string message{"ready"};
-    std::string backend_name{"unknown"};
-    std::string protocol{"unknown"};
-    std::int64_t last_heartbeat_unix_ms{};
-    std::int64_t last_telemetry_unix_ms{};
-    bool armed{false};
-    bool landed{false};
-    std::string mode;
-    int custom_mode{-1};
-    bool failsafe{false};
-    bool gps_ok{false};
-    int gps_fix_type{};
-    int satellites_visible{};
-    float gps_hdop{};
-    bool ekf_ok{true};
-    bool has_relative_altitude{false};
-    float relative_alt_m{};
-    std::optional<float> link_quality_percent;
+    bool ready{true};                           ///< Backend can accept normal commands.
+    std::string message{"ready"};               ///< Human-readable readiness summary.
+    std::string backend_name{"unknown"};        ///< Backend implementation name.
+    std::string protocol{"unknown"};            ///< Vehicle protocol name, for example "mavlink".
+    std::int64_t last_heartbeat_unix_ms{};      ///< Last heartbeat time in Unix milliseconds.
+    std::int64_t last_telemetry_unix_ms{};      ///< Last telemetry time in Unix milliseconds.
+    bool armed{false};                          ///< Vehicle is armed.
+    bool landed{false};                         ///< Vehicle reports landed or ground state.
+    std::string mode;                           ///< Current autopilot/backend mode.
+    int custom_mode{-1};                        ///< Backend-specific mode id; -1 when unavailable.
+    bool failsafe{false};                       ///< Vehicle reports failsafe state.
+    bool gps_ok{false};                         ///< GPS quality satisfies backend readiness checks.
+    int gps_fix_type{};                         ///< Backend-specific GPS fix type.
+    int satellites_visible{};                   ///< Visible/tracked satellite count.
+    float gps_hdop{};                           ///< Horizontal dilution of precision.
+    bool ekf_ok{true};                          ///< Estimator/EKF state satisfies readiness checks.
+    bool has_relative_altitude{false};          ///< relative_alt_m contains a valid measurement.
+    float relative_alt_m{};                     ///< Relative altitude in metres.
+    std::optional<float> link_quality_percent;  ///< Optional link quality percentage.
 };
 
+/// @brief Optional numeric capability limits reported by a backend.
 struct BackendNumericLimits {
-    std::optional<float> max_horizontal_speed_mps;
-    std::optional<float> max_climb_speed_mps;
-    std::optional<float> max_descent_speed_mps;
-    std::optional<float> max_altitude_m;
+    std::optional<float> max_horizontal_speed_mps;  ///< Maximum horizontal speed in m/s.
+    std::optional<float> max_climb_speed_mps;       ///< Maximum climb speed in m/s.
+    std::optional<float> max_descent_speed_mps;     ///< Maximum descent speed in m/s.
+    std::optional<float> max_altitude_m;            ///< Maximum supported altitude in metres.
 };
 
+/// @brief Backend feature set exposed through the client capabilities RPC.
 struct BackendCapabilities {
-    std::string backend_name{"unknown"};
-    std::string protocol{"unknown"};
-    std::string vehicle_class{"unknown"};
-    bool supports_payload_control{false};
-    bool supports_velocity_control{false};
-    bool supports_flight_termination{false};
-    bool supports_backend_commands{false};
-    std::string autopilot_type{"unknown"};
-    std::vector<std::string> supported_modes;
-    std::vector<std::string> supported_commands;
-    std::vector<std::string> supported_payloads;
-    std::vector<std::string> supported_telemetry_fields;
-    std::vector<std::string> backend_command_names;
+    std::string backend_name{"unknown"};          ///< Backend implementation name.
+    std::string protocol{"unknown"};              ///< Vehicle protocol name.
+    std::string vehicle_class{"unknown"};         ///< Vehicle class, for example "multirotor".
+    bool supports_payload_control{false};         ///< Payload command support.
+    bool supports_velocity_control{false};        ///< Velocity setpoint support.
+    bool supports_flight_termination{false};      ///< Emergency termination support.
+    bool supports_backend_commands{false};        ///< Backend-specific command support.
+    std::string autopilot_type{"unknown"};        ///< Autopilot family/profile if known.
+    std::vector<std::string> supported_modes;     ///< Mode names accepted by CmdSetMode.
+    std::vector<std::string> supported_commands;  ///< Generic command names.
+    std::vector<std::string> supported_payloads;  ///< Payload names/devices.
+    std::vector<std::string> supported_telemetry_fields;  ///< Telemetry fields produced.
+    std::vector<std::string> backend_command_names;       ///< Names accepted by BackendCmd.
     BackendNumericLimits limits;
 };
 
+/// @brief Request passed to BackendRegistry creators.
 struct BackendFactoryRequest {
-    std::string backend_name;
-    std::unordered_map<std::string, std::string> options;
+    std::string backend_name;                              ///< Registered backend name.
+    std::unordered_map<std::string, std::string> options;  ///< Backend-specific options.
 };
 
 /// ---------------------------------------------------------------------------
@@ -127,7 +130,6 @@ class IDroneBackend {
     [[nodiscard]] virtual BackendCapabilities GetCapabilities() const {
         return {};
     }
-
 };
 
 using DroneBackendPtr = std::unique_ptr<IDroneBackend>;

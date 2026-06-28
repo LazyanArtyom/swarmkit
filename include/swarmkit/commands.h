@@ -14,9 +14,11 @@
 /// reduce compile-time dependencies in a backend), include the relevant
 /// sub-header directly:
 ///
-///   #include "swarmkit/commands/flight.h"
-///   #include "swarmkit/commands/nav.h"
-///   #include "swarmkit/commands/payload.h"
+/// @code{.cpp}
+/// #include "swarmkit/commands/flight.h"
+/// #include "swarmkit/commands/nav.h"
+/// #include "swarmkit/commands/payload.h"
+/// @endcode
 
 #include <chrono>
 #include <cstdint>
@@ -78,7 +80,7 @@ enum class CommandPriority : std::uint8_t {
  * @par Adding a new category
  * 1. Create @c commands/my_category.h and define @c MyCategoryCmd.
  * 2. Add @c MyCategoryCmd to this variant.
- * 3. Add @c #include above.
+ * 3. Add the include to this aggregator header.
  * 4. Handle it in every IDroneBackend implementation (compile error if missed).
  * 5. Add proto messages and map them in server.cpp.
  */
