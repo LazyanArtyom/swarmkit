@@ -2098,9 +2098,9 @@ enum class VerificationSource : std::uint8_t {
 
 struct VerificationSpec {
     VerificationSource source{VerificationSource::kNone};
-    std::string label;
-    std::function<bool(const HealthStatus&)> health_predicate;
-    std::function<bool(const core::TelemetryFrame&)> telemetry_predicate;
+    std::string label{};
+    std::function<bool(const HealthStatus&)> health_predicate{};
+    std::function<bool(const core::TelemetryFrame&)> telemetry_predicate{};
 };
 
 [[nodiscard]] CommandResult MakeVerifiedResult(const CommandResult& command_result,

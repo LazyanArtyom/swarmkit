@@ -30,8 +30,8 @@ int RunPing(Client& client) {
 }
 
 struct TelemetrySampleResult {
-    std::optional<swarmkit::core::TelemetryFrame> frame;
-    std::string error;
+    std::optional<swarmkit::core::TelemetryFrame> frame{};
+    std::string error{};
 };
 
 [[nodiscard]] TelemetrySampleResult CollectTelemetrySample(Client& client,

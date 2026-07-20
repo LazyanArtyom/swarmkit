@@ -66,11 +66,11 @@ enum class ErrorRetryability : std::uint8_t {
 
 /// Optional backend/autopilot/vendor detail carried alongside SDK errors.
 struct BackendErrorDetails {
-    std::string name;
-    std::string protocol;
-    std::string component;
-    std::string native_code;
-    std::string native_message;
+    std::string name{};
+    std::string protocol{};
+    std::string component{};
+    std::string native_code{};
+    std::string native_message{};
 };
 
 /// Unified typed error used by core, client, agent, and swarm APIs.
@@ -79,13 +79,13 @@ struct SwarmError {
     ErrorCode code{ErrorCode::kOk};
     ErrorSeverity severity{ErrorSeverity::kInfo};
     ErrorRetryability retryability{ErrorRetryability::kNever};
-    std::string user_message;
-    std::string debug_message;
-    std::string correlation_id;
-    std::optional<BackendErrorDetails> backend;
-    std::string remediation;
+    std::string user_message{};
+    std::string debug_message{};
+    std::string correlation_id{};
+    std::optional<BackendErrorDetails> backend{};
+    std::string remediation{};
     int attempt_count{0};
-    std::unordered_map<std::string, std::string> details;
+    std::unordered_map<std::string, std::string> details{};
 
     [[nodiscard]] static SwarmError Ok(std::string msg = {}) {
         return {

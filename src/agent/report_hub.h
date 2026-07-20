@@ -24,8 +24,8 @@
 namespace swarmkit::agent::internal {
 
 struct ReportHubOptions {
-    std::string report_log_file;
-    std::string sequence_state_file;
+    std::string report_log_file{};
+    std::string sequence_state_file{};
     std::size_t max_in_memory_backlog{1000};
     std::size_t max_log_file_size_bytes{10UL * 1024UL * 1024UL};
     int max_log_files{5};

@@ -34,7 +34,7 @@ struct BackendHealth {
     std::int64_t last_telemetry_unix_ms{};      ///< Last telemetry time in Unix milliseconds.
     bool armed{false};                          ///< Vehicle is armed.
     bool landed{false};                         ///< Vehicle reports landed or ground state.
-    std::string mode;                           ///< Current autopilot/backend mode.
+    std::string mode{};                         ///< Current autopilot/backend mode.
     int custom_mode{-1};                        ///< Backend-specific mode id; -1 when unavailable.
     bool failsafe{false};                       ///< Vehicle reports failsafe state.
     bool gps_ok{false};                         ///< GPS quality satisfies backend readiness checks.
@@ -65,12 +65,12 @@ struct BackendCapabilities {
     bool supports_flight_termination{false};      ///< Emergency termination support.
     bool supports_backend_commands{false};        ///< Backend-specific command support.
     std::string autopilot_type{"unknown"};        ///< Autopilot family/profile if known.
-    std::vector<std::string> supported_modes;     ///< Mode names accepted by CmdSetMode.
-    std::vector<std::string> supported_commands;  ///< Generic command names.
-    std::vector<std::string> supported_payloads;  ///< Payload names/devices.
-    std::vector<std::string> supported_telemetry_fields;  ///< Telemetry fields produced.
-    std::vector<std::string> backend_command_names;       ///< Names accepted by BackendCmd.
-    BackendNumericLimits limits;
+    std::vector<std::string> supported_modes{};     ///< Mode names accepted by CmdSetMode.
+    std::vector<std::string> supported_commands{};  ///< Generic command names.
+    std::vector<std::string> supported_payloads{};  ///< Payload names/devices.
+    std::vector<std::string> supported_telemetry_fields{};  ///< Telemetry fields produced.
+    std::vector<std::string> backend_command_names{};       ///< Names accepted by BackendCmd.
+    BackendNumericLimits limits{};
 };
 
 /// @brief Request passed to BackendRegistry creators.

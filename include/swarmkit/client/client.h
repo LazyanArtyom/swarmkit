@@ -427,9 +427,9 @@ struct PublishMessageResult {
 };
 
 struct MessageSubscription {
-    std::string subscriber_id;
-    std::vector<std::string> topics;
-    std::string target_id;
+    std::string subscriber_id{};
+    std::vector<std::string> topics{};
+    std::string target_id{};
     std::uint64_t after_sequence{};
 };
 
@@ -558,11 +558,11 @@ struct ArtifactListResult {
 };
 
 struct ArtifactListOptions {
-    std::string source_id;
-    std::string target_id;
+    std::string source_id{};
+    std::string target_id{};
     bool include_expired{false};
     int page_size{};
-    std::string page_token;
+    std::string page_token{};
 };
 
 /**
