@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "swarmkit/client/client.h"
@@ -249,7 +250,7 @@ TEST_CASE("Client artifacts upload download and verify hash", "[client][integrat
     const ArtifactTransferResult uploaded = client.UploadArtifact(upload);
     REQUIRE(uploaded.ok);
     REQUIRE_FALSE(uploaded.descriptor.artifact_id.empty());
-    CHECK(uploaded.descriptor.size_bytes == static_cast<std::int64_t>(payload.size()));
+    CHECK(std::cmp_equal(uploaded.descriptor.size_bytes, payload.size()));
     CHECK(uploaded.descriptor.content_type == "image/jpeg");
     CHECK(uploaded.descriptor.labels.at("camera_id") == "front");
     CHECK_FALSE(uploaded.descriptor.sha256_hex.empty());
@@ -465,25 +466,25 @@ TEST_CASE("Client resumes artifact upload sessions and commits artifact",
     const ArtifactUploadSessionResult first_chunk =
         client.UploadArtifactChunk(created.upload.upload_id, first, 0, 0);
     REQUIRE(first_chunk.ok);
-    CHECK(first_chunk.upload.bytes_received == static_cast<std::int64_t>(first.size()));
+    CHECK(std::cmp_equal(first_chunk.upload.bytes_received, first.size()));
     CHECK(first_chunk.upload.next_chunk_index == 1);
 
     const ArtifactUploadSessionResult status =
         client.GetUploadStatus(created.upload.upload_id);
     REQUIRE(status.ok);
-    CHECK(status.upload.bytes_received == static_cast<std::int64_t>(first.size()));
+    CHECK(std::cmp_equal(status.upload.bytes_received, first.size()));
 
     const std::string second = payload.substr(first.size());
     const ArtifactUploadSessionResult second_chunk = client.UploadArtifactChunk(
         created.upload.upload_id, second, static_cast<std::int64_t>(first.size()), 1);
     REQUIRE(second_chunk.ok);
-    CHECK(second_chunk.upload.bytes_received == static_cast<std::int64_t>(payload.size()));
+    CHECK(std::cmp_equal(second_chunk.upload.bytes_received, payload.size()));
 
     const ArtifactUploadSessionResult committed =
         client.CommitArtifactUpload(created.upload.upload_id);
     REQUIRE(committed.ok);
     REQUIRE_FALSE(committed.descriptor.artifact_id.empty());
-    CHECK(committed.descriptor.size_bytes == static_cast<std::int64_t>(payload.size()));
+    CHECK(std::cmp_equal(committed.descriptor.size_bytes, payload.size()));
 
     const ArtifactTransferResult downloaded =
         client.DownloadArtifact(committed.descriptor.artifact_id, output_path.string());
@@ -893,7 +894,7 @@ TEST_CASE("Client starts and observes agent-side artifact transfer",
                    status.transfer.state == ArtifactTransferState::kCompleted;
         },
         kWaitTimeout));
-    CHECK(status.transfer.bytes_transferred == static_cast<std::int64_t>(payload.size()));
+    CHECK(std::cmp_equal(status.transfer.bytes_transferred, payload.size()));
     REQUIRE_FALSE(status.transfer.descriptor.artifact_id.empty());
 
     const ArtifactTransferResult downloaded =

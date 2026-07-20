@@ -11,7 +11,9 @@ Checks: >-
   -modernize-use-std-print,
   -readability-magic-numbers,
   -readability-function-cognitive-complexity,
+  -readability-redundant-member-init,
   -bugprone-easily-swappable-parameters,
+  -bugprone-chained-comparison,
   -readability-redundant-access-specifiers
 
 WarningsAsErrors: ''

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 #include <arpa/inet.h>
 #include <sys/time.h>
@@ -136,7 +137,7 @@ core::Result MavlinkUdpTransport::Send(const std::uint8_t* bytes, std::uint16_t 
 
     const auto sent = sendto(socket_snapshot, reinterpret_cast<const char*>(bytes), length, 0,
                              reinterpret_cast<const sockaddr*>(&remote_addr), remote_len);
-    if (sent != static_cast<ssize_t>(length)) {
+    if (std::cmp_not_equal(sent, length)) {
         return core::Result::Failed("failed to send MAVLink UDP packet: sent=" +
                                     std::to_string(sent) +
                                     " expected=" + std::to_string(length));

@@ -763,7 +763,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
                     MakeCorrelationId("msg-" + SanitizedPathComponent(message.source_id())));
             }
             message_backlog_.push_back(message);
-            while (static_cast<int>(message_backlog_.size()) > config_.data.message_backlog_size) {
+            while (std::cmp_greater(message_backlog_.size(), config_.data.message_backlog_size)) {
                 message_backlog_.pop_front();
             }
         }
@@ -1949,7 +1949,7 @@ class DataServiceImpl final : public swarmkit::v1::DataService::Service {
             std::lock_guard<std::mutex> lock(data_mutex_);
             event.set_sequence(++data_sequence_);
             message_backlog_.push_back(event);
-            while (static_cast<int>(message_backlog_.size()) > config_.data.message_backlog_size) {
+            while (std::cmp_greater(message_backlog_.size(), config_.data.message_backlog_size)) {
                 message_backlog_.pop_front();
             }
         }

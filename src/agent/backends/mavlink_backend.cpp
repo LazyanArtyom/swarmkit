@@ -86,7 +86,8 @@ struct ArmStateObservation {
     }
     try {
         const int command = std::stoi(iter->second);
-        if (command > 0 && command <= std::numeric_limits<std::uint16_t>::max()) {
+        if (command > 0 &&
+            std::cmp_less_equal(command, std::numeric_limits<std::uint16_t>::max())) {
             return static_cast<std::uint16_t>(command);
         }
     } catch (const std::exception&) {

@@ -113,8 +113,8 @@ std::expected<DroneBackendPtr, core::Result> BackendRegistry::Create(
 std::vector<std::string> BackendRegistry::Names() const {
     std::vector<std::string> names;
     names.reserve(creators_.size());
-    for (const auto& [name, _] : creators_) {
-        names.push_back(name);
+    for (const auto& creator_entry : creators_) {
+        names.push_back(creator_entry.first);
     }
     std::ranges::sort(names);
     return names;

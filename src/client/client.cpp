@@ -1091,14 +1091,14 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
         frame.accuracy.attitude_deg = accuracy.attitude_deg();
         frame.accuracy.position_covariance_valid = accuracy.position_covariance_valid();
         for (int index = 0; index < accuracy.position_covariance_size() &&
-                            index < static_cast<int>(frame.accuracy.position_covariance.size());
+                            std::cmp_less(index, frame.accuracy.position_covariance.size());
              ++index) {
             frame.accuracy.position_covariance[static_cast<std::size_t>(index)] =
                 accuracy.position_covariance(index);
         }
         frame.accuracy.velocity_covariance_valid = accuracy.velocity_covariance_valid();
         for (int index = 0; index < accuracy.velocity_covariance_size() &&
-                            index < static_cast<int>(frame.accuracy.velocity_covariance.size());
+                            std::cmp_less(index, frame.accuracy.velocity_covariance.size());
              ++index) {
             frame.accuracy.velocity_covariance[static_cast<std::size_t>(index)] =
                 accuracy.velocity_covariance(index);
