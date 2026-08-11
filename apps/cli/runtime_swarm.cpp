@@ -9,7 +9,6 @@
 #include "runtime_common.h"
 #include "runtime_telemetry.h"
 
-
 namespace swarmkit::apps::cli::internal {
 
 [[nodiscard]] std::expected<SwarmRuntime, int> BuildSwarmRuntime(const ClientConfig& client_cfg,
@@ -189,8 +188,7 @@ int RunSwarmHealth(const SwarmRuntime& runtime) {
                       << " link_quality=" << OptionalFloatText(status.link_quality_percent)
                       << " heartbeat_age_ms="
                       << TimestampAgeMsText(status.last_heartbeat_unix_ms, now_ms)
-                      << " heartbeat_stale=" << BoolText(heartbeat_stale)
-                      << " telemetry_age_ms="
+                      << " heartbeat_stale=" << BoolText(heartbeat_stale) << " telemetry_age_ms="
                       << TimestampAgeMsText(status.last_telemetry_unix_ms, now_ms)
                       << " telemetry_stale=" << BoolText(telemetry_stale)
                       << " agent_id=" << status.agent_id << " version=" << status.version;
@@ -265,8 +263,8 @@ int RunSwarmTelemetry(SwarmRuntime& runtime, int argc, char** argv) {
                   << " rate=" << *rate_hz << " Hz\n";
         auto telemetry_streams = runtime.client->StartAllTelemetry(
             *rate_hz,
-            [&telemetry_sink](const swarmkit::core::TelemetryFrame& frame) {
-                telemetry_sink->Write(frame);
+            [&telemetry_sink](const swarmkit::client::TelemetryDelivery& delivery) {
+                telemetry_sink->Write(delivery);
             },
             [](const std::string& error_msg) {
                 std::cerr << "Telemetry stream error: " << error_msg << "\n";
@@ -304,8 +302,8 @@ int RunSwarmTelemetry(SwarmRuntime& runtime, int argc, char** argv) {
                   << " Hz\n";
         auto telemetry_stream = runtime.client->StartTelemetry(
             {.drone_id = drone_id, .rate_hertz = *rate_hz},
-            [&telemetry_sink](const swarmkit::core::TelemetryFrame& frame) {
-                telemetry_sink->Write(frame);
+            [&telemetry_sink](const swarmkit::client::TelemetryDelivery& delivery) {
+                telemetry_sink->Write(delivery);
             },
             [](const std::string& error_msg) {
                 std::cerr << "Telemetry stream error: " << error_msg << "\n";

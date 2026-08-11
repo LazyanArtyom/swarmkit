@@ -17,48 +17,43 @@
 namespace swarmkit::apps::cli::internal {
 
 [[nodiscard]] bool IsSubcommand(std::string_view value) {
-    return value == "ping" || value == "health" || value == "stats" ||
-           value == "capabilities" || value == "preflight" || value == "telemetry" ||
-           value == "command" || value == "sequence" || value == "goal" ||
-           value == "reports" || value == "lock" || value == "unlock" ||
-           value == "watch-authority" || value == "message" || value == "artifact" ||
-           value == "swarm";
+    return value == "ping" || value == "health" || value == "stats" || value == "capabilities" ||
+           value == "preflight" || value == "telemetry" || value == "command" ||
+           value == "sequence" || value == "goal" || value == "reports" || value == "lock" ||
+           value == "unlock" || value == "watch-authority" || value == "message" ||
+           value == "artifact" || value == "swarm";
 }
 
 [[nodiscard]] bool IsOptionWithValue(std::string_view value) {
     return value == "--config" || value == "--drone" || value == "--rate" || value == "--alt" ||
            value == "--lat" || value == "--lon" || value == "--speed" || value == "--log-sink" ||
            value == "--log-file" || value == "--log-level" || value == "--client-id" ||
-           value == "--ca-cert" ||
-           value == "--client-cert" || value == "--client-key" || value == "--server-name" ||
-           value == "--priority" || value == "--mode" || value == "--custom-mode" ||
-           value == "--ground" || value == "--deg" || value == "--yaw" || value == "--x" ||
-           value == "--y" || value == "--z" || value == "--vx" || value == "--vy" ||
-           value == "--vz" || value == "--duration-ms" || value == "--ttl-ms" ||
-           value == "--swarm-config" || value == "--address-mode" || value == "--file" ||
-           value == "--telemetry-file" || value == "--telemetry-dir" || value == "--seq" ||
-           value == "--first" || value == "--last" || value == "--camera" || value == "--stream" ||
+           value == "--ca-cert" || value == "--client-cert" || value == "--client-key" ||
+           value == "--server-name" || value == "--priority" || value == "--mode" ||
+           value == "--custom-mode" || value == "--ground" || value == "--deg" ||
+           value == "--yaw" || value == "--vx" || value == "--vy" || value == "--vz" ||
+           value == "--duration-ms" || value == "--ttl-ms" || value == "--swarm-config" ||
+           value == "--address-mode" || value == "--file" || value == "--telemetry-file" ||
+           value == "--telemetry-dir" || value == "--seq" || value == "--first" ||
+           value == "--last" || value == "--camera" || value == "--stream" ||
            value == "--interval" || value == "--count" || value == "--pitch" || value == "--roll" ||
            value == "--gimbal" || value == "--servo" || value == "--pwm" || value == "--relay" ||
            value == "--gripper" || value == "--goal-id" || value == "--revision" ||
-           value == "--accept-radius" || value == "--deviation-radius" ||
-           value == "--timeout-ms" || value == "--label" || value == "--frame" || value == "--format" ||
-           value == "--min-battery" ||
-           value == "--report-file" || value == "--after-sequence" ||
-           value == "--topic" || value == "--source" || value == "--source-id" ||
-           value == "--target" || value == "--payload" || value == "--content-type" ||
-           value == "--artifact-id" || value == "--chunk-bytes" || value == "--transfer-id" ||
-           value == "--page-size" || value == "--page-token" ||
-           value == "--namespace" || value == "--name" || value == "--param" ||
-           value == "--transport-security";
+           value == "--accept-radius" || value == "--deviation-radius" || value == "--timeout-ms" ||
+           value == "--label" || value == "--format" || value == "--min-battery" ||
+           value == "--report-file" || value == "--after-sequence" || value == "--topic" ||
+           value == "--source" || value == "--source-id" || value == "--target" ||
+           value == "--payload" || value == "--content-type" || value == "--artifact-id" ||
+           value == "--chunk-bytes" || value == "--transfer-id" || value == "--page-size" ||
+           value == "--page-token" || value == "--namespace" || value == "--name" ||
+           value == "--param" || value == "--transport-security";
 }
 
 [[nodiscard]] bool IsFlag(std::string_view value) {
     return value == "--help" || value == "-h" || value == "--insecure" || value == "--verify" ||
            value == "--continue-on-error" || value == "--require-all" || value == "--body-frame" ||
-           value == "--relative" || value == "--on" || value == "--release" ||
-           value == "--route" || value == "--refresh" || value == "--include-expired" ||
-           value == "--no-console";
+           value == "--relative" || value == "--on" || value == "--release" || value == "--route" ||
+           value == "--refresh" || value == "--include-expired" || value == "--no-console";
 }
 
 [[nodiscard]] std::expected<float, std::string> ParseFloatArg(std::string_view value,

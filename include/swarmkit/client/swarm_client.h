@@ -99,8 +99,9 @@ using SwarmSubscriptionResults = std::unordered_map<std::string, SubscriptionRes
  *   swarm.AddDrone("uav-3", "192.168.1.103:50061");
  *
  *   // Start telemetry from every drone at 5 Hz
- *   auto telemetry = swarm.StartAllTelemetry(5, [](const swarmkit::core::TelemetryFrame& frame) {
- *       // frame.drone_id identifies the source drone
+ *   auto telemetry = swarm.StartAllTelemetry(5, [](const swarmkit::client::TelemetryDelivery&
+ * delivery) {
+ *       // delivery.frame.drone_id identifies the source drone
  *   });
  *
  *   // Send a waypoint to one drone
@@ -213,17 +214,18 @@ class SwarmClient {
     /// @name Active goals
     /// @{
 
-    /// @brief Set or replace an active goal on the drone named by goal.drone_id.
-    /// @param goal Goal target, acceptance/deviation radii, timeout, and labels.
+    /// @brief Set or replace an active goal on the drone named by request.goal.drone_id.
+    /// @param request Goal definition and optional complete execution context.
     /// @return GoalResult from the target drone agent.
-    [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoal& goal) const;
+    [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoalRequest& request) const;
 
     /// @brief Set active goals across multiple drones with bounded parallelism.
-    /// @param goals Map from drone_id to goal. Each goal.drone_id is overwritten from the key.
+    /// @param requests Map from drone_id to request. Each goal.drone_id is overwritten from the
+    /// key.
     /// @param fanout_options Parallelism and cancellation options.
     /// @return Map of drone_id to GoalResult.
     [[nodiscard]] std::unordered_map<std::string, GoalResult> SetActiveGoals(
-        const std::unordered_map<std::string, ActiveGoal>& goals,
+        const std::unordered_map<std::string, ActiveGoalRequest>& requests,
         const SwarmFanoutOptions& fanout_options = {}) const;
 
     /// @}
@@ -286,7 +288,7 @@ class SwarmClient {
      * @brief Start telemetry from all currently registered drones.
      *
      * @param rate_hertz Requested frame rate in Hz for each drone stream.
-     * @param on_frame   Callback invoked for every received TelemetryFrame.
+     * @param on_frame   Callback invoked for every received TelemetryDelivery.
      * @param on_error   Callback invoked once per drone when a stream ends
      *                   due to an error.
      * @param on_event   Optional stream lifecycle/backpressure callback.
@@ -294,7 +296,7 @@ class SwarmClient {
      *
      * @details Starts one background stream per drone at @p rate_hertz and
      * returns a per-drone result map. Frames from all drones funnel into the
-     * same @p on_frame callback; use @c TelemetryFrame::drone_id to distinguish
+     * same @p on_frame callback; use @c TelemetryDelivery::frame.drone_id to distinguish
      * sources.
      *
      * @note Drones added after this call are not automatically subscribed.

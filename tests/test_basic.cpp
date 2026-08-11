@@ -4,15 +4,15 @@
 // This file is part of SwarmKit.
 // See LICENSE.md in the repository root for full license terms.
 
-#include <catch2/catch_test_macros.hpp>
-
 #include <algorithm>
+#include <catch2/catch_test_macros.hpp>
 #include <string>
 
-#include "swarmkit/core/result.h"
-#include "swarmkit/core/version.h"
 #include "../src/core/env_utils.h"
 #include "../src/core/sha256.h"
+#include "swarmkit/core/execution.h"
+#include "swarmkit/core/result.h"
+#include "swarmkit/core/version.h"
 
 TEST_CASE("Version constants are sane", "[core]") {
     REQUIRE(swarmkit::core::kVersionMajor >= 0);
@@ -48,4 +48,35 @@ TEST_CASE("Correlation IDs include process entropy", "[core]") {
     CHECK(first != second);
     CHECK(first.starts_with("qa-"));
     CHECK(std::ranges::count(first, '-') >= 3);
+}
+
+TEST_CASE("Execution identity is either absent or complete", "[core][execution]") {
+    swarmkit::core::ExecutionContext context{
+        .mission_id = "mission-1",
+        .mission_revision = 1,
+        .model_hash = "sha256:model",
+        .operation_id = "operation-1",
+        .operation_attempt_revision = 1,
+    };
+    REQUIRE(context.IsComplete());
+
+    swarmkit::core::ExecutionHandle handle{
+        .agent_session_id = "session-1",
+        .drone_id = "drone-1",
+        .goal_id = "goal-1",
+        .goal_revision = 1,
+        .physical_attempt_id = "attempt-1",
+        .physical_attempt_revision = 1,
+        .client_id = "controller-1",
+        .correlation_id = "correlation-1",
+        .context = context,
+    };
+    REQUIRE(handle.IsComplete());
+
+    handle.context->operation_id.clear();
+    CHECK_FALSE(handle.IsComplete());
+    handle.context.reset();
+    CHECK(handle.IsComplete());
+    handle.physical_attempt_id.clear();
+    CHECK_FALSE(handle.IsComplete());
 }

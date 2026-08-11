@@ -258,9 +258,8 @@ class SimBackend final : public IDroneBackend {
 
                     core::TelemetryFrame frame;
                     frame.drone_id = drone_id;
-                    frame.unix_time_ms =
+                    const auto source_unix_time_ms =
                         duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-                    frame.source_unix_time_ms = frame.unix_time_ms;
                     frame.lat_deg = lat_deg;
                     frame.lon_deg = lon_deg;
                     frame.rel_alt_m = alt_m;
@@ -273,7 +272,6 @@ class SimBackend final : public IDroneBackend {
                     frame.armed = true;
                     frame.landed = false;
                     frame.failsafe = false;
-                    frame.ekf_ok = true;
                     frame.gps_fix_type = 3;
                     frame.satellites_visible = 12;
                     frame.gps_hdop = 0.8F;
@@ -294,12 +292,30 @@ class SimBackend final : public IDroneBackend {
                     frame.validity.link_quality = true;
                     frame.validity.estimator = true;
                     frame.validity.home_origin = true;
-                    frame.accuracy.horizontal_position_valid = true;
-                    frame.accuracy.horizontal_position_m = 0.5F;
-                    frame.accuracy.vertical_position_valid = true;
-                    frame.accuracy.vertical_position_m = 0.8F;
-                    frame.accuracy.velocity_valid = true;
-                    frame.accuracy.velocity_mps = 0.1F;
+                    frame.accuracy.horizontal_position = core::UncertaintyEstimate{
+                        .value = 0.5F,
+                        .descriptor =
+                            {
+                                .semantics = core::UncertaintySemantics::kBackendSpecific,
+                                .source = "sim.horizontal_position_accuracy",
+                            },
+                    };
+                    frame.accuracy.vertical_position = core::UncertaintyEstimate{
+                        .value = 0.8F,
+                        .descriptor =
+                            {
+                                .semantics = core::UncertaintySemantics::kBackendSpecific,
+                                .source = "sim.vertical_position_accuracy",
+                            },
+                    };
+                    frame.accuracy.speed = core::UncertaintyEstimate{
+                        .value = 0.1F,
+                        .descriptor =
+                            {
+                                .semantics = core::UncertaintySemantics::kBackendSpecific,
+                                .source = "sim.speed_accuracy",
+                            },
+                    };
                     frame.gps_quality = core::GpsQuality::kFix3D;
                     frame.estimator_state = core::EstimatorState::kHealthy;
                     frame.estimator_position_ok = true;
@@ -309,6 +325,22 @@ class SimBackend final : public IDroneBackend {
                     frame.home_origin.lat_deg = kInitialLatDeg;
                     frame.home_origin.lon_deg = kInitialLonDeg;
                     frame.home_origin.alt_m = 0.0F;
+                    const core::TimestampEvidence source_time{
+                        .timestamp_ms = source_unix_time_ms,
+                        .clock_domain = core::ClockDomain::kUnixEpoch,
+                        .synchronization = core::ClockSynchronization::kSynchronized,
+                    };
+                    auto mark_updated = [&](core::MeasurementProvenance* provenance,
+                                            std::string source) {
+                        provenance->updated = true;
+                        provenance->source_time = source_time;
+                        provenance->source = std::move(source);
+                    };
+                    mark_updated(&frame.provenance.position, "sim.position");
+                    mark_updated(&frame.provenance.velocity, "sim.velocity");
+                    mark_updated(&frame.provenance.accuracy, "sim.accuracy");
+                    mark_updated(&frame.provenance.estimator, "sim.estimator");
+                    mark_updated(&frame.provenance.vehicle_state, "sim.vehicle_state");
 
                     callback(frame);
 
@@ -363,7 +395,7 @@ class SimBackend final : public IDroneBackend {
         };
     }
 
-    [[nodiscard]] BackendCapabilities GetCapabilities() const override {
+    [[nodiscard]] core::BackendCapabilities GetCapabilities() const override {
         return {
             .backend_name = "sim",
             .protocol = "sim",
@@ -374,21 +406,49 @@ class SimBackend final : public IDroneBackend {
             .supports_backend_commands = true,
             .autopilot_type = "sim",
             .supported_modes = {"sim", "guided", "hold", "land", "rtl"},
-            .supported_commands =
-                {"arm", "force-arm", "disarm", "takeoff", "land", "goto", "velocity", "payload",
-                 "backend-command"},
+            .supported_commands = {"arm", "force-arm", "disarm", "takeoff", "land", "goto",
+                                   "velocity", "payload", "backend-command"},
             .supported_payloads = {"camera", "gimbal", "servo", "relay", "gripper"},
-            .supported_telemetry_fields =
-                {"position", "altitude", "velocity", "battery", "mode", "gps", "health",
-                 "validity", "source_time", "coordinate_frame", "home_origin", "accuracy",
-                 "estimator", "linkage"},
             .backend_command_names = {"sim.echo"},
-            .limits =
+            .evidence =
                 {
-                    .max_horizontal_speed_mps = 10.0F,
-                    .max_climb_speed_mps = 5.0F,
-                    .max_descent_speed_mps = 3.0F,
-                    .max_altitude_m = 120.0F,
+                    .source_timestamp = core::CapabilitySupport::kSupported,
+                    .source_clock_domains = {core::ClockDomain::kUnixEpoch},
+                    .position_estimate = core::CapabilitySupport::kSupported,
+                    .horizontal_position_uncertainty = core::CapabilitySupport::kSupported,
+                    .vertical_position_uncertainty = core::CapabilitySupport::kSupported,
+                    .horizontal_velocity = core::CapabilitySupport::kSupported,
+                    .vertical_velocity = core::CapabilitySupport::kSupported,
+                    .horizontal_velocity_uncertainty = core::CapabilitySupport::kUnsupported,
+                    .vertical_velocity_uncertainty = core::CapabilitySupport::kUnsupported,
+                    .speed_uncertainty = core::CapabilitySupport::kSupported,
+                    .uncertainty_semantics = core::CapabilitySupport::kSupported,
+                    .estimator_health = core::CapabilitySupport::kSupported,
+                    .failsafe_state = core::CapabilitySupport::kSupported,
+                },
+            .max_horizontal_speed =
+                core::MotionLimit{
+                    .value = 10.0F,
+                    .semantics = core::MotionLimitSemantics::kPlatformCapabilityAssumption,
+                    .source = "sim.default_vehicle_profile",
+                },
+            .max_climb_speed =
+                core::MotionLimit{
+                    .value = 5.0F,
+                    .semantics = core::MotionLimitSemantics::kPlatformCapabilityAssumption,
+                    .source = "sim.default_vehicle_profile",
+                },
+            .max_descent_speed =
+                core::MotionLimit{
+                    .value = 3.0F,
+                    .semantics = core::MotionLimitSemantics::kPlatformCapabilityAssumption,
+                    .source = "sim.default_vehicle_profile",
+                },
+            .max_altitude =
+                core::MotionLimit{
+                    .value = 120.0F,
+                    .semantics = core::MotionLimitSemantics::kPlatformCapabilityAssumption,
+                    .source = "sim.default_vehicle_profile",
                 },
         };
     }

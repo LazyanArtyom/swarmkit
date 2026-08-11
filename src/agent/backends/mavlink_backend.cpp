@@ -189,7 +189,7 @@ class MavlinkBackend final : public IDroneBackend {
         return health;
     }
 
-    [[nodiscard]] BackendCapabilities GetCapabilities() const override {
+    [[nodiscard]] core::BackendCapabilities GetCapabilities() const override {
         return mav::MavlinkCommandExecutor::Capabilities(config_);
     }
 
@@ -287,14 +287,14 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         if (decode_result.should_publish) {
-            PublishTelemetry();
+            PublishTelemetry(decode_result.provenance);
         }
         if (decode_result.should_request_intervals) {
             RequestTelemetryIntervals();
         }
     }
 
-    void PublishTelemetry() {
+    void PublishTelemetry(const core::TelemetryProvenance& provenance) {
         TelemetryCallback callback;
         std::string drone_id;
         {
@@ -314,9 +314,6 @@ class MavlinkBackend final : public IDroneBackend {
 
         core::TelemetryFrame frame;
         frame.drone_id = drone_id;
-        frame.unix_time_ms = mav::NowUnixMs();
-        frame.source_unix_time_ms = cache.source_unix_time_ms;
-        frame.source_time_boot_ms = cache.source_time_boot_ms;
         frame.lat_deg = cache.lat_deg;
         frame.lon_deg = cache.lon_deg;
         frame.rel_alt_m = cache.rel_alt_m;
@@ -331,7 +328,6 @@ class MavlinkBackend final : public IDroneBackend {
         frame.armed = cache.armed;
         frame.landed = cache.landed;
         frame.failsafe = cache.failsafe;
-        frame.ekf_ok = cache.ekf_ok;
         frame.gps_fix_type = cache.gps_fix_type;
         frame.satellites_visible = cache.satellites_visible;
         frame.gps_hdop = cache.gps_hdop;
@@ -348,6 +344,7 @@ class MavlinkBackend final : public IDroneBackend {
         frame.estimator_velocity_ok = cache.estimator_velocity_ok;
         frame.estimator_attitude_ok = cache.estimator_attitude_ok;
         frame.mode = cache.mode;
+        frame.provenance = provenance;
         callback(frame);
     }
 

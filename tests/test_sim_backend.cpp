@@ -27,15 +27,26 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
     REQUIRE(health.link_quality_percent.has_value());
     CHECK(health.link_quality_percent.value_or(0.0F) == 100.0F);
 
-    const BackendCapabilities capabilities = backend->GetCapabilities();
-    REQUIRE(capabilities.limits.max_horizontal_speed_mps.has_value());
-    REQUIRE(capabilities.limits.max_climb_speed_mps.has_value());
-    REQUIRE(capabilities.limits.max_descent_speed_mps.has_value());
-    REQUIRE(capabilities.limits.max_altitude_m.has_value());
-    CHECK(capabilities.limits.max_horizontal_speed_mps.value_or(0.0F) == 10.0F);
-    CHECK(capabilities.limits.max_climb_speed_mps.value_or(0.0F) == 5.0F);
-    CHECK(capabilities.limits.max_descent_speed_mps.value_or(0.0F) == 3.0F);
-    CHECK(capabilities.limits.max_altitude_m.value_or(0.0F) == 120.0F);
+    const core::BackendCapabilities capabilities = backend->GetCapabilities();
+    REQUIRE(capabilities.max_horizontal_speed.has_value());
+    REQUIRE(capabilities.max_climb_speed.has_value());
+    REQUIRE(capabilities.max_descent_speed.has_value());
+    REQUIRE(capabilities.max_altitude.has_value());
+    CHECK(capabilities.max_horizontal_speed->value == 10.0F);
+    CHECK(capabilities.max_climb_speed->value == 5.0F);
+    CHECK(capabilities.max_descent_speed->value == 3.0F);
+    CHECK(capabilities.max_altitude->value == 120.0F);
+    CHECK(capabilities.evidence.source_timestamp == core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.position_estimate == core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.horizontal_position_uncertainty ==
+          core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.vertical_position_uncertainty ==
+          core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.horizontal_velocity_uncertainty ==
+          core::CapabilitySupport::kUnsupported);
+    CHECK(capabilities.max_horizontal_speed->semantics ==
+          core::MotionLimitSemantics::kPlatformCapabilityAssumption);
+    CHECK(capabilities.max_horizontal_speed->source == "sim.default_vehicle_profile");
 
     std::atomic<int> drone_one_frames{0};
     std::atomic<int> drone_two_frames{0};
@@ -84,7 +95,7 @@ TEST_CASE("SimBackend supports concurrent telemetry streams per drone", "[agent]
         CHECK(frame.velocity_frame == core::CoordinateFrame::kLocalNed);
         CHECK(frame.gps_quality == core::GpsQuality::kFix3D);
         CHECK(frame.estimator_state == core::EstimatorState::kHealthy);
-        CHECK(frame.accuracy.horizontal_position_valid);
+        CHECK(frame.accuracy.horizontal_position.has_value());
         CHECK(frame.validity.home_origin);
     }
 

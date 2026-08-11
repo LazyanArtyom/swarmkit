@@ -1,6 +1,6 @@
 # SwarmKit Scientific Context
 
-Last updated: 2026-06-07
+Last updated: 2026-08-11
 
 ## Purpose
 
@@ -52,10 +52,12 @@ A rotor-router controller should treat SwarmKit as the control and observation s
 1. Compute the next graph node or movement target.
 2. Send an active goal or direct command through the SDK.
 3. Subscribe to telemetry and reports.
-4. Wait for `GOAL_REACHED`, deviation, failure, or cancellation.
-5. Update the rotor state and application event log.
-6. Publish gossip/data messages as application-defined topics.
-7. Send the next goal or correction.
+4. Treat `GOAL_REACHED`, deviation, failure, or cancellation as execution-layer evidence.
+5. Independently certify arrival from the exact attempt's ordered telemetry and guarded logical state.
+6. Only the higher-level controller may then commit rotor state and its application event log.
+7. Publish gossip/data messages as application-defined topics and send the next goal or correction.
+
+`GOAL_REACHED` is useful as an experimental baseline, but it is not a TCRR arrival certificate and must not directly trigger a logical rotor-router commit. SwarmKit does not own or serialize rotor state.
 
 SwarmKit does not know graph nodes, edges, roles, target ownership, or gossip semantics. It only transports labeled messages, artifacts, commands, goals, telemetry, and reports.
 

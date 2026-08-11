@@ -8,7 +8,7 @@
 
 namespace swarmkit::agent::mavlink {
 
-BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendConfig& config) {
+core::BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendConfig& config) {
     return {
         .backend_name = "mavlink",
         .protocol = "mavlink2",
@@ -42,27 +42,24 @@ BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendCon
         // Payload encoders remain available as experimental commands, but are
         // not advertised until a vehicle-specific capability source exists.
         .supported_payloads = {},
-        .supported_telemetry_fields =
-            {
-                "lat_deg",
-                "lon_deg",
-                "rel_alt_m",
-                "abs_alt_m",
-                "velocity",
-                "attitude",
-                "battery_percent",
-                "mode",
-                "armed",
-                "failsafe",
-                "gps",
-                "validity",
-                "source_time",
-                "coordinate_frame",
-                "home_origin",
-                "accuracy",
-                "estimator",
-            },
         .backend_command_names = {"mavlink.command-long"},
+        .evidence =
+            {
+                .source_timestamp = core::CapabilitySupport::kSupported,
+                .source_clock_domains = {core::ClockDomain::kVehicleBoot,
+                                         core::ClockDomain::kUnixEpoch},
+                .position_estimate = core::CapabilitySupport::kSupported,
+                .horizontal_position_uncertainty = core::CapabilitySupport::kSupported,
+                .vertical_position_uncertainty = core::CapabilitySupport::kSupported,
+                .horizontal_velocity = core::CapabilitySupport::kSupported,
+                .vertical_velocity = core::CapabilitySupport::kSupported,
+                .horizontal_velocity_uncertainty = core::CapabilitySupport::kUnsupported,
+                .vertical_velocity_uncertainty = core::CapabilitySupport::kUnsupported,
+                .speed_uncertainty = core::CapabilitySupport::kSupported,
+                .uncertainty_semantics = core::CapabilitySupport::kSupported,
+                .estimator_health = core::CapabilitySupport::kSupported,
+                .failsafe_state = core::CapabilitySupport::kSupported,
+            },
     };
 }
 

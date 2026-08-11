@@ -22,12 +22,14 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <variant>
 
 #include "swarmkit/commands/backend.h"
 #include "swarmkit/commands/flight.h"
 #include "swarmkit/commands/nav.h"
 #include "swarmkit/commands/payload.h"
+#include "swarmkit/core/execution.h"
 
 namespace swarmkit::commands {
 
@@ -97,6 +99,7 @@ struct CommandContext {
     CommandPriority priority{CommandPriority::kOperator};  ///< Arbitration priority.
     std::chrono::system_clock::time_point deadline;        ///< Command deadline (zero = none).
     std::string correlation_id;  ///< Caller-assigned ID for tracing/deduplication.
+    std::optional<core::ExecutionContext> execution_context;  ///< Mission/operation lineage.
 };
 
 /// ---------------------------------------------------------------------------

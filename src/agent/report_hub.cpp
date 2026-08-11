@@ -27,7 +27,7 @@
 namespace swarmkit::agent::internal {
 namespace {
 
-[[nodiscard]] std::int64_t NowUnixMs() {
+[[nodiscard]] std::int64_t SystemNowUnixMs() {
     using std::chrono::duration_cast;
     using std::chrono::milliseconds;
     using std::chrono::system_clock;
@@ -178,6 +178,7 @@ ReportHub::ReportHub(std::string report_log_file)
     : ReportHub(ReportHubOptions{.report_log_file = std::move(report_log_file)}) {}
 
 ReportHub::ReportHub(ReportHubOptions options) : options_(std::move(options)) {
+    wall_time_ms_ = options_.wall_time_ms ? options_.wall_time_ms : SystemNowUnixMs;
     if (options_.sequence_state_file.empty()) {
         options_.sequence_state_file = DefaultSequenceStateFile(options_.report_log_file);
     }
@@ -228,7 +229,10 @@ void ReportHub::Publish(swarmkit::v1::AgentReport report) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         report.set_sequence(++next_sequence_);
-        report.set_unix_time_ms(NowUnixMs());
+        report.set_unix_time_ms(wall_time_ms_());
+        if (report.agent_session_id().empty()) {
+            report.set_agent_session_id(options_.agent_session_id);
+        }
         finalized_report = report;
         backlog_.push_back(report);
         while (backlog_.size() > options_.max_in_memory_backlog) {

@@ -17,6 +17,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "runtime_providers.h"
 #include "swarmkit/agent/backend.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/telemetry.h"
@@ -54,6 +56,7 @@ struct TelemetryLease {
     std::shared_ptr<TelemetryState> state;
     std::string drone_id;
     std::uint64_t subscriber_id{0};
+    std::uint64_t initial_sequence{0};
 };
 
 /// @brief Manages per-drone telemetry streams for the agent server.
@@ -66,10 +69,16 @@ class TelemetryManager {
     /// @param backend         Drone backend (owned externally; must outlive this manager).
     /// @param default_rate_hz Default rate when client requests 0 or negative.
     /// @param min_rate_hz     Floor rate; all requests are clamped to at least this.
-    TelemetryManager(IDroneBackend* backend, int default_rate_hz, int min_rate_hz)
+    using ExecutionSnapshotProvider =
+        std::function<std::optional<core::ExecutionHandle>(const std::string&)>;
+
+    TelemetryManager(IDroneBackend* backend, int default_rate_hz, int min_rate_hz,
+                     RuntimeProviders providers, std::string agent_session_id)
         : backend_(backend),
           default_rate_hz_(std::max(1, default_rate_hz)),
-          min_rate_hz_(std::max(1, min_rate_hz)) {}
+          min_rate_hz_(std::max(1, min_rate_hz)),
+          providers_(std::move(providers)),
+          agent_session_id_(std::move(agent_session_id)) {}
 
     ~TelemetryManager() {
         try {
@@ -81,6 +90,11 @@ class TelemetryManager {
 
     TelemetryManager(const TelemetryManager&) = delete;
     TelemetryManager& operator=(const TelemetryManager&) = delete;
+
+    /// Set once during Agent construction, before telemetry is started.
+    void SetExecutionSnapshotProvider(ExecutionSnapshotProvider provider) {
+        execution_snapshot_provider_ = std::move(provider);
+    }
 
     /// @brief Acquire a telemetry lease for a drone, starting the backend if needed.
     [[nodiscard]] core::Result AcquireLease(const std::string& drone_id, int requested_rate_hz,
@@ -128,8 +142,8 @@ class TelemetryManager {
    private:
     [[nodiscard]] std::shared_ptr<TelemetryState> GetOrCreateState(const std::string& drone_id);
 
-    static void PublishFrame(const std::shared_ptr<TelemetryState>& state,
-                             const core::TelemetryFrame& frame);
+    void PublishFrame(const std::shared_ptr<TelemetryState>& state, const std::string& drone_id,
+                      const core::TelemetryFrame& frame);
 
     [[nodiscard]] int NormalizeRate(int requested_rate_hz) const;
 
@@ -138,6 +152,9 @@ class TelemetryManager {
     IDroneBackend* backend_;
     int default_rate_hz_;
     int min_rate_hz_;
+    RuntimeProviders providers_;
+    std::string agent_session_id_;
+    ExecutionSnapshotProvider execution_snapshot_provider_;
 
     std::mutex states_mutex_;
     std::unordered_map<std::string, std::shared_ptr<TelemetryState>> states_;

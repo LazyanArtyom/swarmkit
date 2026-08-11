@@ -53,8 +53,8 @@ int RunTelemetry(Client& client, std::string_view drone_id, int rate_hz, int arg
     std::mutex stream_error_mutex;
     auto telemetry_stream = client.StartTelemetry(
         subscription,
-        [&telemetry_sink](const swarmkit::core::TelemetryFrame& frame) {
-            telemetry_sink->Write(frame);
+        [&telemetry_sink](const swarmkit::client::TelemetryDelivery& delivery) {
+            telemetry_sink->Write(delivery);
         },
         [&](const std::string& error_msg) {
             {

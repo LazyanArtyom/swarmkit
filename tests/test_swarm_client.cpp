@@ -79,7 +79,7 @@ TEST_CASE("SwarmClient broadcasts commands and reports unknown drones", "[swarm]
     CHECK_FALSE(kMissing.ok);
     CHECK(kMissing.message.find("not registered") != std::string::npos);
     CHECK(kMissing.error.domain == core::ErrorDomain::kSwarm);
-    CHECK(kMissing.error.code == RpcStatusCode::kNotFound);
+    CHECK(kMissing.error.code == core::ErrorCode::kNotFound);
     CHECK(kMissing.error.severity == core::ErrorSeverity::kWarning);
     CHECK(kMissing.error.retryability == core::ErrorRetryability::kAfterRemediation);
 }
@@ -100,9 +100,9 @@ TEST_CASE("SwarmClient fans out active goals", "[swarm][client][goal]") {
     base_goal.deviation_radius_m = 20.0F;
     base_goal.labels = {{"edge_id", "edge-a"}};
 
-    std::unordered_map<std::string, ActiveGoal> goals;
-    goals.emplace("drone-1", base_goal);
-    goals.emplace("drone-2", base_goal);
+    std::unordered_map<std::string, ActiveGoalRequest> goals;
+    goals.emplace("drone-1", ActiveGoalRequest{.goal = base_goal});
+    goals.emplace("drone-2", ActiveGoalRequest{.goal = base_goal});
 
     const auto results = swarm.SetActiveGoals(goals);
     REQUIRE(results.size() == 2);
@@ -148,9 +148,9 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
 
     std::mutex mutex;
     std::unordered_set<std::string> seen_drones;
-    auto telemetry_streams = swarm.StartAllTelemetry(5, [&](const core::TelemetryFrame& frame) {
+    auto telemetry_streams = swarm.StartAllTelemetry(5, [&](const TelemetryDelivery& delivery) {
         std::lock_guard<std::mutex> lock(mutex);
-        seen_drones.insert(frame.drone_id);
+        seen_drones.insert(delivery.frame.drone_id);
     });
     REQUIRE(telemetry_streams.size() == 2);
     REQUIRE(telemetry_streams.at("drone-1").has_value());
@@ -165,12 +165,12 @@ TEST_CASE("SwarmClient subscribes to telemetry from all drones", "[swarm][client
 
     core::TelemetryFrame frame_one;
     frame_one.drone_id = "drone-1";
-    frame_one.unix_time_ms = 1;
+    frame_one.agent_receive_unix_time_ms = 1;
     frame_one.mode = "guided";
 
     core::TelemetryFrame frame_two;
     frame_two.drone_id = "drone-2";
-    frame_two.unix_time_ms = 2;
+    frame_two.agent_receive_unix_time_ms = 2;
     frame_two.mode = "guided";
 
     REQUIRE(testsupport::WaitUntil(

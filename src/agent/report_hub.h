@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <deque>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -32,6 +33,8 @@ struct ReportHubOptions {
     bool flush_each_write{true};
     bool fsync_each_write{false};
     bool replay_from_log{true};
+    std::function<std::int64_t()> wall_time_ms;
+    std::string agent_session_id;
 };
 
 class ReportQueue {
@@ -89,6 +92,7 @@ class ReportHub {
     std::size_t report_log_bytes_{0};
     std::uint64_t next_watch_id_{0};
     std::uint64_t next_sequence_{0};
+    std::function<std::int64_t()> wall_time_ms_;
 };
 
 }  // namespace swarmkit::agent::internal

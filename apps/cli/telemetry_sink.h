@@ -15,18 +15,18 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "swarmkit/core/telemetry.h"
+#include "swarmkit/client/client.h"
 
 namespace swarmkit::apps::cli::internal {
 
-[[nodiscard]] std::string TelemetryCsvLine(const swarmkit::core::TelemetryFrame& frame);
+[[nodiscard]] std::string TelemetryCsvLine(const swarmkit::client::TelemetryDelivery& delivery);
 
 class TelemetrySink {
    public:
     [[nodiscard]] static std::expected<std::unique_ptr<TelemetrySink>, std::string> FromArgs(
         int argc, char** argv, bool allow_split);
 
-    void Write(const swarmkit::core::TelemetryFrame& frame);
+    void Write(const swarmkit::client::TelemetryDelivery& delivery);
 
     [[nodiscard]] bool WritesFiles() const;
 

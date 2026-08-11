@@ -45,7 +45,8 @@ using swarmkit::client::ArtifactTransferState;
 using swarmkit::client::ArtifactUpload;
 using swarmkit::client::ArtifactUploadSession;
 using swarmkit::client::AuthorityEventInfo;
-using swarmkit::client::BackendCapabilities;
+using swarmkit::client::CancelGoalResult;
+using swarmkit::client::CapabilitiesResult;
 using swarmkit::client::Client;
 using swarmkit::client::ClientConfig;
 using swarmkit::client::CommandResult;
@@ -778,6 +779,18 @@ class ControlShell {
         std::cout << "\n";
     }
 
+    void PrintCancelGoalResult(std::string_view label, const CancelGoalResult& result) const {
+        std::lock_guard<std::mutex> lock(output_mutex_);
+        std::cout << label << ": " << (result.ok ? "OK" : "FAILED");
+        if (!result.message.empty()) {
+            std::cout << " " << result.message;
+        }
+        if (!result.correlation_id.empty()) {
+            std::cout << " [corr=" << result.correlation_id << "]";
+        }
+        std::cout << "\n";
+    }
+
     [[nodiscard]] bool Dispatch(const std::vector<std::string>& tokens) {
         const std::string command = Lower(tokens[0]);
         if (command == "quit" || command == "exit") {
@@ -901,27 +914,28 @@ class ControlShell {
     }
 
     void DoCapabilities() {
-        const BackendCapabilities result = client_.GetCapabilities();
+        const CapabilitiesResult result = client_.GetCapabilities();
         std::lock_guard<std::mutex> lock(output_mutex_);
         std::cout << "Capabilities: " << (result.ok ? "OK" : "FAILED")
-                  << " backend=" << result.backend_name << " protocol=" << result.protocol
-                  << " vehicle=" << result.vehicle_class << " autopilot=" << result.autopilot_type
-                  << " velocity=" << BoolName(result.supports_velocity_control)
-                  << " payload=" << BoolName(result.supports_payload_control)
-                  << " backend_cmds=" << BoolName(result.supports_backend_commands);
+                  << " backend=" << result.backend.backend_name
+                  << " protocol=" << result.backend.protocol
+                  << " vehicle=" << result.backend.vehicle_class
+                  << " autopilot=" << result.backend.autopilot_type
+                  << " velocity=" << BoolName(result.backend.supports_velocity_control)
+                  << " payload=" << BoolName(result.backend.supports_payload_control)
+                  << " backend_cmds=" << BoolName(result.backend.supports_backend_commands);
         if (!result.correlation_id.empty()) {
             std::cout << " [corr=" << result.correlation_id << "]";
         }
         std::cout << "\n";
-        PrintStringList("  modes", result.supported_modes);
-        PrintStringList("  commands", result.supported_commands);
-        PrintStringList("  telemetry", result.supported_telemetry_fields);
-        PrintStringList("  backend", result.backend_command_names);
+        PrintStringList("  modes", result.backend.supported_modes);
+        PrintStringList("  commands", result.backend.supported_commands);
+        PrintStringList("  backend", result.backend.backend_command_names);
     }
 
     void DoModes() {
         const HealthStatus health = client_.GetHealth();
-        const BackendCapabilities capabilities = client_.GetCapabilities();
+        const CapabilitiesResult capabilities = client_.GetCapabilities();
         std::lock_guard<std::mutex> lock(output_mutex_);
         std::cout << "Modes:";
         if (health.ok && !health.mode.empty()) {
@@ -939,7 +953,7 @@ class ControlShell {
             std::cout << "\n";
             return;
         }
-        for (const auto& mode : capabilities.supported_modes) {
+        for (const auto& mode : capabilities.backend.supported_modes) {
             std::cout << " " << mode;
         }
         if (!capabilities.correlation_id.empty()) {
@@ -1660,7 +1674,8 @@ class ControlShell {
         subscription.rate_hertz = rate_hz;
         auto stream = client_.StartTelemetry(
             subscription,
-            [this](const swarmkit::core::TelemetryFrame& frame) {
+            [this](const swarmkit::client::TelemetryDelivery& delivery) {
+                const auto& frame = delivery.frame;
                 {
                     std::lock_guard<std::mutex> lock(telemetry_mutex_);
                     latest_frame_ = frame;
@@ -1908,19 +1923,29 @@ class ControlShell {
         if (action == "get") {
             const auto status = client_.GetActiveGoal(drone_id_);
             std::lock_guard<std::mutex> lock(output_mutex_);
-            std::cout << "goal get: " << (status.error.IsOk() ? "OK" : "FAILED")
-                      << " has_goal=" << BoolName(status.has_goal)
-                      << " status=" << GoalStatusName(status.status)
-                      << " timeout_ms=" << status.computed_timeout_ms
+            std::cout << "goal get: " << (status.ok ? "OK" : "FAILED")
+                      << " has_goal=" << BoolName(status.active_goal.has_value())
                       << " message=" << status.message << "\n";
-            if (status.has_goal) {
-                PrintGoal(status.goal);
+            if (status.active_goal.has_value()) {
+                std::cout << "  status=" << GoalStatusName(status.active_goal->status)
+                          << " timeout_ms=" << status.active_goal->computed_timeout_ms << "\n";
+                PrintGoal(status.active_goal->goal);
             }
             return true;
         }
         if (action == "cancel") {
             const std::string goal_id = tokens.size() >= 3 ? tokens[2] : std::string{};
-            PrintCommandResult("goal cancel", client_.CancelGoal(drone_id_, goal_id));
+            const auto current = client_.GetActiveGoal(drone_id_);
+            if (!current.ok || !current.active_goal.has_value()) {
+                PrintLine("goal cancel FAILED: no active goal");
+                return true;
+            }
+            if (!goal_id.empty() && goal_id != current.active_goal->execution_handle.goal_id) {
+                PrintLine("goal cancel FAILED: requested ID does not match active execution");
+                return true;
+            }
+            PrintCancelGoalResult("goal cancel",
+                                  client_.CancelGoal(current.active_goal->execution_handle));
             return true;
         }
         if (action != "set") {
@@ -1945,7 +1970,6 @@ class ControlShell {
         goal.target.lat_deg = *lat;
         goal.target.lon_deg = *lon;
         goal.target.alt_m = *alt;
-        goal.target_frame = "global";
         goal.speed_mps = controller_speed_mps_;
         if (tokens.size() >= 7) {
             const auto speed = ParseFloat(tokens[6], "speed");
@@ -1963,7 +1987,7 @@ class ControlShell {
             }
             goal.acceptance_radius_m = *acceptance;
         }
-        const GoalResult result = client_.SetActiveGoal(goal);
+        const GoalResult result = client_.SetActiveGoal({.goal = goal});
         PrintGoalResult("goal set", result);
         return true;
     }

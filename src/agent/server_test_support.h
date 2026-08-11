@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "runtime_providers.h"
 #include "swarmkit/agent/server.h"
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
 
@@ -21,7 +22,13 @@ struct AgentServiceBundle {
 [[nodiscard]] std::unique_ptr<swarmkit::v1::AgentService::Service> MakeAgentServiceForTesting(
     const AgentConfig& config, DroneBackendPtr backend);
 
+[[nodiscard]] std::unique_ptr<swarmkit::v1::AgentService::Service> MakeAgentServiceForTesting(
+    const AgentConfig& config, DroneBackendPtr backend, RuntimeProviders providers);
+
 [[nodiscard]] std::unique_ptr<AgentServiceBundle> MakeAgentServicesForTesting(
     const AgentConfig& config, DroneBackendPtr backend);
+
+[[nodiscard]] std::unique_ptr<AgentServiceBundle> MakeAgentServicesForTesting(
+    const AgentConfig& config, DroneBackendPtr backend, RuntimeProviders providers);
 
 }  // namespace swarmkit::agent::internal

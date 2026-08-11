@@ -190,7 +190,7 @@ inline void ResetStopRequested() {
 
 [[nodiscard]] inline bool FrameMatchesWaitCondition(const swarmkit::core::TelemetryFrame& frame,
                                                     const WaitCondition& condition) {
-    if (condition.wait_heartbeat && frame.unix_time_ms <= 0) {
+    if (condition.wait_heartbeat && frame.agent_receive_unix_time_ms <= 0) {
         return false;
     }
     if ((condition.alt_min_m.has_value() || condition.alt_max_m.has_value() ||
@@ -259,7 +259,9 @@ class SequenceTelemetryMonitor {
         Stop();
         auto subscription = client.StartTelemetry(
             {.drone_id = drone_id, .rate_hertz = rate_hz},
-            [this](const swarmkit::core::TelemetryFrame& frame) { StoreFrame(frame); },
+            [this](const swarmkit::client::TelemetryDelivery& delivery) {
+                StoreFrame(delivery.frame);
+            },
             [](const std::string& error_msg) {
                 std::cerr << "Sequence telemetry stream error: " << error_msg << "\n";
             });
@@ -275,7 +277,10 @@ class SequenceTelemetryMonitor {
     [[nodiscard]] bool StartSwarm(SwarmRuntime& runtime, int rate_hz) {
         Stop();
         auto subscriptions = runtime.client->StartAllTelemetry(
-            rate_hz, [this](const swarmkit::core::TelemetryFrame& frame) { StoreFrame(frame); },
+            rate_hz,
+            [this](const swarmkit::client::TelemetryDelivery& delivery) {
+                StoreFrame(delivery.frame);
+            },
             [](const std::string& error_msg) {
                 std::cerr << "Sequence telemetry stream error: " << error_msg << "\n";
             });

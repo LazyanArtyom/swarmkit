@@ -78,21 +78,32 @@ template <typename T>
 
 }  // namespace
 
-std::string TelemetryCsvLine(const swarmkit::core::TelemetryFrame& frame) {
+std::string TelemetryCsvLine(const swarmkit::client::TelemetryDelivery& delivery) {
+    const auto& frame = delivery.frame;
+    const auto* execution = frame.execution_handle ? &*frame.execution_handle : nullptr;
+    const auto* context =
+        execution != nullptr && execution->context ? &*execution->context : nullptr;
     std::ostringstream line;
-    line << frame.unix_time_ms << "," << frame.source_unix_time_ms << ","
-         << frame.source_time_boot_ms << "," << CsvField(frame.drone_id) << std::setprecision(10)
-         << "," << CsvScalar(frame.validity.position, frame.lat_deg) << ","
+    line << frame.agent_receive_unix_time_ms << "," << frame.agent_receive_monotonic_time_ns << ","
+         << delivery.sdk_receive_unix_time_ms << "," << CsvField(frame.agent_session_id) << ","
+         << frame.telemetry_sequence << "," << CsvField(delivery.transport_stream_id) << ","
+         << CsvField(frame.drone_id) << std::setprecision(10) << ","
+         << CsvScalar(frame.validity.position, frame.lat_deg) << ","
          << CsvScalar(frame.validity.position, frame.lon_deg) << "," << std::setprecision(5)
          << CsvScalar(frame.validity.relative_altitude, frame.rel_alt_m) << ","
          << CsvScalar(frame.validity.battery, frame.battery_percent) << ","
          << CsvField(frame.validity.mode ? frame.mode : "") << ","
          << CsvScalar(frame.validity.gps, frame.gps_fix_type) << ","
          << CsvScalar(frame.validity.gps_hdop, frame.gps_hdop) << ","
-         << CsvScalar(frame.accuracy.horizontal_position_valid,
-                      frame.accuracy.horizontal_position_m)
+         << CsvScalar(frame.accuracy.horizontal_position.has_value(),
+                      frame.accuracy.horizontal_position ? frame.accuracy.horizontal_position->value
+                                                         : 0.0F)
          << "," << CsvScalar(frame.validity.estimator, static_cast<int>(frame.estimator_state))
-         << "," << CsvField(frame.active_goal_id) << "," << CsvField(frame.correlation_id) << "\n";
+         << "," << CsvField(execution != nullptr ? execution->goal_id : "") << ","
+         << (execution != nullptr ? execution->goal_revision : 0) << ","
+         << CsvField(execution != nullptr ? execution->physical_attempt_id : "") << ","
+         << (execution != nullptr ? execution->physical_attempt_revision : 0) << ","
+         << CsvField(context != nullptr ? context->operation_id : "") << "\n";
     return line.str();
 }
 
@@ -126,15 +137,18 @@ std::expected<std::unique_ptr<TelemetrySink>, std::string> TelemetrySink::FromAr
     return sink;
 }
 
-void TelemetrySink::Write(const swarmkit::core::TelemetryFrame& frame) {
+void TelemetrySink::Write(const swarmkit::client::TelemetryDelivery& delivery) {
+    const auto& frame = delivery.frame;
     std::lock_guard<std::mutex> lock(mutex_);
     if (console_enabled_) {
         std::string_view estimator_text = "unknown";
         if (frame.validity.estimator) {
-            estimator_text = frame.ekf_ok ? "ok" : "bad";
+            estimator_text = frame.estimator_state == swarmkit::core::EstimatorState::kHealthy
+                                 ? "healthy"
+                                 : "unhealthy";
         }
         std::cout << std::fixed << std::setprecision(kTelemetryCoordPrecision) << "["
-                  << frame.unix_time_ms << "]"
+                  << frame.agent_receive_unix_time_ms << "]"
                   << " drone=" << frame.drone_id
                   << " lat=" << ConsoleScalar(frame.validity.position, frame.lat_deg)
                   << " lon=" << ConsoleScalar(frame.validity.position, frame.lon_deg)
@@ -151,7 +165,7 @@ void TelemetrySink::Write(const swarmkit::core::TelemetryFrame& frame) {
                   << " mode=" << (frame.validity.mode ? frame.mode : "unknown") << "\n";
     }
 
-    const std::string csv_line = TelemetryCsvLine(frame);
+    const std::string csv_line = TelemetryCsvLine(delivery);
     if (combined_file_) {
         *combined_file_ << csv_line;
         combined_file_->flush();
@@ -186,9 +200,12 @@ std::expected<std::ofstream, std::string> TelemetrySink::OpenCsvFile(
         return std::unexpected("failed to open telemetry file '" + path.string() + "'");
     }
     if (needs_header) {
-        file << "unix_time_ms,source_unix_time_ms,source_time_boot_ms,drone_id,lat_deg,lon_deg,"
+        file << "agent_receive_unix_time_ms,agent_receive_monotonic_time_ns,"
+                "sdk_receive_unix_time_ms,agent_session_id,telemetry_sequence,"
+                "transport_stream_id,drone_id,lat_deg,lon_deg,"
                 "rel_alt_m,battery_percent,mode,gps_fix_type,gps_hdop,horizontal_accuracy_m,"
-                "estimator_state,active_goal_id,correlation_id\n";
+                "estimator_state,goal_id,goal_revision,physical_attempt_id,"
+                "physical_attempt_revision,operation_id\n";
     }
     return file;
 }

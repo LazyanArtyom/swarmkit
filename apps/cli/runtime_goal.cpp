@@ -36,50 +36,23 @@ ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
     if (goal_id.empty()) {
         return std::unexpected("goal set requires --goal-id ID");
     }
-    std::string target_frame = common::GetOptionValue(argc, argv, "--frame", "global");
-    target_frame = ToLowerAscii(std::move(target_frame));
-    const bool use_local_target = target_frame == "local-ned" ||
-                                  !common::GetOptionValue(argc, argv, "--x").empty() ||
-                                  !common::GetOptionValue(argc, argv, "--y").empty() ||
-                                  !common::GetOptionValue(argc, argv, "--z").empty();
-    if (use_local_target) {
-        target_frame = "local-ned";
+    const auto lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat"), "--lat");
+    const auto lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon"), "--lon");
+    const auto alt = ParseDoubleArg(common::GetOptionValue(argc, argv, "--alt"), "--alt");
+    if (!lat.has_value()) {
+        return std::unexpected(lat.error());
     }
-    if (target_frame != "global" && target_frame != "local-ned") {
-        return std::unexpected("--frame must be global or local-ned");
+    if (!lon.has_value()) {
+        return std::unexpected(lon.error());
     }
-
-    swarmkit::client::GeoPoint target;
-    swarmkit::client::LocalPoint local_target;
-    if (use_local_target) {
-        const auto x_m = ParseDoubleArg(common::GetOptionValue(argc, argv, "--x"), "--x");
-        const auto y_m = ParseDoubleArg(common::GetOptionValue(argc, argv, "--y"), "--y");
-        const auto z_m = ParseDoubleArg(common::GetOptionValue(argc, argv, "--z"), "--z");
-        if (!x_m.has_value()) {
-            return std::unexpected(x_m.error());
-        }
-        if (!y_m.has_value()) {
-            return std::unexpected(y_m.error());
-        }
-        if (!z_m.has_value()) {
-            return std::unexpected(z_m.error());
-        }
-        local_target = swarmkit::client::LocalPoint{.x_m = *x_m, .y_m = *y_m, .z_m = *z_m};
-    } else {
-        const auto lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lat"), "--lat");
-        const auto lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--lon"), "--lon");
-        const auto alt = ParseDoubleArg(common::GetOptionValue(argc, argv, "--alt"), "--alt");
-        if (!lat.has_value()) {
-            return std::unexpected(lat.error());
-        }
-        if (!lon.has_value()) {
-            return std::unexpected(lon.error());
-        }
-        if (!alt.has_value()) {
-            return std::unexpected(alt.error());
-        }
-        target = swarmkit::client::GeoPoint{.lat_deg = *lat, .lon_deg = *lon, .alt_m = *alt};
+    if (!alt.has_value()) {
+        return std::unexpected(alt.error());
     }
+    const swarmkit::client::GeoPoint target{
+        .lat_deg = *lat,
+        .lon_deg = *lon,
+        .alt_m = *alt,
+    };
 
     auto revision = static_cast<std::uint64_t>(NowUnixMs());
     if (const std::string revision_value = common::GetOptionValue(argc, argv, "--revision");
@@ -88,8 +61,8 @@ ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
         if (!parsed_revision.has_value()) {
             return std::unexpected(parsed_revision.error());
         }
-        if (*parsed_revision < 0) {
-            return std::unexpected("--revision must be >= 0");
+        if (*parsed_revision <= 0) {
+            return std::unexpected("--revision must be > 0");
         }
         revision = static_cast<std::uint64_t>(*parsed_revision);
     }
@@ -124,9 +97,6 @@ ParseKeyValueLabels(int argc, char** argv, std::string_view option_name) {
         .goal_id = goal_id,
         .revision = revision,
         .target = target,
-        .local_target = local_target,
-        .use_local_target = use_local_target,
-        .target_frame = target_frame,
         .speed_mps = *speed,
         .acceptance_radius_m = *acceptance_radius,
         .deviation_radius_m = *deviation_radius,
@@ -148,7 +118,7 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
             std::cerr << goal.error() << "\n";
             return EXIT_FAILURE;
         }
-        const auto result = client.SetActiveGoal(*goal);
+        const auto result = client.SetActiveGoal({.goal = *goal});
         if (!result.ok) {
             std::cerr << "Goal set FAILED: " << result.message;
             if (!result.correlation_id.empty()) {
@@ -168,8 +138,19 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
     }
 
     if (actions[0] == "cancel") {
-        const auto result = client.CancelGoal(std::string(drone_id),
-                                              common::GetOptionValue(argc, argv, "--goal-id"));
+        const auto current = client.GetActiveGoal(std::string(drone_id));
+        if (!current.ok || !current.active_goal.has_value()) {
+            std::cerr << "Goal cancel FAILED: "
+                      << (current.message.empty() ? "no active goal" : current.message) << "\n";
+            return EXIT_FAILURE;
+        }
+        const std::string requested_goal_id = common::GetOptionValue(argc, argv, "--goal-id");
+        if (!requested_goal_id.empty() &&
+            requested_goal_id != current.active_goal->execution_handle.goal_id) {
+            std::cerr << "Goal cancel FAILED: active goal identity does not match --goal-id\n";
+            return EXIT_FAILURE;
+        }
+        const auto result = client.CancelGoal(current.active_goal->execution_handle);
         if (!result.ok) {
             std::cerr << "Goal cancel FAILED: " << result.message;
             if (!result.correlation_id.empty()) {
@@ -185,33 +166,30 @@ int RunGoal(Client& client, std::string_view drone_id, int argc, char** argv) {
 
     if (actions[0] == "get") {
         const auto status = client.GetActiveGoal(std::string(drone_id));
-        if (status.error.code != swarmkit::client::RpcStatusCode::kOk) {
+        if (!status.ok) {
             std::cerr << "Goal get FAILED: " << status.message << "\n";
             return EXIT_FAILURE;
         }
-        if (!status.has_goal) {
+        if (!status.active_goal.has_value()) {
             std::cout << "No active goal for drone=" << drone_id << "\n";
             return EXIT_SUCCESS;
         }
+        const auto& active = *status.active_goal;
         std::cout << "Active goal\n"
-                  << "  drone_id            : " << status.goal.drone_id << "\n"
-                  << "  goal_id             : " << status.goal.goal_id << "\n"
-                  << "  revision            : " << status.goal.revision << "\n"
-                  << "  status              : " << GoalStatusName(status.status) << "\n"
-                  << "  target_frame        : " << status.goal.target_frame << "\n"
-                  << "  lat                 : " << status.goal.target.lat_deg << "\n"
-                  << "  lon                 : " << status.goal.target.lon_deg << "\n"
-                  << "  alt_m               : " << status.goal.target.alt_m << "\n"
-                  << "  local_x_m           : " << status.goal.local_target.x_m << "\n"
-                  << "  local_y_m           : " << status.goal.local_target.y_m << "\n"
-                  << "  local_z_m           : " << status.goal.local_target.z_m << "\n"
-                  << "  speed_mps           : " << status.goal.speed_mps << "\n"
-                  << "  accept_radius_m     : " << status.goal.acceptance_radius_m << "\n"
-                  << "  deviation_radius_m  : " << status.goal.deviation_radius_m << "\n"
-                  << "  computed_timeout_ms : " << status.computed_timeout_ms << "\n";
-        if (!status.goal.labels.empty()) {
+                  << "  drone_id            : " << active.goal.drone_id << "\n"
+                  << "  goal_id             : " << active.goal.goal_id << "\n"
+                  << "  revision            : " << active.goal.revision << "\n"
+                  << "  status              : " << GoalStatusName(active.status) << "\n"
+                  << "  lat                 : " << active.goal.target.lat_deg << "\n"
+                  << "  lon                 : " << active.goal.target.lon_deg << "\n"
+                  << "  alt_m               : " << active.goal.target.alt_m << "\n"
+                  << "  speed_mps           : " << active.goal.speed_mps << "\n"
+                  << "  accept_radius_m     : " << active.goal.acceptance_radius_m << "\n"
+                  << "  deviation_radius_m  : " << active.goal.deviation_radius_m << "\n"
+                  << "  computed_timeout_ms : " << active.computed_timeout_ms << "\n";
+        if (!active.goal.labels.empty()) {
             std::cout << "  labels              :\n";
-            for (const auto& [key, value] : status.goal.labels) {
+            for (const auto& [key, value] : active.goal.labels) {
                 std::cout << "    " << key << "=" << value << "\n";
             }
         }

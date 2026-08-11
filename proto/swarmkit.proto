@@ -100,6 +100,7 @@ message PingReply {
     string version = 2;
     int64 unix_time_ms = 3;
     string correlation_id = 4;
+    string agent_session_id = 5;
 }
 
 message HealthRequest {}
@@ -145,6 +146,7 @@ message HealthReply {
     bool autonomous_ready = 25;
     repeated ReadinessCheck readiness_checks = 26;
     repeated string arming_blockers = 27;
+    string agent_session_id = 28;
 }
 
 message RuntimeStatsRequest {}
@@ -179,32 +181,97 @@ message RuntimeStatsReply {
 
 message CapabilitiesRequest {}
 
+enum CapabilitySupport {
+    CAPABILITY_SUPPORT_UNKNOWN = 0;
+    CAPABILITY_UNSUPPORTED = 1;
+    CAPABILITY_SUPPORTED = 2;
+}
+
+message TelemetryEvidenceCapabilities {
+    CapabilitySupport source_timestamp = 1;
+    CapabilitySupport position_estimate = 2;
+    CapabilitySupport horizontal_position_uncertainty = 3;
+    CapabilitySupport vertical_position_uncertainty = 4;
+    CapabilitySupport horizontal_velocity = 5;
+    CapabilitySupport vertical_velocity = 6;
+    CapabilitySupport horizontal_velocity_uncertainty = 7;
+    CapabilitySupport vertical_velocity_uncertainty = 8;
+    CapabilitySupport speed_uncertainty = 9;
+    CapabilitySupport uncertainty_semantics = 10;
+    CapabilitySupport estimator_health = 11;
+    CapabilitySupport failsafe_state = 12;
+    CapabilitySupport active_goal_lineage = 13;
+    CapabilitySupport telemetry_sequence = 14;
+    CapabilitySupport telemetry_replay = 15;
+    repeated TelemetryClockDomain source_clock_domains = 16;
+}
+
+enum MotionLimitSemantics {
+    MOTION_LIMIT_SEMANTICS_UNKNOWN = 0;
+    MOTION_LIMIT_CONFIGURED_COMMAND = 1;
+    MOTION_LIMIT_PLATFORM_CAPABILITY_ASSUMPTION = 2;
+    MOTION_LIMIT_OBSERVED = 3;
+    MOTION_LIMIT_VALIDATED_BOUND = 4;
+}
+
+message MotionLimit {
+    float value = 1;
+    MotionLimitSemantics semantics = 2;
+    string source = 3;
+    string profile_id = 4;
+    string profile_version = 5;
+}
+
 message CapabilitiesReply {
     string agent_id = 1;
-    int64 unix_time_ms = 2;
-    string correlation_id = 3;
-    bool supports_payload_control = 5;
-    bool supports_velocity_control = 6;
-    bool supports_flight_termination = 7;
+    string agent_session_id = 2;
+    int64 unix_time_ms = 3;
+    string correlation_id = 4;
+    string backend_name = 5;
+    string protocol = 6;
+    string vehicle_class = 7;
     string autopilot_type = 8;
-    repeated string supported_modes = 9;
-    string backend_name = 10;
-    string protocol = 11;
-    string vehicle_class = 12;
-    bool supports_backend_commands = 13;
-    repeated string supported_commands = 16;
-    repeated string supported_payloads = 18;
-    repeated string supported_telemetry_fields = 19;
-    repeated string backend_command_names = 20;
-    optional float max_horizontal_speed_mps = 21;
-    optional float max_climb_speed_mps = 22;
-    optional float max_descent_speed_mps = 23;
-    optional float max_altitude_m = 24;
+    bool supports_payload_control = 9;
+    bool supports_velocity_control = 10;
+    bool supports_flight_termination = 11;
+    bool supports_backend_commands = 12;
+    repeated string supported_modes = 13;
+    repeated string supported_commands = 14;
+    repeated string supported_payloads = 15;
+    repeated string backend_command_names = 16;
+    TelemetryEvidenceCapabilities telemetry_evidence = 17;
+    MotionLimit max_horizontal_speed = 18;
+    MotionLimit max_climb_speed = 19;
+    MotionLimit max_descent_speed = 20;
+    MotionLimit max_altitude = 21;
 }
 
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
+
+// Complete controller-supplied, algorithm-neutral intent identity.
+message ExecutionContext {
+    string mission_id = 1;
+    uint64 mission_revision = 2;
+    string model_hash = 3;
+    string operation_id = 4;
+    uint64 operation_attempt_revision = 5;
+}
+
+// Agent-finalized identity for exactly one accepted physical goal attempt.
+// physical_attempt_revision is ordered only within agent_session_id.
+message ExecutionHandle {
+    string agent_session_id = 1;
+    string drone_id = 2;
+    string goal_id = 3;
+    uint64 goal_revision = 4;
+    string physical_attempt_id = 5;
+    uint64 physical_attempt_revision = 6;
+    string client_id = 7;
+    string correlation_id = 8;
+    ExecutionContext context = 9;
+}
 
 /**
  * Standard priority levels for command arbitration.
@@ -228,6 +295,7 @@ message CommandContext {
     int64 deadline_unix_ms = 3;  /// Command deadline; 0 = no deadline.
     string correlation_id = 4;   /// Caller-assigned tracing ID.
     string client_id = 5;        /// Originating client identifier (required for arbitration).
+    ExecutionContext execution_context = 6;
 }
 
 // --- Flight commands (fundamental vehicle control) ---
@@ -455,26 +523,16 @@ message GeoPoint {
     double alt_m = 3;
 }
 
-message LocalPoint {
-    double x_m = 1;
-    double y_m = 2;
-    double z_m = 3;
-}
-
 message ActiveGoal {
     string drone_id = 1;
     string goal_id = 2;
     uint64 revision = 3;
-    GeoPoint target = 4;       // WGS84 target for current GPS-backed goal.
+    GeoPoint target = 4; // WGS84 target for current GPS-backed goal.
     float speed_mps = 5;
     float acceptance_radius_m = 6;
     float deviation_radius_m = 7;
-    int64 timeout_ms = 8;  // 0 => agent computes from vehicle profile.
-    map<string, string> labels = 9;  // Freeform user metadata, not sent to MAVLink.
-    // Future backend support: current MAVLink execution requires global GPS goals.
-    LocalPoint local_target = 10;
-    bool use_local_target = 11;
-    string target_frame = 12;  // global|local-ned; local-ned is currently API-shaped only.
+    int64 timeout_ms = 8;           // 0 => agent computes from vehicle profile.
+    map<string, string> labels = 9; // Freeform user metadata, not sent to MAVLink.
 }
 
 enum GoalStatus {
@@ -534,6 +592,11 @@ message AgentReport {
     AgentReportType type = 5;
     ReportSeverity severity = 6;
     string message = 7;
+    string agent_session_id = 8;
+    oneof execution_binding {
+        ExecutionContext execution_context = 9;
+        ExecutionHandle execution_handle = 11;
+    }
     GoalReport goal = 10;
 }
 
@@ -550,11 +613,12 @@ message SetActiveGoalReply {
     string debug_message = 5;
     ActiveGoal goal = 6;
     int64 computed_timeout_ms = 7;
+    ExecutionHandle execution_handle = 8;
 }
 
 message CancelGoalRequest {
     CommandContext ctx = 1;
-    string goal_id = 2;  // Empty means cancel whatever goal is active.
+    ExecutionHandle expected_execution_handle = 2;
 }
 
 message CancelGoalReply {
@@ -563,18 +627,27 @@ message CancelGoalReply {
     string correlation_id = 3;
     ErrorCode error_code = 4;
     string debug_message = 5;
+    ExecutionHandle execution_handle = 6;
 }
 
 message GetActiveGoalRequest {
     string drone_id = 1;
 }
 
+message ActiveGoalSnapshot {
+    ActiveGoal goal = 1;
+    GoalStatus status = 2;
+    int64 computed_timeout_ms = 3;
+    ExecutionHandle execution_handle = 4;
+}
+
 message GetActiveGoalReply {
-    bool goal_present = 1;
-    ActiveGoal goal = 2;
-    GoalStatus status = 3;
-    int64 computed_timeout_ms = 4;
-    string message = 5;
+    bool ok = 1;
+    string message = 2;
+    string correlation_id = 3;
+    ErrorCode error_code = 4;
+    string debug_message = 5;
+    ActiveGoalSnapshot active_goal = 6;
 }
 
 message ReportSubscription {
@@ -891,6 +964,45 @@ enum TelemetryEstimatorState {
     TELEMETRY_ESTIMATOR_STATE_FAULT = 4;
 }
 
+enum TelemetryClockDomain {
+    TELEMETRY_CLOCK_DOMAIN_UNKNOWN = 0;
+    TELEMETRY_CLOCK_DOMAIN_UNIX_EPOCH = 1;
+    TELEMETRY_CLOCK_DOMAIN_VEHICLE_BOOT = 2;
+    TELEMETRY_CLOCK_DOMAIN_AGENT_MONOTONIC = 3;
+    TELEMETRY_CLOCK_DOMAIN_SDK_MONOTONIC = 4;
+}
+
+enum TelemetryClockSynchronization {
+    TELEMETRY_CLOCK_SYNCHRONIZATION_UNKNOWN = 0;
+    TELEMETRY_CLOCK_UNSYNCHRONIZED = 1;
+    TELEMETRY_CLOCK_ESTIMATED = 2;
+    TELEMETRY_CLOCK_SYNCHRONIZED = 3;
+}
+
+message TelemetryTimestampEvidence {
+    optional int64 timestamp_ms = 1;
+    TelemetryClockDomain clock_domain = 2;
+    TelemetryClockSynchronization synchronization = 3;
+    optional double clock_uncertainty_ms = 4;
+}
+
+message TelemetryMeasurementProvenance {
+    bool updated = 1;
+    uint64 generation = 2;
+    TelemetryTimestampEvidence source_time = 3;
+    optional int64 agent_receive_unix_time_ms = 4;
+    optional int64 agent_receive_monotonic_time_ns = 5;
+    string source = 6;
+}
+
+message TelemetryProvenance {
+    TelemetryMeasurementProvenance position = 1;
+    TelemetryMeasurementProvenance velocity = 2;
+    TelemetryMeasurementProvenance accuracy = 3;
+    TelemetryMeasurementProvenance estimator = 4;
+    TelemetryMeasurementProvenance vehicle_state = 5;
+}
+
 message TelemetryValidityFlags {
     bool position = 1;
     bool relative_altitude = 2;
@@ -909,21 +1021,43 @@ message TelemetryValidityFlags {
     bool home_origin = 15;
 }
 
+enum TelemetryUncertaintySemantics {
+    TELEMETRY_UNCERTAINTY_UNKNOWN = 0;
+    TELEMETRY_UNCERTAINTY_STANDARD_DEVIATION = 1;
+    TELEMETRY_UNCERTAINTY_CONFIDENCE_BOUND = 2;
+    TELEMETRY_UNCERTAINTY_EMPIRICALLY_CALIBRATED_BOUND = 3;
+    TELEMETRY_UNCERTAINTY_DETERMINISTIC_HARD_BOUND = 4;
+    TELEMETRY_UNCERTAINTY_BACKEND_SPECIFIC = 5;
+}
+
+message TelemetryUncertaintyDescriptor {
+    TelemetryUncertaintySemantics semantics = 1;
+    optional double confidence_level = 2;
+    string calibration_profile_id = 3;
+    string calibration_version = 4;
+    string source = 5;
+    uint64 measurement_generation = 6;
+}
+
+message TelemetryUncertaintyEstimate {
+    float value = 1;
+    TelemetryUncertaintyDescriptor uncertainty = 2;
+}
+
+message TelemetryCovariance3x3 {
+    repeated float values = 1;
+}
+
 message TelemetryAccuracy {
-    bool horizontal_position_valid = 1;
-    float horizontal_position_m = 2;
-    bool vertical_position_valid = 3;
-    float vertical_position_m = 4;
-    bool velocity_valid = 5;
-    float velocity_mps = 6;
-    bool heading_valid = 7;
-    float heading_deg = 8;
-    bool attitude_valid = 9;
-    float attitude_deg = 10;
-    bool position_covariance_valid = 11;
-    repeated float position_covariance = 12;
-    bool velocity_covariance_valid = 13;
-    repeated float velocity_covariance = 14;
+    TelemetryUncertaintyEstimate horizontal_position = 1;
+    TelemetryUncertaintyEstimate vertical_position = 2;
+    TelemetryUncertaintyEstimate horizontal_velocity = 3;
+    TelemetryUncertaintyEstimate vertical_velocity = 4;
+    TelemetryUncertaintyEstimate speed = 5;
+    optional float heading_deg = 6;
+    optional float attitude_deg = 7;
+    TelemetryCovariance3x3 position_covariance = 8;
+    TelemetryCovariance3x3 velocity_covariance = 9;
 }
 
 message TelemetryHomeOrigin {
@@ -938,30 +1072,30 @@ message TelemetryHomeOrigin {
 
 message TelemetryFrame {
     string drone_id = 1;
-    int64 unix_time_ms = 2;
-    double lat_deg = 3;
-    double lon_deg = 4;
-    float rel_alt_m = 5;
-    float battery_percent = 6;
-    string mode = 7;
-    string stream_id = 8;
-    float abs_alt_m = 9;
-    float vx_mps = 10;
-    float vy_mps = 11;
-    float vz_mps = 12;
-    float roll_deg = 13;
-    float pitch_deg = 14;
-    float yaw_deg = 15;
-    bool armed = 16;
-    bool landed = 17;
-    bool failsafe = 18;
-    bool ekf_ok = 19;
-    int32 gps_fix_type = 20;
-    int32 satellites_visible = 21;
-    float gps_hdop = 22;
-    float link_quality_percent = 23;
-    int64 source_unix_time_ms = 24;
-    int64 source_time_boot_ms = 25;
+    string agent_session_id = 2;
+    uint64 telemetry_sequence = 3;
+    int64 agent_receive_unix_time_ms = 4;
+    int64 agent_receive_monotonic_time_ns = 5;
+    string transport_stream_id = 6;
+    double lat_deg = 7;
+    double lon_deg = 8;
+    float rel_alt_m = 9;
+    float abs_alt_m = 10;
+    float vx_mps = 11;
+    float vy_mps = 12;
+    float vz_mps = 13;
+    float roll_deg = 14;
+    float pitch_deg = 15;
+    float yaw_deg = 16;
+    float battery_percent = 17;
+    string mode = 18;
+    bool armed = 19;
+    bool landed = 20;
+    bool failsafe = 21;
+    int32 gps_fix_type = 22;
+    int32 satellites_visible = 23;
+    float gps_hdop = 24;
+    float link_quality_percent = 25;
     TelemetryCoordinateFrame position_frame = 26;
     TelemetryCoordinateFrame velocity_frame = 27;
     TelemetryValidityFlags validity = 28;
@@ -973,7 +1107,6 @@ message TelemetryFrame {
     bool estimator_position_ok = 34;
     bool estimator_velocity_ok = 35;
     bool estimator_attitude_ok = 36;
-    string active_command_id = 37;
-    string active_goal_id = 38;
-    string correlation_id = 40;
+    ExecutionHandle execution_handle = 37;
+    TelemetryProvenance provenance = 38;
 }

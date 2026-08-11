@@ -39,8 +39,6 @@ inline constexpr int kHeartbeatStaleTimeoutMs = 3000;
 inline constexpr int kTelemetryStaleTimeoutMs = 5000;
 
 struct TelemetryCache {
-    std::int64_t source_unix_time_ms{};
-    std::int64_t source_time_boot_ms{};
     double lat_deg{};
     double lon_deg{};
     float rel_alt_m{};
@@ -55,7 +53,6 @@ struct TelemetryCache {
     bool armed{false};
     bool landed{false};
     bool failsafe{false};
-    bool ekf_ok{true};
     int gps_fix_type{};
     int satellites_visible{};
     float gps_hdop{};

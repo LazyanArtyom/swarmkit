@@ -80,28 +80,28 @@ class BoundedFanoutExecutor final {
     std::size_t parallelism_{};
 };
 
-[[nodiscard]] RpcError MakeLocalError(core::ErrorDomain domain, RpcStatusCode code,
-                                      std::string message) {
-    if (code == RpcStatusCode::kOk) {
-        RpcError error = core::SwarmError::Ok();
+[[nodiscard]] core::SwarmError MakeLocalError(core::ErrorDomain domain, core::ErrorCode code,
+                                              std::string message) {
+    if (code == core::ErrorCode::kOk) {
+        core::SwarmError error = core::SwarmError::Ok();
         error.user_message = std::move(message);
         return error;
     }
 
     core::ErrorRetryability retryability = core::ErrorRetryability::kAfterRemediation;
-    if (code == RpcStatusCode::kUnavailable || code == RpcStatusCode::kDeadlineExceeded ||
-        code == RpcStatusCode::kCancelled) {
+    if (code == core::ErrorCode::kUnavailable || code == core::ErrorCode::kDeadlineExceeded ||
+        code == core::ErrorCode::kCancelled) {
         retryability = core::ErrorRetryability::kAfterBackoff;
-    } else if (code == RpcStatusCode::kInternal || code == RpcStatusCode::kBackendFailure ||
-               code == RpcStatusCode::kUnknown) {
+    } else if (code == core::ErrorCode::kInternal || code == core::ErrorCode::kBackendFailure ||
+               code == core::ErrorCode::kUnknown) {
         retryability = core::ErrorRetryability::kUnknown;
     }
 
     const core::ErrorSeverity severity =
-        code == RpcStatusCode::kInternal || code == RpcStatusCode::kUnknown
+        code == core::ErrorCode::kInternal || code == core::ErrorCode::kUnknown
             ? core::ErrorSeverity::kCritical
             : core::ErrorSeverity::kWarning;
-    RpcError error =
+    core::SwarmError error =
         core::SwarmError::Make(domain, code, std::move(message), severity, retryability);
     error.debug_message = error.user_message;
     return error;
@@ -111,7 +111,7 @@ class BoundedFanoutExecutor final {
     GoalResult out;
     out.ok = false;
     out.message = "drone '" + drone_id + "' not registered";
-    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kNotFound, out.message);
     return out;
 }
 
@@ -119,12 +119,12 @@ class BoundedFanoutExecutor final {
     CommandResult out;
     out.ok = false;
     out.message = "drone '" + drone_id + "' not registered";
-    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kNotFound, out.message);
     return out;
 }
 
 [[nodiscard]] ReleaseAuthorityResult LocalReleaseAuthorityResult(bool success, std::string message,
-                                                                 RpcStatusCode code) {
+                                                                 core::ErrorCode code) {
     ReleaseAuthorityResult out;
     out.ok = success;
     out.message = std::move(message);
@@ -135,10 +135,10 @@ class BoundedFanoutExecutor final {
 [[nodiscard]] ReleaseAuthorityResult UnregisteredReleaseAuthorityResult(
     const std::string& drone_id) {
     return LocalReleaseAuthorityResult(false, "drone '" + drone_id + "' not registered",
-                                       RpcStatusCode::kNotFound);
+                                       core::ErrorCode::kNotFound);
 }
 
-[[nodiscard]] CommandResult LocalSwarmError(RpcStatusCode code, std::string message) {
+[[nodiscard]] CommandResult LocalSwarmError(core::ErrorCode code, std::string message) {
     CommandResult out;
     out.ok = false;
     out.message = std::move(message);
@@ -147,7 +147,7 @@ class BoundedFanoutExecutor final {
 }
 
 [[nodiscard]] CommandResult CancelledCommandResult(const std::string& drone_id) {
-    return LocalSwarmError(RpcStatusCode::kCancelled,
+    return LocalSwarmError(core::ErrorCode::kCancelled,
                            "swarm fanout cancelled before dispatch for drone '" + drone_id + "'");
 }
 
@@ -155,13 +155,13 @@ class BoundedFanoutExecutor final {
     GoalResult out;
     out.ok = false;
     out.message = "swarm goal fanout cancelled before dispatch for drone '" + drone_id + "'";
-    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kCancelled, out.message);
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kCancelled, out.message);
     return out;
 }
 
 [[nodiscard]] CommandResult ExceptionCommandResult(const std::string& drone_id,
                                                    const std::string& detail) {
-    return LocalSwarmError(RpcStatusCode::kInternal,
+    return LocalSwarmError(core::ErrorCode::kInternal,
                            "swarm fanout task failed for drone '" + drone_id + "': " + detail);
 }
 
@@ -170,21 +170,21 @@ class BoundedFanoutExecutor final {
     GoalResult out;
     out.ok = false;
     out.message = "swarm goal fanout task failed for drone '" + drone_id + "': " + detail;
-    out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInternal, out.message);
+    out.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kInternal, out.message);
     return out;
 }
 
 [[nodiscard]] ReleaseAuthorityResult CancelledReleaseAuthorityResult(const std::string& drone_id) {
     return LocalReleaseAuthorityResult(
         false, "swarm fanout cancelled before authority release for drone '" + drone_id + "'",
-        RpcStatusCode::kCancelled);
+        core::ErrorCode::kCancelled);
 }
 
 [[nodiscard]] ReleaseAuthorityResult ExceptionReleaseAuthorityResult(const std::string& drone_id,
                                                                      const std::string& detail) {
     return LocalReleaseAuthorityResult(
         false, "swarm authority release task failed for drone '" + drone_id + "': " + detail,
-        RpcStatusCode::kInternal);
+        core::ErrorCode::kInternal);
 }
 
 template <typename Result, typename TaskFn, typename CancelledFn, typename ExceptionFn,
@@ -449,7 +449,7 @@ HealthStatus SwarmClient::GetHealth(const std::string& drone_id) const {
             HealthStatus out;
             out.message = "drone '" + drone_id + "' not registered";
             out.error =
-                MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound, out.message);
+                MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kNotFound, out.message);
             return out;
         }
         client = iter->second;
@@ -464,7 +464,7 @@ RuntimeStats SwarmClient::GetRuntimeStats(const std::string& drone_id) const {
         auto iter = impl_->clients.find(drone_id);
         if (iter == impl_->clients.end()) {
             RuntimeStats out;
-            out.error = MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound,
+            out.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kNotFound,
                                        "drone '" + drone_id + "' not registered");
             return out;
         }
@@ -503,13 +503,14 @@ std::unordered_map<std::string, CommandResult> SwarmClient::BroadcastCommandAndW
                            });
 }
 
-GoalResult SwarmClient::SetActiveGoal(const ActiveGoal& goal) const {
+GoalResult SwarmClient::SetActiveGoal(const ActiveGoalRequest& request) const {
+    const ActiveGoal& goal = request.goal;
     if (goal.drone_id.empty()) {
         GoalResult out;
         out.ok = false;
         out.message = "goal.drone_id is required";
-        out.error =
-            MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kInvalidArgument, out.message);
+        out.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kInvalidArgument,
+                                   out.message);
         return out;
     }
 
@@ -522,13 +523,13 @@ GoalResult SwarmClient::SetActiveGoal(const ActiveGoal& goal) const {
         }
         client = iter->second;
     }
-    return client->SetActiveGoal(goal);
+    return client->SetActiveGoal(request);
 }
 
 std::unordered_map<std::string, GoalResult> SwarmClient::SetActiveGoals(
-    const std::unordered_map<std::string, ActiveGoal>& goals,
+    const std::unordered_map<std::string, ActiveGoalRequest>& requests,
     const SwarmFanoutOptions& fanout_options) const {
-    if (goals.empty()) {
+    if (requests.empty()) {
         return {};
     }
 
@@ -541,9 +542,9 @@ std::unordered_map<std::string, GoalResult> SwarmClient::SetActiveGoals(
 
     std::unordered_map<std::string, GoalResult> results;
     std::vector<std::pair<std::string, std::shared_ptr<Client>>> target_clients;
-    target_clients.reserve(goals.size());
-    for (const auto& [drone_id, goal] : goals) {
-        static_cast<void>(goal);
+    target_clients.reserve(requests.size());
+    for (const auto& [drone_id, request] : requests) {
+        static_cast<void>(request);
         const auto client_iter = clients_by_drone.find(drone_id);
         if (client_iter == clients_by_drone.end()) {
             results.emplace(drone_id, UnregisteredGoalResult(drone_id));
@@ -552,13 +553,13 @@ std::unordered_map<std::string, GoalResult> SwarmClient::SetActiveGoals(
         target_clients.emplace_back(drone_id, client_iter->second);
     }
 
-    auto goal_results =
-        RunGoalTasks(target_clients, fanout_options,
-                     [&goals](const std::string& drone_id, const std::shared_ptr<Client>& client) {
-                         ActiveGoal goal = goals.at(drone_id);
-                         goal.drone_id = drone_id;
-                         return client->SetActiveGoal(goal);
-                     });
+    auto goal_results = RunGoalTasks(
+        target_clients, fanout_options,
+        [&requests](const std::string& drone_id, const std::shared_ptr<Client>& client) {
+            ActiveGoalRequest request = requests.at(drone_id);
+            request.goal.drone_id = drone_id;
+            return client->SetActiveGoal(request);
+        });
     for (auto& [drone_id, result] : goal_results) {
         results.emplace(drone_id, std::move(result));
     }
@@ -576,7 +577,7 @@ SubscriptionResult SwarmClient::StartTelemetry(TelemetrySubscription subscriptio
         auto iter = impl_->clients.find(subscription.drone_id);
         if (iter == impl_->clients.end()) {
             return std::unexpected(
-                MakeLocalError(core::ErrorDomain::kSwarm, RpcStatusCode::kNotFound,
+                MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kNotFound,
                                "drone '" + subscription.drone_id + "' is not registered"));
         }
         client = iter->second;

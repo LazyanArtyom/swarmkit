@@ -12,6 +12,7 @@ add_library(swarmkit_agent STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/backend_factory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/command_preconditions.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/report_hub.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime_providers.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/telemetry_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_command_executor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/backends/mavlink_common.cpp

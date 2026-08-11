@@ -50,7 +50,7 @@ PublishMessageResult Client::SendMessageToDrone(DataMessage message) const {
     if (message.target_id.empty()) {
         out.message = "target_id is required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -87,18 +87,16 @@ PublishMessageResult Client::SendMessageToDrone(DataMessage message) const {
     return out;
 }
 
-std::expected<Subscription, RpcError> Client::StartMessages(MessageSubscription subscription,
-                                                            DataMessageHandler on_message,
-                                                            TelemetryErrorHandler on_error,
-                                                            SubscriptionEventHandler on_event,
-                                                            SubscriptionOptions options) {
+std::expected<Subscription, core::SwarmError> Client::StartMessages(
+    MessageSubscription subscription, DataMessageHandler on_message, TelemetryErrorHandler on_error,
+    SubscriptionEventHandler on_event, SubscriptionOptions options) {
     if (subscription.subscriber_id.empty()) {
         subscription.subscriber_id = impl_->config.client_id;
     }
     if (!on_message) {
-        return std::unexpected(
-            MakeSubscriptionStartError(SubscriptionKind::kMessages, RpcStatusCode::kInvalidArgument,
-                                       "message subscription callback must not be empty"));
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kMessages, core::ErrorCode::kInvalidArgument,
+            "message subscription callback must not be empty"));
     }
 
     auto generation = PrepareSubscriptionStart(impl_->messages, SubscriptionKind::kMessages,
@@ -119,7 +117,7 @@ std::expected<Subscription, RpcError> Client::StartMessages(MessageSubscription 
     } catch (const std::system_error& exc) {
         CancelAndJoinStream(*impl_->messages);
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kMessages, RpcStatusCode::kInternal,
+            SubscriptionKind::kMessages, core::ErrorCode::kInternal,
             "failed to start message subscription worker: " + std::string(exc.what())));
     }
 
@@ -274,7 +272,7 @@ void PopulateArtifactUploadSessionResult(ArtifactUploadSessionResult* out,
     if (routed && upload.descriptor.target_id.empty()) {
         out.message = "target_id is required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -285,7 +283,7 @@ void PopulateArtifactUploadSessionResult(ArtifactUploadSessionResult* out,
     if (upload.file_path.empty() || fs_error) {
         out.message = "artifact file does not exist or cannot be read";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -294,7 +292,7 @@ void PopulateArtifactUploadSessionResult(ArtifactUploadSessionResult* out,
     if (!input.is_open()) {
         out.message = "failed to open artifact file";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -363,7 +361,7 @@ void PopulateArtifactUploadSessionResult(ArtifactUploadSessionResult* out,
     if (!wrote_all && status.ok()) {
         out.message = routed ? "artifact route stream closed before all chunks were accepted"
                              : "artifact upload stream closed before all chunks were accepted";
-        PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kUnavailable,
+        PopulateTypedError(&out.error, core::ErrorDomain::kTransport, core::ErrorCode::kUnavailable,
                            out.message, out.message, correlation_id, 1);
         return out;
     }
@@ -432,7 +430,7 @@ ArtifactUploadSessionResult Client::UploadArtifactChunk(const std::string& uploa
     if (upload_id.empty()) {
         out.message = "upload_id is required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -533,14 +531,14 @@ ArtifactTransferStatusResult Client::StartArtifactTransfer(const ArtifactUpload&
     if (upload.file_path.empty()) {
         out.message = "artifact source path is required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
     if (route_to_target && upload.descriptor.target_id.empty()) {
         out.message = "target_id is required for routed artifact transfer";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -586,7 +584,7 @@ ArtifactTransferStatusResult Client::GetArtifactTransfer(const std::string& tran
     if (transfer_id.empty()) {
         out.message = "transfer_id is required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -620,7 +618,7 @@ ArtifactTransferStatusResult Client::CancelArtifactTransfer(const std::string& t
     if (transfer_id.empty()) {
         out.message = "transfer_id is required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -645,15 +643,6 @@ ArtifactTransferStatusResult Client::CancelArtifactTransfer(const std::string& t
     PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
                        out.correlation_id, attempt_count, core::ErrorDomain::kInternal);
     return out;
-}
-
-ArtifactListResult Client::ListArtifacts(std::string source_id, std::string target_id,
-                                         bool include_expired) const {
-    return ListArtifacts(ArtifactListOptions{
-        .source_id = std::move(source_id),
-        .target_id = std::move(target_id),
-        .include_expired = include_expired,
-    });
 }
 
 ArtifactListResult Client::ListArtifacts(const ArtifactListOptions& options) const {
@@ -699,7 +688,7 @@ ArtifactTransferResult Client::GetArtifact(const std::string& artifact_id) const
     if (artifact_id.empty()) {
         out.message = "artifact_id is required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -740,7 +729,7 @@ namespace {
     if (artifact_id.empty() || final_path.empty()) {
         out.message = "artifact_id and output_path are required";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -759,7 +748,7 @@ namespace {
             out.message = "failed to create artifact output directory path=" +
                           final_path.parent_path().string() + " error=" + fs_error.message();
             PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                               RpcStatusCode::kFailedPrecondition, out.message, out.message,
+                               core::ErrorCode::kFailedPrecondition, out.message, out.message,
                                correlation_id, 0);
             return out;
         }
@@ -779,7 +768,7 @@ namespace {
     if (!output.is_open()) {
         out.message = "failed to open artifact output file path=" + tmp_path.string();
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kInvalidArgument, out.message, out.message,
+                           core::ErrorCode::kInvalidArgument, out.message, out.message,
                            correlation_id, 0);
         return out;
     }
@@ -794,8 +783,9 @@ namespace {
             output.close();
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download received data after final chunk";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
-                               out.message, out.message, correlation_id, 1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               core::ErrorCode::kInternal, out.message, out.message, correlation_id,
+                               1);
             return out;
         }
         if (!saw_descriptor && chunk.has_artifact()) {
@@ -806,16 +796,18 @@ namespace {
             output.close();
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download chunk index mismatch";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
-                               out.message, out.message, correlation_id, 1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               core::ErrorCode::kInternal, out.message, out.message, correlation_id,
+                               1);
             return out;
         }
         if (chunk.offset() != received_bytes) {
             output.close();
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download chunk offset mismatch";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
-                               out.message, out.message, correlation_id, 1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               core::ErrorCode::kInternal, out.message, out.message, correlation_id,
+                               1);
             return out;
         }
         if (!WriteBytes(output, std::span<const char>{chunk.data().data(), chunk.data().size()})) {
@@ -823,7 +815,7 @@ namespace {
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "failed to write artifact output file path=" + tmp_path.string();
             PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                               RpcStatusCode::kFailedPrecondition, out.message, out.message,
+                               core::ErrorCode::kFailedPrecondition, out.message, out.message,
                                correlation_id, 1);
             return out;
         }
@@ -844,7 +836,7 @@ namespace {
     if (!saw_descriptor || !saw_final) {
         std::filesystem::remove(tmp_path, fs_error);
         out.message = "artifact download ended before descriptor/final chunk";
-        PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
+        PopulateTypedError(&out.error, core::ErrorDomain::kTransport, core::ErrorCode::kInternal,
                            out.message, out.message, correlation_id, 1);
         return out;
     }
@@ -853,8 +845,9 @@ namespace {
         if (downloaded_hash != out.descriptor.sha256_hex) {
             std::filesystem::remove(tmp_path, fs_error);
             out.message = "artifact download sha256 mismatch";
-            PopulateTypedError(&out.error, core::ErrorDomain::kTransport, RpcStatusCode::kInternal,
-                               out.message, out.message, correlation_id, 1);
+            PopulateTypedError(&out.error, core::ErrorDomain::kTransport,
+                               core::ErrorCode::kInternal, out.message, out.message, correlation_id,
+                               1);
             return out;
         }
     }
@@ -869,7 +862,7 @@ namespace {
         std::filesystem::remove(tmp_path, fs_error);
         out.message = "failed to finalize artifact output file";
         PopulateTypedError(&out.error, core::ErrorDomain::kValidation,
-                           RpcStatusCode::kFailedPrecondition, out.message, out.message,
+                           core::ErrorCode::kFailedPrecondition, out.message, out.message,
                            correlation_id, 1);
         return out;
     }

@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "proto_execution.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/telemetry.h"
 
@@ -23,13 +24,6 @@ namespace swarmkit::agent::internal {
 namespace {
 
 constexpr auto kTelemetryWaitTimeout = std::chrono::milliseconds{200};
-
-[[nodiscard]] std::int64_t NowUnixMs() {
-    using std::chrono::duration_cast;
-    using std::chrono::milliseconds;
-    using std::chrono::system_clock;
-    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-}
 
 [[nodiscard]] double DegToRad(double degrees) {
     return degrees * std::numbers::pi / 180.0;
@@ -84,10 +78,6 @@ struct LocalPointMeters {
     return std::sqrt((delta_x * delta_x) + (delta_y * delta_y));
 }
 
-[[nodiscard]] bool GoalUsesLocalTarget(const swarmkit::v1::ActiveGoal& goal) {
-    return goal.use_local_target() || goal.target_frame() == "local-ned";
-}
-
 [[nodiscard]] std::int64_t ComputeGoalTimeoutMs(const VehicleProfile& profile,
                                                 const swarmkit::v1::ActiveGoal& goal,
                                                 const std::optional<core::TelemetryFrame>& frame) {
@@ -117,8 +107,8 @@ struct LocalPointMeters {
 }  // namespace
 
 ActiveGoalSupervisor::ActiveGoalSupervisor(TelemetryManager* telemetry, ReportHub* reports,
-                                           const AgentConfig* config)
-    : telemetry_(telemetry), reports_(reports), config_(config) {}
+                                           const AgentConfig* config, RuntimeProviders providers)
+    : telemetry_(telemetry), reports_(reports), config_(config), providers_(std::move(providers)) {}
 
 ActiveGoalSupervisor::~ActiveGoalSupervisor() noexcept {
     try {
@@ -137,19 +127,14 @@ core::Result ActiveGoalSupervisor::ValidateGoal(const swarmkit::v1::ActiveGoal& 
     if (goal.goal_id().empty()) {
         return core::Result::Rejected("goal.goal_id must not be empty");
     }
-    if (!GoalUsesLocalTarget(goal) && !goal.has_target()) {
+    if (goal.revision() == 0) {
+        return core::Result::Rejected("goal.revision must be greater than zero");
+    }
+    if (!goal.has_target()) {
         return core::Result::Rejected("goal.target must be set");
     }
-    if (GoalUsesLocalTarget(goal) && !goal.has_local_target()) {
-        return core::Result::Rejected("goal.local_target must be set for local-ned goals");
-    }
-    if (!goal.target_frame().empty() && goal.target_frame() != "global" &&
-        goal.target_frame() != "local-ned") {
-        return core::Result::Rejected("goal.target_frame must be global or local-ned");
-    }
-    if (!GoalUsesLocalTarget(goal) &&
-        (goal.target().lat_deg() < -90.0 || goal.target().lat_deg() > 90.0 ||
-         goal.target().lon_deg() < -180.0 || goal.target().lon_deg() > 180.0)) {
+    if (goal.target().lat_deg() < -90.0 || goal.target().lat_deg() > 90.0 ||
+        goal.target().lon_deg() < -180.0 || goal.target().lon_deg() > 180.0) {
         return core::Result::Rejected("goal target latitude/longitude out of range");
     }
     if (goal.speed_mps() < 0.0F) {
@@ -168,7 +153,7 @@ core::Result ActiveGoalSupervisor::ValidateGoal(const swarmkit::v1::ActiveGoal& 
 }
 
 std::int64_t ActiveGoalSupervisor::StartGoal(swarmkit::v1::ActiveGoal goal,
-                                             std::string correlation_id) {
+                                             core::ExecutionHandle execution_handle) {
     std::thread old_worker;
     std::shared_ptr<std::atomic<bool>> old_stop;
     std::int64_t out_timeout{};
@@ -179,7 +164,7 @@ std::int64_t ActiveGoalSupervisor::StartGoal(swarmkit::v1::ActiveGoal goal,
             PublishGoalReport(iter->second.goal, swarmkit::v1::GOAL_SUPERSEDED,
                               swarmkit::v1::REPORT_INFO, 0.0, 0.0, 0.0,
                               iter->second.computed_timeout_ms, iter->second.started_unix_ms,
-                              "superseded by newer active goal", iter->second.correlation_id);
+                              "superseded by newer active goal", iter->second.execution_handle);
             old_worker = std::move(iter->second.worker);
             goals_.erase(iter);
         }
@@ -189,8 +174,9 @@ std::int64_t ActiveGoalSupervisor::StartGoal(swarmkit::v1::ActiveGoal goal,
 
         ActiveGoalRuntime runtime;
         runtime.goal = std::move(goal);
-        runtime.correlation_id = std::move(correlation_id);
-        runtime.started_unix_ms = NowUnixMs();
+        runtime.execution_handle = std::move(execution_handle);
+        runtime.correlation_id = runtime.execution_handle.correlation_id;
+        runtime.started_unix_ms = providers_.WallTimeMs();
         runtime.computed_timeout_ms =
             ComputeGoalTimeoutMs(config_->vehicle_profile, runtime.goal, std::nullopt);
         runtime.status = swarmkit::v1::GOAL_ACTIVE;
@@ -199,20 +185,20 @@ std::int64_t ActiveGoalSupervisor::StartGoal(swarmkit::v1::ActiveGoal goal,
         const auto stop = runtime.stop;
         const auto runtime_goal = runtime.goal;
         const std::int64_t timeout_ms = runtime.computed_timeout_ms;
-        const std::string runtime_correlation_id = runtime.correlation_id;
+        const core::ExecutionHandle runtime_execution_handle = runtime.execution_handle;
         const std::int64_t started_ms = runtime.started_unix_ms;
         // NOLINTNEXTLINE(bugprone-exception-escape): the thread entry catches all exceptions.
-        runtime.worker = std::thread(
-            [this, runtime_goal, timeout_ms, started_ms, runtime_correlation_id, stop] noexcept {
-                try {
-                    MonitorGoal(runtime_goal, timeout_ms, started_ms, runtime_correlation_id, stop);
-                } catch (...) {
-                    static_cast<void>(std::fputs("Active goal monitor failed\n", stderr));
-                }
-            });
+        runtime.worker = std::thread([this, runtime_goal, timeout_ms, started_ms,
+                                      runtime_execution_handle, stop] noexcept {
+            try {
+                MonitorGoal(runtime_goal, timeout_ms, started_ms, runtime_execution_handle, stop);
+            } catch (...) {
+                static_cast<void>(std::fputs("Active goal monitor failed\n", stderr));
+            }
+        });
         PublishGoalReport(runtime.goal, swarmkit::v1::GOAL_ACTIVE, swarmkit::v1::REPORT_INFO, 0.0,
                           0.0, 0.0, runtime.computed_timeout_ms, runtime.started_unix_ms,
-                          "active goal accepted", runtime.correlation_id);
+                          "active goal accepted", runtime.execution_handle);
         out_timeout = runtime.computed_timeout_ms;
         goals_.emplace(drone_id, std::move(runtime));
     }
@@ -222,26 +208,28 @@ std::int64_t ActiveGoalSupervisor::StartGoal(swarmkit::v1::ActiveGoal goal,
     return out_timeout;
 }
 
-core::Result ActiveGoalSupervisor::CancelGoal(const std::string& drone_id, std::string_view goal_id,
-                                              std::string_view correlation_id) {
+core::Result ActiveGoalSupervisor::CancelGoal(const core::ExecutionHandle& expected_handle,
+                                              core::ExecutionHandle* cancelled_handle) {
     std::thread old_worker;
     std::shared_ptr<std::atomic<bool>> old_stop;
     swarmkit::v1::ActiveGoal old_goal;
     std::int64_t timeout_ms{};
     std::int64_t started_ms{};
+    core::ExecutionHandle old_handle;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        const auto iter = goals_.find(drone_id);
+        const auto iter = goals_.find(expected_handle.drone_id);
         if (iter == goals_.end()) {
             return core::Result::Rejected("no active goal for drone");
         }
-        if (!goal_id.empty() && iter->second.goal.goal_id() != goal_id) {
-            return core::Result::Rejected("active goal id does not match cancel request");
+        if (iter->second.execution_handle != expected_handle) {
+            return core::Result::Rejected("active execution handle does not match cancel request");
         }
         old_goal = iter->second.goal;
         timeout_ms = iter->second.computed_timeout_ms;
         started_ms = iter->second.started_unix_ms;
         old_stop = iter->second.stop;
+        old_handle = iter->second.execution_handle;
         old_worker = std::move(iter->second.worker);
         goals_.erase(iter);
     }
@@ -252,21 +240,32 @@ core::Result ActiveGoalSupervisor::CancelGoal(const std::string& drone_id, std::
         old_worker.join();
     }
     PublishGoalReport(old_goal, swarmkit::v1::GOAL_CANCELLED, swarmkit::v1::REPORT_INFO, 0.0, 0.0,
-                      0.0, timeout_ms, started_ms, "goal cancelled", std::string(correlation_id));
+                      0.0, timeout_ms, started_ms, "goal cancelled", old_handle);
+    if (cancelled_handle != nullptr) {
+        *cancelled_handle = old_handle;
+    }
     return core::Result::Success("goal cancelled");
 }
 
-std::optional<std::pair<swarmkit::v1::ActiveGoal, std::int64_t>> ActiveGoalSupervisor::GetGoal(
-    const std::string& drone_id, swarmkit::v1::GoalStatus* status) const {
+std::optional<ActiveGoalSupervisor::GoalSnapshot> ActiveGoalSupervisor::GetGoal(
+    const std::string& drone_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto iter = goals_.find(drone_id);
     if (iter == goals_.end()) {
         return std::nullopt;
     }
-    if (status != nullptr) {
-        *status = iter->second.status;
-    }
-    return std::make_pair(iter->second.goal, iter->second.computed_timeout_ms);
+    return GoalSnapshot{
+        .goal = iter->second.goal,
+        .computed_timeout_ms = iter->second.computed_timeout_ms,
+        .status = iter->second.status,
+        .execution_handle = iter->second.execution_handle,
+    };
+}
+
+std::optional<core::ExecutionHandle> ActiveGoalSupervisor::GetExecutionHandle(
+    const std::string& drone_id) const {
+    const auto snapshot = GetGoal(drone_id);
+    return snapshot.has_value() ? std::optional{snapshot->execution_handle} : std::nullopt;
 }
 
 void ActiveGoalSupervisor::Shutdown() {
@@ -293,10 +292,11 @@ void ActiveGoalSupervisor::Shutdown() {
     }
 }
 
-void ActiveGoalSupervisor::SetTerminalStatus(const std::string& drone_id,
+void ActiveGoalSupervisor::SetTerminalStatus(const core::ExecutionHandle& handle,
                                              swarmkit::v1::GoalStatus status) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (auto iter = goals_.find(drone_id); iter != goals_.end()) {
+    if (auto iter = goals_.find(handle.drone_id);
+        iter != goals_.end() && iter->second.execution_handle == handle) {
         iter->second.status = status;
     }
 }
@@ -307,13 +307,15 @@ void ActiveGoalSupervisor::PublishGoalReport(const swarmkit::v1::ActiveGoal& goa
                                              double distance_to_goal_m, double deviation_m,
                                              double altitude_error_m, std::int64_t timeout_ms,
                                              std::int64_t started_ms, std::string_view message,
-                                             std::string_view correlation_id) {
+                                             const core::ExecutionHandle& execution_handle) {
     if (reports_ == nullptr) {
         return;
     }
     swarmkit::v1::AgentReport report;
     report.set_drone_id(goal.drone_id());
-    report.set_correlation_id(std::string(correlation_id));
+    report.set_correlation_id(execution_handle.correlation_id);
+    report.set_agent_session_id(execution_handle.agent_session_id);
+    core::internal::PopulateExecutionHandle(execution_handle, report.mutable_execution_handle());
     report.set_type(swarmkit::v1::GOAL_REPORT);
     report.set_severity(severity);
     report.set_message(std::string(message));
@@ -327,7 +329,7 @@ void ActiveGoalSupervisor::PublishGoalReport(const swarmkit::v1::ActiveGoal& goa
     goal_report->set_altitude_error_m(altitude_error_m);
     goal_report->set_acceptance_radius_m(goal.acceptance_radius_m());
     goal_report->set_deviation_radius_m(goal.deviation_radius_m());
-    goal_report->set_elapsed_ms(std::max<std::int64_t>(0, NowUnixMs() - started_ms));
+    goal_report->set_elapsed_ms(std::max<std::int64_t>(0, providers_.WallTimeMs() - started_ms));
     goal_report->set_timeout_ms(timeout_ms);
     goal_report->set_message(std::string(message));
     reports_->Publish(std::move(report));
@@ -335,7 +337,7 @@ void ActiveGoalSupervisor::PublishGoalReport(const swarmkit::v1::ActiveGoal& goa
 
 void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
                                        std::int64_t configured_timeout_ms, std::int64_t started_ms,
-                                       const std::string& correlation_id,
+                                       const core::ExecutionHandle& execution_handle,
                                        const std::shared_ptr<std::atomic<bool>>& stop) {
     TelemetryLease lease;
     const core::Result acquire_result = telemetry_->AcquireLease(
@@ -343,12 +345,12 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
     if (!acquire_result.IsOk()) {
         PublishGoalReport(goal, swarmkit::v1::GOAL_FAILED, swarmkit::v1::REPORT_ERROR, 0.0, 0.0,
                           0.0, configured_timeout_ms, started_ms,
-                          "telemetry unavailable: " + acquire_result.message, correlation_id);
-        SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_FAILED);
+                          "telemetry unavailable: " + acquire_result.message, execution_handle);
+        SetTerminalStatus(execution_handle, swarmkit::v1::GOAL_FAILED);
         return;
     }
 
-    std::uint64_t last_sequence = 0;
+    std::uint64_t last_sequence = lease.initial_sequence;
     std::optional<core::TelemetryFrame> origin;
     bool reported_deviation = false;
     std::int64_t timeout_ms = configured_timeout_ms;
@@ -356,22 +358,22 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
     while (stop && !stop->load(std::memory_order_relaxed)) {
         core::TelemetryFrame frame;
         if (!TelemetryManager::WaitForFrame(lease, &last_sequence, &frame, kTelemetryWaitTimeout)) {
-            if (NowUnixMs() - started_ms >= timeout_ms) {
+            if (providers_.WallTimeMs() - started_ms >= timeout_ms) {
                 PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR, 0.0,
                                   0.0, 0.0, timeout_ms, started_ms,
-                                  "goal timed out without fresh telemetry", correlation_id);
-                SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_TIMEOUT);
+                                  "goal timed out without fresh telemetry", execution_handle);
+                SetTerminalStatus(execution_handle, swarmkit::v1::GOAL_TIMEOUT);
                 break;
             }
             continue;
         }
         if (!frame.HasPosition() || !frame.HasRelativeAltitude()) {
-            if (NowUnixMs() - started_ms >= timeout_ms) {
+            if (providers_.WallTimeMs() - started_ms >= timeout_ms) {
                 PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR, 0.0,
                                   0.0, 0.0, timeout_ms, started_ms,
                                   "goal timed out without valid position telemetry",
-                                  correlation_id);
-                SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_TIMEOUT);
+                                  execution_handle);
+                SetTerminalStatus(execution_handle, swarmkit::v1::GOAL_TIMEOUT);
                 break;
             }
             continue;
@@ -390,8 +392,8 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
         if (distance_to_goal_m <= goal.acceptance_radius_m() && altitude_ok) {
             PublishGoalReport(goal, swarmkit::v1::GOAL_REACHED, swarmkit::v1::REPORT_INFO,
                               distance_to_goal_m, deviation_m, altitude_error_m, timeout_ms,
-                              started_ms, "goal reached", correlation_id);
-            SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_REACHED);
+                              started_ms, "goal reached", execution_handle);
+            SetTerminalStatus(execution_handle, swarmkit::v1::GOAL_REACHED);
             break;
         }
 
@@ -399,21 +401,21 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
             if (!reported_deviation) {
                 PublishGoalReport(goal, swarmkit::v1::GOAL_DEVIATING, swarmkit::v1::REPORT_WARNING,
                                   distance_to_goal_m, deviation_m, altitude_error_m, timeout_ms,
-                                  started_ms, "outside goal deviation radius", correlation_id);
+                                  started_ms, "outside goal deviation radius", execution_handle);
                 reported_deviation = true;
             }
         } else if (reported_deviation) {
             PublishGoalReport(goal, swarmkit::v1::GOAL_ACTIVE, swarmkit::v1::REPORT_INFO,
                               distance_to_goal_m, deviation_m, altitude_error_m, timeout_ms,
-                              started_ms, "goal back inside deviation envelope", correlation_id);
+                              started_ms, "goal back inside deviation envelope", execution_handle);
             reported_deviation = false;
         }
 
-        if (NowUnixMs() - started_ms >= timeout_ms) {
+        if (providers_.WallTimeMs() - started_ms >= timeout_ms) {
             PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR,
                               distance_to_goal_m, deviation_m, altitude_error_m, timeout_ms,
-                              started_ms, "goal timed out", correlation_id);
-            SetTerminalStatus(goal.drone_id(), swarmkit::v1::GOAL_TIMEOUT);
+                              started_ms, "goal timed out", execution_handle);
+            SetTerminalStatus(execution_handle, swarmkit::v1::GOAL_TIMEOUT);
             break;
         }
     }

@@ -34,6 +34,7 @@
 #include <utility>
 
 #include "env_utils.h"
+#include "proto_execution.h"
 #include "security_utils.h"
 #include "sha256.h"
 #include "swarmkit/core/logger.h"
@@ -63,34 +64,34 @@ constexpr std::size_t kDefaultArtifactChunkBytes = std::size_t{64} * std::size_t
     return output.good();
 }
 
-[[nodiscard]] RpcStatusCode ToRpcStatusCode(const grpc::Status& status) {
+[[nodiscard]] core::ErrorCode ToErrorCode(const grpc::Status& status) {
     if (status.ok()) {
-        return RpcStatusCode::kOk;
+        return core::ErrorCode::kOk;
     }
 
     switch (status.error_code()) {
         case grpc::StatusCode::INVALID_ARGUMENT:
-            return RpcStatusCode::kInvalidArgument;
+            return core::ErrorCode::kInvalidArgument;
         case grpc::StatusCode::PERMISSION_DENIED:
-            return RpcStatusCode::kPermissionDenied;
+            return core::ErrorCode::kPermissionDenied;
         case grpc::StatusCode::NOT_FOUND:
-            return RpcStatusCode::kNotFound;
+            return core::ErrorCode::kNotFound;
         case grpc::StatusCode::ALREADY_EXISTS:
-            return RpcStatusCode::kAlreadyExists;
+            return core::ErrorCode::kAlreadyExists;
         case grpc::StatusCode::FAILED_PRECONDITION:
-            return RpcStatusCode::kFailedPrecondition;
+            return core::ErrorCode::kFailedPrecondition;
         case grpc::StatusCode::UNIMPLEMENTED:
-            return RpcStatusCode::kUnsupported;
+            return core::ErrorCode::kUnsupported;
         case grpc::StatusCode::UNAVAILABLE:
-            return RpcStatusCode::kUnavailable;
+            return core::ErrorCode::kUnavailable;
         case grpc::StatusCode::DEADLINE_EXCEEDED:
-            return RpcStatusCode::kDeadlineExceeded;
+            return core::ErrorCode::kDeadlineExceeded;
         case grpc::StatusCode::CANCELLED:
-            return RpcStatusCode::kCancelled;
+            return core::ErrorCode::kCancelled;
         case grpc::StatusCode::INTERNAL:
-            return RpcStatusCode::kInternal;
+            return core::ErrorCode::kInternal;
         default:
-            return RpcStatusCode::kUnknown;
+            return core::ErrorCode::kUnknown;
     }
 }
 
@@ -181,43 +182,43 @@ constexpr std::size_t kDefaultArtifactChunkBytes = std::size_t{64} * std::size_t
     return grpc::CreateCustomChannel(config.address, kCredentials, arguments);
 }
 
-[[nodiscard]] RpcStatusCode ToRpcStatusCode(swarmkit::v1::ErrorCode code) {
+[[nodiscard]] core::ErrorCode ToErrorCode(swarmkit::v1::ErrorCode code) {
     using ProtoCode = swarmkit::v1::ErrorCode;
     switch (code) {
         case ProtoCode::ErrorCode_INT_MIN_SENTINEL_DO_NOT_USE_:
         case ProtoCode::ErrorCode_INT_MAX_SENTINEL_DO_NOT_USE_:
-            return RpcStatusCode::kUnknown;
+            return core::ErrorCode::kUnknown;
         case ProtoCode::ERROR_CODE_NONE:
-            return RpcStatusCode::kOk;
+            return core::ErrorCode::kOk;
         case ProtoCode::ERROR_CODE_INVALID_ARGUMENT:
-            return RpcStatusCode::kInvalidArgument;
+            return core::ErrorCode::kInvalidArgument;
         case ProtoCode::ERROR_CODE_REJECTED:
-            return RpcStatusCode::kRejected;
+            return core::ErrorCode::kRejected;
         case ProtoCode::ERROR_CODE_PERMISSION_DENIED:
-            return RpcStatusCode::kPermissionDenied;
+            return core::ErrorCode::kPermissionDenied;
         case ProtoCode::ERROR_CODE_NOT_FOUND:
-            return RpcStatusCode::kNotFound;
+            return core::ErrorCode::kNotFound;
         case ProtoCode::ERROR_CODE_ALREADY_EXISTS:
-            return RpcStatusCode::kAlreadyExists;
+            return core::ErrorCode::kAlreadyExists;
         case ProtoCode::ERROR_CODE_FAILED_PRECONDITION:
-            return RpcStatusCode::kFailedPrecondition;
+            return core::ErrorCode::kFailedPrecondition;
         case ProtoCode::ERROR_CODE_UNSUPPORTED:
-            return RpcStatusCode::kUnsupported;
+            return core::ErrorCode::kUnsupported;
         case ProtoCode::ERROR_CODE_UNAVAILABLE:
-            return RpcStatusCode::kUnavailable;
+            return core::ErrorCode::kUnavailable;
         case ProtoCode::ERROR_CODE_DEADLINE_EXCEEDED:
-            return RpcStatusCode::kDeadlineExceeded;
+            return core::ErrorCode::kDeadlineExceeded;
         case ProtoCode::ERROR_CODE_CANCELLED:
-            return RpcStatusCode::kCancelled;
+            return core::ErrorCode::kCancelled;
         case ProtoCode::ERROR_CODE_INTERNAL:
-            return RpcStatusCode::kInternal;
+            return core::ErrorCode::kInternal;
         case ProtoCode::ERROR_CODE_BACKEND_FAILURE:
-            return RpcStatusCode::kBackendFailure;
+            return core::ErrorCode::kBackendFailure;
         case ProtoCode::ERROR_CODE_UNSPECIFIED:
         case ProtoCode::ERROR_CODE_UNKNOWN:
-            return RpcStatusCode::kUnknown;
+            return core::ErrorCode::kUnknown;
     }
-    return RpcStatusCode::kUnknown;
+    return core::ErrorCode::kUnknown;
 }
 
 [[nodiscard]] bool ShouldRetryUnary(const grpc::Status& status, const RetryPolicy& policy,
@@ -273,17 +274,17 @@ grpc::Status InvokeUnaryWithRetry(const ClientConfig& config, std::string_view c
     }
 }
 
-[[nodiscard]] core::ErrorSeverity SeverityForCode(RpcStatusCode code);
-[[nodiscard]] core::ErrorRetryability RetryabilityForCode(RpcStatusCode code);
-[[nodiscard]] std::string RemediationForCode(RpcStatusCode code);
+[[nodiscard]] core::ErrorSeverity SeverityForCode(core::ErrorCode code);
+[[nodiscard]] core::ErrorRetryability RetryabilityForCode(core::ErrorCode code);
+[[nodiscard]] std::string RemediationForCode(core::ErrorCode code);
 
-void PopulateTransportError(RpcError* error, const grpc::Status& status,
+void PopulateTransportError(core::SwarmError* error, const grpc::Status& status,
                             std::string_view correlation_id, int attempt_count) {
     if (error == nullptr) {
         return;
     }
 
-    const RpcStatusCode code = ToRpcStatusCode(status);
+    const core::ErrorCode code = ToErrorCode(status);
     *error = core::SwarmError::Make(core::ErrorDomain::kTransport, code, status.error_message(),
                                     SeverityForCode(code), RetryabilityForCode(code),
                                     RemediationForCode(code));
@@ -293,101 +294,102 @@ void PopulateTransportError(RpcError* error, const grpc::Status& status,
     error->details["grpc_status_code"] = std::to_string(static_cast<int>(status.error_code()));
 }
 
-[[nodiscard]] core::ErrorSeverity SeverityForCode(RpcStatusCode code) {
+[[nodiscard]] core::ErrorSeverity SeverityForCode(core::ErrorCode code) {
     switch (code) {
-        case RpcStatusCode::kOk:
+        case core::ErrorCode::kOk:
             return core::ErrorSeverity::kInfo;
-        case RpcStatusCode::kInvalidArgument:
-        case RpcStatusCode::kRejected:
-        case RpcStatusCode::kPermissionDenied:
-        case RpcStatusCode::kNotFound:
-        case RpcStatusCode::kAlreadyExists:
-        case RpcStatusCode::kFailedPrecondition:
-        case RpcStatusCode::kUnsupported:
+        case core::ErrorCode::kInvalidArgument:
+        case core::ErrorCode::kRejected:
+        case core::ErrorCode::kPermissionDenied:
+        case core::ErrorCode::kNotFound:
+        case core::ErrorCode::kAlreadyExists:
+        case core::ErrorCode::kFailedPrecondition:
+        case core::ErrorCode::kUnsupported:
             return core::ErrorSeverity::kWarning;
-        case RpcStatusCode::kUnavailable:
-        case RpcStatusCode::kDeadlineExceeded:
-        case RpcStatusCode::kCancelled:
-        case RpcStatusCode::kBackendFailure:
+        case core::ErrorCode::kUnavailable:
+        case core::ErrorCode::kDeadlineExceeded:
+        case core::ErrorCode::kCancelled:
+        case core::ErrorCode::kBackendFailure:
             return core::ErrorSeverity::kError;
-        case RpcStatusCode::kInternal:
-        case RpcStatusCode::kUnknown:
+        case core::ErrorCode::kInternal:
+        case core::ErrorCode::kUnknown:
             return core::ErrorSeverity::kCritical;
     }
     return core::ErrorSeverity::kError;
 }
 
-[[nodiscard]] core::ErrorRetryability RetryabilityForCode(RpcStatusCode code) {
+[[nodiscard]] core::ErrorRetryability RetryabilityForCode(core::ErrorCode code) {
     switch (code) {
-        case RpcStatusCode::kUnavailable:
-        case RpcStatusCode::kDeadlineExceeded:
-        case RpcStatusCode::kCancelled:
+        case core::ErrorCode::kUnavailable:
+        case core::ErrorCode::kDeadlineExceeded:
+        case core::ErrorCode::kCancelled:
             return core::ErrorRetryability::kAfterBackoff;
-        case RpcStatusCode::kInvalidArgument:
-        case RpcStatusCode::kRejected:
-        case RpcStatusCode::kPermissionDenied:
-        case RpcStatusCode::kNotFound:
-        case RpcStatusCode::kAlreadyExists:
-        case RpcStatusCode::kFailedPrecondition:
-        case RpcStatusCode::kUnsupported:
+        case core::ErrorCode::kInvalidArgument:
+        case core::ErrorCode::kRejected:
+        case core::ErrorCode::kPermissionDenied:
+        case core::ErrorCode::kNotFound:
+        case core::ErrorCode::kAlreadyExists:
+        case core::ErrorCode::kFailedPrecondition:
+        case core::ErrorCode::kUnsupported:
             return core::ErrorRetryability::kAfterRemediation;
-        case RpcStatusCode::kInternal:
-        case RpcStatusCode::kBackendFailure:
-        case RpcStatusCode::kUnknown:
+        case core::ErrorCode::kInternal:
+        case core::ErrorCode::kBackendFailure:
+        case core::ErrorCode::kUnknown:
             return core::ErrorRetryability::kUnknown;
-        case RpcStatusCode::kOk:
+        case core::ErrorCode::kOk:
             return core::ErrorRetryability::kNever;
     }
     return core::ErrorRetryability::kUnknown;
 }
 
-[[nodiscard]] std::string RemediationForCode(RpcStatusCode code) {
+[[nodiscard]] std::string RemediationForCode(core::ErrorCode code) {
     switch (code) {
-        case RpcStatusCode::kInvalidArgument:
+        case core::ErrorCode::kInvalidArgument:
             return "Fix the request parameters before retrying";
-        case RpcStatusCode::kRejected:
-        case RpcStatusCode::kFailedPrecondition:
+        case core::ErrorCode::kRejected:
+        case core::ErrorCode::kFailedPrecondition:
             return "Check authority, vehicle state, and command preconditions";
-        case RpcStatusCode::kPermissionDenied:
+        case core::ErrorCode::kPermissionDenied:
             return "Check client identity, certificates, and allowed_client_ids";
-        case RpcStatusCode::kNotFound:
+        case core::ErrorCode::kNotFound:
             return "Verify the drone, goal, or command identifier";
-        case RpcStatusCode::kAlreadyExists:
+        case core::ErrorCode::kAlreadyExists:
             return "Use a unique identifier or update the existing resource";
-        case RpcStatusCode::kUnsupported:
+        case core::ErrorCode::kUnsupported:
             return "Check backend capabilities before sending this operation";
-        case RpcStatusCode::kUnavailable:
+        case core::ErrorCode::kUnavailable:
             return "Check agent/backend availability and retry with backoff";
-        case RpcStatusCode::kDeadlineExceeded:
+        case core::ErrorCode::kDeadlineExceeded:
             return "Increase the deadline or retry when the vehicle is responsive";
-        case RpcStatusCode::kCancelled:
+        case core::ErrorCode::kCancelled:
             return "Retry if the operation was not intentionally cancelled";
-        case RpcStatusCode::kBackendFailure:
+        case core::ErrorCode::kBackendFailure:
             return "Inspect backend/autopilot diagnostics before retrying";
-        case RpcStatusCode::kInternal:
-        case RpcStatusCode::kUnknown:
+        case core::ErrorCode::kInternal:
+        case core::ErrorCode::kUnknown:
             return "Inspect logs with the correlation ID and report the failure";
-        case RpcStatusCode::kOk:
+        case core::ErrorCode::kOk:
             return {};
     }
     return {};
 }
 
-[[nodiscard]] core::ErrorDomain DomainForReply(RpcStatusCode code,
+[[nodiscard]] core::ErrorDomain DomainForReply(core::ErrorCode code,
                                                core::ErrorDomain requested_domain) {
-    if (code == RpcStatusCode::kOk) {
+    if (code == core::ErrorCode::kOk) {
         return core::ErrorDomain::kNone;
     }
-    if (code == RpcStatusCode::kBackendFailure) {
+    if (code == core::ErrorCode::kBackendFailure) {
         return core::ErrorDomain::kBackend;
     }
-    if (code == RpcStatusCode::kInvalidArgument) {
+    if (code == core::ErrorCode::kInvalidArgument) {
         return core::ErrorDomain::kValidation;
     }
     return requested_domain;
 }
 
-void PopulateSuccessError(RpcError* error, std::string_view correlation_id, int attempt_count) {
+void PopulateSuccessError(core::SwarmError* error, std::string_view correlation_id,
+                          int attempt_count) {
     if (error == nullptr) {
         return;
     }
@@ -396,13 +398,13 @@ void PopulateSuccessError(RpcError* error, std::string_view correlation_id, int 
     error->attempt_count = attempt_count;
 }
 
-void PopulateTypedError(RpcError* error, core::ErrorDomain domain, RpcStatusCode code,
+void PopulateTypedError(core::SwarmError* error, core::ErrorDomain domain, core::ErrorCode code,
                         std::string user_message, std::string debug_message,
                         std::string_view correlation_id, int attempt_count) {
     if (error == nullptr) {
         return;
     }
-    if (code == RpcStatusCode::kOk) {
+    if (code == core::ErrorCode::kOk) {
         PopulateSuccessError(error, correlation_id, attempt_count);
         return;
     }
@@ -414,11 +416,11 @@ void PopulateTypedError(RpcError* error, core::ErrorDomain domain, RpcStatusCode
     error->attempt_count = attempt_count;
 }
 
-void PopulateReplyError(RpcError* error, swarmkit::v1::ErrorCode proto_code,
+void PopulateReplyError(core::SwarmError* error, swarmkit::v1::ErrorCode proto_code,
                         std::string user_message, std::string debug_message,
                         std::string_view correlation_id, int attempt_count,
                         core::ErrorDomain domain = core::ErrorDomain::kCommand) {
-    const RpcStatusCode code = ToRpcStatusCode(proto_code);
+    const core::ErrorCode code = ToErrorCode(proto_code);
     PopulateTypedError(error, DomainForReply(code, domain), code, std::move(user_message),
                        std::move(debug_message), correlation_id, attempt_count);
 }
@@ -450,6 +452,10 @@ void BuildProtoCommand(const commands::CommandEnvelope& envelope,
     proto_ctx->set_client_id(envelope.context.client_id);
     proto_ctx->set_priority(static_cast<std::int32_t>(envelope.context.priority));
     proto_ctx->set_correlation_id(envelope.context.correlation_id);
+    if (envelope.context.execution_context.has_value()) {
+        core::internal::PopulateExecutionContext(*envelope.context.execution_context,
+                                                 proto_ctx->mutable_execution_context());
+    }
 
     const auto kEpoch = std::chrono::system_clock::time_point{};
     if (envelope.context.deadline != kEpoch) {
@@ -769,8 +775,8 @@ void HandleCallbackException(StreamState& stream_state, std::string_view callbac
                                std::string(callback_name) + " callback threw: " + message;
     core::Logger::WarnFmt("Client stream callback exception: {}", detail);
 
-    RpcError error = core::SwarmError::Make(
-        DomainForSubscriptionKind(stream_state.kind), RpcStatusCode::kInternal, detail,
+    core::SwarmError error = core::SwarmError::Make(
+        DomainForSubscriptionKind(stream_state.kind), core::ErrorCode::kInternal, detail,
         core::ErrorSeverity::kError, core::ErrorRetryability::kAfterRemediation,
         "Catch exceptions inside subscription callbacks");
     error.correlation_id = stream_state.correlation_id;
@@ -866,7 +872,8 @@ void RunCallbackDispatcher(StreamState& stream_state) {
 }
 
 void EmitSubscriptionEvent(StreamState& stream_state, SubscriptionLifecycleState state,
-                           std::string message, int attempt_number = 0, RpcError error = {}) {
+                           std::string message, int attempt_number = 0,
+                           core::SwarmError error = {}) {
     error.correlation_id =
         error.correlation_id.empty() ? stream_state.correlation_id : error.correlation_id;
     SubscriptionEvent event{
@@ -1030,13 +1037,175 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
         status.error_message());
 }
 
-[[nodiscard]] core::TelemetryFrame ToCoreTelemetryFrame(
+[[nodiscard]] core::ClockDomain ToCoreClockDomain(swarmkit::v1::TelemetryClockDomain domain) {
+    switch (domain) {
+        case swarmkit::v1::TELEMETRY_CLOCK_DOMAIN_UNIX_EPOCH:
+            return core::ClockDomain::kUnixEpoch;
+        case swarmkit::v1::TELEMETRY_CLOCK_DOMAIN_VEHICLE_BOOT:
+            return core::ClockDomain::kVehicleBoot;
+        case swarmkit::v1::TELEMETRY_CLOCK_DOMAIN_AGENT_MONOTONIC:
+            return core::ClockDomain::kAgentMonotonic;
+        case swarmkit::v1::TELEMETRY_CLOCK_DOMAIN_SDK_MONOTONIC:
+            return core::ClockDomain::kSdkMonotonic;
+        case swarmkit::v1::TELEMETRY_CLOCK_DOMAIN_UNKNOWN:
+        default:
+            return core::ClockDomain::kUnknown;
+    }
+}
+
+[[nodiscard]] core::ClockSynchronization ToCoreClockSynchronization(
+    swarmkit::v1::TelemetryClockSynchronization synchronization) {
+    switch (synchronization) {
+        case swarmkit::v1::TELEMETRY_CLOCK_UNSYNCHRONIZED:
+            return core::ClockSynchronization::kUnsynchronized;
+        case swarmkit::v1::TELEMETRY_CLOCK_ESTIMATED:
+            return core::ClockSynchronization::kEstimated;
+        case swarmkit::v1::TELEMETRY_CLOCK_SYNCHRONIZED:
+            return core::ClockSynchronization::kSynchronized;
+        case swarmkit::v1::TELEMETRY_CLOCK_SYNCHRONIZATION_UNKNOWN:
+        default:
+            return core::ClockSynchronization::kUnknown;
+    }
+}
+
+[[nodiscard]] core::CapabilitySupport ToCoreCapabilitySupport(
+    swarmkit::v1::CapabilitySupport support) {
+    switch (support) {
+        case swarmkit::v1::CAPABILITY_UNSUPPORTED:
+            return core::CapabilitySupport::kUnsupported;
+        case swarmkit::v1::CAPABILITY_SUPPORTED:
+            return core::CapabilitySupport::kSupported;
+        case swarmkit::v1::CAPABILITY_SUPPORT_UNKNOWN:
+        default:
+            return core::CapabilitySupport::kUnknown;
+    }
+}
+
+[[nodiscard]] core::MotionLimitSemantics ToCoreMotionLimitSemantics(
+    swarmkit::v1::MotionLimitSemantics semantics) {
+    switch (semantics) {
+        case swarmkit::v1::MOTION_LIMIT_CONFIGURED_COMMAND:
+            return core::MotionLimitSemantics::kConfiguredCommandLimit;
+        case swarmkit::v1::MOTION_LIMIT_PLATFORM_CAPABILITY_ASSUMPTION:
+            return core::MotionLimitSemantics::kPlatformCapabilityAssumption;
+        case swarmkit::v1::MOTION_LIMIT_OBSERVED:
+            return core::MotionLimitSemantics::kObservedLimit;
+        case swarmkit::v1::MOTION_LIMIT_VALIDATED_BOUND:
+            return core::MotionLimitSemantics::kValidatedBound;
+        case swarmkit::v1::MOTION_LIMIT_SEMANTICS_UNKNOWN:
+        default:
+            return core::MotionLimitSemantics::kUnknown;
+    }
+}
+
+[[nodiscard]] core::MotionLimit ToCoreMotionLimit(const swarmkit::v1::MotionLimit& value) {
+    return {
+        .value = value.value(),
+        .semantics = ToCoreMotionLimitSemantics(value.semantics()),
+        .source = value.source(),
+        .profile_id = value.profile_id(),
+        .profile_version = value.profile_version(),
+    };
+}
+
+[[nodiscard]] core::TimestampEvidence ToCoreTimestampEvidence(
+    const swarmkit::v1::TelemetryTimestampEvidence& value) {
+    core::TimestampEvidence out;
+    if (value.has_timestamp_ms()) {
+        out.timestamp_ms = value.timestamp_ms();
+    }
+    out.clock_domain = ToCoreClockDomain(value.clock_domain());
+    out.synchronization = ToCoreClockSynchronization(value.synchronization());
+    if (value.has_clock_uncertainty_ms()) {
+        out.clock_uncertainty_ms = value.clock_uncertainty_ms();
+    }
+    return out;
+}
+
+[[nodiscard]] core::MeasurementProvenance ToCoreMeasurementProvenance(
+    const swarmkit::v1::TelemetryMeasurementProvenance& value) {
+    core::MeasurementProvenance out;
+    out.updated = value.updated();
+    out.generation = value.generation();
+    if (value.has_source_time()) {
+        out.source_time = ToCoreTimestampEvidence(value.source_time());
+    }
+    if (value.has_agent_receive_unix_time_ms()) {
+        out.agent_receive_unix_time_ms = value.agent_receive_unix_time_ms();
+    }
+    if (value.has_agent_receive_monotonic_time_ns()) {
+        out.agent_receive_monotonic_time_ns = value.agent_receive_monotonic_time_ns();
+    }
+    out.source = value.source();
+    return out;
+}
+
+[[nodiscard]] core::UncertaintySemantics ToCoreUncertaintySemantics(
+    swarmkit::v1::TelemetryUncertaintySemantics semantics) {
+    switch (semantics) {
+        case swarmkit::v1::TELEMETRY_UNCERTAINTY_STANDARD_DEVIATION:
+            return core::UncertaintySemantics::kStandardDeviation;
+        case swarmkit::v1::TELEMETRY_UNCERTAINTY_CONFIDENCE_BOUND:
+            return core::UncertaintySemantics::kConfidenceBound;
+        case swarmkit::v1::TELEMETRY_UNCERTAINTY_EMPIRICALLY_CALIBRATED_BOUND:
+            return core::UncertaintySemantics::kEmpiricallyCalibratedBound;
+        case swarmkit::v1::TELEMETRY_UNCERTAINTY_DETERMINISTIC_HARD_BOUND:
+            return core::UncertaintySemantics::kDeterministicHardBound;
+        case swarmkit::v1::TELEMETRY_UNCERTAINTY_BACKEND_SPECIFIC:
+            return core::UncertaintySemantics::kBackendSpecific;
+        case swarmkit::v1::TELEMETRY_UNCERTAINTY_UNKNOWN:
+        default:
+            return core::UncertaintySemantics::kUnknown;
+    }
+}
+
+[[nodiscard]] core::UncertaintyDescriptor ToCoreUncertaintyDescriptor(
+    const swarmkit::v1::TelemetryUncertaintyDescriptor& value) {
+    core::UncertaintyDescriptor out;
+    out.semantics = ToCoreUncertaintySemantics(value.semantics());
+    if (value.has_confidence_level()) {
+        out.confidence_level = value.confidence_level();
+    }
+    out.calibration_profile_id = value.calibration_profile_id();
+    out.calibration_version = value.calibration_version();
+    out.source = value.source();
+    out.measurement_generation = value.measurement_generation();
+    return out;
+}
+
+[[nodiscard]] core::UncertaintyEstimate ToCoreUncertaintyEstimate(
+    const swarmkit::v1::TelemetryUncertaintyEstimate& value) {
+    core::UncertaintyEstimate out{.value = value.value()};
+    if (value.has_uncertainty()) {
+        out.descriptor = ToCoreUncertaintyDescriptor(value.uncertainty());
+    }
+    return out;
+}
+
+template <typename ProtoCovariance>
+[[nodiscard]] std::optional<std::array<float, 9>> ToCoreCovariance(
+    const ProtoCovariance& covariance) {
+    if (covariance.values_size() != 9) {
+        return std::nullopt;
+    }
+    std::array<float, 9> out{};
+    for (int index = 0; index < covariance.values_size(); ++index) {
+        out[static_cast<std::size_t>(index)] = covariance.values(index);
+    }
+    return out;
+}
+
+[[nodiscard]] TelemetryDelivery ToTelemetryDelivery(
     const swarmkit::v1::TelemetryFrame& proto_frame) {
-    core::TelemetryFrame frame;
+    TelemetryDelivery delivery;
+    delivery.transport_stream_id = proto_frame.transport_stream_id();
+    delivery.sdk_receive_unix_time_ms = NowUnixMs();
+    core::TelemetryFrame& frame = delivery.frame;
     frame.drone_id = proto_frame.drone_id();
-    frame.unix_time_ms = proto_frame.unix_time_ms();
-    frame.source_unix_time_ms = proto_frame.source_unix_time_ms();
-    frame.source_time_boot_ms = proto_frame.source_time_boot_ms();
+    frame.agent_session_id = proto_frame.agent_session_id();
+    frame.telemetry_sequence = proto_frame.telemetry_sequence();
+    frame.agent_receive_unix_time_ms = proto_frame.agent_receive_unix_time_ms();
+    frame.agent_receive_monotonic_time_ns = proto_frame.agent_receive_monotonic_time_ns();
     frame.lat_deg = proto_frame.lat_deg();
     frame.lon_deg = proto_frame.lon_deg();
     frame.rel_alt_m = proto_frame.rel_alt_m();
@@ -1052,7 +1221,6 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     frame.armed = proto_frame.armed();
     frame.landed = proto_frame.landed();
     frame.failsafe = proto_frame.failsafe();
-    frame.ekf_ok = proto_frame.ekf_ok();
     frame.gps_fix_type = proto_frame.gps_fix_type();
     frame.satellites_visible = proto_frame.satellites_visible();
     frame.gps_hdop = proto_frame.gps_hdop();
@@ -1079,29 +1247,36 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     }
     if (proto_frame.has_accuracy()) {
         const auto& accuracy = proto_frame.accuracy();
-        frame.accuracy.horizontal_position_valid = accuracy.horizontal_position_valid();
-        frame.accuracy.horizontal_position_m = accuracy.horizontal_position_m();
-        frame.accuracy.vertical_position_valid = accuracy.vertical_position_valid();
-        frame.accuracy.vertical_position_m = accuracy.vertical_position_m();
-        frame.accuracy.velocity_valid = accuracy.velocity_valid();
-        frame.accuracy.velocity_mps = accuracy.velocity_mps();
-        frame.accuracy.heading_valid = accuracy.heading_valid();
-        frame.accuracy.heading_deg = accuracy.heading_deg();
-        frame.accuracy.attitude_valid = accuracy.attitude_valid();
-        frame.accuracy.attitude_deg = accuracy.attitude_deg();
-        frame.accuracy.position_covariance_valid = accuracy.position_covariance_valid();
-        for (int index = 0; index < accuracy.position_covariance_size() &&
-                            std::cmp_less(index, frame.accuracy.position_covariance.size());
-             ++index) {
-            frame.accuracy.position_covariance[static_cast<std::size_t>(index)] =
-                accuracy.position_covariance(index);
+        if (accuracy.has_horizontal_position()) {
+            frame.accuracy.horizontal_position =
+                ToCoreUncertaintyEstimate(accuracy.horizontal_position());
         }
-        frame.accuracy.velocity_covariance_valid = accuracy.velocity_covariance_valid();
-        for (int index = 0; index < accuracy.velocity_covariance_size() &&
-                            std::cmp_less(index, frame.accuracy.velocity_covariance.size());
-             ++index) {
-            frame.accuracy.velocity_covariance[static_cast<std::size_t>(index)] =
-                accuracy.velocity_covariance(index);
+        if (accuracy.has_vertical_position()) {
+            frame.accuracy.vertical_position =
+                ToCoreUncertaintyEstimate(accuracy.vertical_position());
+        }
+        if (accuracy.has_horizontal_velocity()) {
+            frame.accuracy.horizontal_velocity =
+                ToCoreUncertaintyEstimate(accuracy.horizontal_velocity());
+        }
+        if (accuracy.has_vertical_velocity()) {
+            frame.accuracy.vertical_velocity =
+                ToCoreUncertaintyEstimate(accuracy.vertical_velocity());
+        }
+        if (accuracy.has_speed()) {
+            frame.accuracy.speed = ToCoreUncertaintyEstimate(accuracy.speed());
+        }
+        if (accuracy.has_heading_deg()) {
+            frame.accuracy.heading_deg = accuracy.heading_deg();
+        }
+        if (accuracy.has_attitude_deg()) {
+            frame.accuracy.attitude_deg = accuracy.attitude_deg();
+        }
+        if (accuracy.has_position_covariance()) {
+            frame.accuracy.position_covariance = ToCoreCovariance(accuracy.position_covariance());
+        }
+        if (accuracy.has_velocity_covariance()) {
+            frame.accuracy.velocity_covariance = ToCoreCovariance(accuracy.velocity_covariance());
         }
     }
     if (proto_frame.has_home_origin()) {
@@ -1120,10 +1295,30 @@ void LogStreamFailure(std::string_view stream_name, std::string_view drone_id,
     frame.estimator_position_ok = proto_frame.estimator_position_ok();
     frame.estimator_velocity_ok = proto_frame.estimator_velocity_ok();
     frame.estimator_attitude_ok = proto_frame.estimator_attitude_ok();
-    frame.active_command_id = proto_frame.active_command_id();
-    frame.active_goal_id = proto_frame.active_goal_id();
-    frame.correlation_id = proto_frame.correlation_id();
-    return frame;
+    if (proto_frame.has_execution_handle()) {
+        frame.execution_handle =
+            core::internal::ToCoreExecutionHandle(proto_frame.execution_handle());
+    }
+    if (proto_frame.has_provenance()) {
+        const auto& provenance = proto_frame.provenance();
+        if (provenance.has_position()) {
+            frame.provenance.position = ToCoreMeasurementProvenance(provenance.position());
+        }
+        if (provenance.has_velocity()) {
+            frame.provenance.velocity = ToCoreMeasurementProvenance(provenance.velocity());
+        }
+        if (provenance.has_accuracy()) {
+            frame.provenance.accuracy = ToCoreMeasurementProvenance(provenance.accuracy());
+        }
+        if (provenance.has_estimator()) {
+            frame.provenance.estimator = ToCoreMeasurementProvenance(provenance.estimator());
+        }
+        if (provenance.has_vehicle_state()) {
+            frame.provenance.vehicle_state =
+                ToCoreMeasurementProvenance(provenance.vehicle_state());
+        }
+    }
+    return delivery;
 }
 
 [[nodiscard]] double DegreesToRadians(double degrees) {
@@ -1172,12 +1367,6 @@ void PopulateProtoActiveGoal(const ActiveGoal& goal, swarmkit::v1::ActiveGoal* p
     proto_goal->set_goal_id(goal.goal_id);
     proto_goal->set_revision(goal.revision);
     *proto_goal->mutable_target() = ToProtoGeoPoint(goal.target);
-    auto* local_target = proto_goal->mutable_local_target();
-    local_target->set_x_m(goal.local_target.x_m);
-    local_target->set_y_m(goal.local_target.y_m);
-    local_target->set_z_m(goal.local_target.z_m);
-    proto_goal->set_use_local_target(goal.use_local_target);
-    proto_goal->set_target_frame(goal.target_frame);
     proto_goal->set_speed_mps(goal.speed_mps);
     proto_goal->set_acceptance_radius_m(goal.acceptance_radius_m);
     proto_goal->set_deviation_radius_m(goal.deviation_radius_m);
@@ -1364,15 +1553,6 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
         .lon_deg = proto_goal.target().lon_deg(),
         .alt_m = proto_goal.target().alt_m(),
     };
-    if (proto_goal.has_local_target()) {
-        goal.local_target = LocalPoint{
-            .x_m = proto_goal.local_target().x_m(),
-            .y_m = proto_goal.local_target().y_m(),
-            .z_m = proto_goal.local_target().z_m(),
-        };
-    }
-    goal.use_local_target = proto_goal.use_local_target();
-    goal.target_frame = proto_goal.target_frame().empty() ? "global" : proto_goal.target_frame();
     goal.speed_mps = proto_goal.speed_mps();
     goal.acceptance_radius_m = proto_goal.acceptance_radius_m();
     goal.deviation_radius_m = proto_goal.deviation_radius_m();
@@ -1467,7 +1647,7 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
 }
 
 [[nodiscard]] GoalReport ToGoalReport(const swarmkit::v1::GoalReport& proto_report) {
-    return GoalReport{
+    GoalReport report{
         .drone_id = proto_report.drone_id(),
         .goal_id = proto_report.goal_id(),
         .revision = proto_report.revision(),
@@ -1481,6 +1661,7 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
         .timeout_ms = proto_report.timeout_ms(),
         .message = proto_report.message(),
     };
+    return report;
 }
 
 [[nodiscard]] AgentReport ToAgentReport(const swarmkit::v1::AgentReport& proto_report) {
@@ -1492,6 +1673,20 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     report.type = ToAgentReportType(proto_report.type());
     report.severity = ToReportSeverity(proto_report.severity());
     report.message = proto_report.message();
+    report.agent_session_id = proto_report.agent_session_id();
+    switch (proto_report.execution_binding_case()) {
+        case swarmkit::v1::AgentReport::kExecutionContext:
+            report.execution_binding =
+                core::internal::ToCoreExecutionContext(proto_report.execution_context());
+            break;
+        case swarmkit::v1::AgentReport::kExecutionHandle:
+            report.execution_binding =
+                core::internal::ToCoreExecutionHandle(proto_report.execution_handle());
+            break;
+        case swarmkit::v1::AgentReport::EXECUTION_BINDING_NOT_SET:
+            report.execution_binding = std::monostate{};
+            break;
+    }
     if (proto_report.has_goal()) {
         report.goal = ToGoalReport(proto_report.goal());
     }
@@ -1519,9 +1714,10 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
         }
 
         if (on_frame) {
-            auto frame = ToCoreTelemetryFrame(proto_frame);
+            auto delivery = ToTelemetryDelivery(proto_frame);
             static_cast<void>(EnqueueCallback(
-                telemetry_stream, [on_frame, frame = std::move(frame)]() { on_frame(frame); }));
+                telemetry_stream,
+                [on_frame, delivery = std::move(delivery)]() { on_frame(delivery); }));
         }
     }
 
@@ -1632,9 +1828,10 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     return kFinalStatus;
 }
 
-[[nodiscard]] RpcError MakeStreamError(const grpc::Status& status, std::string_view correlation_id,
-                                       int attempt_number) {
-    RpcError error;
+[[nodiscard]] core::SwarmError MakeStreamError(const grpc::Status& status,
+                                               std::string_view correlation_id,
+                                               int attempt_number) {
+    core::SwarmError error;
     PopulateTransportError(&error, status, correlation_id, attempt_number);
     return error;
 }
@@ -1921,6 +2118,7 @@ PingResult Client::Ping() const {
     out.version = rep.version();
     out.unix_time_ms = rep.unix_time_ms();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.agent_session_id = rep.agent_session_id();
     PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
 }
@@ -1940,6 +2138,7 @@ HealthStatus Client::GetHealth() const {
 
     out.correlation_id = kCorrelationId;
     if (!kStatus.ok()) {
+        out.correlation_id = kCorrelationId;
         PopulateTransportError(&out.error, kStatus, kCorrelationId, attempt_count);
         out.message = out.error.user_message;
         return out;
@@ -1949,6 +2148,7 @@ HealthStatus Client::GetHealth() const {
     out.ready = rep.ready();
     out.agent_id = rep.agent_id();
     out.version = rep.version();
+    out.agent_session_id = rep.agent_session_id();
     out.unix_time_ms = rep.unix_time_ms();
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
@@ -2034,8 +2234,8 @@ RuntimeStats Client::GetRuntimeStats() const {
     return out;
 }
 
-BackendCapabilities Client::GetCapabilities() const {
-    BackendCapabilities out;
+CapabilitiesResult Client::GetCapabilities() const {
+    CapabilitiesResult out;
     const std::string kCorrelationId = MakeCorrelationId("capabilities");
 
     swarmkit::v1::CapabilitiesRequest req;
@@ -2057,32 +2257,65 @@ BackendCapabilities Client::GetCapabilities() const {
     out.agent_id = rep.agent_id();
     out.unix_time_ms = rep.unix_time_ms();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
-    out.backend_name = rep.backend_name();
-    out.protocol = rep.protocol();
-    out.vehicle_class = rep.vehicle_class();
-    out.supports_payload_control = rep.supports_payload_control();
-    out.supports_velocity_control = rep.supports_velocity_control();
-    out.supports_flight_termination = rep.supports_flight_termination();
-    out.supports_backend_commands = rep.supports_backend_commands();
-    out.autopilot_type = rep.autopilot_type();
-    out.supported_modes.assign(rep.supported_modes().begin(), rep.supported_modes().end());
-    out.supported_commands.assign(rep.supported_commands().begin(), rep.supported_commands().end());
-    out.supported_payloads.assign(rep.supported_payloads().begin(), rep.supported_payloads().end());
-    out.supported_telemetry_fields.assign(rep.supported_telemetry_fields().begin(),
-                                          rep.supported_telemetry_fields().end());
-    out.backend_command_names.assign(rep.backend_command_names().begin(),
-                                     rep.backend_command_names().end());
-    if (rep.has_max_horizontal_speed_mps()) {
-        out.max_horizontal_speed_mps = rep.max_horizontal_speed_mps();
+    out.agent_session_id = rep.agent_session_id();
+    auto& backend = out.backend;
+    backend.backend_name = rep.backend_name();
+    backend.protocol = rep.protocol();
+    backend.vehicle_class = rep.vehicle_class();
+    backend.supports_payload_control = rep.supports_payload_control();
+    backend.supports_velocity_control = rep.supports_velocity_control();
+    backend.supports_flight_termination = rep.supports_flight_termination();
+    backend.supports_backend_commands = rep.supports_backend_commands();
+    backend.autopilot_type = rep.autopilot_type();
+    backend.supported_modes.assign(rep.supported_modes().begin(), rep.supported_modes().end());
+    backend.supported_commands.assign(rep.supported_commands().begin(),
+                                      rep.supported_commands().end());
+    backend.supported_payloads.assign(rep.supported_payloads().begin(),
+                                      rep.supported_payloads().end());
+    backend.backend_command_names.assign(rep.backend_command_names().begin(),
+                                         rep.backend_command_names().end());
+    if (rep.has_max_horizontal_speed()) {
+        backend.max_horizontal_speed = ToCoreMotionLimit(rep.max_horizontal_speed());
     }
-    if (rep.has_max_climb_speed_mps()) {
-        out.max_climb_speed_mps = rep.max_climb_speed_mps();
+    if (rep.has_max_climb_speed()) {
+        backend.max_climb_speed = ToCoreMotionLimit(rep.max_climb_speed());
     }
-    if (rep.has_max_descent_speed_mps()) {
-        out.max_descent_speed_mps = rep.max_descent_speed_mps();
+    if (rep.has_max_descent_speed()) {
+        backend.max_descent_speed = ToCoreMotionLimit(rep.max_descent_speed());
     }
-    if (rep.has_max_altitude_m()) {
-        out.max_altitude_m = rep.max_altitude_m();
+    if (rep.has_max_altitude()) {
+        backend.max_altitude = ToCoreMotionLimit(rep.max_altitude());
+    }
+    if (rep.has_telemetry_evidence()) {
+        const auto& evidence = rep.telemetry_evidence();
+        backend.evidence.source_timestamp = ToCoreCapabilitySupport(evidence.source_timestamp());
+        backend.evidence.source_clock_domains.reserve(evidence.source_clock_domains_size());
+        for (const auto domain : evidence.source_clock_domains()) {
+            backend.evidence.source_clock_domains.push_back(
+                ToCoreClockDomain(static_cast<swarmkit::v1::TelemetryClockDomain>(domain)));
+        }
+        backend.evidence.position_estimate = ToCoreCapabilitySupport(evidence.position_estimate());
+        backend.evidence.horizontal_position_uncertainty =
+            ToCoreCapabilitySupport(evidence.horizontal_position_uncertainty());
+        backend.evidence.vertical_position_uncertainty =
+            ToCoreCapabilitySupport(evidence.vertical_position_uncertainty());
+        backend.evidence.horizontal_velocity =
+            ToCoreCapabilitySupport(evidence.horizontal_velocity());
+        backend.evidence.vertical_velocity = ToCoreCapabilitySupport(evidence.vertical_velocity());
+        backend.evidence.horizontal_velocity_uncertainty =
+            ToCoreCapabilitySupport(evidence.horizontal_velocity_uncertainty());
+        backend.evidence.vertical_velocity_uncertainty =
+            ToCoreCapabilitySupport(evidence.vertical_velocity_uncertainty());
+        backend.evidence.speed_uncertainty = ToCoreCapabilitySupport(evidence.speed_uncertainty());
+        backend.evidence.uncertainty_semantics =
+            ToCoreCapabilitySupport(evidence.uncertainty_semantics());
+        backend.evidence.estimator_health = ToCoreCapabilitySupport(evidence.estimator_health());
+        backend.evidence.failsafe_state = ToCoreCapabilitySupport(evidence.failsafe_state());
+        backend.evidence.active_goal_lineage =
+            ToCoreCapabilitySupport(evidence.active_goal_lineage());
+        backend.evidence.telemetry_sequence =
+            ToCoreCapabilitySupport(evidence.telemetry_sequence());
+        backend.evidence.telemetry_replay = ToCoreCapabilitySupport(evidence.telemetry_replay());
     }
     PopulateSuccessError(&out.error, out.correlation_id, attempt_count);
     return out;
@@ -2117,7 +2350,7 @@ struct VerificationSpec {
 }
 
 [[nodiscard]] CommandResult MakeVerificationFailure(const CommandResult& command_result,
-                                                    RpcStatusCode code, std::string message) {
+                                                    core::ErrorCode code, std::string message) {
     CommandResult out = command_result;
     out.ok = false;
     out.message = std::move(message);
@@ -2257,7 +2490,7 @@ struct VerificationSpec {
     if (!last_health.message.empty()) {
         detail += ": " + last_health.message;
     }
-    return MakeVerificationFailure(command_result, RpcStatusCode::kDeadlineExceeded,
+    return MakeVerificationFailure(command_result, core::ErrorCode::kDeadlineExceeded,
                                    std::move(detail));
 }
 
@@ -2281,7 +2514,7 @@ struct VerificationSpec {
     auto reader = stub.StreamTelemetry(&context, request);
     swarmkit::v1::TelemetryFrame proto_frame;
     while (reader->Read(&proto_frame)) {
-        const core::TelemetryFrame frame = ToCoreTelemetryFrame(proto_frame);
+        const core::TelemetryFrame frame = ToTelemetryDelivery(proto_frame).frame;
         if (spec.telemetry_predicate && spec.telemetry_predicate(frame)) {
             context.TryCancel();
             static_cast<void>(reader->Finish());
@@ -2293,10 +2526,10 @@ struct VerificationSpec {
     if (!status.ok() && status.error_code() != grpc::StatusCode::DEADLINE_EXCEEDED &&
         !status.error_message().empty()) {
         return MakeVerificationFailure(
-            command_result, ToRpcStatusCode(status),
+            command_result, ToErrorCode(status),
             spec.label + " verification stream failed: " + status.error_message());
     }
-    return MakeVerificationFailure(command_result, RpcStatusCode::kDeadlineExceeded,
+    return MakeVerificationFailure(command_result, core::ErrorCode::kDeadlineExceeded,
                                    spec.label + " verification timed out");
 }
 
@@ -2396,9 +2629,10 @@ CommandResult Client::LandAndWait(const std::string& drone_id,
         MakeClientCommandEnvelope(impl_->config, drone_id, FlightCmd{CmdLand{}}), options);
 }
 
-GoalResult Client::SetActiveGoal(const ActiveGoal& goal) const {
+GoalResult Client::SetActiveGoal(const ActiveGoalRequest& request) const {
     GoalResult out;
     const std::string kCorrelationId = MakeCorrelationId("goal");
+    const ActiveGoal& goal = request.goal;
 
     swarmkit::v1::SetActiveGoalRequest req;
     auto* proto_ctx = req.mutable_ctx();
@@ -2406,6 +2640,10 @@ GoalResult Client::SetActiveGoal(const ActiveGoal& goal) const {
     proto_ctx->set_client_id(impl_->config.client_id);
     proto_ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
     proto_ctx->set_correlation_id(kCorrelationId);
+    if (request.execution_context.has_value()) {
+        core::internal::PopulateExecutionContext(*request.execution_context,
+                                                 proto_ctx->mutable_execution_context());
+    }
     PopulateProtoActiveGoal(goal, req.mutable_goal());
 
     swarmkit::v1::SetActiveGoalReply rep;
@@ -2432,20 +2670,23 @@ GoalResult Client::SetActiveGoal(const ActiveGoal& goal) const {
         out.goal = ToActiveGoal(rep.goal());
     }
     out.computed_timeout_ms = rep.computed_timeout_ms();
+    if (rep.has_execution_handle()) {
+        out.execution_handle = core::internal::ToCoreExecutionHandle(rep.execution_handle());
+    }
     return out;
 }
 
-CommandResult Client::CancelGoal(const std::string& drone_id, const std::string& goal_id) const {
-    CommandResult out;
+CancelGoalResult Client::CancelGoal(const core::ExecutionHandle& expected) const {
+    CancelGoalResult out;
     const std::string kCorrelationId = MakeCorrelationId("cancel-goal");
 
     swarmkit::v1::CancelGoalRequest req;
     auto* proto_ctx = req.mutable_ctx();
-    proto_ctx->set_drone_id(drone_id);
+    proto_ctx->set_drone_id(expected.drone_id);
     proto_ctx->set_client_id(impl_->config.client_id);
     proto_ctx->set_priority(static_cast<std::int32_t>(impl_->config.priority));
     proto_ctx->set_correlation_id(kCorrelationId);
-    req.set_goal_id(goal_id);
+    core::internal::PopulateExecutionHandle(expected, req.mutable_expected_execution_handle());
 
     swarmkit::v1::CancelGoalReply rep;
     int attempt_count = 0;
@@ -2467,11 +2708,14 @@ CommandResult Client::CancelGoal(const std::string& drone_id, const std::string&
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
     PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
                        out.correlation_id, attempt_count);
+    if (rep.has_execution_handle()) {
+        out.cancelled_execution = core::internal::ToCoreExecutionHandle(rep.execution_handle());
+    }
     return out;
 }
 
-ActiveGoalStatus Client::GetActiveGoal(const std::string& drone_id) const {
-    ActiveGoalStatus out;
+ActiveGoalResult Client::GetActiveGoal(const std::string& drone_id) const {
+    ActiveGoalResult out;
     const std::string kCorrelationId = MakeCorrelationId("get-goal");
 
     swarmkit::v1::GetActiveGoalRequest req;
@@ -2486,47 +2730,57 @@ ActiveGoalStatus Client::GetActiveGoal(const std::string& drone_id) const {
                              });
 
     if (!kStatus.ok()) {
+        out.correlation_id = kCorrelationId;
         PopulateTransportError(&out.error, kStatus, kCorrelationId, attempt_count);
         out.message = out.error.user_message;
         return out;
     }
 
-    out.has_goal = rep.goal_present();
-    if (rep.has_goal()) {
-        out.goal = ToActiveGoal(rep.goal());
-    }
-    out.status = ToGoalStatus(rep.status());
-    out.computed_timeout_ms = rep.computed_timeout_ms();
+    out.ok = rep.ok();
     out.message = rep.message();
-    PopulateSuccessError(&out.error, kCorrelationId, attempt_count);
+    if (rep.has_active_goal()) {
+        const auto& active = rep.active_goal();
+        out.active_goal = ActiveGoalSnapshot{
+            .goal = ToActiveGoal(active.goal()),
+            .status = ToGoalStatus(active.status()),
+            .computed_timeout_ms = active.computed_timeout_ms(),
+            .execution_handle = core::internal::ToCoreExecutionHandle(active.execution_handle()),
+        };
+    }
+    const std::string correlation_id =
+        rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    out.correlation_id = correlation_id;
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
+                       correlation_id, attempt_count);
     return out;
 }
 
 namespace {
 
-[[nodiscard]] RpcError MakeSubscriptionStartError(SubscriptionKind kind, RpcStatusCode code,
-                                                  std::string message) {
-    RpcError error = core::SwarmError::Make(DomainForSubscriptionKind(kind), code,
-                                            std::move(message), SeverityForCode(code),
-                                            RetryabilityForCode(code), RemediationForCode(code));
+[[nodiscard]] core::SwarmError MakeSubscriptionStartError(SubscriptionKind kind,
+                                                          core::ErrorCode code,
+                                                          std::string message) {
+    core::SwarmError error = core::SwarmError::Make(
+        DomainForSubscriptionKind(kind), code, std::move(message), SeverityForCode(code),
+        RetryabilityForCode(code), RemediationForCode(code));
     error.debug_message = error.user_message;
     return error;
 }
 
-[[nodiscard]] std::expected<std::uint64_t, RpcError> PrepareSubscriptionStart(
+[[nodiscard]] std::expected<std::uint64_t, core::SwarmError> PrepareSubscriptionStart(
     const std::shared_ptr<StreamState>& stream, SubscriptionKind kind, std::string drone_id,
     TelemetryErrorHandler on_error, SubscriptionEventHandler on_event,
     SubscriptionOptions options) {
     if (options.backpressure.max_pending_callbacks == 0) {
         return std::unexpected(MakeSubscriptionStartError(
-            kind, RpcStatusCode::kInvalidArgument,
+            kind, core::ErrorCode::kInvalidArgument,
             "subscription max_pending_callbacks must be greater than zero"));
     }
 
     if (!options.replace_existing &&
         (stream->active.load(std::memory_order_relaxed) || stream->worker.joinable() ||
          stream->callback_worker.joinable())) {
-        return std::unexpected(MakeSubscriptionStartError(kind, RpcStatusCode::kAlreadyExists,
+        return std::unexpected(MakeSubscriptionStartError(kind, core::ErrorCode::kAlreadyExists,
                                                           "subscription already active"));
     }
 
@@ -2549,7 +2803,7 @@ namespace {
     } catch (const std::system_error& exc) {
         stream->active.store(false, std::memory_order_relaxed);
         return std::unexpected(MakeSubscriptionStartError(
-            kind, RpcStatusCode::kInternal,
+            kind, core::ErrorCode::kInternal,
             "failed to start subscription callback dispatcher: " + std::string(exc.what())));
     }
 
@@ -2561,24 +2815,22 @@ namespace {
 
 }  // namespace
 
-std::expected<Subscription, RpcError> Client::StartTelemetry(TelemetrySubscription subscription,
-                                                             TelemetryHandler on_frame,
-                                                             TelemetryErrorHandler on_error,
-                                                             SubscriptionEventHandler on_event,
-                                                             SubscriptionOptions options) {
+std::expected<Subscription, core::SwarmError> Client::StartTelemetry(
+    TelemetrySubscription subscription, TelemetryHandler on_frame, TelemetryErrorHandler on_error,
+    SubscriptionEventHandler on_event, SubscriptionOptions options) {
     if (subscription.drone_id.empty()) {
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kTelemetry, RpcStatusCode::kInvalidArgument,
+            SubscriptionKind::kTelemetry, core::ErrorCode::kInvalidArgument,
             "telemetry subscription drone_id must not be empty"));
     }
     if (subscription.rate_hertz <= 0) {
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kTelemetry, RpcStatusCode::kInvalidArgument,
+            SubscriptionKind::kTelemetry, core::ErrorCode::kInvalidArgument,
             "telemetry subscription rate_hertz must be greater than zero"));
     }
     if (!on_frame) {
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kTelemetry, RpcStatusCode::kInvalidArgument,
+            SubscriptionKind::kTelemetry, core::ErrorCode::kInvalidArgument,
             "telemetry subscription frame callback must not be empty"));
     }
 
@@ -2600,7 +2852,7 @@ std::expected<Subscription, RpcError> Client::StartTelemetry(TelemetrySubscripti
     } catch (const std::system_error& exc) {
         CancelAndJoinStream(*impl_->telemetry);
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kTelemetry, RpcStatusCode::kInternal,
+            SubscriptionKind::kTelemetry, core::ErrorCode::kInternal,
             "failed to start telemetry subscription worker: " + std::string(exc.what())));
     }
 
@@ -2615,18 +2867,18 @@ void Client::StopTelemetry() {
     CancelAndJoinStream(*impl_->telemetry);
 }
 
-std::expected<Subscription, RpcError> Client::StartAuthorityWatch(
+std::expected<Subscription, core::SwarmError> Client::StartAuthorityWatch(
     AuthoritySubscription subscription, AuthorityEventHandler on_event,
     TelemetryErrorHandler on_error, SubscriptionEventHandler on_state,
     SubscriptionOptions options) {
     if (subscription.drone_id.empty()) {
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kAuthority, RpcStatusCode::kInvalidArgument,
+            SubscriptionKind::kAuthority, core::ErrorCode::kInvalidArgument,
             "authority subscription drone_id must not be empty"));
     }
     if (!on_event) {
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kAuthority, RpcStatusCode::kInvalidArgument,
+            SubscriptionKind::kAuthority, core::ErrorCode::kInvalidArgument,
             "authority subscription event callback must not be empty"));
     }
 
@@ -2648,7 +2900,7 @@ std::expected<Subscription, RpcError> Client::StartAuthorityWatch(
     } catch (const std::system_error& exc) {
         CancelAndJoinStream(*impl_->authority);
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kAuthority, RpcStatusCode::kInternal,
+            SubscriptionKind::kAuthority, core::ErrorCode::kInternal,
             "failed to start authority subscription worker: " + std::string(exc.what())));
     }
 
@@ -2663,20 +2915,18 @@ void Client::StopAuthorityWatch() {
     CancelAndJoinStream(*impl_->authority);
 }
 
-std::expected<Subscription, RpcError> Client::StartReports(ReportSubscription subscription,
-                                                           AgentReportHandler on_report,
-                                                           TelemetryErrorHandler on_error,
-                                                           SubscriptionEventHandler on_event,
-                                                           SubscriptionOptions options) {
+std::expected<Subscription, core::SwarmError> Client::StartReports(
+    ReportSubscription subscription, AgentReportHandler on_report, TelemetryErrorHandler on_error,
+    SubscriptionEventHandler on_event, SubscriptionOptions options) {
     if (subscription.drone_id.empty()) {
-        return std::unexpected(
-            MakeSubscriptionStartError(SubscriptionKind::kReports, RpcStatusCode::kInvalidArgument,
-                                       "report subscription drone_id must not be empty"));
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kReports, core::ErrorCode::kInvalidArgument,
+            "report subscription drone_id must not be empty"));
     }
     if (!on_report) {
-        return std::unexpected(
-            MakeSubscriptionStartError(SubscriptionKind::kReports, RpcStatusCode::kInvalidArgument,
-                                       "report subscription callback must not be empty"));
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kReports, core::ErrorCode::kInvalidArgument,
+            "report subscription callback must not be empty"));
     }
 
     auto generation =
@@ -2697,7 +2947,7 @@ std::expected<Subscription, RpcError> Client::StartReports(ReportSubscription su
     } catch (const std::system_error& exc) {
         CancelAndJoinStream(*impl_->reports);
         return std::unexpected(MakeSubscriptionStartError(
-            SubscriptionKind::kReports, RpcStatusCode::kInternal,
+            SubscriptionKind::kReports, core::ErrorCode::kInternal,
             "failed to start report subscription worker: " + std::string(exc.what())));
     }
 

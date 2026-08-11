@@ -15,10 +15,12 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include "swarmkit/client/command_verifier.h"
 #include "swarmkit/commands.h"
+#include "swarmkit/core/capabilities.h"
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/security.h"
 #include "swarmkit/core/telemetry.h"
@@ -36,10 +38,6 @@ inline constexpr int kDefaultStreamReconnectInitialBackoffMs = 500;
 inline constexpr int kDefaultStreamReconnectMaxBackoffMs = 5000;
 inline constexpr int kUnlimitedStreamReconnectAttempts = 0;
 inline constexpr int kDefaultTelemetryRateHertz = 1;
-
-/// @brief Backward-compatible names for the unified SDK error model.
-using RpcStatusCode = core::ErrorCode;
-using RpcError = core::SwarmError;
 
 struct RetryPolicy {
     /// Maximum attempts for one unary RPC, including the first try.
@@ -141,7 +139,8 @@ struct PingResult {
     std::int64_t unix_time_ms{};
     std::string error_message;
     std::string correlation_id;
-    RpcError error;
+    std::string agent_session_id;
+    core::SwarmError error;
 };
 
 /// @brief Result of a SendCommand() call.
@@ -149,7 +148,7 @@ struct CommandResult {
     bool ok{false};
     std::string message;  ///< Error description on failure, empty on success.
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
 };
 
 /// @brief Result of explicitly releasing command authority.
@@ -157,7 +156,7 @@ struct ReleaseAuthorityResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
 };
 
 enum class ReadinessCheckSeverity : std::uint8_t {
@@ -178,6 +177,7 @@ struct HealthStatus {
     bool ready{false};
     std::string agent_id;
     std::string version;
+    std::string agent_session_id;
     std::int64_t unix_time_ms{};
     std::string message;
     std::string correlation_id;
@@ -201,7 +201,7 @@ struct HealthStatus {
     std::vector<ReadinessCheck> readiness_checks;
     std::vector<std::string> arming_blockers;
     std::optional<float> link_quality_percent;
-    RpcError error;
+    core::SwarmError error;
 };
 
 struct RuntimeStats {
@@ -231,32 +231,17 @@ struct RuntimeStats {
     std::uint64_t artifact_bytes_sent_total{0};
     std::uint64_t artifact_failures_total{0};
     bool ready{false};
-    RpcError error;
+    core::SwarmError error;
 };
 
-struct BackendCapabilities {
+struct CapabilitiesResult {
     bool ok{false};
     std::string agent_id;
     std::int64_t unix_time_ms{};
     std::string correlation_id;
-    std::string backend_name{"unknown"};
-    std::string protocol{"unknown"};
-    std::string vehicle_class{"unknown"};
-    bool supports_payload_control{false};
-    bool supports_velocity_control{false};
-    bool supports_flight_termination{false};
-    bool supports_backend_commands{false};
-    std::string autopilot_type{"unknown"};
-    std::vector<std::string> supported_modes;
-    std::vector<std::string> supported_commands;
-    std::vector<std::string> supported_payloads;
-    std::vector<std::string> supported_telemetry_fields;
-    std::vector<std::string> backend_command_names;
-    std::optional<float> max_horizontal_speed_mps;
-    std::optional<float> max_climb_speed_mps;
-    std::optional<float> max_descent_speed_mps;
-    std::optional<float> max_altitude_m;
-    RpcError error;
+    std::string agent_session_id;
+    core::BackendCapabilities backend;
+    core::SwarmError error;
 };
 
 /**
@@ -301,27 +286,23 @@ struct GeoPoint {
     double alt_m{};
 };
 
-struct LocalPoint {
-    double x_m{};
-    double y_m{};
-    double z_m{};
-};
-
 struct ActiveGoal {
     std::string drone_id{"default"};
     std::string goal_id;
     std::uint64_t revision{};
     GeoPoint target{};
-    /// Future backend support: accepted by the API shape, but current
-    /// MAVLink execution still requires a global GPS target.
-    LocalPoint local_target{};
-    bool use_local_target{false};
-    std::string target_frame{"global"};
     float speed_mps{};
     float acceptance_radius_m{2.0F};
     float deviation_radius_m{8.0F};
     std::int64_t timeout_ms{};  ///< 0 lets the agent compute from its vehicle profile.
     std::unordered_map<std::string, std::string> labels;
+};
+
+/// Complete request to begin one physical goal attempt. Execution context is
+/// request metadata, not part of the reusable physical goal definition.
+struct ActiveGoalRequest {
+    ActiveGoal goal;
+    std::optional<core::ExecutionContext> execution_context;
 };
 
 enum class GoalStatus : std::uint8_t {
@@ -372,6 +353,9 @@ struct GoalReport {
     std::string message;
 };
 
+using ReportExecutionBinding =
+    std::variant<std::monostate, core::ExecutionContext, core::ExecutionHandle>;
+
 struct AgentReport {
     std::string drone_id;
     std::int64_t unix_time_ms{};
@@ -380,6 +364,9 @@ struct AgentReport {
     AgentReportType type{AgentReportType::kUnspecified};
     ReportSeverity severity{ReportSeverity::kInfo};
     std::string message;
+    std::string agent_session_id;
+    /// Mutually exclusive binding: none, generic command context, or exact physical attempt.
+    ReportExecutionBinding execution_binding;
     std::optional<GoalReport> goal;
 };
 
@@ -387,18 +374,40 @@ struct GoalResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
     ActiveGoal goal;
     std::int64_t computed_timeout_ms{};
+    std::optional<core::ExecutionHandle> execution_handle;
 };
 
-struct ActiveGoalStatus {
-    bool has_goal{false};
+struct ActiveGoalSnapshot {
     ActiveGoal goal;
     GoalStatus status{GoalStatus::kUnspecified};
     std::int64_t computed_timeout_ms{};
+    core::ExecutionHandle execution_handle;
+};
+
+struct ActiveGoalResult {
+    bool ok{false};
+    std::optional<ActiveGoalSnapshot> active_goal;
     std::string message;
-    RpcError error;
+    std::string correlation_id;
+    core::SwarmError error;
+};
+
+struct CancelGoalResult {
+    bool ok{false};
+    std::string message;
+    std::string correlation_id;
+    std::optional<core::ExecutionHandle> cancelled_execution;
+    core::SwarmError error;
+};
+
+/// Transport-local metadata is deliberately kept outside normalized evidence.
+struct TelemetryDelivery {
+    core::TelemetryFrame frame;
+    std::string transport_stream_id;
+    std::int64_t sdk_receive_unix_time_ms{};
 };
 
 struct ReportSubscription {
@@ -422,7 +431,7 @@ struct PublishMessageResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
     std::uint64_t sequence{};
 };
 
@@ -466,7 +475,7 @@ struct DataPeerListResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
     std::vector<DataPeerStatus> peers;
 };
 
@@ -487,7 +496,7 @@ struct ArtifactTransferResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
     ArtifactDescriptor descriptor;
 };
 
@@ -512,7 +521,7 @@ struct ArtifactUploadSessionResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
     ArtifactUploadSession upload;
     ArtifactDescriptor descriptor;
 };
@@ -536,14 +545,14 @@ struct ArtifactTransferStatus {
     std::int64_t updated_unix_ms{};
     std::int64_t completed_unix_ms{};
     std::string message;
-    RpcError error;
+    core::SwarmError error;
 };
 
 struct ArtifactTransferStatusResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
     ArtifactTransferStatus transfer;
 };
 
@@ -551,7 +560,7 @@ struct ArtifactListResult {
     bool ok{false};
     std::string message;
     std::string correlation_id;
-    RpcError error;
+    core::SwarmError error;
     std::vector<ArtifactDescriptor> artifacts;
     std::string next_page_token;
     int total_count{};
@@ -572,7 +581,7 @@ struct ArtifactListOptions {
  * subscription dispatcher. They must be thread-safe and should return quickly.
  */
 /// @{
-using TelemetryHandler = std::function<void(const swarmkit::core::TelemetryFrame&)>;
+using TelemetryHandler = std::function<void(const TelemetryDelivery&)>;
 using TelemetryErrorHandler = std::function<void(const std::string&)>;
 using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
 using AgentReportHandler = std::function<void(const AgentReport&)>;
@@ -617,7 +626,7 @@ struct SubscriptionEvent {
     std::string drone_id;
     std::string correlation_id;
     int attempt_number{};
-    RpcError error;
+    core::SwarmError error;
     std::string message;
     std::size_t dropped_callbacks{};
 };
@@ -648,7 +657,7 @@ class Subscription {
     std::shared_ptr<State> state_;
 };
 
-using SubscriptionResult = std::expected<Subscription, RpcError>;
+using SubscriptionResult = std::expected<Subscription, core::SwarmError>;
 
 /**
  * @brief RAII authority lease for a single drone.
@@ -737,8 +746,8 @@ class Client {
     [[nodiscard]] RuntimeStats GetRuntimeStats() const;
 
     /// @brief Discover backend/autopilot features this agent can execute.
-    /// @return BackendCapabilities reported by the connected agent backend.
-    [[nodiscard]] BackendCapabilities GetCapabilities() const;
+    /// @return CapabilitiesResult containing Agent metadata and the backend feature set.
+    [[nodiscard]] CapabilitiesResult GetCapabilities() const;
 
     /**
      * @brief Send a single command to the agent.
@@ -796,21 +805,17 @@ class Client {
                                             const CommandWaitOptions& options = {}) const;
 
     /// @brief Set or replace the agent-supervised active goal for a drone.
-    /// @param goal Goal target, acceptance/deviation radii, timeout, and labels.
+    /// @param request Goal definition and optional complete execution context.
     /// @return GoalResult with computed timeout and stored goal on success.
-    [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoal& goal) const;
+    [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoalRequest& request) const;
 
-    /// @brief Cancel the current active goal for a drone.
-    /// @param drone_id Target drone identifier.
-    /// @param goal_id Optional goal id guard; empty cancels the current goal.
-    /// @return CommandResult describing cancellation.
-    [[nodiscard]] CommandResult CancelGoal(const std::string& drone_id,
-                                           const std::string& goal_id = {}) const;
+    /// Cancel only if the complete currently active execution handle matches.
+    [[nodiscard]] CancelGoalResult CancelGoal(const core::ExecutionHandle& expected) const;
 
     /// @brief Read the current active goal state known by the agent.
     /// @param drone_id Target drone identifier.
-    /// @return ActiveGoalStatus with has_goal=false when no goal is active.
-    [[nodiscard]] ActiveGoalStatus GetActiveGoal(const std::string& drone_id) const;
+    /// @return ActiveGoalResult with no snapshot when no goal is active.
+    [[nodiscard]] ActiveGoalResult GetActiveGoal(const std::string& drone_id) const;
 
     /// @brief Publish a small app-defined data-plane message.
     /// @param message Message topic, target, labels, TTL, and payload.
@@ -887,10 +892,7 @@ class Client {
         const std::string& transfer_id) const;
 
     /// @brief List artifacts stored or announced by the connected agent.
-    [[nodiscard]] ArtifactListResult ListArtifacts(std::string source_id = {},
-                                                   std::string target_id = {},
-                                                   bool include_expired = false) const;
-    [[nodiscard]] ArtifactListResult ListArtifacts(const ArtifactListOptions& options) const;
+    [[nodiscard]] ArtifactListResult ListArtifacts(const ArtifactListOptions& options = {}) const;
 
     /// @brief Inspect metadata for one stored or announced artifact.
     [[nodiscard]] ArtifactTransferResult GetArtifact(const std::string& artifact_id) const;
@@ -943,7 +945,7 @@ class Client {
      * @brief Start a background gRPC streaming telemetry subscription.
      *
      * @param subscription Drone identifier and rate_hertz to request.
-     * @param on_frame     Called for every received TelemetryFrame.
+     * @param on_frame     Called for every received TelemetryDelivery.
      * @param on_error     Called once when the stream ends due to an error;
      *                     not called on a clean StopTelemetry() cancellation.
      * @param on_event     Optional lifecycle/backpressure event callback.

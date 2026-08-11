@@ -44,10 +44,10 @@ struct TelemetrySampleResult {
 
     auto telemetry_stream = client.StartTelemetry(
         {.drone_id = std::string(drone_id), .rate_hertz = 2},
-        [&](const swarmkit::core::TelemetryFrame& frame) {
+        [&](const swarmkit::client::TelemetryDelivery& delivery) {
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                latest_frame = frame;
+                latest_frame = delivery.frame;
             }
             frame_cv.notify_all();
         },
@@ -279,6 +279,18 @@ int RunStats(Client& client) {
     return EXIT_SUCCESS;
 }
 
+[[nodiscard]] std::string MotionLimitText(const std::optional<swarmkit::core::MotionLimit>& limit) {
+    if (!limit.has_value()) {
+        return "unknown";
+    }
+    std::ostringstream out;
+    out << limit->value;
+    if (!limit->source.empty()) {
+        out << " (" << limit->source << ")";
+    }
+    return out.str();
+}
+
 int RunCapabilities(Client& client) {
     const auto capabilities = client.GetCapabilities();
     if (!capabilities.ok) {
@@ -303,31 +315,30 @@ int RunCapabilities(Client& client) {
 
     std::cout << "Backend Capabilities\n"
               << "  agent_id                    : " << capabilities.agent_id << "\n"
-              << "  backend_name                : " << capabilities.backend_name << "\n"
-              << "  protocol                    : " << capabilities.protocol << "\n"
-              << "  vehicle_class               : " << capabilities.vehicle_class << "\n"
-              << "  autopilot_type              : " << capabilities.autopilot_type << "\n"
+              << "  backend_name                : " << capabilities.backend.backend_name << "\n"
+              << "  protocol                    : " << capabilities.backend.protocol << "\n"
+              << "  vehicle_class               : " << capabilities.backend.vehicle_class << "\n"
+              << "  autopilot_type              : " << capabilities.backend.autopilot_type << "\n"
               << "  supports_payload_control    : "
-              << (capabilities.supports_payload_control ? "true" : "false") << "\n"
+              << (capabilities.backend.supports_payload_control ? "true" : "false") << "\n"
               << "  supports_velocity_control   : "
-              << (capabilities.supports_velocity_control ? "true" : "false") << "\n"
+              << (capabilities.backend.supports_velocity_control ? "true" : "false") << "\n"
               << "  supports_flight_termination : "
-              << (capabilities.supports_flight_termination ? "true" : "false") << "\n"
+              << (capabilities.backend.supports_flight_termination ? "true" : "false") << "\n"
               << "  supports_backend_commands   : "
-              << (capabilities.supports_backend_commands ? "true" : "false") << "\n"
+              << (capabilities.backend.supports_backend_commands ? "true" : "false") << "\n"
               << "  max_horizontal_speed_mps    : "
-              << OptionalFloatText(capabilities.max_horizontal_speed_mps) << "\n"
+              << MotionLimitText(capabilities.backend.max_horizontal_speed) << "\n"
               << "  max_climb_speed_mps         : "
-              << OptionalFloatText(capabilities.max_climb_speed_mps) << "\n"
+              << MotionLimitText(capabilities.backend.max_climb_speed) << "\n"
               << "  max_descent_speed_mps       : "
-              << OptionalFloatText(capabilities.max_descent_speed_mps) << "\n"
+              << MotionLimitText(capabilities.backend.max_descent_speed) << "\n"
               << "  max_altitude_m              : "
-              << OptionalFloatText(capabilities.max_altitude_m) << "\n";
-    print_list("supported_modes", capabilities.supported_modes);
-    print_list("supported_commands", capabilities.supported_commands);
-    print_list("supported_payloads", capabilities.supported_payloads);
-    print_list("supported_telemetry_fields", capabilities.supported_telemetry_fields);
-    print_list("backend_command_names", capabilities.backend_command_names);
+              << MotionLimitText(capabilities.backend.max_altitude) << "\n";
+    print_list("supported_modes", capabilities.backend.supported_modes);
+    print_list("supported_commands", capabilities.backend.supported_commands);
+    print_list("supported_payloads", capabilities.backend.supported_payloads);
+    print_list("backend_command_names", capabilities.backend.backend_command_names);
     return EXIT_SUCCESS;
 }
 

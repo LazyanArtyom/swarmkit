@@ -11,6 +11,35 @@
 #include <vector>
 
 namespace swarmkit::agent::internal {
+namespace {
+
+void NormalizeMeasurement(core::MeasurementProvenance* current,
+                          const core::MeasurementProvenance* previous, std::int64_t receive_wall_ms,
+                          std::int64_t receive_monotonic_ns) {
+    if (current == nullptr) {
+        return;
+    }
+
+    if (!current->updated) {
+        if (previous != nullptr) {
+            *current = *previous;
+            current->updated = false;
+        } else {
+            current->updated = false;
+        }
+        return;
+    }
+
+    current->updated = true;
+    current->generation = previous == nullptr ? 1 : previous->generation + 1;
+    current->agent_receive_unix_time_ms = receive_wall_ms;
+    current->agent_receive_monotonic_time_ns = receive_monotonic_ns;
+    if (current->source.empty()) {
+        current->source = "backend.unspecified";
+    }
+}
+
+}  // namespace
 
 std::shared_ptr<TelemetryState> TelemetryManager::GetOrCreateState(const std::string& drone_id) {
     std::lock_guard<std::mutex> lock(states_mutex_);
@@ -22,11 +51,52 @@ std::shared_ptr<TelemetryState> TelemetryManager::GetOrCreateState(const std::st
 }
 
 void TelemetryManager::PublishFrame(const std::shared_ptr<TelemetryState>& state,
+                                    const std::string& drone_id,
                                     const core::TelemetryFrame& frame) {
+    core::TelemetryFrame normalized = frame;
+    normalized.drone_id = drone_id;
+    normalized.agent_session_id = agent_session_id_;
+    const std::int64_t receive_wall_ms = providers_.WallTimeMs();
+    const std::int64_t receive_monotonic_ns = providers_.MonotonicTimeNs();
+    normalized.agent_receive_unix_time_ms = receive_wall_ms;
+    normalized.agent_receive_monotonic_time_ns = receive_monotonic_ns;
+    normalized.execution_handle.reset();
+    if (execution_snapshot_provider_) {
+        normalized.execution_handle = execution_snapshot_provider_(drone_id);
+    }
     {
         std::lock_guard<std::mutex> lock(state->data_mutex);
-        state->last_frame = frame;
-        ++state->sequence;
+        const core::TelemetryFrame* previous =
+            state->last_frame.has_value() ? &*state->last_frame : nullptr;
+        NormalizeMeasurement(&normalized.provenance.position,
+                             previous == nullptr ? nullptr : &previous->provenance.position,
+                             receive_wall_ms, receive_monotonic_ns);
+        NormalizeMeasurement(&normalized.provenance.velocity,
+                             previous == nullptr ? nullptr : &previous->provenance.velocity,
+                             receive_wall_ms, receive_monotonic_ns);
+        NormalizeMeasurement(&normalized.provenance.accuracy,
+                             previous == nullptr ? nullptr : &previous->provenance.accuracy,
+                             receive_wall_ms, receive_monotonic_ns);
+        NormalizeMeasurement(&normalized.provenance.estimator,
+                             previous == nullptr ? nullptr : &previous->provenance.estimator,
+                             receive_wall_ms, receive_monotonic_ns);
+        NormalizeMeasurement(&normalized.provenance.vehicle_state,
+                             previous == nullptr ? nullptr : &previous->provenance.vehicle_state,
+                             receive_wall_ms, receive_monotonic_ns);
+        const std::uint64_t accuracy_generation = normalized.provenance.accuracy.generation;
+        auto set_generation =
+            [accuracy_generation](std::optional<core::UncertaintyEstimate>* estimate) {
+                if (estimate != nullptr && estimate->has_value()) {
+                    (*estimate)->descriptor.measurement_generation = accuracy_generation;
+                }
+            };
+        set_generation(&normalized.accuracy.horizontal_position);
+        set_generation(&normalized.accuracy.vertical_position);
+        set_generation(&normalized.accuracy.horizontal_velocity);
+        set_generation(&normalized.accuracy.vertical_velocity);
+        set_generation(&normalized.accuracy.speed);
+        normalized.telemetry_sequence = ++state->sequence;
+        state->last_frame = std::move(normalized);
     }
     state->data_cv.notify_all();
 }
@@ -47,6 +117,11 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
     const int kNormalizedRate = NormalizeRate(requested_rate_hz);
     auto state = GetOrCreateState(drone_id);
     const std::uint64_t kSubscriberId = next_subscriber_id_.fetch_add(1, std::memory_order_relaxed);
+    std::uint64_t initial_sequence = 0;
+    {
+        std::lock_guard<std::mutex> data_lock(state->data_mutex);
+        initial_sequence = state->sequence;
+    }
 
     std::lock_guard<std::mutex> lock(state->control_mutex);
     state->subscriber_rates_hz[kSubscriberId] = kNormalizedRate;
@@ -59,9 +134,11 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
     }
 
     if (!state->backend_running) {
-        const core::Result kStartResult = backend_->StartTelemetry(
-            drone_id, desired_backend_rate,
-            [state](const core::TelemetryFrame& frame) { PublishFrame(state, frame); });
+        const core::Result kStartResult =
+            backend_->StartTelemetry(drone_id, desired_backend_rate,
+                                     [this, state, drone_id](const core::TelemetryFrame& frame) {
+                                         PublishFrame(state, drone_id, frame);
+                                     });
 
         if (!kStartResult.IsOk()) {
             backend_failure_count_.fetch_add(1, std::memory_order_relaxed);
@@ -86,9 +163,11 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
                                         kStopResult.message);
         }
 
-        const core::Result kStartResult = backend_->StartTelemetry(
-            drone_id, desired_backend_rate,
-            [state](const core::TelemetryFrame& frame) { PublishFrame(state, frame); });
+        const core::Result kStartResult =
+            backend_->StartTelemetry(drone_id, desired_backend_rate,
+                                     [this, state, drone_id](const core::TelemetryFrame& frame) {
+                                         PublishFrame(state, drone_id, frame);
+                                     });
 
         if (!kStartResult.IsOk()) {
             backend_failure_count_.fetch_add(1, std::memory_order_relaxed);
@@ -99,7 +178,9 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
             // Attempt to restore the previous rate.
             const core::Result kRestoreResult = backend_->StartTelemetry(
                 drone_id, kPreviousRate,
-                [state](const core::TelemetryFrame& frame) { PublishFrame(state, frame); });
+                [this, state, drone_id](const core::TelemetryFrame& frame) {
+                    PublishFrame(state, drone_id, frame);
+                });
 
             if (kRestoreResult.IsOk()) {
                 state->backend_running = true;
@@ -127,6 +208,7 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
     out_lease->state = std::move(state);
     out_lease->drone_id = drone_id;
     out_lease->subscriber_id = kSubscriberId;
+    out_lease->initial_sequence = initial_sequence;
     return core::Result::Success();
 }
 
@@ -136,8 +218,6 @@ void TelemetryManager::ReleaseLease(const TelemetryLease& lease) {
     }
 
     active_stream_count_.fetch_sub(1, std::memory_order_relaxed);
-    bool should_erase_state = false;
-
     {
         std::lock_guard<std::mutex> lock(lease.state->control_mutex);
         lease.state->subscriber_rates_hz.erase(lease.subscriber_id);
@@ -153,24 +233,6 @@ void TelemetryManager::ReleaseLease(const TelemetryLease& lease) {
                 lease.state->backend_running = false;
                 lease.state->backend_rate_hz = 0;
             }
-
-            should_erase_state = true;
-        }
-    }
-
-    if (should_erase_state) {
-        {
-            std::lock_guard<std::mutex> data_lock(lease.state->data_mutex);
-            lease.state->shutting_down = true;
-            lease.state->last_frame.reset();
-            lease.state->sequence = 0;
-        }
-        lease.state->data_cv.notify_all();
-
-        std::lock_guard<std::mutex> map_lock(states_mutex_);
-        auto iter = states_.find(lease.drone_id);
-        if (iter != states_.end() && iter->second == lease.state) {
-            states_.erase(iter);
         }
     }
 }
@@ -231,6 +293,17 @@ void TelemetryManager::ShutdownAll() {
     }
 
     for (const auto& drone_id : drone_ids) {
+        std::shared_ptr<TelemetryState> state;
+        {
+            std::lock_guard<std::mutex> lock(states_mutex_);
+            const auto iter = states_.find(drone_id);
+            if (iter != states_.end()) {
+                state = iter->second;
+            }
+        }
+        if (!state || !state->backend_running) {
+            continue;
+        }
         const core::Result kStopResult = backend_->StopTelemetry(drone_id);
         if (!kStopResult.IsOk()) {
             core::Logger::WarnFmt(

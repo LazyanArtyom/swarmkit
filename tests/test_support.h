@@ -140,6 +140,11 @@ class RecordingBackend final : public agent::IDroneBackend {
         health_ = std::move(health);
     }
 
+    void SetCapabilities(core::BackendCapabilities capabilities) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        capabilities_ = std::move(capabilities);
+    }
+
     void EmitTelemetry(const std::string& drone_id, const core::TelemetryFrame& frame) {
         TelemetryCallback callback;
         {
@@ -186,8 +191,11 @@ class RecordingBackend final : public agent::IDroneBackend {
         return iter == telemetry_streams_.end() ? 0 : iter->second.rate_hertz;
     }
 
-    [[nodiscard]] agent::BackendCapabilities GetCapabilities() const override {
+    [[nodiscard]] core::BackendCapabilities GetCapabilities() const override {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (capabilities_.has_value()) {
+            return *capabilities_;
+        }
         return {
             .supports_payload_control = false,
             .supports_velocity_control = true,
@@ -218,16 +226,25 @@ class RecordingBackend final : public agent::IDroneBackend {
     std::unordered_map<std::string, int> telemetry_stop_count_;
     ExecuteHandler execute_handler_;
     std::optional<agent::BackendHealth> health_;
+    std::optional<core::BackendCapabilities> capabilities_;
 };
 
 class AgentServerHarness {
    public:
     AgentServerHarness() : AgentServerHarness(MakeDefaultConfig()) {}
 
-    explicit AgentServerHarness(const agent::AgentConfig& config) {
+    explicit AgentServerHarness(agent::internal::RuntimeProviders providers)
+        : AgentServerHarness(MakeDefaultConfig(), std::move(providers)) {}
+
+    explicit AgentServerHarness(const agent::AgentConfig& config)
+        : AgentServerHarness(config, agent::internal::RuntimeProviders::System()) {}
+
+    AgentServerHarness(const agent::AgentConfig& config,
+                       agent::internal::RuntimeProviders providers) {
         auto backend = std::make_unique<RecordingBackend>();
         backend_ = backend.get();
-        services_ = agent::internal::MakeAgentServicesForTesting(config, std::move(backend));
+        services_ = agent::internal::MakeAgentServicesForTesting(config, std::move(backend),
+                                                                 std::move(providers));
 
         grpc::ServerBuilder builder;
         int selected_port = 0;

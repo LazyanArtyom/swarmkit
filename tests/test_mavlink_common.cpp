@@ -11,6 +11,7 @@
 
 #include "mavlink_command_executor.h"
 #include "mavlink_common.h"
+#include "mavlink_telemetry_decoder.h"
 
 namespace swarmkit::agent::mavlink {
 namespace {
@@ -141,6 +142,101 @@ TEST_CASE("MAVLink command ACK lookup ignores in-progress ACKs", "[agent][mavlin
 
     const auto ack = FindCommandAckAfter(history, MAV_CMD_COMPONENT_ARM_DISARM, 0, 245, 191);
     CHECK_FALSE(ack.has_value());
+}
+
+TEST_CASE("MAVLink measurement provenance does not refresh position on heartbeat or attitude",
+          "[agent][mavlink][telemetry][provenance]") {
+    MavlinkTelemetryDecoder decoder;
+    TelemetryCache cache;
+    MavlinkStateCache state;
+
+    mavlink_global_position_int_t position{};
+    position.time_boot_ms = 1234;
+    position.lat = 400'000'000;
+    position.lon = 440'000'000;
+    position.alt = 10'000;
+    position.relative_alt = 8'000;
+    mavlink_message_t position_message{};
+    mavlink_msg_global_position_int_encode(1, 1, &position_message, &position);
+    const auto position_result =
+        decoder.Decode(position_message, &cache, &state, MavlinkAutopilotProfile::kArdupilotCopter);
+    REQUIRE(position_result.should_publish);
+    CHECK(position_result.provenance.position.updated);
+    CHECK(position_result.provenance.velocity.updated);
+    CHECK(position_result.provenance.position.source == "mavlink.GLOBAL_POSITION_INT");
+    REQUIRE(position_result.provenance.position.source_time.timestamp_ms.has_value());
+    CHECK(*position_result.provenance.position.source_time.timestamp_ms == 1234);
+    CHECK(position_result.provenance.position.source_time.clock_domain ==
+          core::ClockDomain::kVehicleBoot);
+
+    mavlink_heartbeat_t heartbeat{};
+    heartbeat.system_status = MAV_STATE_ACTIVE;
+    mavlink_message_t heartbeat_message{};
+    mavlink_msg_heartbeat_encode(1, 1, &heartbeat_message, &heartbeat);
+    const auto heartbeat_result = decoder.Decode(heartbeat_message, &cache, &state,
+                                                 MavlinkAutopilotProfile::kArdupilotCopter);
+    REQUIRE(heartbeat_result.should_publish);
+    CHECK_FALSE(heartbeat_result.provenance.position.updated);
+    CHECK(heartbeat_result.provenance.vehicle_state.updated);
+
+    mavlink_attitude_t attitude{};
+    attitude.time_boot_ms = 9999;
+    mavlink_message_t attitude_message{};
+    mavlink_msg_attitude_encode(1, 1, &attitude_message, &attitude);
+    const auto attitude_result =
+        decoder.Decode(attitude_message, &cache, &state, MavlinkAutopilotProfile::kArdupilotCopter);
+    REQUIRE(attitude_result.should_publish);
+    CHECK_FALSE(attitude_result.provenance.position.updated);
+}
+
+TEST_CASE("MAVLink GPS accuracy retains backend-specific uncertainty semantics",
+          "[agent][mavlink][telemetry][uncertainty]") {
+    MavlinkTelemetryDecoder decoder;
+    TelemetryCache cache;
+    MavlinkStateCache state;
+
+    mavlink_gps_raw_int_t gps{};
+    gps.time_usec = 1'234'000;
+    gps.fix_type = GPS_FIX_TYPE_3D_FIX;
+    gps.h_acc = 700;
+    gps.v_acc = 1'200;
+    gps.vel_acc = 250;
+    mavlink_message_t message{};
+    mavlink_msg_gps_raw_int_encode(1, 1, &message, &gps);
+
+    const auto result =
+        decoder.Decode(message, &cache, &state, MavlinkAutopilotProfile::kArdupilotCopter);
+    REQUIRE(result.should_publish);
+    REQUIRE(cache.accuracy.horizontal_position.has_value());
+    CHECK(cache.accuracy.horizontal_position->value == 0.7F);
+    CHECK(cache.accuracy.horizontal_position->descriptor.semantics ==
+          core::UncertaintySemantics::kBackendSpecific);
+    CHECK(cache.accuracy.horizontal_position->descriptor.source == "mavlink.GPS_RAW_INT.h_acc");
+    REQUIRE(cache.accuracy.vertical_position.has_value());
+    CHECK(cache.accuracy.vertical_position->descriptor.semantics ==
+          core::UncertaintySemantics::kBackendSpecific);
+    REQUIRE(cache.accuracy.speed.has_value());
+    CHECK(cache.accuracy.speed->descriptor.semantics ==
+          core::UncertaintySemantics::kBackendSpecific);
+    CHECK(cache.accuracy.horizontal_position->descriptor.semantics !=
+          core::UncertaintySemantics::kDeterministicHardBound);
+    CHECK_FALSE(cache.accuracy.horizontal_position->descriptor.confidence_level.has_value());
+}
+
+TEST_CASE("MAVLink capability evidence is typed and motion bounds remain unknown",
+          "[agent][mavlink][capabilities]") {
+    MavlinkBackendConfig config;
+    const core::BackendCapabilities capabilities = MavlinkCommandExecutor::Capabilities(config);
+
+    CHECK(capabilities.evidence.source_timestamp == core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.position_estimate == core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.horizontal_position_uncertainty ==
+          core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.horizontal_velocity_uncertainty ==
+          core::CapabilitySupport::kUnsupported);
+    CHECK(capabilities.evidence.estimator_health == core::CapabilitySupport::kSupported);
+    CHECK(capabilities.evidence.failsafe_state == core::CapabilitySupport::kSupported);
+    CHECK_FALSE(capabilities.max_horizontal_speed.has_value());
 }
 
 }  // namespace

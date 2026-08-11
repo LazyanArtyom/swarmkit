@@ -52,7 +52,8 @@ int main() {
     std::atomic<int> frames{0};
     auto telemetry = swarmkit.StartTelemetry(
         {.drone_id = "default", .rate_hertz = 1},
-        [&](const core::TelemetryFrame& frame) {
+        [&](const client::TelemetryDelivery& delivery) {
+            const auto& frame = delivery.frame;
             ++frames;
             if (frame.HasPosition()) {
                 std::cout << "lat=" << frame.lat_deg << " lon=" << frame.lon_deg << "\n";

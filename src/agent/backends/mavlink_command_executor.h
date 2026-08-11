@@ -26,7 +26,7 @@ struct MavlinkCommandLongSpec {
 
 class MavlinkCommandExecutor {
    public:
-    [[nodiscard]] static BackendCapabilities Capabilities(const MavlinkBackendConfig& config);
+    [[nodiscard]] static core::BackendCapabilities Capabilities(const MavlinkBackendConfig& config);
     [[nodiscard]] static core::Result ResolveCustomMode(const MavlinkBackendConfig& config,
                                                         const commands::CmdSetMode& mode,
                                                         int* custom_mode);

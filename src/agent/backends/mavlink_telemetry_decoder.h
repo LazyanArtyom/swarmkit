@@ -14,6 +14,7 @@ namespace swarmkit::agent::mavlink {
 struct MavlinkTelemetryDecodeResult {
     bool should_publish{false};
     bool should_request_intervals{false};
+    core::TelemetryProvenance provenance;
 };
 
 class MavlinkTelemetryDecoder {

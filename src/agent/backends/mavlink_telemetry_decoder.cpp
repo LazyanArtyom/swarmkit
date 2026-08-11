@@ -26,21 +26,46 @@ constexpr std::uint64_t kUnixEpochUsecThreshold = 1000000000000000ULL;
     constexpr auto required = static_cast<std::uint16_t>(
         ESTIMATOR_ATTITUDE | ESTIMATOR_VELOCITY_HORIZ | ESTIMATOR_POS_HORIZ_REL);
     return (flags & required) == required &&
-           (flags & static_cast<std::uint16_t>(ESTIMATOR_GPS_GLITCH | ESTIMATOR_ACCEL_ERROR)) ==
-               0U;
+           (flags & static_cast<std::uint16_t>(ESTIMATOR_GPS_GLITCH | ESTIMATOR_ACCEL_ERROR)) == 0U;
 }
 
-void ApplyGpsSourceTime(std::uint64_t time_usec, TelemetryCache* telemetry_cache) {
-    if (telemetry_cache == nullptr || time_usec == 0U) {
-        return;
+[[nodiscard]] core::TimestampEvidence GpsSourceTime(std::uint64_t time_usec) {
+    if (time_usec == 0U) {
+        return {};
     }
     if (time_usec >= kUnixEpochUsecThreshold) {
-        telemetry_cache->source_unix_time_ms =
-            static_cast<std::int64_t>(time_usec / 1000ULL);
-    } else {
-        telemetry_cache->source_time_boot_ms =
-            static_cast<std::int64_t>(time_usec / 1000ULL);
+        return {
+            .timestamp_ms = static_cast<std::int64_t>(time_usec / 1000ULL),
+            .clock_domain = core::ClockDomain::kUnixEpoch,
+            .synchronization = core::ClockSynchronization::kUnknown,
+        };
     }
+    return {
+        .timestamp_ms = static_cast<std::int64_t>(time_usec / 1000ULL),
+        .clock_domain = core::ClockDomain::kVehicleBoot,
+        .synchronization = core::ClockSynchronization::kUnsynchronized,
+    };
+}
+
+[[nodiscard]] core::TimestampEvidence VehicleBootTime(std::uint32_t time_boot_ms) {
+    if (time_boot_ms == 0U) {
+        return {};
+    }
+    return {
+        .timestamp_ms = static_cast<std::int64_t>(time_boot_ms),
+        .clock_domain = core::ClockDomain::kVehicleBoot,
+        .synchronization = core::ClockSynchronization::kUnsynchronized,
+    };
+}
+
+void MarkUpdated(core::MeasurementProvenance* provenance, std::string source,
+                 core::TimestampEvidence source_time = {}) {
+    if (provenance == nullptr) {
+        return;
+    }
+    provenance->updated = true;
+    provenance->source = std::move(source);
+    provenance->source_time = std::move(source_time);
 }
 
 [[nodiscard]] core::GpsQuality GpsQualityFromFixType(std::uint8_t fix_type) {
@@ -72,22 +97,36 @@ void ApplyGpsAccuracy(const mavlink_gps_raw_int_t& gps, TelemetryCache* telemetr
         return;
     }
     if (gps.h_acc > 0U && gps.h_acc < kInvalidAccuracy) {
-        telemetry_cache->accuracy.horizontal_position_valid = true;
-        telemetry_cache->accuracy.horizontal_position_m =
-            static_cast<float>(gps.h_acc) / kMillimetresPerMetre;
+        telemetry_cache->accuracy.horizontal_position = core::UncertaintyEstimate{
+            .value = static_cast<float>(gps.h_acc) / kMillimetresPerMetre,
+            .descriptor =
+                {
+                    .semantics = core::UncertaintySemantics::kBackendSpecific,
+                    .source = "mavlink.GPS_RAW_INT.h_acc",
+                },
+        };
     }
     if (gps.v_acc > 0U && gps.v_acc < kInvalidAccuracy) {
-        telemetry_cache->accuracy.vertical_position_valid = true;
-        telemetry_cache->accuracy.vertical_position_m =
-            static_cast<float>(gps.v_acc) / kMillimetresPerMetre;
+        telemetry_cache->accuracy.vertical_position = core::UncertaintyEstimate{
+            .value = static_cast<float>(gps.v_acc) / kMillimetresPerMetre,
+            .descriptor =
+                {
+                    .semantics = core::UncertaintySemantics::kBackendSpecific,
+                    .source = "mavlink.GPS_RAW_INT.v_acc",
+                },
+        };
     }
     if (gps.vel_acc > 0U && gps.vel_acc < kInvalidAccuracy) {
-        telemetry_cache->accuracy.velocity_valid = true;
-        telemetry_cache->accuracy.velocity_mps =
-            static_cast<float>(gps.vel_acc) / kMillimetresPerMetre;
+        telemetry_cache->accuracy.speed = core::UncertaintyEstimate{
+            .value = static_cast<float>(gps.vel_acc) / kMillimetresPerMetre,
+            .descriptor =
+                {
+                    .semantics = core::UncertaintySemantics::kBackendSpecific,
+                    .source = "mavlink.GPS_RAW_INT.vel_acc",
+                },
+        };
     }
     if (gps.hdg_acc > 0U && gps.hdg_acc < kInvalidAccuracy) {
-        telemetry_cache->accuracy.heading_valid = true;
         telemetry_cache->accuracy.heading_deg = static_cast<float>(gps.hdg_acc) / 100000.0F;
     }
 }
@@ -100,13 +139,11 @@ void ApplyCommonEstimatorState(std::uint16_t flags, TelemetryCache* telemetry_ca
     telemetry_cache->estimator_flags = flags;
     telemetry_cache->estimator_attitude_ok = (flags & ESTIMATOR_ATTITUDE) != 0U;
     telemetry_cache->estimator_velocity_ok =
-        (flags & static_cast<std::uint16_t>(ESTIMATOR_VELOCITY_HORIZ |
-                                            ESTIMATOR_VELOCITY_VERT)) != 0U;
+        (flags & static_cast<std::uint16_t>(ESTIMATOR_VELOCITY_HORIZ | ESTIMATOR_VELOCITY_VERT)) !=
+        0U;
     telemetry_cache->estimator_position_ok =
-        (flags & static_cast<std::uint16_t>(ESTIMATOR_POS_HORIZ_REL |
-                                            ESTIMATOR_POS_HORIZ_ABS |
-                                            ESTIMATOR_POS_VERT_ABS |
-                                            ESTIMATOR_POS_VERT_AGL)) != 0U;
+        (flags & static_cast<std::uint16_t>(ESTIMATOR_POS_HORIZ_REL | ESTIMATOR_POS_HORIZ_ABS |
+                                            ESTIMATOR_POS_VERT_ABS | ESTIMATOR_POS_VERT_AGL)) != 0U;
     const bool fault =
         (flags & static_cast<std::uint16_t>(ESTIMATOR_GPS_GLITCH | ESTIMATOR_ACCEL_ERROR)) != 0U;
     if (fault) {
@@ -147,9 +184,10 @@ void ApplyArdupilotEkfState(std::uint16_t flags, TelemetryCache* telemetry_cache
 
 }  // namespace
 
-MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
-    const mavlink_message_t& message, TelemetryCache* telemetry_cache,
-    MavlinkStateCache* state_cache, MavlinkAutopilotProfile profile) {
+MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(const mavlink_message_t& message,
+                                                             TelemetryCache* telemetry_cache,
+                                                             MavlinkStateCache* state_cache,
+                                                             MavlinkAutopilotProfile profile) {
     MavlinkTelemetryDecodeResult result;
     if (telemetry_cache == nullptr || state_cache == nullptr) {
         return result;
@@ -169,6 +207,7 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             telemetry_cache->validity.failsafe = true;
             state_cache->UpdateHeartbeat(message, heartbeat);
             result.should_publish = true;
+            MarkUpdated(&result.provenance.vehicle_state, "mavlink.HEARTBEAT");
             if (!message_intervals_requested_) {
                 message_intervals_requested_ = true;
                 result.should_request_intervals = true;
@@ -180,14 +219,12 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             mavlink_msg_global_position_int_decode(&message, &position);
             telemetry_cache->lat_deg = static_cast<double>(position.lat) / kDegE7;
             telemetry_cache->lon_deg = static_cast<double>(position.lon) / kDegE7;
-            telemetry_cache->abs_alt_m =
-                static_cast<float>(position.alt) / kMillimetresPerMetre;
+            telemetry_cache->abs_alt_m = static_cast<float>(position.alt) / kMillimetresPerMetre;
             telemetry_cache->rel_alt_m =
                 static_cast<float>(position.relative_alt) / kMillimetresPerMetre;
             telemetry_cache->vx_mps = static_cast<float>(position.vx) / kCentimetresPerMetre;
             telemetry_cache->vy_mps = static_cast<float>(position.vy) / kCentimetresPerMetre;
             telemetry_cache->vz_mps = static_cast<float>(position.vz) / kCentimetresPerMetre;
-            telemetry_cache->source_time_boot_ms = position.time_boot_ms;
             telemetry_cache->position_frame = core::CoordinateFrame::kWgs84;
             telemetry_cache->velocity_frame = core::CoordinateFrame::kLocalNed;
             telemetry_cache->validity.position = true;
@@ -196,6 +233,9 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             telemetry_cache->validity.velocity = true;
             state_cache->UpdateGlobalPosition(message, position);
             result.should_publish = true;
+            const core::TimestampEvidence source_time = VehicleBootTime(position.time_boot_ms);
+            MarkUpdated(&result.provenance.position, "mavlink.GLOBAL_POSITION_INT", source_time);
+            MarkUpdated(&result.provenance.velocity, "mavlink.GLOBAL_POSITION_INT", source_time);
             break;
         }
         case MAVLINK_MSG_ID_SYS_STATUS: {
@@ -227,14 +267,15 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             telemetry_cache->satellites_visible = gps.satellites_visible;
             telemetry_cache->gps_quality = GpsQualityFromFixType(gps.fix_type);
             telemetry_cache->validity.gps = true;
-            telemetry_cache->gps_hdop =
-                gps.eph == kInvalidGpsEph ? 0.0F
-                                          : static_cast<float>(gps.eph) / kCentimetresPerMetre;
+            telemetry_cache->gps_hdop = gps.eph == kInvalidGpsEph
+                                            ? 0.0F
+                                            : static_cast<float>(gps.eph) / kCentimetresPerMetre;
             telemetry_cache->validity.gps_hdop = gps.eph != kInvalidGpsEph;
-            ApplyGpsSourceTime(gps.time_usec, telemetry_cache);
             ApplyGpsAccuracy(gps, telemetry_cache);
             state_cache->UpdateGps(message, gps);
             result.should_publish = true;
+            MarkUpdated(&result.provenance.accuracy, "mavlink.GPS_RAW_INT",
+                        GpsSourceTime(gps.time_usec));
             break;
         }
         case MAVLINK_MSG_ID_EXTENDED_SYS_STATE: {
@@ -258,24 +299,26 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             }
             state_cache->UpdateExtendedSysState(message, sys_state);
             result.should_publish = true;
+            MarkUpdated(&result.provenance.vehicle_state, "mavlink.EXTENDED_SYS_STATE");
             break;
         }
         case MAVLINK_MSG_ID_ESTIMATOR_STATUS: {
             mavlink_estimator_status_t estimator{};
             mavlink_msg_estimator_status_decode(&message, &estimator);
-            telemetry_cache->ekf_ok = EstimateCommonEstimatorOk(estimator.flags);
             ApplyCommonEstimatorState(estimator.flags, telemetry_cache);
             state_cache->UpdateEstimatorStatus(message, estimator);
             result.should_publish = true;
+            MarkUpdated(&result.provenance.estimator, "mavlink.ESTIMATOR_STATUS",
+                        GpsSourceTime(estimator.time_usec));
             break;
         }
         case MAVLINK_MSG_ID_EKF_STATUS_REPORT: {
             mavlink_ekf_status_report_t ekf{};
             mavlink_msg_ekf_status_report_decode(&message, &ekf);
-            telemetry_cache->ekf_ok = EstimateArdupilotEkfOk(ekf.flags);
             ApplyArdupilotEkfState(ekf.flags, telemetry_cache);
             state_cache->UpdateEkfStatus(message, ekf);
             result.should_publish = true;
+            MarkUpdated(&result.provenance.estimator, "mavlink.EKF_STATUS_REPORT");
             break;
         }
         case MAVLINK_MSG_ID_ATTITUDE: {
@@ -284,7 +327,6 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             telemetry_cache->roll_deg = attitude.roll * kRadiansToDegrees;
             telemetry_cache->pitch_deg = attitude.pitch * kRadiansToDegrees;
             telemetry_cache->yaw_deg = attitude.yaw * kRadiansToDegrees;
-            telemetry_cache->source_time_boot_ms = attitude.time_boot_ms;
             telemetry_cache->validity.attitude = true;
             state_cache->UpdateTelemetry(message);
             result.should_publish = true;
@@ -302,7 +344,6 @@ MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(
             telemetry_cache->home_origin.east_m = home.y;
             telemetry_cache->home_origin.down_m = home.z;
             telemetry_cache->validity.home_origin = true;
-            ApplyGpsSourceTime(home.time_usec, telemetry_cache);
             state_cache->UpdateTelemetry(message);
             result.should_publish = true;
             break;

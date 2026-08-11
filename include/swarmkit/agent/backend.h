@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "swarmkit/commands.h"
+#include "swarmkit/core/capabilities.h"
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/telemetry.h"
 
@@ -45,32 +46,6 @@ struct BackendHealth {
     bool has_relative_altitude{false};          ///< relative_alt_m contains a valid measurement.
     float relative_alt_m{};                     ///< Relative altitude in metres.
     std::optional<float> link_quality_percent;  ///< Optional link quality percentage.
-};
-
-/// @brief Optional numeric capability limits reported by a backend.
-struct BackendNumericLimits {
-    std::optional<float> max_horizontal_speed_mps;  ///< Maximum horizontal speed in m/s.
-    std::optional<float> max_climb_speed_mps;       ///< Maximum climb speed in m/s.
-    std::optional<float> max_descent_speed_mps;     ///< Maximum descent speed in m/s.
-    std::optional<float> max_altitude_m;            ///< Maximum supported altitude in metres.
-};
-
-/// @brief Backend feature set exposed through the client capabilities RPC.
-struct BackendCapabilities {
-    std::string backend_name{"unknown"};          ///< Backend implementation name.
-    std::string protocol{"unknown"};              ///< Vehicle protocol name.
-    std::string vehicle_class{"unknown"};         ///< Vehicle class, for example "multirotor".
-    bool supports_payload_control{false};         ///< Payload command support.
-    bool supports_velocity_control{false};        ///< Velocity setpoint support.
-    bool supports_flight_termination{false};      ///< Emergency termination support.
-    bool supports_backend_commands{false};        ///< Backend-specific command support.
-    std::string autopilot_type{"unknown"};        ///< Autopilot family/profile if known.
-    std::vector<std::string> supported_modes{};     ///< Mode names accepted by CmdSetMode.
-    std::vector<std::string> supported_commands{};  ///< Generic command names.
-    std::vector<std::string> supported_payloads{};  ///< Payload names/devices.
-    std::vector<std::string> supported_telemetry_fields{};  ///< Telemetry fields produced.
-    std::vector<std::string> backend_command_names{};       ///< Names accepted by BackendCmd.
-    BackendNumericLimits limits{};
 };
 
 /// @brief Request passed to BackendRegistry creators.
@@ -127,7 +102,7 @@ class IDroneBackend {
     }
 
     /// @brief Report backend/autopilot capabilities exposed to SDK clients.
-    [[nodiscard]] virtual BackendCapabilities GetCapabilities() const {
+    [[nodiscard]] virtual core::BackendCapabilities GetCapabilities() const {
         return {};
     }
 };
