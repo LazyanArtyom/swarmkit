@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -30,6 +31,10 @@ namespace swarmkit::agent::internal {
 
 class ActiveGoalSupervisor {
    public:
+    using GoalLifecycleObserver =
+        std::function<void(const swarmkit::v1::ActiveGoal&, const core::ExecutionHandle&,
+                           swarmkit::v1::GoalStatus, std::string_view)>;
+
     struct GoalSnapshot {
         swarmkit::v1::ActiveGoal goal;
         std::int64_t computed_timeout_ms{};
@@ -45,6 +50,11 @@ class ActiveGoalSupervisor {
     ActiveGoalSupervisor& operator=(const ActiveGoalSupervisor&) = delete;
 
     [[nodiscard]] static core::Result ValidateGoal(const swarmkit::v1::ActiveGoal& goal);
+
+    /// Bind normalized telemetry to an attempt while its backend dispatch is in progress.
+    void BindDispatchAttempt(const core::ExecutionHandle& execution_handle);
+    void ClearDispatchAttempt(const core::ExecutionHandle& execution_handle);
+    void SetGoalLifecycleObserver(GoalLifecycleObserver observer);
 
     [[nodiscard]] std::int64_t StartGoal(swarmkit::v1::ActiveGoal goal,
                                          core::ExecutionHandle execution_handle);
@@ -81,8 +91,11 @@ class ActiveGoalSupervisor {
     ReportHub* reports_{nullptr};
     const AgentConfig* config_{nullptr};
     RuntimeProviders providers_;
+    mutable std::mutex observer_mutex_;
+    GoalLifecycleObserver lifecycle_observer_;
     mutable std::mutex mutex_;
     std::unordered_map<std::string, ActiveGoalRuntime> goals_;
+    std::unordered_map<std::string, core::ExecutionHandle> dispatch_attempts_;
 };
 
 }  // namespace swarmkit::agent::internal

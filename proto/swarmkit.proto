@@ -24,8 +24,8 @@ service AgentService {
     /// forwarding it to the configured backend.
     rpc SendCommand(CommandRequest) returns (CommandReply);
 
-    /// Subscribe to a server-streaming telemetry feed.
-    rpc StreamTelemetry(TelemetryRequest) returns (stream TelemetryFrame);
+    /// Subscribe to the canonical replay/live telemetry evidence stream.
+    rpc StreamTelemetry(TelemetryRequest) returns (stream TelemetryStreamItem);
 
     /// Set or replace the active supervised goal for one drone.
     /// The agent sends the corresponding guided movement command, then reports
@@ -481,6 +481,36 @@ message CommandRequest {
     Command cmd = 2;
 }
 
+enum BackendDispatchState {
+    BACKEND_DISPATCH_STATE_UNSPECIFIED = 0;
+    BACKEND_DISPATCH_ACCEPTED = 1;
+    BACKEND_DISPATCH_REJECTED = 2;
+    BACKEND_DISPATCH_FAILED = 3;
+}
+
+/// One protocol-level response observed while executing a backend command.
+/// A response acknowledges protocol handling; it never proves physical arrival.
+message BackendProtocolResponse {
+    string protocol = 1;
+    string command_name = 2;
+    optional uint32 native_command_id = 3;
+    bool response_expected = 4;
+    bool response_received = 5;
+    bool response_timed_out = 6;
+    optional int32 result_code = 7;
+    string result_name = 8;
+    string status_text = 9;
+}
+
+/// Backend dispatch result with any protocol acknowledgements retained verbatim.
+message BackendCommandOutcome {
+    BackendDispatchState dispatch_state = 1;
+    string message = 2;
+    int64 dispatch_monotonic_time_ns = 3;
+    int64 completion_monotonic_time_ns = 4;
+    repeated BackendProtocolResponse protocol_responses = 5;
+}
+
 enum ErrorCode {
     ERROR_CODE_UNSPECIFIED = 0;
     ERROR_CODE_NONE = 1;
@@ -511,6 +541,7 @@ message CommandReply {
     string correlation_id = 3;
     ErrorCode error_code = 4;
     string debug_message = 5;
+    BackendCommandOutcome backend_outcome = 6;
 }
 
 // ---------------------------------------------------------------------------
@@ -614,6 +645,7 @@ message SetActiveGoalReply {
     ActiveGoal goal = 6;
     int64 computed_timeout_ms = 7;
     ExecutionHandle execution_handle = 8;
+    BackendCommandOutcome backend_outcome = 9;
 }
 
 message CancelGoalRequest {
@@ -678,6 +710,7 @@ message WatchAuthorityRequest {
  * On PREEMPTED: stop sending commands until RESUMED arrives.
  * On RESUMED:   resume the command loop.
  * On EXPIRED:   your TTL elapsed; re-acquire by sending a new command.
+ * On RELEASED:  your authority was explicitly relinquished.
  */
 message AuthorityEvent {
     enum Kind {
@@ -686,12 +719,14 @@ message AuthorityEvent {
         PREEMPTED = 2;  /// Authority taken by a higher-priority client.
         RESUMED = 3;    /// Higher-priority client released; authority restored.
         EXPIRED = 4;    /// Authority TTL elapsed; must re-acquire.
+        RELEASED = 5;   /// Authority was explicitly relinquished.
     }
     Kind kind = 1;
     string drone_id = 2;
     string holder_client_id = 3;  /// Who now holds authority.
     int32 holder_priority = 4;
     string correlation_id = 5;
+    string affected_client_id = 6;
 }
 
 /**
@@ -935,6 +970,42 @@ message ArtifactTransferReply {
 message TelemetryRequest {
     string drone_id = 1;
     int32 rate_hz = 2;  /// 0 => server default.
+    uint64 after_sequence = 3;  /// Replay normalized frames with sequence > this cursor.
+    string expected_agent_session_id = 4;  /// Empty only for the first connection.
+}
+
+enum TelemetryStreamEventKind {
+    TELEMETRY_STREAM_EVENT_UNSPECIFIED = 0;
+    TELEMETRY_STREAM_STARTED = 1;
+    TELEMETRY_REPLAY_STARTED = 2;
+    TELEMETRY_REPLAY_COMPLETED = 3;
+    TELEMETRY_LIVE_BOUNDARY = 4;
+    TELEMETRY_HISTORY_EVICTED = 5;
+    TELEMETRY_SESSION_MISMATCH = 6;
+    TELEMETRY_CURSOR_AHEAD = 7;
+}
+
+/// Control-plane evidence carried in-band with replayed and live telemetry.
+message TelemetryStreamEvent {
+    TelemetryStreamEventKind kind = 1;
+    string drone_id = 2;
+    string agent_session_id = 3;
+    string transport_stream_id = 4;
+    string expected_agent_session_id = 5;
+    uint64 requested_after_sequence = 6;
+    uint64 oldest_available_sequence = 7;
+    uint64 latest_available_sequence = 8;
+    uint64 replay_first_sequence = 9;
+    uint64 replay_last_sequence = 10;
+    uint64 live_from_sequence = 11;
+    string detail = 12;
+}
+
+message TelemetryStreamItem {
+    oneof item {
+        TelemetryStreamEvent event = 1;
+        TelemetryFrame frame = 2;
+    }
 }
 
 enum TelemetryCoordinateFrame {
@@ -1109,4 +1180,84 @@ message TelemetryFrame {
     bool estimator_attitude_ok = 36;
     ExecutionHandle execution_handle = 37;
     TelemetryProvenance provenance = 38;
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic execution evidence log
+// ---------------------------------------------------------------------------
+
+enum ExecutionSessionState {
+    EXECUTION_SESSION_STATE_UNSPECIFIED = 0;
+    EXECUTION_SESSION_STARTED = 1;
+    EXECUTION_SESSION_COMPLETED = 2;
+    EXECUTION_SESSION_INVALIDATED = 3;
+}
+
+message ExecutionRunMetadata {
+    string run_id = 1;
+    string scenario_id = 2;
+    optional uint64 random_seed = 3;
+    string configuration_sha256 = 4;
+    string software_version = 5;
+    string backend_name = 6;
+    string backend_protocol = 7;
+    string calibration_profile_id = 8;
+    string calibration_version = 9;
+    map<string, string> labels = 10;
+}
+
+message ExecutionSessionEvent {
+    ExecutionSessionState state = 1;
+    ExecutionRunMetadata metadata = 2;
+    string detail = 3;
+}
+
+enum CommandExecutionStage {
+    COMMAND_EXECUTION_STAGE_UNSPECIFIED = 0;
+    COMMAND_EXECUTION_REQUESTED = 1;
+    COMMAND_EXECUTION_COMPLETED = 2;
+}
+
+message CommandExecutionEvent {
+    CommandExecutionStage stage = 1;
+    CommandRequest request = 2;
+    BackendCommandOutcome outcome = 3;
+    ExecutionHandle execution_handle = 4;
+}
+
+message GoalLifecycleEvent {
+    GoalStatus status = 1;
+    ActiveGoal goal = 2;
+    ExecutionHandle execution_handle = 3;
+    string detail = 4;
+}
+
+message VehicleHealthEvent {
+    string drone_id = 1;
+    TelemetryValidityFlags validity = 2;
+    TelemetryEstimatorState estimator_state = 3;
+    bool estimator_position_ok = 4;
+    bool estimator_velocity_ok = 5;
+    bool failsafe = 6;
+    bool armed = 7;
+    bool landed = 8;
+}
+
+/// Versioned envelope used as the payload of every framed evidence-log record.
+message ExecutionEventEnvelope {
+    uint32 schema_version = 1;
+    uint64 event_sequence = 2;
+    string agent_session_id = 3;
+    int64 agent_unix_time_ms = 4;
+    int64 agent_monotonic_time_ns = 5;
+    ExecutionRunMetadata run_metadata = 6;
+    oneof event {
+        ExecutionSessionEvent session = 10;
+        TelemetryFrame telemetry = 11;
+        CommandExecutionEvent command = 12;
+        GoalLifecycleEvent goal = 13;
+        AgentReport report = 14;
+        VehicleHealthEvent health = 15;
+        AuthorityEvent authority = 16;
+    }
 }

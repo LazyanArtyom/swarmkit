@@ -30,8 +30,15 @@ namespace {
 CommandArbiter::CommandArbiter() : expiry_thread_([this] { RunExpiryLoop(); }) {}
 
 CommandArbiter::~CommandArbiter() {
+    Shutdown();
+}
+
+void CommandArbiter::Shutdown() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (shutdown_) {
+            return;
+        }
         shutdown_ = true;
     }
     expiry_cv_.notify_all();
@@ -96,18 +103,41 @@ void CommandArbiter::NotifyWatchers(const std::vector<WatcherEntry>& watchers,
         event.drone_id = notification.drone_id;
         event.holder_client_id = notification.holder_client_id;
         event.holder_priority = notification.holder_priority;
+        event.affected_client_id = notification.target_client_id;
+        event.correlation_id = notification.correlation_id;
         queue->Push(std::move(event));
     }
 }
 
 void CommandArbiter::NotifyPending(const std::vector<WatcherEntry>& watchers,
                                    const std::vector<PendingNotification>& notifications) {
+    EventObserver observer;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        observer = event_observer_;
+    }
     for (const auto& notification : notifications) {
+        if (observer) {
+            observer(AuthorityEvent{
+                .kind = notification.kind,
+                .drone_id = notification.drone_id,
+                .holder_client_id = notification.holder_client_id,
+                .holder_priority = notification.holder_priority,
+                .affected_client_id = notification.target_client_id,
+                .correlation_id = notification.correlation_id,
+            });
+        }
         NotifyWatchers(watchers, notification);
     }
 }
 
+void CommandArbiter::SetEventObserver(EventObserver observer) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    event_observer_ = std::move(observer);
+}
+
 void CommandArbiter::ResumeSuspendedHolder(DroneState& state, std::string_view drone_id,
+                                           std::string_view correlation_id,
                                            std::vector<PendingNotification>* notifications) {
     while (!state.suspended_holders.empty()) {
         DroneState::Holder resumed_holder = std::move(state.suspended_holders.back());
@@ -120,6 +150,7 @@ void CommandArbiter::ResumeSuspendedHolder(DroneState& state, std::string_view d
                 .drone_id = std::string(drone_id),
                 .holder_client_id = "",
                 .holder_priority = resumed_holder.priority,
+                .correlation_id = std::string(correlation_id),
             });
             continue;
         }
@@ -131,6 +162,7 @@ void CommandArbiter::ResumeSuspendedHolder(DroneState& state, std::string_view d
             .drone_id = std::string(drone_id),
             .holder_client_id = resumed_holder.client_id,
             .holder_priority = resumed_holder.priority,
+            .correlation_id = std::string(correlation_id),
         });
         return;
     }
@@ -150,9 +182,10 @@ void CommandArbiter::EvictExpiredHolder(DroneState& state, std::string_view dron
             .drone_id = std::string(drone_id),
             .holder_client_id = "",
             .holder_priority = kExpiredHolder.priority,
+            .correlation_id = "",
         });
 
-        ResumeSuspendedHolder(state, drone_id, notifications);
+        ResumeSuspendedHolder(state, drone_id, "", notifications);
     }
 
     std::erase_if(state.suspended_holders, [&](const DroneState::Holder& holder) {
@@ -166,6 +199,7 @@ void CommandArbiter::EvictExpiredHolder(DroneState& state, std::string_view dron
             .drone_id = std::string(drone_id),
             .holder_client_id = "",
             .holder_priority = holder.priority,
+            .correlation_id = "",
         });
         return true;
     });
@@ -277,6 +311,7 @@ CommandArbiter::GrantResult CommandArbiter::CheckAndGrantDetailed(const CommandC
                 .drone_id = context.drone_id,
                 .holder_client_id = context.client_id,
                 .holder_priority = context.priority,
+                .correlation_id = context.correlation_id,
             });
 
             core::Logger::DebugFmt(
@@ -308,6 +343,7 @@ CommandArbiter::GrantResult CommandArbiter::CheckAndGrantDetailed(const CommandC
                 .drone_id = context.drone_id,
                 .holder_client_id = context.client_id,
                 .holder_priority = context.priority,
+                .correlation_id = context.correlation_id,
             });
             notifications.push_back(PendingNotification{
                 .target_client_id = context.client_id,
@@ -315,6 +351,7 @@ CommandArbiter::GrantResult CommandArbiter::CheckAndGrantDetailed(const CommandC
                 .drone_id = context.drone_id,
                 .holder_client_id = context.client_id,
                 .holder_priority = context.priority,
+                .correlation_id = context.correlation_id,
             });
 
             core::Logger::InfoFmt(
@@ -324,11 +361,9 @@ CommandArbiter::GrantResult CommandArbiter::CheckAndGrantDetailed(const CommandC
             grant.granted_for_call = true;
             grant.preempted_holder = true;
         } else {
-            grant.result =
-                core::Result::Rejected("command authority held by '" + state.holder->client_id +
-                                       "' at priority " +
-                                       std::to_string(static_cast<int>(state.holder->priority)));
-            return grant;
+            grant.result = core::Result::Rejected(
+                "command authority held by '" + state.holder->client_id + "' at priority " +
+                std::to_string(static_cast<int>(state.holder->priority)));
         }
 
         watchers_to_notify = state.watchers;
@@ -344,7 +379,8 @@ CommandArbiter::GrantResult CommandArbiter::CheckAndGrantDetailed(const CommandC
 /// @name CommandArbiter — Release
 /// @{
 
-void CommandArbiter::Release(const std::string& drone_id, const std::string& client_id) {
+void CommandArbiter::Release(const std::string& drone_id, const std::string& client_id,
+                             std::string_view correlation_id) {
     std::vector<WatcherEntry> watchers_to_notify;
     std::vector<PendingNotification> notifications;
 
@@ -359,15 +395,37 @@ void CommandArbiter::Release(const std::string& drone_id, const std::string& cli
         EvictExpiredHolder(state, drone_id, &notifications);
 
         if (state.holder.has_value() && state.holder->client_id == client_id) {
+            const DroneState::Holder released_holder = *state.holder;
             core::Logger::InfoFmt("CommandArbiter: '{}' released authority on drone '{}'",
                                   client_id, drone_id);
             state.holder.reset();
-            ResumeSuspendedHolder(state, drone_id, &notifications);
+            notifications.push_back(PendingNotification{
+                .target_client_id = client_id,
+                .kind = AuthorityEvent::Kind::kReleased,
+                .drone_id = drone_id,
+                .holder_client_id = "",
+                .holder_priority = released_holder.priority,
+                .correlation_id = std::string(correlation_id),
+            });
+            ResumeSuspendedHolder(state, drone_id, correlation_id, &notifications);
             watchers_to_notify = state.watchers;
         } else {
-            const std::size_t kRemovedCount = std::erase_if(
-                state.suspended_holders,
-                [&](const DroneState::Holder& holder) { return holder.client_id == client_id; });
+            const std::size_t kRemovedCount =
+                std::erase_if(state.suspended_holders, [&](const DroneState::Holder& holder) {
+                    if (holder.client_id != client_id) {
+                        return false;
+                    }
+                    notifications.push_back(PendingNotification{
+                        .target_client_id = client_id,
+                        .kind = AuthorityEvent::Kind::kReleased,
+                        .drone_id = drone_id,
+                        .holder_client_id = state.holder.has_value() ? state.holder->client_id : "",
+                        .holder_priority =
+                            state.holder.has_value() ? state.holder->priority : holder.priority,
+                        .correlation_id = std::string(correlation_id),
+                    });
+                    return true;
+                });
             if (kRemovedCount == 0U && notifications.empty()) {
                 return;
             }

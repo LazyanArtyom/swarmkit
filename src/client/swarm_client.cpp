@@ -567,7 +567,7 @@ std::unordered_map<std::string, GoalResult> SwarmClient::SetActiveGoals(
 }
 
 SubscriptionResult SwarmClient::StartTelemetry(TelemetrySubscription subscription,
-                                               TelemetryHandler on_frame,
+                                               TelemetryObservationHandler on_observation,
                                                TelemetryErrorHandler on_error,
                                                SubscriptionEventHandler on_event,
                                                SubscriptionOptions options) {
@@ -582,8 +582,8 @@ SubscriptionResult SwarmClient::StartTelemetry(TelemetrySubscription subscriptio
         }
         client = iter->second;
     }
-    return client->StartTelemetry(std::move(subscription), std::move(on_frame), std::move(on_error),
-                                  std::move(on_event), options);
+    return client->StartTelemetry(std::move(subscription), std::move(on_observation),
+                                  std::move(on_error), std::move(on_event), options);
 }
 
 void SwarmClient::StopTelemetry(const std::string& drone_id) {
@@ -599,18 +599,17 @@ void SwarmClient::StopTelemetry(const std::string& drone_id) {
     client->StopTelemetry();
 }
 
-SwarmSubscriptionResults SwarmClient::StartAllTelemetry(int rate_hertz,
-                                                        const TelemetryHandler& on_frame,
-                                                        const TelemetryErrorHandler& on_error,
-                                                        const SubscriptionEventHandler& on_event,
-                                                        SubscriptionOptions options) {
+SwarmSubscriptionResults SwarmClient::StartAllTelemetry(
+    int rate_hertz, const TelemetryObservationHandler& on_observation,
+    const TelemetryErrorHandler& on_error, const SubscriptionEventHandler& on_event,
+    SubscriptionOptions options) {
     SwarmSubscriptionResults results;
     const auto clients = impl_->Snapshot();
     results.reserve(clients.size());
     for (const auto& [drone_id, client] : clients) {
         results.emplace(drone_id,
                         client->StartTelemetry({.drone_id = drone_id, .rate_hertz = rate_hertz},
-                                               on_frame, on_error, on_event, options));
+                                               on_observation, on_error, on_event, options));
     }
     return results;
 }

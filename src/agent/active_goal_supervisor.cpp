@@ -152,6 +152,24 @@ core::Result ActiveGoalSupervisor::ValidateGoal(const swarmkit::v1::ActiveGoal& 
     return core::Result::Success();
 }
 
+void ActiveGoalSupervisor::BindDispatchAttempt(const core::ExecutionHandle& execution_handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    dispatch_attempts_[execution_handle.drone_id] = execution_handle;
+}
+
+void ActiveGoalSupervisor::ClearDispatchAttempt(const core::ExecutionHandle& execution_handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto iter = dispatch_attempts_.find(execution_handle.drone_id);
+    if (iter != dispatch_attempts_.end() && iter->second == execution_handle) {
+        dispatch_attempts_.erase(iter);
+    }
+}
+
+void ActiveGoalSupervisor::SetGoalLifecycleObserver(GoalLifecycleObserver observer) {
+    std::lock_guard<std::mutex> lock(observer_mutex_);
+    lifecycle_observer_ = std::move(observer);
+}
+
 std::int64_t ActiveGoalSupervisor::StartGoal(swarmkit::v1::ActiveGoal goal,
                                              core::ExecutionHandle execution_handle) {
     std::thread old_worker;
@@ -264,8 +282,13 @@ std::optional<ActiveGoalSupervisor::GoalSnapshot> ActiveGoalSupervisor::GetGoal(
 
 std::optional<core::ExecutionHandle> ActiveGoalSupervisor::GetExecutionHandle(
     const std::string& drone_id) const {
-    const auto snapshot = GetGoal(drone_id);
-    return snapshot.has_value() ? std::optional{snapshot->execution_handle} : std::nullopt;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (const auto dispatch = dispatch_attempts_.find(drone_id);
+        dispatch != dispatch_attempts_.end()) {
+        return dispatch->second;
+    }
+    const auto active = goals_.find(drone_id);
+    return active != goals_.end() ? std::optional{active->second.execution_handle} : std::nullopt;
 }
 
 void ActiveGoalSupervisor::Shutdown() {
@@ -279,6 +302,7 @@ void ActiveGoalSupervisor::Shutdown() {
             workers.push_back(std::move(runtime.worker));
         }
         goals_.clear();
+        dispatch_attempts_.clear();
     }
     for (const auto& stop : stops) {
         if (stop) {
@@ -308,6 +332,14 @@ void ActiveGoalSupervisor::PublishGoalReport(const swarmkit::v1::ActiveGoal& goa
                                              double altitude_error_m, std::int64_t timeout_ms,
                                              std::int64_t started_ms, std::string_view message,
                                              const core::ExecutionHandle& execution_handle) {
+    GoalLifecycleObserver observer;
+    {
+        std::lock_guard<std::mutex> lock(observer_mutex_);
+        observer = lifecycle_observer_;
+    }
+    if (observer) {
+        observer(goal, execution_handle, status, message);
+    }
     if (reports_ == nullptr) {
         return;
     }
@@ -340,8 +372,9 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
                                        const core::ExecutionHandle& execution_handle,
                                        const std::shared_ptr<std::atomic<bool>>& stop) {
     TelemetryLease lease;
-    const core::Result acquire_result = telemetry_->AcquireLease(
-        goal.drone_id(), std::max(1, config_->default_telemetry_rate_hz), &lease);
+    const core::Result acquire_result =
+        telemetry_->AcquireLease(goal.drone_id(), std::max(1, config_->default_telemetry_rate_hz),
+                                 TelemetryCursor{}, &lease);
     if (!acquire_result.IsOk()) {
         PublishGoalReport(goal, swarmkit::v1::GOAL_FAILED, swarmkit::v1::REPORT_ERROR, 0.0, 0.0,
                           0.0, configured_timeout_ms, started_ms,
@@ -356,8 +389,14 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
     std::int64_t timeout_ms = configured_timeout_ms;
 
     while (stop && !stop->load(std::memory_order_relaxed)) {
-        core::TelemetryFrame frame;
-        if (!TelemetryManager::WaitForFrame(lease, &last_sequence, &frame, kTelemetryWaitTimeout)) {
+        TelemetryReadResult read =
+            TelemetryManager::WaitForFrame(lease, last_sequence, kTelemetryWaitTimeout);
+        if (read.status == TelemetryReadStatus::kHistoryEvicted) {
+            last_sequence = read.oldest_available_sequence > 0 ? read.oldest_available_sequence - 1
+                                                               : read.latest_available_sequence;
+            continue;
+        }
+        if (read.status != TelemetryReadStatus::kFrame) {
             if (providers_.WallTimeMs() - started_ms >= timeout_ms) {
                 PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR, 0.0,
                                   0.0, 0.0, timeout_ms, started_ms,
@@ -367,6 +406,8 @@ void ActiveGoalSupervisor::MonitorGoal(const swarmkit::v1::ActiveGoal& goal,
             }
             continue;
         }
+        core::TelemetryFrame frame = std::move(read.frame);
+        last_sequence = frame.telemetry_sequence;
         if (!frame.HasPosition() || !frame.HasRelativeAltitude()) {
             if (providers_.WallTimeMs() - started_ms >= timeout_ms) {
                 PublishGoalReport(goal, swarmkit::v1::GOAL_TIMEOUT, swarmkit::v1::REPORT_ERROR, 0.0,

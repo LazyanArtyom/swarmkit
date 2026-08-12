@@ -112,17 +112,35 @@ class MavlinkBackend final : public IDroneBackend {
         return EnsureReceiverStarted();
     }
 
-    core::Result Execute(const CommandEnvelope& envelope) override {
+    core::BackendCommandOutcome Execute(const CommandEnvelope& envelope) override {
+        core::BackendCommandOutcome outcome;
+        const auto finalize = [&outcome](core::Result result) {
+            outcome.result = std::move(result);
+            outcome.dispatch_state = outcome.result.IsOk()
+                                         ? core::BackendDispatchState::kAccepted
+                                         : (outcome.result.code == core::StatusCode::kRejected
+                                                ? core::BackendDispatchState::kRejected
+                                                : core::BackendDispatchState::kFailed);
+        };
         if (const core::Result result = EnsureReceiverStarted(); !result.IsOk()) {
-            return result;
+            finalize(result);
+            return outcome;
         }
         if (!WaitForEndpoint()) {
-            return core::Result::Rejected("no MAVLink peer discovered yet for target system " +
-                                          std::to_string(config_.target_system) + " on " +
-                                          config_.bind_addr);
+            finalize(core::Result::Rejected("no MAVLink peer discovered yet for target system " +
+                                            std::to_string(config_.target_system) + " on " +
+                                            config_.bind_addr));
+            return outcome;
         }
 
         std::lock_guard<std::mutex> command_lock(command_mutex_);
+        active_protocol_responses_ = &outcome.protocol_responses;
+        struct ActiveTraceReset {
+            std::vector<core::BackendProtocolResponse>*& slot;
+            ~ActiveTraceReset() {
+                slot = nullptr;
+            }
+        } trace_reset{active_protocol_responses_};
         core::Result result = core::Result::Rejected("command not handled");
         std::visit(core::Overloaded{
                        [&](const FlightCmd& flight) {
@@ -133,7 +151,8 @@ class MavlinkBackend final : public IDroneBackend {
                        [&](const BackendCmd& backend) { result = ExecuteBackendCommand(backend); },
                    },
                    envelope.command);
-        return result;
+        finalize(std::move(result));
+        return outcome;
     }
 
     core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,
@@ -641,9 +660,15 @@ class MavlinkBackend final : public IDroneBackend {
         if (!send_result.IsOk() || !wait_for_ack) {
             mav::MavlinkCommandAckResult result;
             result.send_result = std::move(send_result);
+            if (wait_for_ack) {
+                RecordProtocolResponse(command, result);
+            }
             return result;
         }
-        return WaitForCommandAck(command, ack_start_sequence, status_start_sequence);
+        mav::MavlinkCommandAckResult result =
+            WaitForCommandAck(command, ack_start_sequence, status_start_sequence);
+        RecordProtocolResponse(command, result);
+        return result;
     }
 
     [[nodiscard]] core::Result SendSetPositionTargetGlobalInt(const CmdSetWaypoint& waypoint) {
@@ -790,10 +815,47 @@ class MavlinkBackend final : public IDroneBackend {
 
     [[nodiscard]] core::Result SendUnverifiedMavlinkMessage(const mavlink_message_t& message) {
         core::Result result = SendMavlinkMessage(message);
+        if (active_protocol_responses_ != nullptr) {
+            active_protocol_responses_->push_back(core::BackendProtocolResponse{
+                .protocol = "mavlink2",
+                .command_name = "message-id-" + std::to_string(message.msgid),
+                .native_command_id = std::nullopt,
+                .response_expected = false,
+                .response_received = false,
+                .response_timed_out = false,
+                .result_code = std::nullopt,
+                .result_name = result.IsOk() ? "SENT_UNACKNOWLEDGED" : "SEND_FAILED",
+                .status_text = result.message,
+            });
+        }
         if (!result.IsOk()) {
             return result;
         }
         return core::Result::Success("MAVLink setpoint sent; setpoint stream is not acknowledged");
+    }
+
+    void RecordProtocolResponse(std::uint16_t command,
+                                const mav::MavlinkCommandAckResult& ack_result) {
+        if (active_protocol_responses_ == nullptr) {
+            return;
+        }
+        core::BackendProtocolResponse response{
+            .protocol = "mavlink2",
+            .command_name = "COMMAND_LONG",
+            .native_command_id = command,
+            .response_expected = true,
+            .response_received = ack_result.has_ack,
+            .response_timed_out = ack_result.ack_timed_out,
+            .result_code = std::nullopt,
+            .result_name = ack_result.ack_timed_out ? "ACK_TIMEOUT" : "NO_ACK",
+            .status_text = ack_result.has_status_text ? ack_result.status_text.text
+                                                      : ack_result.send_result.message,
+        };
+        if (ack_result.has_ack) {
+            response.result_code = static_cast<std::int32_t>(ack_result.ack.result);
+            response.result_name = mav::MavResultName(ack_result.ack.result);
+        }
+        active_protocol_responses_->push_back(std::move(response));
     }
 
     void RecordCommandAck(const mav::CommandAck& ack) {
@@ -953,6 +1015,7 @@ class MavlinkBackend final : public IDroneBackend {
     TelemetryCallback telemetry_callback_;
 
     std::mutex command_mutex_;
+    std::vector<core::BackendProtocolResponse>* active_protocol_responses_{nullptr};
 
     std::mutex telemetry_mutex_;
     mav::TelemetryCache telemetry_cache_;

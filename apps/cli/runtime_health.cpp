@@ -44,10 +44,15 @@ struct TelemetrySampleResult {
 
     auto telemetry_stream = client.StartTelemetry(
         {.drone_id = std::string(drone_id), .rate_hertz = 2},
-        [&](const swarmkit::client::TelemetryDelivery& delivery) {
+        [&](const swarmkit::client::TelemetryObservation& observation) {
+            const auto* frame =
+                std::get_if<swarmkit::client::TelemetryFrameObservation>(&observation);
+            if (frame == nullptr) {
+                return;
+            }
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                latest_frame = delivery.frame;
+                latest_frame = frame->delivery.frame;
             }
             frame_cv.notify_all();
         },

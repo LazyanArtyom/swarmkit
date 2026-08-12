@@ -90,6 +90,20 @@ struct TelemetryDelivery {
 Two subscribers may receive the same producer frame through different transport streams. A
 reconnect changes transport identity but does not reset producer sequence.
 
+The canonical RPC returns `TelemetryStreamItem`, whose oneof is either a normalized frame or an
+in-band `TelemetryStreamEvent`. A request supplies `after_sequence` and the
+`expected_agent_session_id` associated with that cursor. Stream events identify stream start,
+replay start/completion, the exact live boundary, evicted history, session mismatch, and a cursor
+that is ahead of the current producer. The
+per-drone ring is bounded by `telemetry.retention_frames_per_drone`; unavailable history is never
+presented as continuous. A non-zero cursor without its producer session is invalid.
+
+The SDK callback receives one `TelemetryObservation` variant. Frame observations classify the
+producer sequence as first, next, gap, duplicate, reordered, or new session and expose any missing
+range. Status observations preserve replay/live and history/session facts. Reconnect attempts use
+the last producer sequence accepted by the gRPC reader. Callback queue drops are reported by the
+subscription lifecycle counter and remain distinct from producer-sequence gaps.
+
 ## Timing and measurement provenance
 
 Every normalized frame has Agent receive wall and monotonic timestamps. Position, velocity,
@@ -154,11 +168,33 @@ Semantics distinguish configured command limits, platform assumptions, observed 
 bounds, and unknown. Numeric values and provenance are never exposed as parallel structures. A
 configured speed is not automatically a physical worst-case bound.
 
-## Determinism and future evidence infrastructure
+## Backend outcomes
 
-Wall time, monotonic time, and generated IDs are injectable for tests. The planned telemetry replay,
-execution recorder, scripted backend, and fault decorator must preserve the canonical types above,
-use bounded memory/storage, and make history loss explicit.
+`IDroneBackend::Execute` returns a typed `BackendCommandOutcome`. It distinguishes accepted,
+rejected, and failed dispatch and carries zero or more native protocol responses. Each response
+states whether a response was expected, received, or timed out and may retain a native command ID,
+result code/name, and status text. MAVLink `COMMAND_ACK` details survive into SDK results and the
+execution record. Setpoint messages truthfully state that no ACK exists. None of these outcomes
+prove movement or arrival. SDK results expose the outcome as optional because Agent-side
+validation or authority rejection means no backend dispatch occurred.
+
+## Determinism and evidence recording
+
+Wall time, monotonic time, and generated IDs are injectable. The execution recorder writes one
+Agent-global order of versioned `ExecutionEventEnvelope` protobuf messages. It records session
+start/clean completion, normalized telemetry, health/failsafe changes, command requests and typed
+backend outcomes, exact goal lifecycle/attempt evidence, reports, and authority changes. The
+session header includes run/scenario ID, optional seed, software/backend identity, configuration
+hash, and calibration reference.
+
+Every record uses deterministic protobuf serialization and is framed by a little-endian payload
+length plus SHA-256 checksum. A clean session-completion event distinguishes orderly closure from
+truncation. Storage is bounded. `invalidate_run` is the scientific policy: exhaustion or an I/O
+failure invalidates readiness and blocks further commands. `rotate_oldest` is an explicit
+operational data-loss policy. Report-only JSONL persistence does not exist.
+
+The future scripted backend and fault decorator must preserve these canonical types and make every
+realized fault explicit.
 
 For a fixed normalized execution record and fixed higher-level configuration, TCRR must be able to
 reproduce the same certificate decisions. Console logs are diagnostic and are not correctness

@@ -1674,8 +1674,13 @@ class ControlShell {
         subscription.rate_hertz = rate_hz;
         auto stream = client_.StartTelemetry(
             subscription,
-            [this](const swarmkit::client::TelemetryDelivery& delivery) {
-                const auto& frame = delivery.frame;
+            [this](const swarmkit::client::TelemetryObservation& observation) {
+                const auto* frame_observation =
+                    std::get_if<swarmkit::client::TelemetryFrameObservation>(&observation);
+                if (frame_observation == nullptr) {
+                    return;
+                }
+                const auto& frame = frame_observation->delivery.frame;
                 {
                     std::lock_guard<std::mutex> lock(telemetry_mutex_);
                     latest_frame_ = frame;

@@ -73,7 +73,7 @@ class SimBackend final : public IDroneBackend {
         }
     }
 
-    core::Result Execute(const CommandEnvelope& envelope) override {
+    core::BackendCommandOutcome Execute(const CommandEnvelope& envelope) override {
         const CommandContext& context = envelope.context;
 
         std::visit(
@@ -213,7 +213,11 @@ class SimBackend final : public IDroneBackend {
             },
             envelope.command);
 
-        return core::Result::Success();
+        return core::BackendCommandOutcome{
+            .result = core::Result::Success("simulator accepted command; no protocol ACK exists"),
+            .dispatch_state = core::BackendDispatchState::kAccepted,
+            .protocol_responses = {},
+        };
     }
 
     core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,

@@ -15,7 +15,23 @@ agent:
   default_authority_ttl_ms: 5000
   default_telemetry_rate_hz: 5
   min_telemetry_rate_hz: 1
-  report_log_file: "/tmp/swarmkit-agent-1-reports.jsonl"
+  telemetry:
+    retention_frames_per_drone: 4096
+  reports:
+    backlog_size: 1000
+  execution_recorder:
+    file_path: "/tmp/run-001.swkevidence"
+    run_id: "run-001"
+    scenario_id: "nominal-sitl"
+    random_seed: 104729
+    max_segment_bytes: 268435456
+    max_segments: 1
+    loss_policy: "invalidate_run"
+    flush_each_record: true
+    fsync_each_record: false
+    overwrite_existing: false
+    calibration_profile_id: ""
+    calibration_version: ""
   vehicle_profile:
     profile_id: "generic-quad"
     cruise_speed_mps: 4.0
@@ -41,9 +57,10 @@ agent:
       - "swarmkit-cli"
 ```
 
-The agent also supports report persistence under `reports:` or
-`report_persistence:`, safety options under `safety:`, and data-plane settings
-under `data:` or `data_plane:`.
+`reports` is an in-memory notification/replay stream. Durable correctness evidence is written only
+by `execution_recorder`; the old report-only JSONL path does not exist. `invalidate_run` is the
+scientific fail-closed policy. `rotate_oldest` must be selected explicitly for operational logging
+where bounded evidence loss is acceptable.
 
 ## MAVLink Backend YAML
 
@@ -140,6 +157,11 @@ Important `swarmkit-agent` options:
 --mavlink-target-system N
 --mavlink-target-component N
 --artifact-dir PATH
+--evidence-file PATH
+--evidence-run-id ID
+--evidence-scenario-id ID
+--evidence-seed N
+--evidence-overwrite
 --allow-unsafe-bench-commands
 --transport-security auto|insecure|tls|mtls
 --insecure
@@ -206,9 +228,21 @@ SWARMKIT_AGENT_BIND_ADDR
 SWARMKIT_AGENT_DEFAULT_AUTHORITY_TTL_MS
 SWARMKIT_AGENT_DEFAULT_TELEMETRY_RATE_HZ
 SWARMKIT_AGENT_MIN_TELEMETRY_RATE_HZ
+SWARMKIT_AGENT_TELEMETRY_RETENTION_FRAMES
 SWARMKIT_AGENT_ALLOW_UNSAFE_BENCH_COMMANDS
-SWARMKIT_AGENT_REPORT_LOG_FILE
-SWARMKIT_AGENT_REPORT_SEQUENCE_STATE_FILE
+SWARMKIT_AGENT_REPORT_BACKLOG_SIZE
+SWARMKIT_AGENT_EVIDENCE_FILE
+SWARMKIT_AGENT_EVIDENCE_RUN_ID
+SWARMKIT_AGENT_EVIDENCE_SCENARIO_ID
+SWARMKIT_AGENT_EVIDENCE_MAX_SEGMENT_BYTES
+SWARMKIT_AGENT_EVIDENCE_MAX_SEGMENTS
+SWARMKIT_AGENT_EVIDENCE_LOSS_POLICY
+SWARMKIT_AGENT_EVIDENCE_RANDOM_SEED
+SWARMKIT_AGENT_EVIDENCE_FLUSH_EACH_RECORD
+SWARMKIT_AGENT_EVIDENCE_FSYNC_EACH_RECORD
+SWARMKIT_AGENT_EVIDENCE_OVERWRITE
+SWARMKIT_AGENT_EVIDENCE_CALIBRATION_PROFILE
+SWARMKIT_AGENT_EVIDENCE_CALIBRATION_VERSION
 SWARMKIT_AGENT_ARTIFACT_DIR
 SWARMKIT_AGENT_TRANSPORT_SECURITY
 SWARMKIT_AGENT_ROOT_CA_CERT_PATH

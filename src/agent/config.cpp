@@ -4,8 +4,6 @@
 // This file is part of SwarmKit.
 // See LICENSE.md in the repository root for full license terms.
 
-#include "swarmkit/agent/server.h"
-
 #include <algorithm>
 #include <expected>
 #include <optional>
@@ -17,6 +15,7 @@
 #include "config_yaml.h"
 #include "env_utils.h"
 #include "security_utils.h"
+#include "swarmkit/agent/server.h"
 
 namespace swarmkit::agent {
 namespace {
@@ -29,19 +28,24 @@ constexpr std::string_view kAgentEnvBindAddr = "BIND_ADDR";
 constexpr std::string_view kAgentEnvDefaultAuthorityTtlMs = "DEFAULT_AUTHORITY_TTL_MS";
 constexpr std::string_view kAgentEnvDefaultTelemetryRateHz = "DEFAULT_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvMinTelemetryRateHz = "MIN_TELEMETRY_RATE_HZ";
+constexpr std::string_view kAgentEnvTelemetryRetentionFrames = "TELEMETRY_RETENTION_FRAMES";
 constexpr std::string_view kAgentEnvAllowUnsafeBenchCommands = "ALLOW_UNSAFE_BENCH_COMMANDS";
-constexpr std::string_view kAgentEnvReportLogFile = "REPORT_LOG_FILE";
-constexpr std::string_view kAgentEnvReportSequenceStateFile = "REPORT_SEQUENCE_STATE_FILE";
 constexpr std::string_view kAgentEnvReportBacklogSize = "REPORT_BACKLOG_SIZE";
-constexpr std::string_view kAgentEnvReportLogMaxFileSizeBytes = "REPORT_LOG_MAX_FILE_SIZE_BYTES";
-constexpr std::string_view kAgentEnvReportLogMaxFiles = "REPORT_LOG_MAX_FILES";
-constexpr std::string_view kAgentEnvReportFlushEachWrite = "REPORT_FLUSH_EACH_WRITE";
-constexpr std::string_view kAgentEnvReportFsyncEachWrite = "REPORT_FSYNC_EACH_WRITE";
-constexpr std::string_view kAgentEnvReportReplayFromLog = "REPORT_REPLAY_FROM_LOG";
+constexpr std::string_view kAgentEnvEvidenceFile = "EVIDENCE_FILE";
+constexpr std::string_view kAgentEnvEvidenceRunId = "EVIDENCE_RUN_ID";
+constexpr std::string_view kAgentEnvEvidenceScenarioId = "EVIDENCE_SCENARIO_ID";
+constexpr std::string_view kAgentEnvEvidenceMaxSegmentBytes = "EVIDENCE_MAX_SEGMENT_BYTES";
+constexpr std::string_view kAgentEnvEvidenceMaxSegments = "EVIDENCE_MAX_SEGMENTS";
+constexpr std::string_view kAgentEnvEvidenceLossPolicy = "EVIDENCE_LOSS_POLICY";
+constexpr std::string_view kAgentEnvEvidenceRandomSeed = "EVIDENCE_RANDOM_SEED";
+constexpr std::string_view kAgentEnvEvidenceFlushEachRecord = "EVIDENCE_FLUSH_EACH_RECORD";
+constexpr std::string_view kAgentEnvEvidenceFsyncEachRecord = "EVIDENCE_FSYNC_EACH_RECORD";
+constexpr std::string_view kAgentEnvEvidenceOverwrite = "EVIDENCE_OVERWRITE";
+constexpr std::string_view kAgentEnvEvidenceCalibrationProfile = "EVIDENCE_CALIBRATION_PROFILE";
+constexpr std::string_view kAgentEnvEvidenceCalibrationVersion = "EVIDENCE_CALIBRATION_VERSION";
 constexpr std::string_view kAgentEnvArtifactDir = "ARTIFACT_DIR";
 constexpr std::string_view kAgentEnvDataMessageBacklogSize = "DATA_MESSAGE_BACKLOG_SIZE";
-constexpr std::string_view kAgentEnvDataMaxMessagePayloadBytes =
-    "DATA_MAX_MESSAGE_PAYLOAD_BYTES";
+constexpr std::string_view kAgentEnvDataMaxMessagePayloadBytes = "DATA_MAX_MESSAGE_PAYLOAD_BYTES";
 constexpr std::string_view kAgentEnvDataArtifactChunkBytes = "DATA_ARTIFACT_CHUNK_BYTES";
 constexpr std::string_view kAgentEnvDataMaxArtifactBytes = "DATA_MAX_ARTIFACT_BYTES";
 constexpr std::string_view kAgentEnvDataMaxConcurrentArtifactTransfers =
@@ -174,15 +178,33 @@ core::Result AgentSecurityConfig::Validate() const {
     return core::Result::Success();
 }
 
-core::Result ReportPersistenceConfig::Validate() const {
+core::Result ReportStreamConfig::Validate() const {
     if (backlog_size < 0) {
         return core::Result::Rejected("reports.backlog_size must be >= 0");
     }
-    if (max_log_file_size_bytes < 0) {
-        return core::Result::Rejected("reports.max_log_file_size_bytes must be >= 0");
+    return core::Result::Success();
+}
+
+core::Result ExecutionRecorderConfig::Validate() const {
+    if (file_path.empty()) {
+        return core::Result::Success();
     }
-    if (max_log_files < 0) {
-        return core::Result::Rejected("reports.max_log_files must be >= 0");
+    if (max_segment_bytes <= 1024) {
+        return core::Result::Rejected("execution_recorder.max_segment_bytes must be > 1024");
+    }
+    if (max_segments <= 0) {
+        return core::Result::Rejected("execution_recorder.max_segments must be > 0");
+    }
+    if (loss_policy == EvidenceLossPolicy::kInvalidateRun && max_segments != 1) {
+        return core::Result::Rejected(
+            "execution_recorder.max_segments must be 1 when loss_policy is invalidate_run");
+    }
+    return core::Result::Success();
+}
+
+core::Result TelemetryRetentionConfig::Validate() const {
+    if (max_frames_per_drone <= 0) {
+        return core::Result::Rejected("telemetry_retention.max_frames_per_drone must be > 0");
     }
     return core::Result::Success();
 }
@@ -214,8 +236,7 @@ core::Result DataPlaneConfig::Validate() const {
         return core::Result::Rejected("data.max_artifact_bytes must be > 0");
     }
     if (max_concurrent_artifact_transfers <= 0) {
-        return core::Result::Rejected(
-            "data.max_concurrent_artifact_transfers must be > 0");
+        return core::Result::Rejected("data.max_concurrent_artifact_transfers must be > 0");
     }
     if (max_queued_artifact_transfers < 0) {
         return core::Result::Rejected("data.max_queued_artifact_transfers must be >= 0");
@@ -242,9 +263,8 @@ core::Result DataPlaneConfig::Validate() const {
 }
 
 std::optional<DataPeerConfig> DataPlaneConfig::FindPeer(std::string_view drone_id) const {
-    const auto iter = std::ranges::find_if(peers, [drone_id](const DataPeerConfig& peer) {
-        return peer.drone_id == drone_id;
-    });
+    const auto iter = std::ranges::find_if(
+        peers, [drone_id](const DataPeerConfig& peer) { return peer.drone_id == drone_id; });
     if (iter == peers.end()) {
         return std::nullopt;
     }
@@ -270,11 +290,19 @@ core::Result AgentConfig::Validate() const {
     if (min_telemetry_rate_hz > default_telemetry_rate_hz) {
         return core::Result::Rejected("min_telemetry_rate_hz must be <= default_telemetry_rate_hz");
     }
+    if (const core::Result telemetry_result = telemetry_retention.Validate();
+        !telemetry_result.IsOk()) {
+        return telemetry_result;
+    }
     if (const core::Result vehicle_result = vehicle_profile.Validate(); !vehicle_result.IsOk()) {
         return vehicle_result;
     }
     if (const core::Result report_result = reports.Validate(); !report_result.IsOk()) {
         return report_result;
+    }
+    if (const core::Result recorder_result = execution_recorder.Validate();
+        !recorder_result.IsOk()) {
+        return recorder_result;
     }
     if (const core::Result data_result = data.Validate(); !data_result.IsOk()) {
         return data_result;
@@ -292,16 +320,50 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
     ApplyIntEnv(prefix, kAgentEnvDefaultAuthorityTtlMs, &default_authority_ttl_ms);
     ApplyIntEnv(prefix, kAgentEnvDefaultTelemetryRateHz, &default_telemetry_rate_hz);
     ApplyIntEnv(prefix, kAgentEnvMinTelemetryRateHz, &min_telemetry_rate_hz);
-    ApplyBoolEnv(prefix, kAgentEnvAllowUnsafeBenchCommands,
-                 &safety.allow_unsafe_bench_commands);
-    ApplyStringEnv(prefix, kAgentEnvReportLogFile, &reports.log_file);
-    ApplyStringEnv(prefix, kAgentEnvReportSequenceStateFile, &reports.sequence_state_file);
+    ApplyIntEnv(prefix, kAgentEnvTelemetryRetentionFrames,
+                &telemetry_retention.max_frames_per_drone);
+    ApplyBoolEnv(prefix, kAgentEnvAllowUnsafeBenchCommands, &safety.allow_unsafe_bench_commands);
     ApplyIntEnv(prefix, kAgentEnvReportBacklogSize, &reports.backlog_size);
-    ApplyIntEnv(prefix, kAgentEnvReportLogMaxFileSizeBytes, &reports.max_log_file_size_bytes);
-    ApplyIntEnv(prefix, kAgentEnvReportLogMaxFiles, &reports.max_log_files);
-    ApplyBoolEnv(prefix, kAgentEnvReportFlushEachWrite, &reports.flush_each_write);
-    ApplyBoolEnv(prefix, kAgentEnvReportFsyncEachWrite, &reports.fsync_each_write);
-    ApplyBoolEnv(prefix, kAgentEnvReportReplayFromLog, &reports.replay_from_log);
+    ApplyStringEnv(prefix, kAgentEnvEvidenceFile, &execution_recorder.file_path);
+    ApplyStringEnv(prefix, kAgentEnvEvidenceRunId, &execution_recorder.run_id);
+    ApplyStringEnv(prefix, kAgentEnvEvidenceScenarioId, &execution_recorder.scenario_id);
+    ApplyIntEnv(prefix, kAgentEnvEvidenceMaxSegments, &execution_recorder.max_segments);
+    ApplyBoolEnv(prefix, kAgentEnvEvidenceFlushEachRecord, &execution_recorder.flush_each_record);
+    ApplyBoolEnv(prefix, kAgentEnvEvidenceFsyncEachRecord, &execution_recorder.fsync_each_record);
+    ApplyBoolEnv(prefix, kAgentEnvEvidenceOverwrite, &execution_recorder.overwrite_existing);
+    ApplyStringEnv(prefix, kAgentEnvEvidenceCalibrationProfile,
+                   &execution_recorder.calibration_profile_id);
+    ApplyStringEnv(prefix, kAgentEnvEvidenceCalibrationVersion,
+                   &execution_recorder.calibration_version);
+    if (const auto value =
+            GetEnvValue(std::string(prefix) + std::string(kAgentEnvEvidenceMaxSegmentBytes));
+        value.has_value()) {
+        try {
+            execution_recorder.max_segment_bytes = std::stoll(*value);
+        } catch (const std::exception&) {
+            execution_recorder.max_segment_bytes = 0;
+        }
+    }
+    if (const auto value =
+            GetEnvValue(std::string(prefix) + std::string(kAgentEnvEvidenceRandomSeed));
+        value.has_value()) {
+        try {
+            execution_recorder.random_seed = std::stoull(*value);
+        } catch (const std::exception&) {
+            execution_recorder.max_segment_bytes = 0;
+        }
+    }
+    if (const auto value =
+            GetEnvValue(std::string(prefix) + std::string(kAgentEnvEvidenceLossPolicy));
+        value.has_value()) {
+        if (*value == "invalidate_run") {
+            execution_recorder.loss_policy = EvidenceLossPolicy::kInvalidateRun;
+        } else if (*value == "rotate_oldest") {
+            execution_recorder.loss_policy = EvidenceLossPolicy::kRotateOldest;
+        } else {
+            execution_recorder.max_segments = 0;
+        }
+    }
     ApplyStringEnv(prefix, kAgentEnvArtifactDir, &data.artifact_dir);
     ApplyIntEnv(prefix, kAgentEnvDataMessageBacklogSize, &data.message_backlog_size);
     ApplyIntEnv(prefix, kAgentEnvDataMaxMessagePayloadBytes, &data.max_message_payload_bytes);
@@ -392,12 +454,19 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             min_telemetry_rate_hz->value_or(config.min_telemetry_rate_hz);
     }
 
-    const auto report_log_file = core::yaml::ReadOptionalScalar<std::string>(root, "report_log_file");
-    if (!report_log_file.has_value()) {
-        return std::unexpected(report_log_file.error());
-    }
-    if (report_log_file->has_value()) {
-        config.reports.log_file = report_log_file->value_or(config.reports.log_file);
+    if (const YAML::Node telemetry = root["telemetry"]; telemetry) {
+        if (!telemetry.IsMap()) {
+            return std::unexpected(core::Result::Rejected("agent.telemetry must be a map"));
+        }
+        const auto retention_frames =
+            core::yaml::ReadOptionalScalar<int>(telemetry, "retention_frames_per_drone");
+        if (!retention_frames.has_value()) {
+            return std::unexpected(retention_frames.error());
+        }
+        if (retention_frames->has_value()) {
+            config.telemetry_retention.max_frames_per_drone =
+                retention_frames->value_or(config.telemetry_retention.max_frames_per_drone);
+        }
     }
 
     if (const YAML::Node safety = root["safety"]; safety) {
@@ -410,94 +479,115 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             return std::unexpected(allow_unsafe_bench_commands.error());
         }
         if (allow_unsafe_bench_commands->has_value()) {
-            config.safety.allow_unsafe_bench_commands = allow_unsafe_bench_commands->value_or(false);
+            config.safety.allow_unsafe_bench_commands =
+                allow_unsafe_bench_commands->value_or(false);
         }
     }
 
-        const YAML::Node report_persistence =
-        root["report_persistence"] ? root["report_persistence"] : root["reports"];
-    if (report_persistence) {
-        if (!report_persistence.IsMap()) {
-            return std::unexpected(
-                core::Result::Rejected("agent.report_persistence must be a map"));
+    if (const YAML::Node reports = root["reports"]; reports) {
+        if (!reports.IsMap()) {
+            return std::unexpected(core::Result::Rejected("agent.reports must be a map"));
         }
-
-        const auto log_file =
-            core::yaml::ReadOptionalScalar<std::string>(report_persistence, "log_file");
-        if (!log_file.has_value()) {
-            return std::unexpected(log_file.error());
-        }
-        if (log_file->has_value()) {
-            config.reports.log_file = log_file->value_or(config.reports.log_file);
-        }
-
-        const auto sequence_state_file = core::yaml::ReadOptionalScalar<std::string>(
-            report_persistence, "sequence_state_file");
-        if (!sequence_state_file.has_value()) {
-            return std::unexpected(sequence_state_file.error());
-        }
-        if (sequence_state_file->has_value()) {
-            config.reports.sequence_state_file =
-                sequence_state_file->value_or(config.reports.sequence_state_file);
-        }
-
-        const auto backlog_size =
-            core::yaml::ReadOptionalScalar<int>(report_persistence, "backlog_size");
+        const auto backlog_size = core::yaml::ReadOptionalScalar<int>(reports, "backlog_size");
         if (!backlog_size.has_value()) {
             return std::unexpected(backlog_size.error());
         }
         if (backlog_size->has_value()) {
             config.reports.backlog_size = backlog_size->value_or(config.reports.backlog_size);
         }
+    }
 
-        const auto max_log_file_size_bytes = core::yaml::ReadOptionalScalar<int>(
-            report_persistence, "max_log_file_size_bytes");
-        if (!max_log_file_size_bytes.has_value()) {
-            return std::unexpected(max_log_file_size_bytes.error());
+    if (const YAML::Node recorder = root["execution_recorder"]; recorder) {
+        if (!recorder.IsMap()) {
+            return std::unexpected(
+                core::Result::Rejected("agent.execution_recorder must be a map"));
         }
-        if (max_log_file_size_bytes->has_value()) {
-            config.reports.max_log_file_size_bytes =
-                max_log_file_size_bytes->value_or(config.reports.max_log_file_size_bytes);
+        const auto file_path = core::yaml::ReadOptionalScalar<std::string>(recorder, "file_path");
+        const auto max_segment_bytes =
+            core::yaml::ReadOptionalScalar<std::int64_t>(recorder, "max_segment_bytes");
+        const auto max_segments = core::yaml::ReadOptionalScalar<int>(recorder, "max_segments");
+        const auto loss_policy =
+            core::yaml::ReadOptionalScalar<std::string>(recorder, "loss_policy");
+        const auto flush_each_record =
+            core::yaml::ReadOptionalScalar<bool>(recorder, "flush_each_record");
+        const auto fsync_each_record =
+            core::yaml::ReadOptionalScalar<bool>(recorder, "fsync_each_record");
+        const auto overwrite_existing =
+            core::yaml::ReadOptionalScalar<bool>(recorder, "overwrite_existing");
+        const auto run_id = core::yaml::ReadOptionalScalar<std::string>(recorder, "run_id");
+        const auto scenario_id =
+            core::yaml::ReadOptionalScalar<std::string>(recorder, "scenario_id");
+        const auto random_seed =
+            core::yaml::ReadOptionalScalar<std::uint64_t>(recorder, "random_seed");
+        const auto calibration_profile_id =
+            core::yaml::ReadOptionalScalar<std::string>(recorder, "calibration_profile_id");
+        const auto calibration_version =
+            core::yaml::ReadOptionalScalar<std::string>(recorder, "calibration_version");
+        if (!file_path || !max_segment_bytes || !max_segments || !loss_policy ||
+            !flush_each_record || !fsync_each_record || !overwrite_existing || !run_id ||
+            !scenario_id || !random_seed || !calibration_profile_id || !calibration_version) {
+            return std::unexpected(
+                core::Result::Rejected("agent.execution_recorder contains an invalid scalar"));
         }
-
-        const auto max_log_files =
-            core::yaml::ReadOptionalScalar<int>(report_persistence, "max_log_files");
-        if (!max_log_files.has_value()) {
-            return std::unexpected(max_log_files.error());
+        if (file_path->has_value()) {
+            config.execution_recorder.file_path = file_path->value_or("");
         }
-        if (max_log_files->has_value()) {
-            config.reports.max_log_files =
-                max_log_files->value_or(config.reports.max_log_files);
+        if (max_segment_bytes->has_value()) {
+            config.execution_recorder.max_segment_bytes =
+                max_segment_bytes->value_or(config.execution_recorder.max_segment_bytes);
         }
-
-        const auto flush_each_write =
-            core::yaml::ReadOptionalScalar<bool>(report_persistence, "flush_each_write");
-        if (!flush_each_write.has_value()) {
-            return std::unexpected(flush_each_write.error());
+        if (max_segments->has_value()) {
+            config.execution_recorder.max_segments =
+                max_segments->value_or(config.execution_recorder.max_segments);
         }
-        if (flush_each_write->has_value()) {
-            config.reports.flush_each_write =
-                flush_each_write->value_or(config.reports.flush_each_write);
+        if (loss_policy->has_value()) {
+            const std::string value = loss_policy->value_or("");
+            if (value == "invalidate_run") {
+                config.execution_recorder.loss_policy = EvidenceLossPolicy::kInvalidateRun;
+            } else if (value == "rotate_oldest") {
+                config.execution_recorder.loss_policy = EvidenceLossPolicy::kRotateOldest;
+            } else {
+                return std::unexpected(core::Result::Rejected(
+                    "execution_recorder.loss_policy must be invalidate_run|rotate_oldest"));
+            }
         }
-
-        const auto fsync_each_write =
-            core::yaml::ReadOptionalScalar<bool>(report_persistence, "fsync_each_write");
-        if (!fsync_each_write.has_value()) {
-            return std::unexpected(fsync_each_write.error());
+        if (flush_each_record->has_value()) {
+            config.execution_recorder.flush_each_record = flush_each_record->value_or(true);
         }
-        if (fsync_each_write->has_value()) {
-            config.reports.fsync_each_write =
-                fsync_each_write->value_or(config.reports.fsync_each_write);
+        if (fsync_each_record->has_value()) {
+            config.execution_recorder.fsync_each_record = fsync_each_record->value_or(false);
         }
-
-        const auto replay_from_log =
-            core::yaml::ReadOptionalScalar<bool>(report_persistence, "replay_from_log");
-        if (!replay_from_log.has_value()) {
-            return std::unexpected(replay_from_log.error());
+        if (overwrite_existing->has_value()) {
+            config.execution_recorder.overwrite_existing = overwrite_existing->value_or(false);
         }
-        if (replay_from_log->has_value()) {
-            config.reports.replay_from_log =
-                replay_from_log->value_or(config.reports.replay_from_log);
+        if (run_id->has_value()) {
+            config.execution_recorder.run_id = run_id->value_or("");
+        }
+        if (scenario_id->has_value()) {
+            config.execution_recorder.scenario_id = scenario_id->value_or("");
+        }
+        if (random_seed->has_value()) {
+            config.execution_recorder.random_seed = random_seed->value();
+        }
+        if (calibration_profile_id->has_value()) {
+            config.execution_recorder.calibration_profile_id = calibration_profile_id->value_or("");
+        }
+        if (calibration_version->has_value()) {
+            config.execution_recorder.calibration_version = calibration_version->value_or("");
+        }
+        if (const YAML::Node labels = recorder["labels"]; labels) {
+            if (!labels.IsMap()) {
+                return std::unexpected(
+                    core::Result::Rejected("agent.execution_recorder.labels must be a map"));
+            }
+            for (const auto& entry : labels) {
+                if (!entry.first.IsScalar() || !entry.second.IsScalar()) {
+                    return std::unexpected(core::Result::Rejected(
+                        "agent.execution_recorder.labels entries must be scalar"));
+                }
+                config.execution_recorder.labels.emplace(entry.first.as<std::string>(),
+                                                         entry.second.as<std::string>());
+            }
         }
     }
 
@@ -507,8 +597,7 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             return std::unexpected(core::Result::Rejected("agent.data must be a map"));
         }
 
-        const auto artifact_dir =
-            core::yaml::ReadOptionalScalar<std::string>(data, "artifact_dir");
+        const auto artifact_dir = core::yaml::ReadOptionalScalar<std::string>(data, "artifact_dir");
         if (!artifact_dir.has_value()) {
             return std::unexpected(artifact_dir.error());
         }
@@ -574,13 +663,11 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         }
         if (max_queued_artifact_transfers->has_value()) {
             config.data.max_queued_artifact_transfers =
-                max_queued_artifact_transfers->value_or(
-                    config.data.max_queued_artifact_transfers);
+                max_queued_artifact_transfers->value_or(config.data.max_queued_artifact_transfers);
         }
 
         const auto max_concurrent_artifact_transfers_per_peer =
-            core::yaml::ReadOptionalScalar<int>(
-                data, "max_concurrent_artifact_transfers_per_peer");
+            core::yaml::ReadOptionalScalar<int>(data, "max_concurrent_artifact_transfers_per_peer");
         if (!max_concurrent_artifact_transfers_per_peer.has_value()) {
             return std::unexpected(max_concurrent_artifact_transfers_per_peer.error());
         }
@@ -596,9 +683,8 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             return std::unexpected(artifact_peer_bytes_per_second.error());
         }
         if (artifact_peer_bytes_per_second->has_value()) {
-            config.data.artifact_peer_bytes_per_second =
-                artifact_peer_bytes_per_second->value_or(
-                    config.data.artifact_peer_bytes_per_second);
+            config.data.artifact_peer_bytes_per_second = artifact_peer_bytes_per_second->value_or(
+                config.data.artifact_peer_bytes_per_second);
         }
 
         const YAML::Node peers = data["peers"];
@@ -624,8 +710,7 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
                     peer.drone_id = drone_id->value_or(peer.drone_id);
                 }
 
-                const auto address =
-                    core::yaml::ReadOptionalScalar<std::string>(entry, "address");
+                const auto address = core::yaml::ReadOptionalScalar<std::string>(entry, "address");
                 if (!address.has_value()) {
                     return std::unexpected(address.error());
                 }
@@ -677,8 +762,8 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
                         path, private_key_path->value_or(std::string{}));
                 }
 
-                const auto server_authority_override = core::yaml::ReadOptionalScalar<std::string>(
-                    entry, "server_authority_override");
+                const auto server_authority_override =
+                    core::yaml::ReadOptionalScalar<std::string>(entry, "server_authority_override");
                 if (!server_authority_override.has_value()) {
                     return std::unexpected(server_authority_override.error());
                 }
@@ -763,8 +848,8 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             return std::unexpected(battery_reserve_percent.error());
         }
         if (battery_reserve_percent->has_value()) {
-            config.vehicle_profile.battery_reserve_percent = battery_reserve_percent->value_or(
-                config.vehicle_profile.battery_reserve_percent);
+            config.vehicle_profile.battery_reserve_percent =
+                battery_reserve_percent->value_or(config.vehicle_profile.battery_reserve_percent);
         }
 
         const auto tracking_tolerance_m =
@@ -793,9 +878,8 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             return std::unexpected(takeoff_timeout_margin_ms.error());
         }
         if (takeoff_timeout_margin_ms->has_value()) {
-            config.vehicle_profile.takeoff_timeout_margin_ms =
-                takeoff_timeout_margin_ms->value_or(
-                    config.vehicle_profile.takeoff_timeout_margin_ms);
+            config.vehicle_profile.takeoff_timeout_margin_ms = takeoff_timeout_margin_ms->value_or(
+                config.vehicle_profile.takeoff_timeout_margin_ms);
         }
 
         const auto land_timeout_margin_ms =

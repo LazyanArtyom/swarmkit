@@ -259,8 +259,11 @@ class SequenceTelemetryMonitor {
         Stop();
         auto subscription = client.StartTelemetry(
             {.drone_id = drone_id, .rate_hertz = rate_hz},
-            [this](const swarmkit::client::TelemetryDelivery& delivery) {
-                StoreFrame(delivery.frame);
+            [this](const swarmkit::client::TelemetryObservation& observation) {
+                if (const auto* frame =
+                        std::get_if<swarmkit::client::TelemetryFrameObservation>(&observation)) {
+                    StoreFrame(frame->delivery.frame);
+                }
             },
             [](const std::string& error_msg) {
                 std::cerr << "Sequence telemetry stream error: " << error_msg << "\n";
@@ -278,8 +281,11 @@ class SequenceTelemetryMonitor {
         Stop();
         auto subscriptions = runtime.client->StartAllTelemetry(
             rate_hz,
-            [this](const swarmkit::client::TelemetryDelivery& delivery) {
-                StoreFrame(delivery.frame);
+            [this](const swarmkit::client::TelemetryObservation& observation) {
+                if (const auto* frame =
+                        std::get_if<swarmkit::client::TelemetryFrameObservation>(&observation)) {
+                    StoreFrame(frame->delivery.frame);
+                }
             },
             [](const std::string& error_msg) {
                 std::cerr << "Sequence telemetry stream error: " << error_msg << "\n";

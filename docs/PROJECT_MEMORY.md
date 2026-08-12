@@ -60,7 +60,7 @@ Current development setup:
   - GPS fix type and normalized quality, visible satellites, HDOP, relative altitude, landed state, estimator status, selected accuracy data, source timestamps, home origin, and failsafe indicators are decoded when present.
   - Telemetry frames use explicit validity flags so production clients can distinguish real zero values from unknown measurements.
   - Agent-side preconditions treat idempotent command states cleanly, including already armed, already airborne for takeoff, already landed for land, and safe disarm checks before normal disarm.
-- Agent reports can be persisted as rotated JSONL through `report_log_file`, `report_persistence.log_file`, or `--report-log-file`; the agent persists report sequence state so clients can reconnect with `after_sequence`.
+- Durable correctness evidence uses the single deterministic `ExecutionEventEnvelope` recorder (`execution_recorder` / `--evidence-file`). Report-only JSONL and its compatibility aliases were removed. Telemetry reconnect uses Agent session plus producer sequence; report replay remains bounded in memory.
 
 ## MAVLink Configs
 
@@ -84,4 +84,3 @@ Current development setup:
 - See:
   - `docs/SWARMKIT_PROJECT_DESCRIPTION.md`
   - `docs/SCIENTIFIC_CONTEXT.md`
-

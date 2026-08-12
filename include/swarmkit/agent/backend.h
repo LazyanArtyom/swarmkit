@@ -16,6 +16,7 @@
 
 #include "swarmkit/commands.h"
 #include "swarmkit/core/capabilities.h"
+#include "swarmkit/core/command_outcome.h"
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/telemetry.h"
 
@@ -80,7 +81,7 @@ class IDroneBackend {
     /// @brief Execute a flight command described by @p envelope.
     /// @returns Ok on acceptance, Rejected if the command is not valid in the
     ///          current state, or Failed on a hard error.
-    [[nodiscard]] virtual swarmkit::core::Result Execute(const CommandEnvelope& envelope) = 0;
+    [[nodiscard]] virtual core::BackendCommandOutcome Execute(const CommandEnvelope& envelope) = 0;
 
     /// @brief Begin streaming telemetry for @p drone_id at approximately
     ///        @p rate_hertz frames per second.

@@ -99,9 +99,9 @@ using SwarmSubscriptionResults = std::unordered_map<std::string, SubscriptionRes
  *   swarm.AddDrone("uav-3", "192.168.1.103:50061");
  *
  *   // Start telemetry from every drone at 5 Hz
- *   auto telemetry = swarm.StartAllTelemetry(5, [](const swarmkit::client::TelemetryDelivery&
- * delivery) {
- *       // delivery.frame.drone_id identifies the source drone
+ *   auto telemetry = swarm.StartAllTelemetry(5, [](const swarmkit::client::TelemetryObservation&
+ * observation) {
+ *       // Inspect TelemetryFrameObservation for normalized frame evidence.
  *   });
  *
  *   // Send a waypoint to one drone
@@ -276,7 +276,7 @@ class SwarmClient {
      *          drone is not registered or the subscription cannot start.
      */
     [[nodiscard]] SubscriptionResult StartTelemetry(TelemetrySubscription subscription,
-                                                    TelemetryHandler on_frame,
+                                                    TelemetryObservationHandler on_observation,
                                                     TelemetryErrorHandler on_error = {},
                                                     SubscriptionEventHandler on_event = {},
                                                     SubscriptionOptions options = {});
@@ -288,7 +288,7 @@ class SwarmClient {
      * @brief Start telemetry from all currently registered drones.
      *
      * @param rate_hertz Requested frame rate in Hz for each drone stream.
-     * @param on_frame   Callback invoked for every received TelemetryDelivery.
+     * @param on_observation Callback invoked for stream metadata and normalized frames.
      * @param on_error   Callback invoked once per drone when a stream ends
      *                   due to an error.
      * @param on_event   Optional stream lifecycle/backpressure callback.
@@ -296,18 +296,18 @@ class SwarmClient {
      *
      * @details Starts one background stream per drone at @p rate_hertz and
      * returns a per-drone result map. Frames from all drones funnel into the
-     * same @p on_frame callback; use @c TelemetryDelivery::frame.drone_id to distinguish
+     * same @p on_observation callback; inspect TelemetryFrameObservation to distinguish
      * sources.
      *
      * @note Drones added after this call are not automatically subscribed.
      *       Call StartAllTelemetry() again or StartTelemetry() for the new
      *       drone explicitly.
      *
-     * @note @p on_frame may be called concurrently from multiple drone
+     * @note @p on_observation may be called concurrently from multiple drone
      *       threads.  Ensure the callback is thread-safe.
      */
     [[nodiscard]] SwarmSubscriptionResults StartAllTelemetry(
-        int rate_hertz, const TelemetryHandler& on_frame,
+        int rate_hertz, const TelemetryObservationHandler& on_observation,
         const TelemetryErrorHandler& on_error = {}, const SubscriptionEventHandler& on_event = {},
         SubscriptionOptions options = {});
 

@@ -271,14 +271,30 @@ void ReadBackendOptionsYaml(const YAML::Node& node,
     if (!kBindAddr.empty()) {
         agent_cfg.bind_addr = kBindAddr;
     }
-    if (const std::string report_log_file = common::GetOptionValue(argc, argv, "--report-log-file");
-        !report_log_file.empty()) {
-        agent_cfg.reports.log_file = report_log_file;
+    if (const std::string evidence_file = common::GetOptionValue(argc, argv, "--evidence-file");
+        !evidence_file.empty()) {
+        agent_cfg.execution_recorder.file_path = evidence_file;
     }
-    if (const std::string sequence_state_file =
-            common::GetOptionValue(argc, argv, "--report-sequence-state-file");
-        !sequence_state_file.empty()) {
-        agent_cfg.reports.sequence_state_file = sequence_state_file;
+    if (const std::string run_id = common::GetOptionValue(argc, argv, "--evidence-run-id");
+        !run_id.empty()) {
+        agent_cfg.execution_recorder.run_id = run_id;
+    }
+    if (const std::string scenario_id =
+            common::GetOptionValue(argc, argv, "--evidence-scenario-id");
+        !scenario_id.empty()) {
+        agent_cfg.execution_recorder.scenario_id = scenario_id;
+    }
+    if (const std::string seed = common::GetOptionValue(argc, argv, "--evidence-seed");
+        !seed.empty()) {
+        try {
+            agent_cfg.execution_recorder.random_seed = std::stoull(seed);
+        } catch (const std::exception&) {
+            std::cerr << "--evidence-seed must be an unsigned integer\n";
+            return std::unexpected(EXIT_FAILURE);
+        }
+    }
+    if (common::HasFlag(argc, argv, "--evidence-overwrite")) {
+        agent_cfg.execution_recorder.overwrite_existing = true;
     }
     if (const std::string artifact_dir = common::GetOptionValue(argc, argv, "--artifact-dir");
         !artifact_dir.empty()) {

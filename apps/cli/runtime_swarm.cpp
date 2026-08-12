@@ -263,8 +263,11 @@ int RunSwarmTelemetry(SwarmRuntime& runtime, int argc, char** argv) {
                   << " rate=" << *rate_hz << " Hz\n";
         auto telemetry_streams = runtime.client->StartAllTelemetry(
             *rate_hz,
-            [&telemetry_sink](const swarmkit::client::TelemetryDelivery& delivery) {
-                telemetry_sink->Write(delivery);
+            [&telemetry_sink](const swarmkit::client::TelemetryObservation& observation) {
+                if (const auto* frame =
+                        std::get_if<swarmkit::client::TelemetryFrameObservation>(&observation)) {
+                    telemetry_sink->Write(frame->delivery);
+                }
             },
             [](const std::string& error_msg) {
                 std::cerr << "Telemetry stream error: " << error_msg << "\n";
@@ -302,8 +305,11 @@ int RunSwarmTelemetry(SwarmRuntime& runtime, int argc, char** argv) {
                   << " Hz\n";
         auto telemetry_stream = runtime.client->StartTelemetry(
             {.drone_id = drone_id, .rate_hertz = *rate_hz},
-            [&telemetry_sink](const swarmkit::client::TelemetryDelivery& delivery) {
-                telemetry_sink->Write(delivery);
+            [&telemetry_sink](const swarmkit::client::TelemetryObservation& observation) {
+                if (const auto* frame =
+                        std::get_if<swarmkit::client::TelemetryFrameObservation>(&observation)) {
+                    telemetry_sink->Write(frame->delivery);
+                }
             },
             [](const std::string& error_msg) {
                 std::cerr << "Telemetry stream error: " << error_msg << "\n";

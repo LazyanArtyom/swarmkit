@@ -4,6 +4,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -40,12 +41,15 @@ struct AuthorityEvent {
         kPreempted,  ///< A higher-priority client took authority from this client.
         kResumed,    ///< A previously preempted client regained authority.
         kExpired,    ///< This client's TTL elapsed; authority was revoked.
+        kReleased,   ///< This client explicitly relinquished authority.
     };
 
     Kind kind;
     std::string drone_id;
     std::string holder_client_id;  ///< Client that now holds authority.
     CommandPriority holder_priority;
+    std::string affected_client_id;
+    std::string correlation_id;
 };
 
 /// ---------------------------------------------------------------------------
@@ -129,6 +133,7 @@ class EventQueue {
  */
 class CommandArbiter {
    public:
+    using EventObserver = std::function<void(const AuthorityEvent&)>;
     struct GrantResult {
         core::Result result{core::Result::Success()};
         bool granted_for_call{false};
@@ -145,6 +150,9 @@ class CommandArbiter {
 
     CommandArbiter(const CommandArbiter&) = delete;
     CommandArbiter& operator=(const CommandArbiter&) = delete;
+
+    /// Stop authority expiry processing and wait for any observer callback to finish.
+    void Shutdown() noexcept;
 
     /**
      * @brief Check whether a command from @p context may execute and grant
@@ -188,8 +196,10 @@ class CommandArbiter {
      *
      * @param drone_id  Target drone identifier.
      * @param client_id Client identifier that wishes to release authority.
+     * @param correlation_id Identity of the request that caused the release.
      */
-    void Release(const std::string& drone_id, const std::string& client_id);
+    void Release(const std::string& drone_id, const std::string& client_id,
+                 std::string_view correlation_id);
 
     /**
      * @brief Register a watcher to receive authority events for @p drone_id.
@@ -215,6 +225,8 @@ class CommandArbiter {
      */
     void Unwatch(WatchToken token);
 
+    void SetEventObserver(EventObserver observer);
+
    private:
     struct PendingNotification {
         std::string target_client_id;
@@ -222,6 +234,7 @@ class CommandArbiter {
         std::string drone_id;
         std::string holder_client_id;
         CommandPriority holder_priority;
+        std::string correlation_id;
     };
 
     struct WatcherEntry {
@@ -250,8 +263,8 @@ class CommandArbiter {
                                const PendingNotification& notification);
 
     /// @brief Notify all pending notifications without holding the lock.
-    static void NotifyPending(const std::vector<WatcherEntry>& watchers,
-                              const std::vector<PendingNotification>& notifications);
+    void NotifyPending(const std::vector<WatcherEntry>& watchers,
+                       const std::vector<PendingNotification>& notifications);
 
     /// @brief Evict expired authority holders and resume suspended holders.
     static void EvictExpiredHolder(DroneState& state, std::string_view drone_id,
@@ -259,6 +272,7 @@ class CommandArbiter {
 
     /// @brief Resume the most recently preempted live holder if one exists.
     static void ResumeSuspendedHolder(DroneState& state, std::string_view drone_id,
+                                      std::string_view correlation_id,
                                       std::vector<PendingNotification>* notifications);
 
     [[nodiscard]] std::optional<std::chrono::system_clock::time_point> ComputeNextExpiryLocked()
@@ -272,6 +286,7 @@ class CommandArbiter {
     std::thread expiry_thread_;
     std::unordered_map<std::string, DroneState> drone_states_;
     std::atomic<std::uint64_t> next_watch_id_{1};
+    EventObserver event_observer_;
 };
 
 }  // namespace swarmkit::agent

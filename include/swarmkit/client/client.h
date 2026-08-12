@@ -21,6 +21,7 @@
 #include "swarmkit/client/command_verifier.h"
 #include "swarmkit/commands.h"
 #include "swarmkit/core/capabilities.h"
+#include "swarmkit/core/command_outcome.h"
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/security.h"
 #include "swarmkit/core/telemetry.h"
@@ -149,6 +150,8 @@ struct CommandResult {
     std::string message;  ///< Error description on failure, empty on success.
     std::string correlation_id;
     core::SwarmError error;
+    /// Present only when the Agent actually invoked the backend.
+    std::optional<core::BackendCommandOutcome> backend_outcome;
 };
 
 /// @brief Result of explicitly releasing command authority.
@@ -257,6 +260,12 @@ struct TelemetrySubscription {
 
     /// Requested frame rate in Hz.  The agent may clamp the value.
     int rate_hertz{kDefaultTelemetryRateHertz};
+
+    /// Resume cursor. Zero requests every retained frame in the current session.
+    std::uint64_t after_sequence{};
+
+    /// Producer session associated with after_sequence; required for a non-zero cursor.
+    std::string expected_agent_session_id;
 };
 
 struct AuthoritySubscription {
@@ -270,6 +279,7 @@ enum class AuthorityEventKind : std::uint8_t {
     kPreempted,
     kResumed,
     kExpired,
+    kReleased,
 };
 
 struct AuthorityEventInfo {
@@ -278,6 +288,7 @@ struct AuthorityEventInfo {
     std::string holder_client_id;
     commands::CommandPriority holder_priority{commands::CommandPriority::kOperator};
     std::string correlation_id;
+    std::string affected_client_id;
 };
 
 struct GeoPoint {
@@ -378,6 +389,8 @@ struct GoalResult {
     ActiveGoal goal;
     std::int64_t computed_timeout_ms{};
     std::optional<core::ExecutionHandle> execution_handle;
+    /// Present only when the physical goal was dispatched to the backend.
+    std::optional<core::BackendCommandOutcome> backend_outcome;
 };
 
 struct ActiveGoalSnapshot {
@@ -409,6 +422,52 @@ struct TelemetryDelivery {
     std::string transport_stream_id;
     std::int64_t sdk_receive_unix_time_ms{};
 };
+
+enum class TelemetryStreamEventKind : std::uint8_t {
+    kStarted,
+    kReplayStarted,
+    kReplayCompleted,
+    kLiveBoundary,
+    kHistoryEvicted,
+    kSessionMismatch,
+    kCursorAhead,
+};
+
+struct TelemetryStreamStatus {
+    TelemetryStreamEventKind kind{TelemetryStreamEventKind::kStarted};
+    std::string drone_id;
+    std::string agent_session_id;
+    std::string transport_stream_id;
+    std::string expected_agent_session_id;
+    std::uint64_t requested_after_sequence{};
+    std::uint64_t oldest_available_sequence{};
+    std::uint64_t latest_available_sequence{};
+    std::uint64_t replay_first_sequence{};
+    std::uint64_t replay_last_sequence{};
+    std::uint64_t live_from_sequence{};
+    std::string detail;
+};
+
+enum class TelemetrySequenceRelation : std::uint8_t {
+    kFirst,
+    kNext,
+    kGap,
+    kDuplicate,
+    kReordered,
+    kNewSession,
+};
+
+struct TelemetryFrameObservation {
+    TelemetryDelivery delivery;
+    TelemetrySequenceRelation sequence_relation{TelemetrySequenceRelation::kFirst};
+    std::uint64_t previous_accepted_sequence{};
+    std::uint64_t missing_first_sequence{};
+    std::uint64_t missing_last_sequence{};
+    bool replayed{false};
+};
+
+/// Canonical typed stream callback payload: protocol status or normalized frame evidence.
+using TelemetryObservation = std::variant<TelemetryStreamStatus, TelemetryFrameObservation>;
 
 struct ReportSubscription {
     std::string drone_id{"all"};
@@ -581,7 +640,7 @@ struct ArtifactListOptions {
  * subscription dispatcher. They must be thread-safe and should return quickly.
  */
 /// @{
-using TelemetryHandler = std::function<void(const TelemetryDelivery&)>;
+using TelemetryObservationHandler = std::function<void(const TelemetryObservation&)>;
 using TelemetryErrorHandler = std::function<void(const std::string&)>;
 using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
 using AgentReportHandler = std::function<void(const AgentReport&)>;
@@ -709,7 +768,8 @@ class AuthoritySession {
  *
  *   auto result = client.Ping();
  *
- *   auto telemetry = client.StartTelemetry({"uav-1", 5}, on_frame, on_error);
+ *   auto telemetry = client.StartTelemetry(
+ *       {.drone_id = "uav-1", .rate_hertz = 5}, on_observation, on_error);
  *   // ... do work ...
  *   if (telemetry) telemetry->Stop();
  * @endcode
@@ -945,7 +1005,7 @@ class Client {
      * @brief Start a background gRPC streaming telemetry subscription.
      *
      * @param subscription Drone identifier and rate_hertz to request.
-     * @param on_frame     Called for every received TelemetryDelivery.
+     * @param on_observation Called for stream metadata and normalized frame observations.
      * @param on_error     Called once when the stream ends due to an error;
      *                     not called on a clean StopTelemetry() cancellation.
      * @param on_event     Optional lifecycle/backpressure event callback.
@@ -957,7 +1017,7 @@ class Client {
      * does not block the gRPC reader unless configured to do so.
      */
     [[nodiscard]] SubscriptionResult StartTelemetry(TelemetrySubscription subscription,
-                                                    TelemetryHandler on_frame,
+                                                    TelemetryObservationHandler on_observation,
                                                     TelemetryErrorHandler on_error = {},
                                                     SubscriptionEventHandler on_event = {},
                                                     SubscriptionOptions options = {});

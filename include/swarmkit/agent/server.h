@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "swarmkit/agent/backend.h"
@@ -20,6 +21,7 @@ namespace swarmkit::agent {
 inline constexpr int kDefaultAuthorityTtlMs = 5000;
 inline constexpr int kDefaultTelemetryRateHz = 5;
 inline constexpr int kMinimumTelemetryRateHz = 1;
+inline constexpr int kDefaultTelemetryRetentionFrames = 4096;
 inline constexpr float kDefaultCruiseSpeedMps = 4.0F;
 inline constexpr float kDefaultClimbSpeedMps = 1.5F;
 inline constexpr float kDefaultDescentSpeedMps = 1.0F;
@@ -35,8 +37,7 @@ inline constexpr int kDefaultMinGpsFixType = 3;
 inline constexpr int kDefaultMinSatellitesVisible = 6;
 inline constexpr float kDefaultMaxGpsHdop = 2.5F;
 inline constexpr int kDefaultReportBacklogSize = 1000;
-inline constexpr int kDefaultReportLogMaxFileSizeBytes = 10 * 1024 * 1024;
-inline constexpr int kDefaultReportLogMaxFiles = 5;
+inline constexpr std::int64_t kDefaultEvidenceSegmentBytes = 256LL * 1024LL * 1024LL;
 inline constexpr int kDefaultDataMessageBacklogSize = 1000;
 inline constexpr int kDefaultDataMessageMaxPayloadBytes = 256 * 1024;
 inline constexpr int kDefaultArtifactChunkBytes = 64 * 1024;
@@ -83,18 +84,40 @@ struct AgentSecurityConfig {
     [[nodiscard]] core::Result Validate() const;
 };
 
-/// @brief Persistent report stream storage configuration.
-struct ReportPersistenceConfig {
-    std::string log_file;             ///< JSONL report log path; empty disables file persistence.
-    std::string sequence_state_file;  ///< Optional cursor/sequence state path.
-    int backlog_size{kDefaultReportBacklogSize};  ///< In-memory replay backlog size.
-    int max_log_file_size_bytes{kDefaultReportLogMaxFileSizeBytes};  ///< Rotation threshold.
-    int max_log_files{kDefaultReportLogMaxFiles};  ///< Number of rotated report logs to keep.
-    bool flush_each_write{true};   ///< Flush stream buffers after every report write.
-    bool fsync_each_write{false};  ///< Force fsync after every write; expensive but durable.
-    bool replay_from_log{true};    ///< Replay persisted reports at startup when possible.
+/// @brief Bounded normalized telemetry history retained per drone and Agent session.
+struct TelemetryRetentionConfig {
+    int max_frames_per_drone{kDefaultTelemetryRetentionFrames};
 
-    /// @brief Validate backlog and rotation limits.
+    [[nodiscard]] core::Result Validate() const;
+};
+
+/// @brief In-memory report replay configuration.
+struct ReportStreamConfig {
+    int backlog_size{kDefaultReportBacklogSize};  ///< In-memory replay backlog size.
+    [[nodiscard]] core::Result Validate() const;
+};
+
+enum class EvidenceLossPolicy : std::uint8_t {
+    kInvalidateRun,
+    kRotateOldest,
+};
+
+/// @brief Canonical deterministic protobuf evidence recording configuration.
+struct ExecutionRecorderConfig {
+    std::string file_path;  ///< Empty disables recording.
+    std::int64_t max_segment_bytes{kDefaultEvidenceSegmentBytes};
+    int max_segments{1};
+    EvidenceLossPolicy loss_policy{EvidenceLossPolicy::kInvalidateRun};
+    bool flush_each_record{true};
+    bool fsync_each_record{false};
+    bool overwrite_existing{false};
+    std::string run_id;
+    std::string scenario_id;
+    std::optional<std::uint64_t> random_seed;
+    std::string calibration_profile_id;
+    std::string calibration_version;
+    std::unordered_map<std::string, std::string> labels;
+
     [[nodiscard]] core::Result Validate() const;
 };
 
@@ -149,7 +172,9 @@ struct AgentConfig {
     int default_authority_ttl_ms{kDefaultAuthorityTtlMs};
     int default_telemetry_rate_hz{kDefaultTelemetryRateHz};
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};
-    ReportPersistenceConfig reports{};
+    TelemetryRetentionConfig telemetry_retention{};
+    ReportStreamConfig reports{};
+    ExecutionRecorderConfig execution_recorder{};
     DataPlaneConfig data{};
     VehicleProfile vehicle_profile{};
     SafetyPolicy safety{};

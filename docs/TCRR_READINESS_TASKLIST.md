@@ -1,6 +1,6 @@
 # SwarmKit TCRR Readiness and Empirical Evaluation Task List
 
-Status: repository and paper audit completed on 2026-08-11. Gate 0 and Phase 1 were implemented on 2026-08-11. No rotor-router, TCRR certificate, or commit logic has been added to SwarmKit.
+Status: repository and paper audit completed on 2026-08-11. Gate 0 and Phase 1 were implemented on 2026-08-11. Phase 2 was implemented on 2026-08-12. No rotor-router, TCRR certificate, or commit logic has been added to SwarmKit.
 
 ## Objective
 
@@ -20,7 +20,8 @@ The implementation order is driven by two rules:
 - SwarmKit is pre-release: compatibility-only fields, overloads, fixtures, and aliases are intentionally absent.
 - The public telemetry model has producer identity, exact attempt binding, typed measurement provenance,
   explicit uncertainty semantics, GPS/estimator state, and transport-local delivery metadata.
-- Report sequencing, bounded in-memory replay, rotated JSONL persistence, and a report replay cursor already exist.
+- Telemetry and reports have bounded in-memory replay; telemetry has an atomic replay/live boundary and explicit history/session status.
+- One deterministic, checksummed protobuf recorder is the only durable execution-evidence path; report-only JSONL was removed.
 
 ## Paper result contract
 
@@ -67,30 +68,28 @@ Outcomes:
 
 ## Remaining audit findings
 
-1. Telemetry is live-only: there is no bounded replay cursor or explicit history-loss response.
-2. Existing report JSONL is not a complete normalized execution record with one global event order.
-3. The simulator is not yet a command-responsive experimental dynamics model and has no separate
+1. The simulator is not yet a command-responsive experimental dynamics model and has no separate
    truth channel or seeded fault scheduler.
-4. The external TCRR controller, calibration pipeline, experimental runner, statistical analysis,
+2. The external TCRR controller, calibration pipeline, experimental runner, statistical analysis,
    and paper result replacement remain future phases.
 
 ## Gap analysis
 
 | Requirement | Current support | Remaining gap | Next change | Required tests |
 | --- | --- | --- | --- | --- |
-| Execution identity and Agent session | Complete optional intent context plus Agent-generated exact execution handle | Event recorder does not yet capture every identity-bearing action | Carry the canonical handle/context into the global execution record | Restart, retry, supersession, failure, timeout, exact cancel |
-| Goal lineage | Goal/revision/physical-attempt/session/client/correlation are one exact handle | Durable execution reconstruction is not implemented | Record every lifecycle change under the exact handle | Retry, replacement, stale report, and guarded cancellation |
-| Telemetry order | Session/drone sequence is assigned at normalized ingress; transport delivery metadata is separate | Live stream has no replay cursor/history status | Evolve the telemetry RPC to a replay/live evidence envelope | Duplicate, gap, reorder, reconnect, restart, eviction |
-| Measurement provenance | Per-group update generation, source time/domain/synchronization/uncertainty, and Agent receipt | Recorder/replay path is not implemented | Preserve canonical frames without renumbering or restamping | Cached-position freshness and deterministic replay |
-| Timing uncertainty | Agent ingress times and per-group typed source evidence are canonical | Replay and recorder paths must preserve them unchanged | Carry timing evidence through the future record/envelope | Unknown remains absent, never zero; replay equality tests |
+| Execution identity and Agent session | Complete optional intent context, exact execution handle, and global evidence binding | Phase 3 reader/replay tools remain | Preserve the envelope unchanged in normalized replay | Restart, retry, supersession, failure, timeout, exact cancel |
+| Goal lineage | Goal/revision/physical-attempt/session/client/correlation are recorded under one exact handle | Phase 3 scripted lifecycle coverage remains | Exercise every lifecycle through the scripted backend | Retry, replacement, stale report, and guarded cancellation |
+| Telemetry order | Session/drone sequence, replay cursor, live boundary, and explicit loss/session events are complete | Phase 3 exact sequence injection remains | Drive canonical observations from the scripted backend | Duplicate, gap, reorder, reconnect, restart, eviction |
+| Measurement provenance | Per-group provenance is preserved unchanged in normalized frames and evidence envelopes | Calibration profile generation remains external | Replay envelopes without renumbering or restamping | Cached-position freshness and deterministic replay |
+| Timing uncertainty | Agent ingress and per-group source evidence survive stream and recorder paths | Empirical clock calibration remains external | Validate timing profiles in the experiment layer | Unknown remains absent, never zero; replay equality tests |
 | Accuracy semantics | Optional typed XY/Z position/velocity and generic speed estimates with descriptors | Calibration profiles do not yet supply empirical bounds | Add external calibration artifacts and profile loading at the experiment layer | Round-trip, absent values, MAVLink backend-specific labels |
 | Estimator/failsafe evidence | Typed state, validity, raw quality, and typed capability support | Fault harness cannot yet script all degradations | Add scripted state changes and seeded faults | Unknown versus healthy and degradation sequences |
 | Motion bounds | Cohesive value+semantics+source/profile type | Validated physical bounds are not calibrated | Load validated profiles only after empirical validation | Unknown/default and semantic round trips |
-| Telemetry replay and gap status | Report replay provides an implementation pattern | Telemetry has no bounded replay or explicit eviction result | Replace the live-only RPC contract with the canonical replay/live envelope | Eviction, replay ordering, reconnect, bounded memory |
-| Deterministic execution record | Rotated report JSONL and console/file logging exist | No complete event stream, global order, schema header, seed/config hashes, or loss policy | Add length-delimited protobuf execution records with global event sequence, deterministic serialization, rotation, and explicit recorder loss/failure events | Recording disabled by default. Test byte-stable replay or canonical semantic equality and rotation |
+| Telemetry replay and gap status | Complete bounded replay/live stream with session, range, boundary, and eviction events | Deterministic scripted producer belongs to Phase 3 | Exercise the canonical stream through the scripted backend | Eviction, replay ordering, reconnect, bounded memory |
+| Deterministic execution record | Complete global protobuf envelope with deterministic serialization, checksums, clean-close marker, metadata, and loss policy | Reader/replay tooling belongs to Phase 3 | Promote a strict log reader and normalized replay backend | Byte-stable replay, rotation, truncation, and corruption |
 | Replay/fault testing | `RecordingBackend` can manually emit telemetry; simulator and integration harness exist | No public scripted/replay backend, manual time/session injection, seeded faults, command-responsive motion, or separate truth | Add a scripted backend, deterministic backend decorator/scheduler, and command-responsive kinematic simulator with a truth-only channel | Production MAVLink path remains free of random test behavior. Fixed-seed tests required |
-| SDK ergonomics and conversions | Exact cancellation handle, goal snapshot, delivery envelope, and typed evidence are canonical | Cursor/gap observation is not implemented | Extend the canonical subscription result rather than adding wrappers | Conversion tests for every correctness field |
-| Documentation boundary | The scientific and canonical API contracts state the TCRR boundary | Future replay/record/fault details are not implemented | Update guarantees alongside each completed phase | Review all guarantees and non-guarantees |
+| SDK ergonomics and conversions | Exact handles and typed stream/frame observations expose cursor, gaps, replay/live, sessions, and local callback drops | Phase 3 end-to-end matrix remains | Exercise all observations through deterministic scripts | Conversion tests for every correctness field |
+| Documentation boundary | The scientific, canonical API, and readiness contracts state guarantees and non-guarantees | Fault/simulator guarantees await Phase 3 | Update the contract alongside each completed phase | Review all guarantees and non-guarantees |
 
 ## Ordered implementation backlog
 
@@ -186,7 +185,9 @@ Tasks within each priority are ordered by dependency. Do not begin a task whose 
 
 ### Phase 2 - replayable and reconstructable SwarmKit evidence
 
-- [ ] **TCRR-020 (P1): Add bounded telemetry retention and the canonical replay/live evidence stream.**
+Implementation complete. Per project direction, Phase 2 added no new tests; its deferred correctness matrix remains consolidated under TCRR-033.
+
+- [x] **TCRR-020 (P1): Add bounded telemetry retention and the canonical replay/live evidence stream.**
   - Add a new stream shape that can carry normalized frames plus stream-start/session metadata, replay range, live boundary, session mismatch, and history-evicted status.
   - Support `after_sequence`, `expected_agent_session_id`, and bounded replay configured per Agent/drone.
   - Never silently bridge an unavailable range; emit an explicit history-loss event.
@@ -194,7 +195,7 @@ Tasks within each priority are ordered by dependency. Do not begin a task whose 
   - Tests: exact replay, live handoff without a race, eviction, old-session request, and multiple subscribers.
   - Dependencies: TCRR-015.
 
-- [ ] **TCRR-021 (P1): Add SDK cursor, gap, duplicate, reorder, and reconnect handling.**
+- [x] **TCRR-021 (P1): Add SDK cursor, gap, duplicate, reorder, and reconnect handling.**
   - Expose producer identity and a typed stream observation/event callback.
   - Detect next, duplicate, older/reordered, gap, session change, replay/live boundary, and history loss.
   - Advance reconnect cursors from the last accepted producer sequence rather than replaying from the original static cursor.
@@ -203,7 +204,7 @@ Tasks within each priority are ordered by dependency. Do not begin a task whose 
   - Tests: scripted 10, 11, 13, delayed 12, duplicate 13, reconnect, local callback drop, and new session.
   - Dependencies: TCRR-020.
 
-- [ ] **TCRR-022 (P1): Implement a generic deterministic execution-event recorder.**
+- [x] **TCRR-022 (P1): Implement a generic deterministic execution-event recorder.**
   - Use a versioned protobuf envelope with one Agent-global event sequence and Agent session.
   - Record session start, normalized telemetry, command request, backend result/ACK detail, goal lifecycle/attempt, reports, health/failsafe changes, and authority changes.
   - Record run/scenario ID, seed, software version, configuration hash, backend identity, and calibration profile reference.
@@ -213,7 +214,7 @@ Tasks within each priority are ordered by dependency. Do not begin a task whose 
   - Tests: stable global order under concurrent publishers, replay equality, rotation, truncated/corrupt record detection, and recorder-overflow policy.
   - Dependencies: TCRR-020.
 
-- [ ] **TCRR-023 (P1): Surface typed command/backend outcomes for the recorder.**
+- [x] **TCRR-023 (P1): Surface typed command/backend outcomes for the recorder.**
   - Record command kind and parameters, execution context, dispatch time, transport/backend response, MAVLink ACK code/status text where available, and commands with no autopilot ACK.
   - Do not infer movement or arrival from ACK.
   - Change `IDroneBackend::Execute` if needed to make backend outcomes explicit and typed.

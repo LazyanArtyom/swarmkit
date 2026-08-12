@@ -67,7 +67,7 @@ void TelemetryManager::PublishFrame(const std::shared_ptr<TelemetryState>& state
     {
         std::lock_guard<std::mutex> lock(state->data_mutex);
         const core::TelemetryFrame* previous =
-            state->last_frame.has_value() ? &*state->last_frame : nullptr;
+            state->retained_frames.empty() ? nullptr : &state->retained_frames.back();
         NormalizeMeasurement(&normalized.provenance.position,
                              previous == nullptr ? nullptr : &previous->provenance.position,
                              receive_wall_ms, receive_monotonic_ns);
@@ -96,7 +96,13 @@ void TelemetryManager::PublishFrame(const std::shared_ptr<TelemetryState>& state
         set_generation(&normalized.accuracy.vertical_velocity);
         set_generation(&normalized.accuracy.speed);
         normalized.telemetry_sequence = ++state->sequence;
-        state->last_frame = std::move(normalized);
+        state->retained_frames.push_back(normalized);
+        while (state->retained_frames.size() > retention_frames_) {
+            state->retained_frames.pop_front();
+        }
+        if (normalized_frame_observer_) {
+            normalized_frame_observer_(normalized);
+        }
     }
     state->data_cv.notify_all();
 }
@@ -109,6 +115,7 @@ int TelemetryManager::NormalizeRate(int requested_rate_hz) const {
 }
 
 core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int requested_rate_hz,
+                                            const TelemetryCursor& cursor,
                                             TelemetryLease* out_lease) {
     if (out_lease == nullptr) {
         return core::Result::Failed("telemetry lease output is null");
@@ -117,12 +124,6 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
     const int kNormalizedRate = NormalizeRate(requested_rate_hz);
     auto state = GetOrCreateState(drone_id);
     const std::uint64_t kSubscriberId = next_subscriber_id_.fetch_add(1, std::memory_order_relaxed);
-    std::uint64_t initial_sequence = 0;
-    {
-        std::lock_guard<std::mutex> data_lock(state->data_mutex);
-        initial_sequence = state->sequence;
-    }
-
     std::lock_guard<std::mutex> lock(state->control_mutex);
     state->subscriber_rates_hz[kSubscriberId] = kNormalizedRate;
 
@@ -205,10 +206,36 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
     total_subscription_count_.fetch_add(1, std::memory_order_relaxed);
     active_stream_count_.fetch_add(1, std::memory_order_relaxed);
 
+    TelemetryReplaySnapshot replay;
+    replay.requested_after_sequence = cursor.after_sequence;
+    {
+        std::lock_guard<std::mutex> data_lock(state->data_mutex);
+        replay.latest_available_sequence = state->sequence;
+        replay.oldest_available_sequence =
+            state->retained_frames.empty() ? 0 : state->retained_frames.front().telemetry_sequence;
+        replay.session_mismatch = !cursor.expected_agent_session_id.empty() &&
+                                  cursor.expected_agent_session_id != agent_session_id_;
+        replay.cursor_ahead =
+            !replay.session_mismatch && cursor.after_sequence > replay.latest_available_sequence;
+        const std::uint64_t effective_after =
+            replay.session_mismatch
+                ? 0
+                : (replay.cursor_ahead ? replay.latest_available_sequence : cursor.after_sequence);
+        replay.history_evicted = !replay.session_mismatch && cursor.after_sequence > 0 &&
+                                 replay.oldest_available_sequence > 1 &&
+                                 cursor.after_sequence < replay.oldest_available_sequence - 1;
+        for (const auto& retained : state->retained_frames) {
+            if (retained.telemetry_sequence > effective_after) {
+                replay.frames.push_back(retained);
+            }
+        }
+    }
+
     out_lease->state = std::move(state);
     out_lease->drone_id = drone_id;
     out_lease->subscriber_id = kSubscriberId;
-    out_lease->initial_sequence = initial_sequence;
+    out_lease->initial_sequence = replay.latest_available_sequence;
+    out_lease->replay = std::move(replay);
     return core::Result::Success();
 }
 
@@ -237,44 +264,47 @@ void TelemetryManager::ReleaseLease(const TelemetryLease& lease) {
     }
 }
 
-bool TelemetryManager::ReadFrame(const TelemetryLease& lease, std::uint64_t* last_sequence,
-                                 core::TelemetryFrame* out_frame) {
-    if (!lease.state || last_sequence == nullptr || out_frame == nullptr) {
-        return false;
-    }
-
-    std::lock_guard<std::mutex> lock(lease.state->data_mutex);
-    if (lease.state->last_frame.has_value() && lease.state->sequence != *last_sequence) {
-        *out_frame = lease.state->last_frame.value_or(core::TelemetryFrame{});
-        *last_sequence = lease.state->sequence;
-        return true;
-    }
-    return false;
-}
-
-bool TelemetryManager::WaitForFrame(const TelemetryLease& lease, std::uint64_t* last_sequence,
-                                    core::TelemetryFrame* out_frame,
-                                    std::chrono::milliseconds timeout) {
-    if (!lease.state || last_sequence == nullptr || out_frame == nullptr) {
-        return false;
+TelemetryReadResult TelemetryManager::WaitForFrame(const TelemetryLease& lease,
+                                                   std::uint64_t last_sequence,
+                                                   std::chrono::milliseconds timeout) {
+    TelemetryReadResult result;
+    if (!lease.state) {
+        result.status = TelemetryReadStatus::kShutdown;
+        return result;
     }
 
     std::unique_lock<std::mutex> lock(lease.state->data_mutex);
     const bool kReady = lease.state->data_cv.wait_for(lock, timeout, [&] {
         return lease.state->shutting_down ||
-               (lease.state->last_frame.has_value() && lease.state->sequence != *last_sequence);
+               (!lease.state->retained_frames.empty() && lease.state->sequence > last_sequence);
     });
-    if (!kReady || lease.state->shutting_down) {
-        return false;
+    if (!kReady) {
+        result.status = TelemetryReadStatus::kTimeout;
+        return result;
+    }
+    if (lease.state->shutting_down) {
+        result.status = TelemetryReadStatus::kShutdown;
+        return result;
     }
 
-    if (!lease.state->last_frame.has_value()) {
-        return false;
+    result.oldest_available_sequence = lease.state->retained_frames.front().telemetry_sequence;
+    result.latest_available_sequence = lease.state->retained_frames.back().telemetry_sequence;
+    if (last_sequence > 0 && result.oldest_available_sequence > 1 &&
+        last_sequence < result.oldest_available_sequence - 1) {
+        result.status = TelemetryReadStatus::kHistoryEvicted;
+        return result;
     }
-
-    *out_frame = lease.state->last_frame.value_or(core::TelemetryFrame{});
-    *last_sequence = lease.state->sequence;
-    return true;
+    const auto iter = std::ranges::find_if(lease.state->retained_frames,
+                                           [last_sequence](const core::TelemetryFrame& candidate) {
+                                               return candidate.telemetry_sequence > last_sequence;
+                                           });
+    if (iter == lease.state->retained_frames.end()) {
+        result.status = TelemetryReadStatus::kTimeout;
+        return result;
+    }
+    result.status = TelemetryReadStatus::kFrame;
+    result.frame = *iter;
+    return result;
 }
 
 void TelemetryManager::ShutdownAll() {

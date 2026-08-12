@@ -1,6 +1,6 @@
 # SwarmKit Scientific Context
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## Purpose
 
@@ -95,7 +95,9 @@ Implemented capabilities include:
 - swarm fanout for commands, goals, health, stats, telemetry, and authority;
 - generic message plane for small labeled payloads;
 - generic artifact plane for chunked binary transfer with hashing, TTL, direct peer routing, progress, cancellation, and peer status;
-- agent-side JSONL report persistence and replay cursors;
+- bounded in-memory report replay cursors;
+- canonical replay/live telemetry with Agent-session and producer-sequence identity;
+- deterministic, checksummed protobuf execution-evidence recording;
 - CLI reference tool for smoke testing SDK workflows.
 
 Removed/non-goal core features:

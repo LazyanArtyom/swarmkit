@@ -437,6 +437,8 @@ void PopulateReplyError(core::SwarmError* error, swarmkit::v1::ErrorCode proto_c
             return AuthorityEventKind::kPreempted;
         case ProtoKind::AuthorityEvent_Kind_RESUMED:
             return AuthorityEventKind::kResumed;
+        case ProtoKind::AuthorityEvent_Kind_RELEASED:
+            return AuthorityEventKind::kReleased;
         case ProtoKind::AuthorityEvent_Kind_EXPIRED:
         case ProtoKind::AuthorityEvent_Kind_KIND_UNSPECIFIED:
             return AuthorityEventKind::kExpired;
@@ -638,7 +640,7 @@ struct StreamState {
     std::condition_variable callback_cv;
     std::deque<std::function<void()>> callback_queue;
     bool callback_shutdown{false};
-    std::size_t dropped_callbacks{0};
+    std::atomic<std::size_t> dropped_callbacks{0};
 
     SubscriptionKind kind{SubscriptionKind::kTelemetry};
     std::string drone_id;
@@ -781,16 +783,17 @@ void HandleCallbackException(StreamState& stream_state, std::string_view callbac
         "Catch exceptions inside subscription callbacks");
     error.correlation_id = stream_state.correlation_id;
 
-    SafeNotifySubscriptionEvent(stream_state.on_event,
-                                SubscriptionEvent{
-                                    .kind = stream_state.kind,
-                                    .state = SubscriptionLifecycleState::kCallbackError,
-                                    .drone_id = stream_state.drone_id,
-                                    .correlation_id = stream_state.correlation_id,
-                                    .error = error,
-                                    .message = detail,
-                                    .dropped_callbacks = stream_state.dropped_callbacks,
-                                });
+    SafeNotifySubscriptionEvent(
+        stream_state.on_event,
+        SubscriptionEvent{
+            .kind = stream_state.kind,
+            .state = SubscriptionLifecycleState::kCallbackError,
+            .drone_id = stream_state.drone_id,
+            .correlation_id = stream_state.correlation_id,
+            .error = error,
+            .message = detail,
+            .dropped_callbacks = stream_state.dropped_callbacks.load(std::memory_order_relaxed),
+        });
     SafeNotifyStreamError(stream_state.on_error, detail);
 }
 
@@ -798,7 +801,7 @@ void ResetCallbackQueue(StreamState& stream_state) {
     std::lock_guard<std::mutex> lock(stream_state.callback_mutex);
     stream_state.callback_queue.clear();
     stream_state.callback_shutdown = false;
-    stream_state.dropped_callbacks = 0;
+    stream_state.dropped_callbacks.store(0, std::memory_order_relaxed);
 }
 
 void ShutdownCallbackQueue(StreamState& stream_state) {
@@ -884,7 +887,7 @@ void EmitSubscriptionEvent(StreamState& stream_state, SubscriptionLifecycleState
         .attempt_number = attempt_number,
         .error = std::move(error),
         .message = std::move(message),
-        .dropped_callbacks = stream_state.dropped_callbacks,
+        .dropped_callbacks = stream_state.dropped_callbacks.load(std::memory_order_relaxed),
     };
     static_cast<void>(EnqueueCallback(
         stream_state,
@@ -1348,6 +1351,7 @@ template <typename ProtoCovariance>
         .holder_client_id = proto_event.holder_client_id(),
         .holder_priority = static_cast<CommandPriority>(proto_event.holder_priority()),
         .correlation_id = proto_event.correlation_id(),
+        .affected_client_id = proto_event.affected_client_id(),
     };
 }
 
@@ -1693,31 +1697,216 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     return report;
 }
 
-[[nodiscard]] grpc::Status RunTelemetryStreamAttempt(ClientRuntime runtime,
-                                                     StreamState& telemetry_stream,
-                                                     const TelemetrySubscription& subscription,
-                                                     const TelemetryHandler& on_frame,
-                                                     std::string_view stream_id) {
+[[nodiscard]] TelemetryStreamEventKind ToTelemetryStreamEventKind(
+    swarmkit::v1::TelemetryStreamEventKind kind) {
+    switch (kind) {
+        case swarmkit::v1::TELEMETRY_REPLAY_STARTED:
+            return TelemetryStreamEventKind::kReplayStarted;
+        case swarmkit::v1::TELEMETRY_REPLAY_COMPLETED:
+            return TelemetryStreamEventKind::kReplayCompleted;
+        case swarmkit::v1::TELEMETRY_LIVE_BOUNDARY:
+            return TelemetryStreamEventKind::kLiveBoundary;
+        case swarmkit::v1::TELEMETRY_HISTORY_EVICTED:
+            return TelemetryStreamEventKind::kHistoryEvicted;
+        case swarmkit::v1::TELEMETRY_SESSION_MISMATCH:
+            return TelemetryStreamEventKind::kSessionMismatch;
+        case swarmkit::v1::TELEMETRY_CURSOR_AHEAD:
+            return TelemetryStreamEventKind::kCursorAhead;
+        case swarmkit::v1::TELEMETRY_STREAM_STARTED:
+        case swarmkit::v1::TELEMETRY_STREAM_EVENT_UNSPECIFIED:
+        default:
+            return TelemetryStreamEventKind::kStarted;
+    }
+}
+
+[[nodiscard]] TelemetryStreamStatus ToTelemetryStreamStatus(
+    const swarmkit::v1::TelemetryStreamEvent& event) {
+    return {
+        .kind = ToTelemetryStreamEventKind(event.kind()),
+        .drone_id = event.drone_id(),
+        .agent_session_id = event.agent_session_id(),
+        .transport_stream_id = event.transport_stream_id(),
+        .expected_agent_session_id = event.expected_agent_session_id(),
+        .requested_after_sequence = event.requested_after_sequence(),
+        .oldest_available_sequence = event.oldest_available_sequence(),
+        .latest_available_sequence = event.latest_available_sequence(),
+        .replay_first_sequence = event.replay_first_sequence(),
+        .replay_last_sequence = event.replay_last_sequence(),
+        .live_from_sequence = event.live_from_sequence(),
+        .detail = event.detail(),
+    };
+}
+
+[[nodiscard]] core::BackendDispatchState ToCoreDispatchState(
+    swarmkit::v1::BackendDispatchState state) {
+    switch (state) {
+        case swarmkit::v1::BACKEND_DISPATCH_REJECTED:
+            return core::BackendDispatchState::kRejected;
+        case swarmkit::v1::BACKEND_DISPATCH_FAILED:
+            return core::BackendDispatchState::kFailed;
+        case swarmkit::v1::BACKEND_DISPATCH_ACCEPTED:
+            return core::BackendDispatchState::kAccepted;
+        case swarmkit::v1::BACKEND_DISPATCH_STATE_UNSPECIFIED:
+        default:
+            return core::BackendDispatchState::kUnknown;
+    }
+}
+
+[[nodiscard]] core::BackendCommandOutcome ToCoreBackendOutcome(
+    const swarmkit::v1::BackendCommandOutcome& proto) {
+    core::BackendCommandOutcome outcome;
+    outcome.dispatch_state = ToCoreDispatchState(proto.dispatch_state());
+    outcome.dispatch_monotonic_time_ns = proto.dispatch_monotonic_time_ns();
+    outcome.completion_monotonic_time_ns = proto.completion_monotonic_time_ns();
+    switch (outcome.dispatch_state) {
+        case core::BackendDispatchState::kUnknown:
+            outcome.result = core::Result::Failed("backend outcome is unknown");
+            break;
+        case core::BackendDispatchState::kAccepted:
+            outcome.result = core::Result::Success(proto.message());
+            break;
+        case core::BackendDispatchState::kRejected:
+            outcome.result = core::Result::Rejected(proto.message());
+            break;
+        case core::BackendDispatchState::kFailed:
+            outcome.result = core::Result::Failed(proto.message());
+            break;
+    }
+    outcome.protocol_responses.reserve(static_cast<std::size_t>(proto.protocol_responses_size()));
+    for (const auto& response : proto.protocol_responses()) {
+        core::BackendProtocolResponse converted{
+            .protocol = response.protocol(),
+            .command_name = response.command_name(),
+            .native_command_id = std::nullopt,
+            .response_expected = response.response_expected(),
+            .response_received = response.response_received(),
+            .response_timed_out = response.response_timed_out(),
+            .result_code = std::nullopt,
+            .result_name = response.result_name(),
+            .status_text = response.status_text(),
+        };
+        if (response.has_native_command_id()) {
+            converted.native_command_id = response.native_command_id();
+        }
+        if (response.has_result_code()) {
+            converted.result_code = response.result_code();
+        }
+        outcome.protocol_responses.push_back(std::move(converted));
+    }
+    return outcome;
+}
+
+struct TelemetryCursorState {
+    std::string agent_session_id;
+    std::uint64_t last_accepted_sequence{};
+    bool replayed{false};
+    bool session_changed{false};
+};
+
+[[nodiscard]] grpc::Status RunTelemetryStreamAttempt(
+    ClientRuntime runtime, StreamState& telemetry_stream, const TelemetrySubscription& subscription,
+    TelemetryCursorState* cursor, const TelemetryObservationHandler& on_observation,
+    std::string_view stream_id) {
     grpc::ClientContext* context = InstallStreamContext(telemetry_stream, stream_id);
 
     swarmkit::v1::TelemetryRequest request;
     request.set_drone_id(subscription.drone_id);
     request.set_rate_hz(subscription.rate_hertz);
+    request.set_after_sequence(cursor->last_accepted_sequence);
+    request.set_expected_agent_session_id(cursor->agent_session_id);
 
     auto reader = runtime.stub.StreamTelemetry(context, request);
     EmitSubscriptionEvent(telemetry_stream, SubscriptionLifecycleState::kConnected,
                           "telemetry stream connected");
-    swarmkit::v1::TelemetryFrame proto_frame;
-    while (reader->Read(&proto_frame)) {
+    swarmkit::v1::TelemetryStreamItem item;
+    while (reader->Read(&item)) {
         if (IsStopRequested(telemetry_stream)) {
             break;
         }
 
-        if (on_frame) {
-            auto delivery = ToTelemetryDelivery(proto_frame);
+        if (item.has_event()) {
+            TelemetryStreamStatus status = ToTelemetryStreamStatus(item.event());
+            if (status.kind == TelemetryStreamEventKind::kSessionMismatch) {
+                cursor->agent_session_id = status.agent_session_id;
+                cursor->last_accepted_sequence = 0;
+                cursor->session_changed = true;
+            } else if (status.kind == TelemetryStreamEventKind::kCursorAhead) {
+                cursor->agent_session_id = status.agent_session_id;
+                cursor->last_accepted_sequence = status.latest_available_sequence;
+            } else if (cursor->agent_session_id.empty() && !status.agent_session_id.empty()) {
+                cursor->agent_session_id = status.agent_session_id;
+            }
+            if (status.kind == TelemetryStreamEventKind::kReplayStarted) {
+                cursor->replayed = true;
+            } else if (status.kind == TelemetryStreamEventKind::kLiveBoundary) {
+                cursor->replayed = false;
+            }
+            if (on_observation) {
+                TelemetryObservation observation{std::move(status)};
+                static_cast<void>(EnqueueCallback(
+                    telemetry_stream, [on_observation, observation = std::move(observation)]() {
+                        on_observation(observation);
+                    }));
+            }
+            continue;
+        }
+        if (!item.has_frame()) {
+            continue;
+        }
+
+        TelemetryDelivery delivery = ToTelemetryDelivery(item.frame());
+        const std::string& frame_session = delivery.frame.agent_session_id;
+        const std::uint64_t frame_sequence = delivery.frame.telemetry_sequence;
+        const std::uint64_t previous_sequence = cursor->last_accepted_sequence;
+        TelemetrySequenceRelation relation = TelemetrySequenceRelation::kFirst;
+        std::uint64_t missing_first = 0;
+        std::uint64_t missing_last = 0;
+
+        if (cursor->session_changed) {
+            relation = TelemetrySequenceRelation::kNewSession;
+            cursor->agent_session_id = frame_session;
+            cursor->last_accepted_sequence = frame_sequence;
+            cursor->session_changed = false;
+        } else if (!cursor->agent_session_id.empty() && frame_session != cursor->agent_session_id) {
+            relation = TelemetrySequenceRelation::kNewSession;
+            cursor->agent_session_id = frame_session;
+            cursor->last_accepted_sequence = frame_sequence;
+        } else {
+            if (cursor->agent_session_id.empty()) {
+                cursor->agent_session_id = frame_session;
+            }
+            if (previous_sequence == 0) {
+                relation = TelemetrySequenceRelation::kFirst;
+                cursor->last_accepted_sequence = frame_sequence;
+            } else if (frame_sequence == previous_sequence + 1) {
+                relation = TelemetrySequenceRelation::kNext;
+                cursor->last_accepted_sequence = frame_sequence;
+            } else if (frame_sequence > previous_sequence + 1) {
+                relation = TelemetrySequenceRelation::kGap;
+                missing_first = previous_sequence + 1;
+                missing_last = frame_sequence - 1;
+                cursor->last_accepted_sequence = frame_sequence;
+            } else if (frame_sequence == previous_sequence) {
+                relation = TelemetrySequenceRelation::kDuplicate;
+            } else {
+                relation = TelemetrySequenceRelation::kReordered;
+            }
+        }
+
+        if (on_observation) {
+            TelemetryFrameObservation frame_observation{
+                .delivery = std::move(delivery),
+                .sequence_relation = relation,
+                .previous_accepted_sequence = previous_sequence,
+                .missing_first_sequence = missing_first,
+                .missing_last_sequence = missing_last,
+                .replayed = cursor->replayed,
+            };
+            TelemetryObservation observation{std::move(frame_observation)};
             static_cast<void>(EnqueueCallback(
-                telemetry_stream,
-                [on_frame, delivery = std::move(delivery)]() { on_frame(delivery); }));
+                telemetry_stream, [on_observation, observation = std::move(observation)]() {
+                    on_observation(observation);
+                }));
         }
     }
 
@@ -1837,16 +2026,21 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
 }
 
 void RunTelemetryLoop(ClientRuntime runtime, StreamState& telemetry_stream,
-                      const TelemetrySubscription& subscription, const TelemetryHandler& on_frame,
+                      const TelemetrySubscription& subscription,
+                      const TelemetryObservationHandler& on_observation,
                       const TelemetryErrorHandler& on_error) {
     static_cast<void>(on_error);
     StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
+    TelemetryCursorState cursor{
+        .agent_session_id = subscription.expected_agent_session_id,
+        .last_accepted_sequence = subscription.after_sequence,
+    };
 
     while (!IsStopRequested(telemetry_stream)) {
         ++retry_state.attempt_number;
         const std::string kStreamId = MakeCorrelationId("telemetry");
-        const grpc::Status kFinalStatus =
-            RunTelemetryStreamAttempt(runtime, telemetry_stream, subscription, on_frame, kStreamId);
+        const grpc::Status kFinalStatus = RunTelemetryStreamAttempt(
+            runtime, telemetry_stream, subscription, &cursor, on_observation, kStreamId);
 
         if (IsStopRequested(telemetry_stream)) {
             break;
@@ -2512,9 +2706,12 @@ struct VerificationSpec {
     request.set_rate_hz(std::max(1, options.telemetry_rate_hz));
 
     auto reader = stub.StreamTelemetry(&context, request);
-    swarmkit::v1::TelemetryFrame proto_frame;
-    while (reader->Read(&proto_frame)) {
-        const core::TelemetryFrame frame = ToTelemetryDelivery(proto_frame).frame;
+    swarmkit::v1::TelemetryStreamItem item;
+    while (reader->Read(&item)) {
+        if (!item.has_frame()) {
+            continue;
+        }
+        const core::TelemetryFrame frame = ToTelemetryDelivery(item.frame()).frame;
         if (spec.telemetry_predicate && spec.telemetry_predicate(frame)) {
             context.TryCancel();
             static_cast<void>(reader->Finish());
@@ -2572,6 +2769,9 @@ CommandResult Client::SendCommand(const commands::CommandEnvelope& envelope) con
     out.ok = (rep.status() == swarmkit::v1::CommandReply::OK);
     out.message = rep.message();
     out.correlation_id = rep.correlation_id().empty() ? kCorrelationId : rep.correlation_id();
+    if (rep.has_backend_outcome()) {
+        out.backend_outcome = ToCoreBackendOutcome(rep.backend_outcome());
+    }
     PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.debug_message(),
                        out.correlation_id, attempt_count);
     return out;
@@ -2672,6 +2872,9 @@ GoalResult Client::SetActiveGoal(const ActiveGoalRequest& request) const {
     out.computed_timeout_ms = rep.computed_timeout_ms();
     if (rep.has_execution_handle()) {
         out.execution_handle = core::internal::ToCoreExecutionHandle(rep.execution_handle());
+    }
+    if (rep.has_backend_outcome()) {
+        out.backend_outcome = ToCoreBackendOutcome(rep.backend_outcome());
     }
     return out;
 }
@@ -2816,8 +3019,9 @@ namespace {
 }  // namespace
 
 std::expected<Subscription, core::SwarmError> Client::StartTelemetry(
-    TelemetrySubscription subscription, TelemetryHandler on_frame, TelemetryErrorHandler on_error,
-    SubscriptionEventHandler on_event, SubscriptionOptions options) {
+    TelemetrySubscription subscription, TelemetryObservationHandler on_observation,
+    TelemetryErrorHandler on_error, SubscriptionEventHandler on_event,
+    SubscriptionOptions options) {
     if (subscription.drone_id.empty()) {
         return std::unexpected(MakeSubscriptionStartError(
             SubscriptionKind::kTelemetry, core::ErrorCode::kInvalidArgument,
@@ -2828,10 +3032,15 @@ std::expected<Subscription, core::SwarmError> Client::StartTelemetry(
             SubscriptionKind::kTelemetry, core::ErrorCode::kInvalidArgument,
             "telemetry subscription rate_hertz must be greater than zero"));
     }
-    if (!on_frame) {
+    if (subscription.after_sequence > 0 && subscription.expected_agent_session_id.empty()) {
         return std::unexpected(MakeSubscriptionStartError(
             SubscriptionKind::kTelemetry, core::ErrorCode::kInvalidArgument,
-            "telemetry subscription frame callback must not be empty"));
+            "expected_agent_session_id is required when after_sequence is non-zero"));
+    }
+    if (!on_observation) {
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kTelemetry, core::ErrorCode::kInvalidArgument,
+            "telemetry observation callback must not be empty"));
     }
 
     auto generation = PrepareSubscriptionStart(impl_->telemetry, SubscriptionKind::kTelemetry,
@@ -2843,12 +3052,12 @@ std::expected<Subscription, core::SwarmError> Client::StartTelemetry(
 
     try {
         const auto stream = impl_->telemetry;
-        stream->worker =
-            std::thread([this, stream, subscription = std::move(subscription),
-                         on_frame = std::move(on_frame), on_error = stream->on_error]() mutable {
-                RunTelemetryLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub},
-                                 *stream, subscription, on_frame, on_error);
-            });
+        stream->worker = std::thread([this, stream, subscription = std::move(subscription),
+                                      on_observation = std::move(on_observation),
+                                      on_error = stream->on_error]() mutable {
+            RunTelemetryLoop(ClientRuntime{.config = impl_->config, .stub = *impl_->stub}, *stream,
+                             subscription, on_observation, on_error);
+        });
     } catch (const std::system_error& exc) {
         CancelAndJoinStream(*impl_->telemetry);
         return std::unexpected(MakeSubscriptionStartError(
