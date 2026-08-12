@@ -33,9 +33,10 @@ place to load `swarm.drones` topology from YAML.
 
 `swarmkit::agent::IDroneBackend` is the agent-side vehicle interface. Backends
 execute typed command envelopes, start and stop telemetry, and report health and
-capabilities. The simulator backend accepts commands and produces synthetic
-telemetry. The MAVLink backend speaks direct UDP MAVLink to SITL or autopilot
-traffic.
+capabilities. The simulator backend is a command-responsive kinematic model
+with real-time and manual deterministic clocks. It produces estimated telemetry
+and exposes a separate experiment-only truth type. The MAVLink backend speaks
+direct UDP MAVLink to SITL or autopilot traffic.
 
 Custom backends can be registered through `BackendRegistry` with a
 `BackendCreator`.
@@ -75,6 +76,23 @@ meaningful. For example, check `frame.HasPosition()` before using `lat_deg` and
 Frames can carry source timestamps, coordinate-frame metadata, GPS quality,
 estimator state, accuracy fields, home origin, active command IDs, active goal
 IDs, and correlation IDs.
+
+The Agent assigns one producer sequence at normalized ingress. Live and retained
+replay frames use the same `(agent session, drone ID, sequence)` identity. The
+SDK reports gaps, duplicates, reordered evidence, session changes, replay
+boundaries, and unavailable history explicitly.
+
+## Evidence And Experiments
+
+The execution recorder writes checksummed, deterministically serialized protobuf
+envelopes in one Agent-global order. The evidence reader rejects corruption,
+truncation, incompatible schema, sequence discontinuity, session changes, and
+incomplete scientific runs.
+
+The experiment library provides a manual runtime, scripted backend, explicit
+seeded fault decorator, normalized telemetry replay, and simulator controls.
+Ground truth is not normalized telemetry. None of these components implements
+arrival certification or rotor-router state.
 
 ## Goals And Reports
 

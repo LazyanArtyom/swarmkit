@@ -266,13 +266,14 @@ For explicit CI jobs, pass the preset and platform:
 
 ## Tools package
 
-The tools package contains only the two statically-linked binaries:
+The tools package contains three statically-linked binaries:
 
 ```
 swarmkit-<version>-tools-<platform>/
 └── bin/
     ├── swarmkit-agent
-    └── swarmkit-cli
+    ├── swarmkit-cli
+    └── swarmkit-evidence-inspect
 ```
 
 They depend only on system libraries and run on any machine of the same OS and architecture without additional dependencies.
@@ -303,12 +304,16 @@ SDK layout:
 │   ├── core/                  # Logger, Result, TelemetryFrame, version
 │   ├── agent/                 # IDroneBackend, CommandArbiter, server, SimBackend
 │   ├── client/                # Client, SwarmClient, subscriptions, command results
+│   ├── evidence/              # Strict execution-log reader and ordered replay
+│   ├── experiment/            # Scripted/fault backends, manual runtime, normalized replay
 │   ├── commands/              # flight/nav/swarm/payload command categories
 │   └── commands.h             # aggregate Command, CommandContext, CommandEnvelope
 ├── lib/
 │   ├── libswarmkit_core.a
 │   ├── libswarmkit_agent.a
 │   ├── libswarmkit_client.a
+│   ├── libswarmkit_evidence.a
+│   ├── libswarmkit_experiment.a
 │   ├── libswarmkit_proto.a
 │   └── cmake/SwarmKit/
 │       ├── SwarmKitConfig.cmake

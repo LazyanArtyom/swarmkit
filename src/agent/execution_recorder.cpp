@@ -7,6 +7,7 @@
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 
 #include <array>
+#include <cstdio>
 #include <filesystem>
 #include <system_error>
 #include <utility>
@@ -57,8 +58,14 @@ ExecutionRecorder::ExecutionRecorder(ExecutionRecorderOptions options)
     static_cast<void>(WriteEnvelopeLocked(&envelope));
 }
 
-ExecutionRecorder::~ExecutionRecorder() {
-    Close();
+ExecutionRecorder::~ExecutionRecorder() noexcept {
+    try {
+        Close();
+    } catch (...) {
+        // Destructors cannot report recorder failures. Production shutdown calls
+        // Close() explicitly while the recorder is still observable.
+        std::fputs("SwarmKit execution recorder shutdown failed\n", stderr);
+    }
 }
 
 bool ExecutionRecorder::Enabled() const noexcept {
@@ -169,6 +176,21 @@ void ExecutionRecorder::RecordAuthority(const swarmkit::v1::AuthorityEvent& auth
     RecordEnvelope(std::move(envelope));
 }
 
+void ExecutionRecorder::RecordBackendEvidence(const BackendEvidenceEvent& event) {
+    swarmkit::v1::ExecutionEventEnvelope envelope;
+    auto* recorded = envelope.mutable_backend();
+    recorded->set_source(event.source);
+    recorded->set_kind(event.kind);
+    recorded->set_source_sequence(event.source_sequence);
+    if (event.random_seed.has_value()) {
+        recorded->set_random_seed(*event.random_seed);
+    }
+    for (const auto& [key, value] : event.attributes) {
+        (*recorded->mutable_attributes())[key] = value;
+    }
+    RecordEnvelope(std::move(envelope));
+}
+
 void ExecutionRecorder::Close() {
     if (!enabled_) {
         return;
@@ -244,7 +266,7 @@ bool ExecutionRecorder::WriteEnvelopeLocked(swarmkit::v1::ExecutionEventEnvelope
 }
 
 bool ExecutionRecorder::SerializeDeterministically(
-    const swarmkit::v1::ExecutionEventEnvelope& envelope, std::string* output) const {
+    const swarmkit::v1::ExecutionEventEnvelope& envelope, std::string* output) {
     if (output == nullptr) {
         return false;
     }
@@ -331,10 +353,10 @@ bool ExecutionRecorder::RotateLocked() {
     std::filesystem::remove(SegmentPath(options_.config.file_path, max_segments - 1), error);
     for (int index = max_segments - 2; index >= 0; --index) {
         const std::string from = SegmentPath(options_.config.file_path, index);
-        const std::string to = SegmentPath(options_.config.file_path, index + 1);
+        const std::string destination = SegmentPath(options_.config.file_path, index + 1);
         error.clear();
         if (std::filesystem::exists(from, error)) {
-            std::filesystem::rename(from, to, error);
+            std::filesystem::rename(from, destination, error);
             if (error) {
                 InvalidateLocked("execution evidence rotation failed: " + error.message());
                 return false;

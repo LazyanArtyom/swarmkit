@@ -1,6 +1,8 @@
 # SwarmKit TCRR Readiness and Empirical Evaluation Task List
 
-Status: repository and paper audit completed on 2026-08-11. Gate 0 and Phase 1 were implemented on 2026-08-11. Phase 2 was implemented on 2026-08-12. No rotor-router, TCRR certificate, or commit logic has been added to SwarmKit.
+Status: Gate 1 accepted on 2026-08-12. Phases 0–3 are implemented and the canonical Debug,
+Release, UBSan, package-consumer, deterministic replay/fault, and simulator tests pass. No
+rotor-router, TCRR certificate, or commit logic has been added to SwarmKit.
 
 ## Objective
 
@@ -15,13 +17,17 @@ The implementation order is driven by two rules:
 
 - The repository configures with `cmake --preset mac-debug`.
 - The repository builds with `cmake --build --preset mac-debug`.
-- The current test target passes with `ctest --preset mac-debug` (1/1 CTest targets, 0 failures).
+- The canonical suite contains 91 cases (906 assertions) and passes in Debug, Release, and UBSan
+  builds; the installed-package CLI contract is registered as a separate CTest smoke test.
 - The protobuf and public C++ APIs now expose one canonical execution-handle and telemetry-evidence model.
 - SwarmKit is pre-release: compatibility-only fields, overloads, fixtures, and aliases are intentionally absent.
 - The public telemetry model has producer identity, exact attempt binding, typed measurement provenance,
   explicit uncertainty semantics, GPS/estimator state, and transport-local delivery metadata.
 - Telemetry and reports have bounded in-memory replay; telemetry has an atomic replay/live boundary and explicit history/session status.
 - One deterministic, checksummed protobuf recorder is the only durable execution-evidence path; report-only JSONL was removed.
+- Strict evidence reading, normalized offline replay, manual runtime, exact scripted input, a
+  seeded fault decorator, and a command-responsive deterministic simulator are public libraries.
+- The simulator exposes independent `SimulationTruthFrame` evidence outside normalized telemetry.
 
 ## Paper result contract
 
@@ -68,28 +74,32 @@ Outcomes:
 
 ## Remaining audit findings
 
-1. The simulator is not yet a command-responsive experimental dynamics model and has no separate
-   truth channel or seeded fault scheduler.
-2. The external TCRR controller, calibration pipeline, experimental runner, statistical analysis,
+1. The external TCRR controller, calibration pipeline, experimental runner, statistical analysis,
    and paper result replacement remain future phases.
+2. SITL was reachable when originally announced, but the Ubuntu host was not routed during the
+   final Gate 1 run. Three local MAVLink Agents, gRPC ping, recorder clean-close, and strict log
+   validation succeeded; vehicle heartbeat/telemetry and flight commands remain to be rerun when
+   the external SITL sender is reachable.
+3. AppleClang 17's ASan and TSan runtimes on macOS 26 fail inside sanitizer/dyld initialization
+   before `main`; UBSan passes locally and Linux ASan/UBSan/TSan are required by CI.
 
 ## Gap analysis
 
 | Requirement | Current support | Remaining gap | Next change | Required tests |
 | --- | --- | --- | --- | --- |
-| Execution identity and Agent session | Complete optional intent context, exact execution handle, and global evidence binding | Phase 3 reader/replay tools remain | Preserve the envelope unchanged in normalized replay | Restart, retry, supersession, failure, timeout, exact cancel |
-| Goal lineage | Goal/revision/physical-attempt/session/client/correlation are recorded under one exact handle | Phase 3 scripted lifecycle coverage remains | Exercise every lifecycle through the scripted backend | Retry, replacement, stale report, and guarded cancellation |
-| Telemetry order | Session/drone sequence, replay cursor, live boundary, and explicit loss/session events are complete | Phase 3 exact sequence injection remains | Drive canonical observations from the scripted backend | Duplicate, gap, reorder, reconnect, restart, eviction |
+| Execution identity and Agent session | Complete optional intent context, exact execution handle, global evidence binding, and normalized replay | None in SwarmKit | Consume exact handle equality in external TCRR | Restart, retry, supersession, failure, timeout, exact cancel covered |
+| Goal lineage | Goal/revision/physical-attempt/session/client/correlation are recorded under one exact handle | None in SwarmKit | Consume lineage in external TCRR | Retry, replacement, stale report, and guarded cancellation covered |
+| Telemetry order | Session/drone sequence, replay cursor, live boundary, explicit loss/session events, and shared offline/live classifier are complete | None in SwarmKit | Build TCRR evidence windows over observations | Duplicate, gap, reorder, reconnect, restart, eviction covered |
 | Measurement provenance | Per-group provenance is preserved unchanged in normalized frames and evidence envelopes | Calibration profile generation remains external | Replay envelopes without renumbering or restamping | Cached-position freshness and deterministic replay |
 | Timing uncertainty | Agent ingress and per-group source evidence survive stream and recorder paths | Empirical clock calibration remains external | Validate timing profiles in the experiment layer | Unknown remains absent, never zero; replay equality tests |
 | Accuracy semantics | Optional typed XY/Z position/velocity and generic speed estimates with descriptors | Calibration profiles do not yet supply empirical bounds | Add external calibration artifacts and profile loading at the experiment layer | Round-trip, absent values, MAVLink backend-specific labels |
 | Estimator/failsafe evidence | Typed state, validity, raw quality, and typed capability support | Fault harness cannot yet script all degradations | Add scripted state changes and seeded faults | Unknown versus healthy and degradation sequences |
 | Motion bounds | Cohesive value+semantics+source/profile type | Validated physical bounds are not calibrated | Load validated profiles only after empirical validation | Unknown/default and semantic round trips |
-| Telemetry replay and gap status | Complete bounded replay/live stream with session, range, boundary, and eviction events | Deterministic scripted producer belongs to Phase 3 | Exercise the canonical stream through the scripted backend | Eviction, replay ordering, reconnect, bounded memory |
-| Deterministic execution record | Complete global protobuf envelope with deterministic serialization, checksums, clean-close marker, metadata, and loss policy | Reader/replay tooling belongs to Phase 3 | Promote a strict log reader and normalized replay backend | Byte-stable replay, rotation, truncation, and corruption |
-| Replay/fault testing | `RecordingBackend` can manually emit telemetry; simulator and integration harness exist | No public scripted/replay backend, manual time/session injection, seeded faults, command-responsive motion, or separate truth | Add a scripted backend, deterministic backend decorator/scheduler, and command-responsive kinematic simulator with a truth-only channel | Production MAVLink path remains free of random test behavior. Fixed-seed tests required |
-| SDK ergonomics and conversions | Exact handles and typed stream/frame observations expose cursor, gaps, replay/live, sessions, and local callback drops | Phase 3 end-to-end matrix remains | Exercise all observations through deterministic scripts | Conversion tests for every correctness field |
-| Documentation boundary | The scientific, canonical API, and readiness contracts state guarantees and non-guarantees | Fault/simulator guarantees await Phase 3 | Update the contract alongside each completed phase | Review all guarantees and non-guarantees |
+| Telemetry replay and gap status | Complete bounded replay/live stream plus deterministic exact scripted/offline input | None in SwarmKit | Consume typed status in external TCRR | Eviction, replay ordering, reconnect, bounded memory covered |
+| Deterministic execution record | Complete writer, strict reader, checksums, clean-close, metadata, loss policy, and rotation reconstruction | None in SwarmKit | Define TCRR-derived decision record | Replay, rotation, truncation, and corruption covered |
+| Replay/fault testing | Public manual runtime, scripted backend, normalized replay, seeded fault decorator, command-responsive simulator, separate truth type | Lifecycle faults remain explicit scenario-runner actions by design | Build the external Phase 4 runner | Production MAVLink path has no test randomness; fixed-seed determinism covered |
+| SDK ergonomics and conversions | Exact handles and typed observations expose cursor, gaps, replay/live, sessions, timing, uncertainty, and local drops | None in SwarmKit | Use the public evidence-consumer example as TCRR boundary | Canonical conversion and Agent/SDK integration matrix covered |
+| Documentation boundary | Scientific, API, readiness, simulator, fault, replay, and non-guarantee contracts are published | None in SwarmKit | Keep contract synchronized during Phase 4 | Gate 1 review complete |
 
 ## Ordered implementation backlog
 
@@ -223,7 +233,7 @@ Implementation complete. Per project direction, Phase 2 added no new tests; its 
 
 ### Phase 3 - deterministic test and experiment infrastructure
 
-- [ ] **TCRR-030 (P1): Promote a scripted/replay backend for exact evidence tests.**
+- [x] **TCRR-030 (P1): Promote a scripted/replay backend for exact evidence tests.**
   - Feed explicitly ordered telemetry and health changes using a manual clock and ID source.
   - Script backend command outcomes and ACK details.
   - Use the scripted backend to test normalization. Separately replay already-normalized records through the same controller-facing evidence interface without silently renumbering or restamping them.
@@ -231,14 +241,14 @@ Implementation complete. Per project direction, Phase 2 added no new tests; its 
   - Tests: the complete stale/reorder/duplicate/supersession/restart sequence from the readiness prompt.
   - Dependencies: TCRR-023.
 
-- [ ] **TCRR-031 (P1): Add a seeded deterministic fault-injection decorator/scheduler.**
+- [x] **TCRR-031 (P1): Add a seeded deterministic fault-injection decorator/scheduler.**
   - Support loss, delay, duplication, reordering, bias, noise, spikes, clock offset/uncertainty, estimator degradation, invalid accuracy, ACK without motion, target crossing, backend failure, supersession, restart/session change, interruption, stale rejoin, and duplicate requests where the interface permits.
   - Log the seed, fault configuration, and realized fault decisions as evidence.
   - Keep test randomness outside the production MAVLink execution path.
   - Tests: same scenario/config/seed yields the same logical fault sequence; a changed seed changes at least one randomized decision.
   - Dependencies: TCRR-030.
 
-- [ ] **TCRR-032 (P1): Replace/extend the demo simulator with command-responsive deterministic motion.**
+- [x] **TCRR-032 (P1): Replace/extend the demo simulator with command-responsive deterministic motion.**
   - Replace demo dynamics where necessary; keep one simulator contract rather than parallel legacy/experimental factories.
   - Model goal-directed position/velocity, hold, high-speed crossing, failure, and configurable rate/geometry sufficiently for controlled experiments.
   - Provide independent simulation truth through an experiment-only channel/file that cannot be mistaken for `TelemetryFrame`.
@@ -246,14 +256,14 @@ Implementation complete. Per project direction, Phase 2 added no new tests; its 
   - Tests: deterministic trajectory, command response, truth/estimate separation, and limit semantics.
   - Dependencies: TCRR-031.
 
-- [ ] **TCRR-033 (P1): Complete the SwarmKit correctness test matrix.**
+- [x] **TCRR-033 (P1): Complete the SwarmKit correctness test matrix.**
   - Add unit tests for every conversion and pure state rule.
   - Add Agent/SDK integration tests for identity, sequencing, replay, gaps, lineage, sessions, recorder, and backpressure.
   - Add sanitizer/release CI coverage and schema linting for the canonical protocol.
   - Remove avoidable sleep-based waits from the new correctness tests.
   - Dependencies: TCRR-032.
 
-- [ ] **TCRR-034 (P1): Publish the SwarmKit evidence contract and correct existing docs.**
+- [x] **TCRR-034 (P1): Publish the SwarmKit evidence contract and correct existing docs.**
   - Add `docs/tcrr-readiness.md` describing guarantees, non-guarantees, identity, session, sequencing, timing, uncertainty, replay, recording, and capability semantics.
   - Correct `docs/SCIENTIFIC_CONTEXT.md`: `GOAL_REACHED` is an execution-layer baseline; rotor state may be updated only by the external TCRR guarded commit.
   - Document `Command ACK != physical arrival`, `accuracy != hard bound unless explicitly declared`, and `SwarmKit != rotor consensus`.
@@ -264,14 +274,14 @@ Implementation complete. Per project direction, Phase 2 added no new tests; its 
 
 Do not start `tcrr-core` integration until all are true:
 
-- [ ] One normalized frame has an immutable Agent session, drone ID, producer sequence, execution handle snapshot, and measurement provenance.
-- [ ] A reconnect can replay or explicitly report the missing interval.
-- [ ] Old-session and old-attempt evidence are mechanically distinguishable.
-- [ ] Unknown timing/accuracy/bound semantics remain unknown.
-- [ ] A complete run can be reconstructed from the machine-readable log with no silent evidence loss.
-- [ ] The scripted/fault layer reproduces the same event sequence for a fixed seed.
-- [ ] All repository consumers use only the canonical API; no compatibility wrappers or fixtures remain.
-- [ ] No graph, rotor, reservation, certificate, or commit logic exists in SwarmKit core.
+- [x] One normalized frame has an immutable Agent session, drone ID, producer sequence, execution handle snapshot, and measurement provenance.
+- [x] A reconnect can replay or explicitly report the missing interval.
+- [x] Old-session and old-attempt evidence are mechanically distinguishable.
+- [x] Unknown timing/accuracy/bound semantics remain unknown.
+- [x] A complete run can be reconstructed from the machine-readable log with no silent evidence loss.
+- [x] The scripted/fault layer reproduces the same event sequence for a fixed seed.
+- [x] All repository consumers use only the canonical API; no compatibility wrappers or fixtures remain.
+- [x] No graph, rotor, reservation, certificate, or commit logic exists in SwarmKit core.
 
 ### Phase 4 - external TCRR and baseline implementation
 

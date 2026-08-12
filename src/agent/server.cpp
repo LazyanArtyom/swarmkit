@@ -1239,6 +1239,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             PopulateTelemetryProto(frame, &proto);
             recorder_.RecordTelemetry(proto);
         });
+        backend_->SetEvidenceCallback(
+            [this](const BackendEvidenceEvent& event) { recorder_.RecordBackendEvidence(event); });
         reports_.SetFinalizedReportObserver(
             [this](const swarmkit::v1::AgentReport& report) { recorder_.RecordReport(report); });
         goals_.SetGoalLifecycleObserver([this](const swarmkit::v1::ActiveGoal& goal,

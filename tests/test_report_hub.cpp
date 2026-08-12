@@ -1,27 +1,16 @@
 // Copyright (c) 2026 Artyom Lazyan. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
-//
-// This file is part of SwarmKit.
-// See LICENSE.md in the repository root for full license terms.
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
-#include <filesystem>
 #include <memory>
 #include <string>
-#include <utility>
+#include <vector>
 
 #include "../src/agent/report_hub.h"
 
 namespace swarmkit::agent::internal {
 namespace {
-
-namespace fs = std::filesystem;
-
-[[nodiscard]] fs::path UniqueReportPath(const std::string& name) {
-    const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-    return fs::temp_directory_path() / (name + "-" + std::to_string(now) + ".jsonl");
-}
 
 [[nodiscard]] swarmkit::v1::AgentReport MakeReport(std::string drone_id, std::string message) {
     swarmkit::v1::AgentReport report;
@@ -32,91 +21,56 @@ namespace fs = std::filesystem;
     return report;
 }
 
-void RemoveReportFiles(const fs::path& log_file) {
-    std::error_code error;
-    fs::remove(log_file, error);
-    fs::remove(log_file.string() + ".seq", error);
-    fs::remove(log_file.string() + ".seq.tmp", error);
-    for (int index = 1; index <= 5; ++index) {
-        fs::remove(log_file.string() + "." + std::to_string(index), error);
-    }
+TEST_CASE("ReportHub finalizes identity and replays its bounded in-memory history",
+          "[agent][reports]") {
+    std::int64_t wall_time = 1000;
+    ReportHub hub({.max_in_memory_backlog = 2,
+                   .wall_time_ms = [&wall_time] { return ++wall_time; },
+                   .agent_session_id = "agent-session-test"});
+    std::vector<swarmkit::v1::AgentReport> observed;
+    hub.SetFinalizedReportObserver(
+        [&observed](const swarmkit::v1::AgentReport& report) { observed.push_back(report); });
+
+    hub.Publish(MakeReport("drone-1", "evicted"));
+    hub.Publish(MakeReport("drone-2", "retained-2"));
+    hub.Publish(MakeReport("drone-1", "retained-3"));
+
+    REQUIRE(observed.size() == 3);
+    CHECK(observed[0].sequence() == 1);
+    CHECK(observed[2].sequence() == 3);
+    CHECK(observed[2].unix_time_ms() == 1003);
+    CHECK(observed[2].agent_session_id() == "agent-session-test");
+
+    auto queue = std::make_shared<ReportQueue>();
+    const ReportWatchToken token = hub.Watch("all", 0, queue);
+    swarmkit::v1::AgentReport first;
+    swarmkit::v1::AgentReport second;
+    REQUIRE(queue->Pop(&first, std::chrono::milliseconds{10}));
+    REQUIRE(queue->Pop(&second, std::chrono::milliseconds{10}));
+    CHECK(first.sequence() == 2);
+    CHECK(second.sequence() == 3);
+    hub.Unwatch(token);
 }
 
-TEST_CASE("ReportHub persists sequence and replays reports after restart", "[agent][reports]") {
-    const fs::path log_file = UniqueReportPath("swarmkit-report-hub-replay");
-    RemoveReportFiles(log_file);
+TEST_CASE("ReportHub filters replay and delivers live reports after retained evidence",
+          "[agent][reports]") {
+    ReportHub hub({.max_in_memory_backlog = 8,
+                   .wall_time_ms = [] { return 42; },
+                   .agent_session_id = "session"});
+    hub.Publish(MakeReport("drone-1", "one"));
+    hub.Publish(MakeReport("drone-2", "two"));
 
-    ReportHubOptions options;
-    options.report_log_file = log_file.string();
-    options.sequence_state_file = log_file.string() + ".seq";
-    options.max_in_memory_backlog = 1;
-    options.flush_each_write = true;
-
-    {
-        ReportHub hub(options);
-        hub.Publish(MakeReport("drone-1", "first"));
-        hub.Publish(MakeReport("drone-2", "second"));
-    }
-
-    ReportHub restarted(options);
-    auto replay_queue = std::make_shared<ReportQueue>();
-    const ReportWatchToken token = restarted.Watch("drone-2", 1, replay_queue);
+    auto queue = std::make_shared<ReportQueue>();
+    const ReportWatchToken token = hub.Watch("drone-2", 1, queue);
+    hub.Publish(MakeReport("drone-2", "three"));
 
     swarmkit::v1::AgentReport replayed;
-    REQUIRE(replay_queue->Pop(&replayed, std::chrono::milliseconds{100}));
-    CHECK(replayed.sequence() == 2);
-    CHECK(replayed.drone_id() == "drone-2");
-    CHECK(replayed.message() == "second");
-    restarted.Unwatch(token);
-
-    auto live_queue = std::make_shared<ReportQueue>();
-    const ReportWatchToken live_token = restarted.Watch("all", 2, live_queue);
-    restarted.Publish(MakeReport("drone-1", "third"));
-
     swarmkit::v1::AgentReport live;
-    REQUIRE(live_queue->Pop(&live, std::chrono::milliseconds{100}));
+    REQUIRE(queue->Pop(&replayed, std::chrono::milliseconds{10}));
+    REQUIRE(queue->Pop(&live, std::chrono::milliseconds{10}));
+    CHECK(replayed.sequence() == 2);
     CHECK(live.sequence() == 3);
-    CHECK(live.message() == "third");
-    restarted.Unwatch(live_token);
-
-    RemoveReportFiles(log_file);
-}
-
-TEST_CASE("ReportHub rotates JSONL logs while preserving sequence state", "[agent][reports]") {
-    const fs::path log_file = UniqueReportPath("swarmkit-report-hub-rotate");
-    RemoveReportFiles(log_file);
-
-    ReportHubOptions options;
-    options.report_log_file = log_file.string();
-    options.sequence_state_file = log_file.string() + ".seq";
-    options.max_in_memory_backlog = 0;
-    options.max_log_file_size_bytes = 180;
-    options.max_log_files = 1;
-    options.flush_each_write = true;
-
-    {
-        ReportHub hub(options);
-        for (int index = 0; index < 6; ++index) {
-            hub.Publish(MakeReport("drone-1", "rotated report " + std::to_string(index)));
-        }
-    }
-
-    CHECK(fs::exists(log_file));
-    CHECK(fs::exists(log_file.string() + ".1"));
-    CHECK(fs::exists(options.sequence_state_file));
-
-    ReportHub restarted(options);
-    auto queue = std::make_shared<ReportQueue>();
-    const ReportWatchToken token = restarted.Watch("all", 6, queue);
-    restarted.Publish(MakeReport("drone-1", "after restart"));
-
-    swarmkit::v1::AgentReport report;
-    REQUIRE(queue->Pop(&report, std::chrono::milliseconds{100}));
-    CHECK(report.sequence() == 7);
-    CHECK(report.message() == "after restart");
-    restarted.Unwatch(token);
-
-    RemoveReportFiles(log_file);
+    hub.Unwatch(token);
 }
 
 }  // namespace

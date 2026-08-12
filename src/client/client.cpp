@@ -37,6 +37,7 @@
 #include "proto_execution.h"
 #include "security_utils.h"
 #include "sha256.h"
+#include "swarmkit/client/telemetry_codec.h"
 #include "swarmkit/core/logger.h"
 #include "swarmkit/core/overloaded.h"
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
@@ -1198,11 +1199,11 @@ template <typename ProtoCovariance>
     return out;
 }
 
-[[nodiscard]] TelemetryDelivery ToTelemetryDelivery(
-    const swarmkit::v1::TelemetryFrame& proto_frame) {
+TelemetryDelivery DecodeTelemetryFrame(const swarmkit::v1::TelemetryFrame& proto_frame,
+                                       std::optional<std::int64_t> consumer_receive_unix_time_ms) {
     TelemetryDelivery delivery;
     delivery.transport_stream_id = proto_frame.transport_stream_id();
-    delivery.sdk_receive_unix_time_ms = NowUnixMs();
+    delivery.sdk_receive_unix_time_ms = consumer_receive_unix_time_ms;
     core::TelemetryFrame& frame = delivery.frame;
     frame.drone_id = proto_frame.drone_id();
     frame.agent_session_id = proto_frame.agent_session_id();
@@ -1797,10 +1798,8 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
 }
 
 struct TelemetryCursorState {
-    std::string agent_session_id;
-    std::uint64_t last_accepted_sequence{};
+    TelemetrySequenceTracker sequence;
     bool replayed{false};
-    bool session_changed{false};
 };
 
 [[nodiscard]] grpc::Status RunTelemetryStreamAttempt(
@@ -1812,8 +1811,8 @@ struct TelemetryCursorState {
     swarmkit::v1::TelemetryRequest request;
     request.set_drone_id(subscription.drone_id);
     request.set_rate_hz(subscription.rate_hertz);
-    request.set_after_sequence(cursor->last_accepted_sequence);
-    request.set_expected_agent_session_id(cursor->agent_session_id);
+    request.set_after_sequence(cursor->sequence.LastAcceptedSequence());
+    request.set_expected_agent_session_id(cursor->sequence.AgentSessionId());
 
     auto reader = runtime.stub.StreamTelemetry(context, request);
     EmitSubscriptionEvent(telemetry_stream, SubscriptionLifecycleState::kConnected,
@@ -1827,14 +1826,13 @@ struct TelemetryCursorState {
         if (item.has_event()) {
             TelemetryStreamStatus status = ToTelemetryStreamStatus(item.event());
             if (status.kind == TelemetryStreamEventKind::kSessionMismatch) {
-                cursor->agent_session_id = status.agent_session_id;
-                cursor->last_accepted_sequence = 0;
-                cursor->session_changed = true;
+                cursor->sequence.AdoptSession(status.agent_session_id, 0, true);
             } else if (status.kind == TelemetryStreamEventKind::kCursorAhead) {
-                cursor->agent_session_id = status.agent_session_id;
-                cursor->last_accepted_sequence = status.latest_available_sequence;
-            } else if (cursor->agent_session_id.empty() && !status.agent_session_id.empty()) {
-                cursor->agent_session_id = status.agent_session_id;
+                cursor->sequence.AdoptSession(status.agent_session_id,
+                                              status.latest_available_sequence);
+            } else if (cursor->sequence.AgentSessionId().empty() &&
+                       !status.agent_session_id.empty()) {
+                cursor->sequence.AdoptSession(status.agent_session_id);
             }
             if (status.kind == TelemetryStreamEventKind::kReplayStarted) {
                 cursor->replayed = true;
@@ -1854,54 +1852,11 @@ struct TelemetryCursorState {
             continue;
         }
 
-        TelemetryDelivery delivery = ToTelemetryDelivery(item.frame());
-        const std::string& frame_session = delivery.frame.agent_session_id;
-        const std::uint64_t frame_sequence = delivery.frame.telemetry_sequence;
-        const std::uint64_t previous_sequence = cursor->last_accepted_sequence;
-        TelemetrySequenceRelation relation = TelemetrySequenceRelation::kFirst;
-        std::uint64_t missing_first = 0;
-        std::uint64_t missing_last = 0;
-
-        if (cursor->session_changed) {
-            relation = TelemetrySequenceRelation::kNewSession;
-            cursor->agent_session_id = frame_session;
-            cursor->last_accepted_sequence = frame_sequence;
-            cursor->session_changed = false;
-        } else if (!cursor->agent_session_id.empty() && frame_session != cursor->agent_session_id) {
-            relation = TelemetrySequenceRelation::kNewSession;
-            cursor->agent_session_id = frame_session;
-            cursor->last_accepted_sequence = frame_sequence;
-        } else {
-            if (cursor->agent_session_id.empty()) {
-                cursor->agent_session_id = frame_session;
-            }
-            if (previous_sequence == 0) {
-                relation = TelemetrySequenceRelation::kFirst;
-                cursor->last_accepted_sequence = frame_sequence;
-            } else if (frame_sequence == previous_sequence + 1) {
-                relation = TelemetrySequenceRelation::kNext;
-                cursor->last_accepted_sequence = frame_sequence;
-            } else if (frame_sequence > previous_sequence + 1) {
-                relation = TelemetrySequenceRelation::kGap;
-                missing_first = previous_sequence + 1;
-                missing_last = frame_sequence - 1;
-                cursor->last_accepted_sequence = frame_sequence;
-            } else if (frame_sequence == previous_sequence) {
-                relation = TelemetrySequenceRelation::kDuplicate;
-            } else {
-                relation = TelemetrySequenceRelation::kReordered;
-            }
-        }
+        TelemetryDelivery delivery = DecodeTelemetryFrame(item.frame(), NowUnixMs());
+        TelemetryFrameObservation frame_observation =
+            cursor->sequence.Observe(std::move(delivery), cursor->replayed);
 
         if (on_observation) {
-            TelemetryFrameObservation frame_observation{
-                .delivery = std::move(delivery),
-                .sequence_relation = relation,
-                .previous_accepted_sequence = previous_sequence,
-                .missing_first_sequence = missing_first,
-                .missing_last_sequence = missing_last,
-                .replayed = cursor->replayed,
-            };
             TelemetryObservation observation{std::move(frame_observation)};
             static_cast<void>(EnqueueCallback(
                 telemetry_stream, [on_observation, observation = std::move(observation)]() {
@@ -2031,10 +1986,9 @@ void RunTelemetryLoop(ClientRuntime runtime, StreamState& telemetry_stream,
                       const TelemetryErrorHandler& on_error) {
     static_cast<void>(on_error);
     StreamRetryState retry_state = MakeStreamRetryState(runtime.config);
-    TelemetryCursorState cursor{
-        .agent_session_id = subscription.expected_agent_session_id,
-        .last_accepted_sequence = subscription.after_sequence,
-    };
+    TelemetryCursorState cursor;
+    cursor.sequence.AdoptSession(subscription.expected_agent_session_id,
+                                 subscription.after_sequence);
 
     while (!IsStopRequested(telemetry_stream)) {
         ++retry_state.attempt_number;
@@ -2711,7 +2665,7 @@ struct VerificationSpec {
         if (!item.has_frame()) {
             continue;
         }
-        const core::TelemetryFrame frame = ToTelemetryDelivery(item.frame()).frame;
+        const core::TelemetryFrame frame = DecodeTelemetryFrame(item.frame(), NowUnixMs()).frame;
         if (spec.telemetry_predicate && spec.telemetry_predicate(frame)) {
             context.TryCancel();
             static_cast<void>(reader->Finish());

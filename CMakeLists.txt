@@ -25,6 +25,7 @@ include(SwarmkitSanitizers)
 
 option(SWARMKIT_BUILD_TOOLS "Build agent+cli executables" ON)
 option(SWARMKIT_BUILD_TESTS "Build unit tests" ON)
+include(CTest)
 
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
@@ -44,14 +45,16 @@ configure_file(
 
 add_subdirectory(proto)
 add_subdirectory(src/core)
+add_subdirectory(src/evidence)
 add_subdirectory(src/client)
 add_subdirectory(src/agent)
+add_subdirectory(src/experiment)
 
 if (SWARMKIT_BUILD_TOOLS)
   add_subdirectory(apps)
+  add_subdirectory(examples)
 endif()
 
-include(CTest)
 if (BUILD_TESTING AND SWARMKIT_BUILD_TESTS)
   find_package(Catch2 CONFIG REQUIRED)
   add_subdirectory(tests)
@@ -80,8 +83,10 @@ install(DIRECTORY "${SWARMKIT_GEN_ROOT}/swarmkit/"
 install(TARGETS
     swarmkit_core
     swarmkit_proto
+    swarmkit_evidence
     swarmkit_client
     swarmkit_agent
+    swarmkit_experiment
     EXPORT SwarmKitTargets
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT sdk
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT sdk
@@ -116,7 +121,7 @@ install(EXPORT SwarmKitTargets
 
 # Tools install (separate component)
 if (SWARMKIT_BUILD_TOOLS)
-  install(TARGETS swarmkit-agent swarmkit-cli
+  install(TARGETS swarmkit-agent swarmkit-cli swarmkit-evidence-inspect
           RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
           COMPONENT tools)
 endif()

@@ -420,7 +420,7 @@ struct CancelGoalResult {
 struct TelemetryDelivery {
     core::TelemetryFrame frame;
     std::string transport_stream_id;
-    std::int64_t sdk_receive_unix_time_ms{};
+    std::optional<std::int64_t> sdk_receive_unix_time_ms;
 };
 
 enum class TelemetryStreamEventKind : std::uint8_t {

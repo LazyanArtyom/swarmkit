@@ -128,8 +128,8 @@ class EventQueue {
  * @par TTL / automatic release
  * If @p ttl passed to CheckAndGrant() is non-zero, authority is
  * automatically released after that many milliseconds even if the client
- * never calls Release(). Expiry is evaluated lazily on the next arbiter
- * interaction for the drone.
+ * never calls Release(). A dedicated worker evaluates expirations and is
+ * joined during shutdown.
  */
 class CommandArbiter {
    public:
@@ -283,10 +283,12 @@ class CommandArbiter {
     std::mutex mutex_;
     std::condition_variable expiry_cv_;
     bool shutdown_{false};
-    std::thread expiry_thread_;
     std::unordered_map<std::string, DroneState> drone_states_;
     std::atomic<std::uint64_t> next_watch_id_{1};
     EventObserver event_observer_;
+    // Construct last so the worker cannot observe partially constructed state.
+    // Shutdown() joins it before reverse-order member destruction begins.
+    std::thread expiry_thread_;
 };
 
 }  // namespace swarmkit::agent

@@ -49,6 +49,19 @@ struct BackendHealth {
     std::optional<float> link_quality_percent;  ///< Optional link quality percentage.
 };
 
+/// Algorithm-neutral evidence emitted by a backend or backend decorator.
+///
+/// This channel is intended for reconstructing execution conditions such as
+/// deterministic fault-scheduler decisions.  It is never vehicle telemetry
+/// and must not be used as an estimator or ground-truth input.
+struct BackendEvidenceEvent {
+    std::string source;
+    std::string kind;
+    std::uint64_t source_sequence{};
+    std::optional<std::uint64_t> random_seed;
+    std::unordered_map<std::string, std::string> attributes;
+};
+
 /// @brief Request passed to BackendRegistry creators.
 struct BackendFactoryRequest {
     std::string backend_name;                              ///< Registered backend name.
@@ -70,6 +83,7 @@ struct BackendFactoryRequest {
 class IDroneBackend {
    public:
     using TelemetryCallback = std::function<void(const swarmkit::core::TelemetryFrame&)>;
+    using EvidenceCallback = std::function<void(const BackendEvidenceEvent&)>;
 
     virtual ~IDroneBackend() = default;
 
@@ -105,6 +119,15 @@ class IDroneBackend {
     /// @brief Report backend/autopilot capabilities exposed to SDK clients.
     [[nodiscard]] virtual core::BackendCapabilities GetCapabilities() const {
         return {};
+    }
+
+    /// @brief Install the sink for backend-originated execution evidence.
+    ///
+    /// Backends that do not produce auxiliary evidence may keep the default
+    /// no-op implementation. Decorators must forward underlying events and
+    /// serialize callback invocation with their own event production.
+    virtual void SetEvidenceCallback(const EvidenceCallback& callback) {
+        static_cast<void>(callback);
     }
 };
 

@@ -62,6 +62,31 @@ by `execution_recorder`; the old report-only JSONL path does not exist. `invalid
 scientific fail-closed policy. `rotate_oldest` must be selected explicitly for operational logging
 where bounded evidence loss is acceptable.
 
+The built-in simulator accepts strict options through `agent.backend_options`.
+Unknown keys and invalid values fail backend creation:
+
+```yaml
+agent:
+  backend: "sim"
+  backend_options:
+    integration_step_ms: "20"
+    initial_source_unix_time_ms: "1700000000000"
+    home_lat_deg: "40.1811"
+    home_lon_deg: "44.5136"
+    home_alt_m: "0"
+    initial_battery_percent: "95"
+    max_horizontal_speed_mps: "10"
+    max_climb_speed_mps: "5"
+    max_descent_speed_mps: "3"
+    max_altitude_m: "120"
+    default_cruise_speed_mps: "4"
+    battery_drain_percent_per_second: "0.002"
+    stop_at_target: "true"
+```
+
+Manual simulator time and the truth observer are C++ experiment controls and are
+not enabled by the production Agent YAML path.
+
 ## MAVLink Backend YAML
 
 The MAVLink backend is selected by setting `agent.backend` to `mavlink`.

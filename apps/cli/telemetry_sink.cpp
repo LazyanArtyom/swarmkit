@@ -85,8 +85,8 @@ std::string TelemetryCsvLine(const swarmkit::client::TelemetryDelivery& delivery
         execution != nullptr && execution->context ? &*execution->context : nullptr;
     std::ostringstream line;
     line << frame.agent_receive_unix_time_ms << "," << frame.agent_receive_monotonic_time_ns << ","
-         << delivery.sdk_receive_unix_time_ms << "," << CsvField(frame.agent_session_id) << ","
-         << frame.telemetry_sequence << "," << CsvField(delivery.transport_stream_id) << ","
+         << delivery.sdk_receive_unix_time_ms.value_or(0) << "," << CsvField(frame.agent_session_id)
+         << "," << frame.telemetry_sequence << "," << CsvField(delivery.transport_stream_id) << ","
          << CsvField(frame.drone_id) << std::setprecision(10) << ","
          << CsvScalar(frame.validity.position, frame.lat_deg) << ","
          << CsvScalar(frame.validity.position, frame.lon_deg) << "," << std::setprecision(5)

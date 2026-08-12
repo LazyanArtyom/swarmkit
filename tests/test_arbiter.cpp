@@ -29,6 +29,13 @@ constexpr auto kNoEventTimeout = std::chrono::milliseconds{50};
 
 }  // namespace
 
+TEST_CASE("CommandArbiter worker lifetime is bounded by the arbiter", "[agent][arbiter]") {
+    for (int iteration = 0; iteration < 128; ++iteration) {
+        CommandArbiter arbiter;
+        arbiter.Shutdown();
+    }
+}
+
 TEST_CASE("CommandArbiter sends targeted preempt and resume notifications", "[agent][arbiter]") {
     CommandArbiter arbiter;
 
@@ -66,12 +73,14 @@ TEST_CASE("CommandArbiter sends targeted preempt and resume notifications", "[ag
     CHECK(event.kind == AuthorityEvent::Kind::kGranted);
     CHECK(event.holder_client_id == "override-client");
 
-    arbiter.Release("drone-1", "override-client");
+    arbiter.Release("drone-1", "override-client", "release-override");
 
     REQUIRE(operator_queue->Pop(event, kEventTimeout));
     CHECK(event.kind == AuthorityEvent::Kind::kResumed);
     CHECK(event.holder_client_id == "operator-client");
-    CHECK_FALSE(override_queue->Pop(event, kNoEventTimeout));
+    REQUIRE(override_queue->Pop(event, kEventTimeout));
+    CHECK(event.kind == AuthorityEvent::Kind::kReleased);
+    CHECK(event.affected_client_id == "override-client");
 
     arbiter.Unwatch(kOperatorToken);
     arbiter.Unwatch(kOverrideToken);

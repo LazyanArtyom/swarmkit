@@ -146,13 +146,14 @@ conan_install() {
 
 bundle_cmake_deps() {
     local stage_root="$1"
+    local source_generators_dir="$2"
     local dest_dir="${stage_root}/lib/cmake/SwarmKit/deps"
     local tp_abs
     tp_abs="$(cd "${stage_root}" && pwd)/third_party/full_deploy/host"
 
     mkdir -p "${dest_dir}"
 
-    for cmake_file in "${generators_dir}"/*.cmake; do
+    for cmake_file in "${source_generators_dir}"/*.cmake; do
         local fname
         fname="$(basename "${cmake_file}")"
         case "${fname}" in
@@ -183,7 +184,16 @@ package_component() {
     cmake --install "${build_dir}" --prefix "${stage_root}" --component "${component}"
 
     if [[ "${component}" == "sdk" ]]; then
-        conan_install False \
+        local deploy_conan_root="${stage_root}/.conan-sdk"
+        local deploy_generators_dir="${deploy_conan_root}/build/${build_type}/generators"
+        conan install . \
+            -of "${deploy_conan_root}" \
+            -s build_type="${build_type}" \
+            -s compiler.cppstd=23 \
+            -o "&:with_tests=False" \
+            -o "&:with_tools=True" \
+            -c 'tools.cmake.cmaketoolchain:user_presets=' \
+            --build=missing \
             --deployer=full_deploy \
             --deployer-folder "${stage_root}/third_party"
 
@@ -197,7 +207,15 @@ package_component() {
             exit 2
         fi
 
-        bundle_cmake_deps "${stage_root}"
+        bundle_cmake_deps "${stage_root}" "${deploy_generators_dir}"
+        rm -rf "${deploy_conan_root}"
+    elif [[ "${component}" == "tools" ]]; then
+        for tool in swarmkit-agent swarmkit-cli swarmkit-evidence-inspect; do
+            if [[ ! -x "${stage_root}/bin/${tool}" ]]; then
+                echo "ERROR: tools install is missing executable ${tool}" >&2
+                exit 2
+            fi
+        done
     fi
 
     tar -czf "${out}" -C "${build_dir}/stage" "${base}"

@@ -92,13 +92,15 @@ struct DevMtlsPaths {
 
 class RecordingBackend final : public agent::IDroneBackend {
    public:
-    using ExecuteHandler = std::function<core::Result(const commands::CommandEnvelope&)>;
+    using ExecuteHandler =
+        std::function<core::BackendCommandOutcome(const commands::CommandEnvelope&)>;
 
     struct ExecuteRecord {
         commands::CommandEnvelope envelope;
     };
 
-    [[nodiscard]] core::Result Execute(const commands::CommandEnvelope& envelope) override {
+    [[nodiscard]] core::BackendCommandOutcome Execute(
+        const commands::CommandEnvelope& envelope) override {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             execute_records_.push_back(ExecuteRecord{.envelope = envelope});
@@ -106,7 +108,10 @@ class RecordingBackend final : public agent::IDroneBackend {
         if (execute_handler_) {
             return execute_handler_(envelope);
         }
-        return core::Result::Success("executed");
+        return {
+            .result = core::Result::Success("executed"),
+            .dispatch_state = core::BackendDispatchState::kAccepted,
+        };
     }
 
     [[nodiscard]] core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,
@@ -228,6 +233,15 @@ class RecordingBackend final : public agent::IDroneBackend {
     std::optional<agent::BackendHealth> health_;
     std::optional<core::BackendCapabilities> capabilities_;
 };
+
+template <typename Handler>
+[[nodiscard]] inline client::TelemetryObservationHandler OnTelemetryFrame(Handler handler) {
+    return [handler = std::move(handler)](const client::TelemetryObservation& observation) mutable {
+        if (const auto* frame = std::get_if<client::TelemetryFrameObservation>(&observation)) {
+            handler(frame->delivery);
+        }
+    };
+}
 
 class AgentServerHarness {
    public:

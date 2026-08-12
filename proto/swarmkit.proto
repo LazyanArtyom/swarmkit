@@ -1243,6 +1243,17 @@ message VehicleHealthEvent {
     bool landed = 8;
 }
 
+/// Algorithm-neutral diagnostic/evidence emitted by a backend or decorator.
+/// This message is not normalized vehicle telemetry and never carries
+/// simulation truth.
+message BackendEvidenceEvent {
+    string source = 1;
+    string kind = 2;
+    uint64 source_sequence = 3;
+    optional uint64 random_seed = 4;
+    map<string, string> attributes = 5;
+}
+
 /// Versioned envelope used as the payload of every framed evidence-log record.
 message ExecutionEventEnvelope {
     uint32 schema_version = 1;
@@ -1259,5 +1270,6 @@ message ExecutionEventEnvelope {
         AgentReport report = 14;
         VehicleHealthEvent health = 15;
         AuthorityEvent authority = 16;
+        BackendEvidenceEvent backend = 17;
     }
 }

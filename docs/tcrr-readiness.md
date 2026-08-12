@@ -1,6 +1,6 @@
 # SwarmKit Physical-Execution Evidence Contract
 
-Status: Phase 2 contract, 2026-08-12.
+Status: Gate 1 evidence contract, 2026-08-12.
 
 SwarmKit is the algorithm-neutral physical execution and evidence layer. TCRR is an external
 consumer. Nothing in this contract evaluates a target region, certifies arrival, mutates rotor
@@ -60,6 +60,11 @@ Reconnect starts from the last producer sequence accepted by the SDK reader. Cal
 its own bounded queue. `SubscriptionEvent::dropped_callbacks` describes local callback pressure;
 it is not a producer gap and is never presented as one.
 
+Offline normalized replay uses the same `TelemetrySequenceTracker` as the live SDK. It preserves
+recorded Agent receive times, execution handles, producer sessions, and sequence numbers exactly.
+Because no SDK transport received an offline replay, its SDK receive timestamp is absent rather
+than synthesized.
+
 ## Backend outcomes
 
 `IDroneBackend::Execute` returns `BackendCommandOutcome`, not an unstructured success string. The
@@ -109,6 +114,40 @@ Recorder storage is bounded:
 
 Existing files are refused unless `overwrite_existing` is explicitly enabled.
 
+`ReadExecutionLog` is the strict counterpart to the recorder. It checks file magic, bounded record
+length, SHA-256, protobuf/schema validity, Agent-global sequence continuity, one immutable session
+and run metadata set, session start, and clean completion. It reconstructs retained rotation
+segments oldest first and rejects a non-contiguous segment set. A truncated or corrupt run is an
+error, not a partial success. `ReplayExecutionLog` emits the validated envelopes in recorded order
+without transformation.
+
+## Deterministic experiment infrastructure
+
+The public `swarmkit_experiment` library contains infrastructure for repeatable SwarmKit and future
+controller tests:
+
+- `ManualRuntime` supplies explicit wall time, monotonic time, and deterministic identifiers;
+- `ScriptedBackend` synchronously emits exact telemetry/health changes and queued typed command
+  outcomes without sleep-based ordering;
+- `FaultInjectingBackend` explicitly decorates another backend with seeded loss, delay,
+  duplication, reordering, bias, noise, spikes, source-clock error, estimator degradation,
+  invalid accuracy, command failure, and ACK-without-motion behavior;
+- `ReplayNormalizedTelemetry` presents recorded normalized frames through the same observation and
+  sequence-classification contract used by the live SDK.
+
+The decorator records its seed, complete configuration, and realized decisions through generic
+backend evidence events. Faults that change Agent or controller lifecycle—supersession, restart,
+network interruption, stale rejoin, and duplicate requests—are explicit scenario actions rather
+than hidden backend randomness. The production MAVLink backend contains no experiment RNG.
+
+The canonical `SimBackend` is a command-responsive kinematic model. It supports deterministic
+manual advancement and real-time operation, goal-directed flight, timed velocity, hold, landing,
+return-to-launch, model failure, and deliberate target crossing. Its configured speed and altitude
+limits are enforced, so the simulator alone declares them validated model bounds. Simulator truth
+is a distinct `SimulationTruthFrame` delivered through an experiment-only observer/control API;
+it cannot be passed to a telemetry consumer as a `TelemetryFrame`. This is simulation truth, not a
+claim about SITL or physical-airframe accuracy.
+
 ## Capability discovery
 
 Capability discovery is granular. It declares support for source timestamps, position and velocity,
@@ -147,3 +186,7 @@ auto stream = client.StartTelemetry(
 `GOAL_REACHED` remains an execution-layer experimental baseline. It is not a certified arrival and
 cannot update rotor state. Reported covariance or accuracy is not a deterministic hard bound unless
 its descriptor explicitly says so. SwarmKit does not provide shared rotor-state consensus.
+
+Passing the software test matrix establishes this evidence/API contract. It does not constitute
+airworthiness certification, validate a physical vehicle's motion bounds, or replace SITL and
+flight-specific calibration.

@@ -83,12 +83,14 @@ SDK transport data is deliberately outside the normalized frame:
 struct TelemetryDelivery {
     TelemetryFrame frame;
     std::string transport_stream_id;
-    int64_t sdk_receive_unix_time_ms;
+    std::optional<int64_t> sdk_receive_unix_time_ms;
 };
 ```
 
 Two subscribers may receive the same producer frame through different transport streams. A
-reconnect changes transport identity but does not reset producer sequence.
+reconnect changes transport identity but does not reset producer sequence. Live SDK delivery has a
+consumer receive time; offline normalized replay leaves it absent rather than inventing a transport
+timestamp.
 
 The canonical RPC returns `TelemetryStreamItem`, whose oneof is either a normalized frame or an
 in-band `TelemetryStreamEvent`. A request supplies `after_sequence` and the
@@ -193,8 +195,16 @@ truncation. Storage is bounded. `invalidate_run` is the scientific policy: exhau
 failure invalidates readiness and blocks further commands. `rotate_oldest` is an explicit
 operational data-loss policy. Report-only JSONL persistence does not exist.
 
-The future scripted backend and fault decorator must preserve these canonical types and make every
-realized fault explicit.
+The experiment library preserves these canonical types. `ScriptedBackend` supplies exact backend
+input and typed outcomes under manual control. `ReplayNormalizedTelemetry` passes already-normalized
+records through the SDK sequence classifier without renumbering or restamping. The explicit seeded
+`FaultInjectingBackend` decorator makes its seed, configuration, and every realized decision generic
+backend evidence; no randomized test behavior exists in the production MAVLink path.
+
+The single canonical simulator is command-responsive and supports manual deterministic time. It
+enforces its advertised kinematic limits and exposes independent `SimulationTruthFrame` values only
+through an experiment API. Simulation truth and normalized estimated telemetry are different types
+and channels.
 
 For a fixed normalized execution record and fixed higher-level configuration, TCRR must be able to
 reproduce the same certificate decisions. Console logs are diagnostic and are not correctness

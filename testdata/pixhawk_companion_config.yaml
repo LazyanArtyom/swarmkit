@@ -5,7 +5,6 @@ agent:
   default_authority_ttl_ms: 5000
   default_telemetry_rate_hz: 10
   min_telemetry_rate_hz: 2
-  report_log_file: "/var/log/swarmkit/agent-reports.jsonl"
   vehicle_profile:
     profile_id: "pixhawk-companion-quad"
     cruise_speed_mps: 4.0

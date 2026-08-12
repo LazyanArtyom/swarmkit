@@ -121,7 +121,7 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK(capabilities.backend.evidence.position_estimate == core::CapabilitySupport::kUnknown);
     CHECK(capabilities.backend.evidence.active_goal_lineage == core::CapabilitySupport::kSupported);
     CHECK(capabilities.backend.evidence.telemetry_sequence == core::CapabilitySupport::kSupported);
-    CHECK(capabilities.backend.evidence.telemetry_replay == core::CapabilitySupport::kUnsupported);
+    CHECK(capabilities.backend.evidence.telemetry_replay == core::CapabilitySupport::kSupported);
 }
 
 TEST_CASE("Client command reports are replayable and delivered live",
@@ -228,7 +228,7 @@ TEST_CASE("Typed evidence capabilities and motion provenance survive the SDK bou
     CHECK(actual.backend.evidence.estimator_health == core::CapabilitySupport::kUnsupported);
     CHECK(actual.backend.evidence.active_goal_lineage == core::CapabilitySupport::kSupported);
     CHECK(actual.backend.evidence.telemetry_sequence == core::CapabilitySupport::kSupported);
-    CHECK(actual.backend.evidence.telemetry_replay == core::CapabilitySupport::kUnsupported);
+    CHECK(actual.backend.evidence.telemetry_replay == core::CapabilitySupport::kSupported);
     REQUIRE(actual.backend.max_horizontal_speed.has_value());
     CHECK(actual.backend.max_horizontal_speed->value == 4.5F);
     CHECK(actual.backend.max_horizontal_speed->semantics ==
@@ -1184,15 +1184,16 @@ TEST_CASE("Client telemetry subscription receives frames and can stop cleanly",
     std::atomic<int> frame_count{0};
     std::mutex received_mutex;
     std::optional<TelemetryDelivery> received_delivery;
-    auto telemetry_stream = client.StartTelemetry(
-        {.drone_id = "drone-1", .rate_hertz = 5}, [&](const TelemetryDelivery& delivery) {
-            const auto& frame = delivery.frame;
-            if (frame.drone_id == "drone-1") {
-                std::lock_guard<std::mutex> lock(received_mutex);
-                received_delivery = delivery;
-                frame_count.fetch_add(1, std::memory_order_relaxed);
-            }
-        });
+    auto telemetry_stream =
+        client.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
+                              testsupport::OnTelemetryFrame([&](const TelemetryDelivery& delivery) {
+                                  const auto& frame = delivery.frame;
+                                  if (frame.drone_id == "drone-1") {
+                                      std::lock_guard<std::mutex> lock(received_mutex);
+                                      received_delivery = delivery;
+                                      frame_count.fetch_add(1, std::memory_order_relaxed);
+                                  }
+                              }));
     REQUIRE(telemetry_stream.has_value());
 
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
@@ -1297,16 +1298,18 @@ TEST_CASE("Normalized telemetry producer identity survives subscribers and recon
     std::mutex frames_mutex;
     std::vector<TelemetryDelivery> first_frames;
     std::vector<TelemetryDelivery> second_frames;
-    auto first_stream = first.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
-                                             [&](const TelemetryDelivery& delivery) {
-                                                 std::lock_guard<std::mutex> lock(frames_mutex);
-                                                 first_frames.push_back(delivery);
-                                             });
-    auto second_stream = second.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
-                                               [&](const TelemetryDelivery& delivery) {
-                                                   std::lock_guard<std::mutex> lock(frames_mutex);
-                                                   second_frames.push_back(delivery);
-                                               });
+    auto first_stream =
+        first.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
+                             testsupport::OnTelemetryFrame([&](const TelemetryDelivery& delivery) {
+                                 std::lock_guard<std::mutex> lock(frames_mutex);
+                                 first_frames.push_back(delivery);
+                             }));
+    auto second_stream =
+        second.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
+                              testsupport::OnTelemetryFrame([&](const TelemetryDelivery& delivery) {
+                                  std::lock_guard<std::mutex> lock(frames_mutex);
+                                  second_frames.push_back(delivery);
+                              }));
     REQUIRE(first_stream.has_value());
     REQUIRE(second_stream.has_value());
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().TelemetryRate("drone-1") == 5; },
@@ -1345,11 +1348,12 @@ TEST_CASE("Normalized telemetry producer identity survives subscribers and recon
                                    kWaitTimeout));
 
     std::optional<TelemetryDelivery> reconnected_frame;
-    auto reconnected = first.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
-                                            [&](const TelemetryDelivery& delivery) {
-                                                std::lock_guard<std::mutex> lock(frames_mutex);
-                                                reconnected_frame = delivery;
-                                            });
+    auto reconnected =
+        first.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
+                             testsupport::OnTelemetryFrame([&](const TelemetryDelivery& delivery) {
+                                 std::lock_guard<std::mutex> lock(frames_mutex);
+                                 reconnected_frame = delivery;
+                             }));
     REQUIRE(reconnected.has_value());
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
@@ -1385,11 +1389,12 @@ TEST_CASE("Telemetry preserves per-measurement source and receive-time freshness
 
     std::mutex frames_mutex;
     std::vector<TelemetryDelivery> frames;
-    auto stream = client.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 100},
-                                        [&](const TelemetryDelivery& delivery) {
-                                            std::lock_guard<std::mutex> lock(frames_mutex);
-                                            frames.push_back(delivery);
-                                        });
+    auto stream =
+        client.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 100},
+                              testsupport::OnTelemetryFrame([&](const TelemetryDelivery& delivery) {
+                                  std::lock_guard<std::mutex> lock(frames_mutex);
+                                  frames.push_back(delivery);
+                              }));
     REQUIRE(stream.has_value());
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
@@ -1541,8 +1546,9 @@ TEST_CASE("Client telemetry subscription handle contains callback exceptions",
     testsupport::AgentServerHarness harness;
     Client client = MakeClient(harness.Address());
 
-    auto invalid_subscription = client.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 0},
-                                                      [](const TelemetryDelivery&) {});
+    auto invalid_subscription =
+        client.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 0},
+                              testsupport::OnTelemetryFrame([](const TelemetryDelivery&) {}));
     REQUIRE_FALSE(invalid_subscription.has_value());
     CHECK(invalid_subscription.error().code == core::ErrorCode::kInvalidArgument);
 
@@ -1555,7 +1561,8 @@ TEST_CASE("Client telemetry subscription handle contains callback exceptions",
 
     auto subscription = client.StartTelemetry(
         {.drone_id = "drone-1", .rate_hertz = 5},
-        [](const TelemetryDelivery&) { throw std::runtime_error("boom"); },
+        testsupport::OnTelemetryFrame(
+            [](const TelemetryDelivery&) { throw std::runtime_error("boom"); }),
         [&](const std::string& message) {
             if (message.find("boom") != std::string::npos) {
                 callback_error_seen.store(true, std::memory_order_relaxed);
@@ -1786,11 +1793,12 @@ TEST_CASE("Goal retries receive distinct physical attempts and guarded cancellat
 
     std::mutex telemetry_mutex;
     std::optional<core::TelemetryFrame> bound_frame;
-    auto telemetry_stream = client.StartTelemetry(
-        {.drone_id = "drone-1", .rate_hertz = 5}, [&](const TelemetryDelivery& delivery) {
-            std::lock_guard<std::mutex> lock(telemetry_mutex);
-            bound_frame = delivery.frame;
-        });
+    auto telemetry_stream =
+        client.StartTelemetry({.drone_id = "drone-1", .rate_hertz = 5},
+                              testsupport::OnTelemetryFrame([&](const TelemetryDelivery& delivery) {
+                                  std::lock_guard<std::mutex> lock(telemetry_mutex);
+                                  bound_frame = delivery.frame;
+                              }));
     REQUIRE(telemetry_stream.has_value());
     core::TelemetryFrame backend_frame;
     backend_frame.validity.position = true;
@@ -1830,7 +1838,10 @@ TEST_CASE("Backend-dispatched goal failure retains its physical attempt identity
           "[client][integration][goal][identity]") {
     testsupport::AgentServerHarness harness;
     harness.Backend().SetExecuteHandler([](const commands::CommandEnvelope&) {
-        return core::Result::Failed("dispatch failed after acceptance");
+        return core::BackendCommandOutcome{
+            .result = core::Result::Failed("dispatch failed after acceptance"),
+            .dispatch_state = core::BackendDispatchState::kFailed,
+        };
     });
     Client client = MakeClient(harness.Address());
 
@@ -1981,7 +1992,10 @@ TEST_CASE("Client reports backend command failure and telemetry counters",
           "[client][integration]") {
     testsupport::AgentServerHarness harness;
     harness.Backend().SetExecuteHandler([](const commands::CommandEnvelope&) {
-        return core::Result::Failed("simulated backend failure");
+        return core::BackendCommandOutcome{
+            .result = core::Result::Failed("simulated backend failure"),
+            .dispatch_state = core::BackendDispatchState::kFailed,
+        };
     });
 
     Client client = MakeClient(harness.Address());

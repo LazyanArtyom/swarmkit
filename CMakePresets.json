@@ -55,6 +55,23 @@
       }
     },
     {
+      "name": "linux-asan",
+      "inherits": "linux-debug",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "SWARMKIT_ENABLE_ASAN": "ON",
+        "SWARMKIT_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "linux-tsan",
+      "inherits": "linux-debug",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "SWARMKIT_ENABLE_TSAN": "ON"
+      }
+    },
+    {
       "name": "mac-release",
       "inherits": "mac-base",
       "toolchainFile": "${sourceDir}/build/conan/build/Release/generators/conan_toolchain.cmake",
@@ -98,6 +115,16 @@
       "jobs": 0
     },
     {
+      "name": "linux-asan",
+      "configurePreset": "linux-asan",
+      "jobs": 0
+    },
+    {
+      "name": "linux-tsan",
+      "configurePreset": "linux-tsan",
+      "jobs": 0
+    },
+    {
       "name": "mac-release",
       "configurePreset": "mac-release",
       "jobs": 0
@@ -131,6 +158,20 @@
     {
       "name": "linux-release",
       "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-asan",
+      "configurePreset": "linux-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-tsan",
+      "configurePreset": "linux-tsan",
       "output": {
         "outputOnFailure": true
       }

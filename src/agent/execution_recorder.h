@@ -30,7 +30,7 @@ struct ExecutionRecorderOptions {
 class ExecutionRecorder {
    public:
     explicit ExecutionRecorder(ExecutionRecorderOptions options);
-    ~ExecutionRecorder();
+    ~ExecutionRecorder() noexcept;
 
     ExecutionRecorder(const ExecutionRecorder&) = delete;
     ExecutionRecorder& operator=(const ExecutionRecorder&) = delete;
@@ -50,13 +50,14 @@ class ExecutionRecorder {
                     swarmkit::v1::GoalStatus status, std::string detail);
     void RecordReport(const swarmkit::v1::AgentReport& report);
     void RecordAuthority(const swarmkit::v1::AuthorityEvent& authority);
+    void RecordBackendEvidence(const BackendEvidenceEvent& event);
     void Close();
 
    private:
     void RecordEnvelope(swarmkit::v1::ExecutionEventEnvelope envelope);
     [[nodiscard]] bool WriteEnvelopeLocked(swarmkit::v1::ExecutionEventEnvelope* envelope);
-    [[nodiscard]] bool SerializeDeterministically(
-        const swarmkit::v1::ExecutionEventEnvelope& envelope, std::string* output) const;
+    [[nodiscard]] static bool SerializeDeterministically(
+        const swarmkit::v1::ExecutionEventEnvelope& envelope, std::string* output);
     [[nodiscard]] bool EnsureCapacityLocked(std::size_t record_bytes);
     [[nodiscard]] bool OpenSegmentLocked(bool initial);
     [[nodiscard]] bool RotateLocked();

@@ -9,6 +9,7 @@ add_library(swarmkit_client STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/client_config.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/config_io.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/swarm_client.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/telemetry_codec.cpp
 )
 
 target_include_directories(swarmkit_client PUBLIC

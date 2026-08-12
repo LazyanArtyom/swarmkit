@@ -41,3 +41,19 @@ target_include_directories(swarmkit-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(swarmkit-cli PRIVATE swarmkit_client)
 swarmkit_set_warnings(swarmkit-cli)
 swarmkit_enable_sanitizers(swarmkit-cli)
+
+add_executable(swarmkit-evidence-inspect
+    ${CMAKE_CURRENT_SOURCE_DIR}/evidence_inspect.cpp
+)
+target_link_libraries(swarmkit-evidence-inspect PRIVATE swarmkit_evidence)
+swarmkit_set_warnings(swarmkit-evidence-inspect)
+swarmkit_enable_sanitizers(swarmkit-evidence-inspect)
+
+if(BUILD_TESTING)
+    add_test(NAME swarmkit_evidence_inspect_help
+        COMMAND swarmkit-evidence-inspect --help
+    )
+    set_tests_properties(swarmkit_evidence_inspect_help PROPERTIES
+        PASS_REGULAR_EXPRESSION "usage: .* EXECUTION_LOG"
+    )
+endif()
