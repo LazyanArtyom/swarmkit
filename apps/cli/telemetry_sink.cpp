@@ -10,7 +10,9 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
+#include <type_traits>
 
 #include "common/arg_utils.h"
 #include "constants.h"
@@ -55,6 +57,9 @@ template <typename T>
         return {};
     }
     std::ostringstream out;
+    if constexpr (std::is_floating_point_v<T>) {
+        out << std::setprecision(std::numeric_limits<T>::max_digits10);
+    }
     out << value;
     return out.str();
 }
@@ -87,9 +92,8 @@ std::string TelemetryCsvLine(const swarmkit::client::TelemetryDelivery& delivery
     line << frame.agent_receive_unix_time_ms << "," << frame.agent_receive_monotonic_time_ns << ","
          << delivery.sdk_receive_unix_time_ms.value_or(0) << "," << CsvField(frame.agent_session_id)
          << "," << frame.telemetry_sequence << "," << CsvField(delivery.transport_stream_id) << ","
-         << CsvField(frame.drone_id) << std::setprecision(10) << ","
-         << CsvScalar(frame.validity.position, frame.lat_deg) << ","
-         << CsvScalar(frame.validity.position, frame.lon_deg) << "," << std::setprecision(5)
+         << CsvField(frame.drone_id) << "," << CsvScalar(frame.validity.position, frame.lat_deg)
+         << "," << CsvScalar(frame.validity.position, frame.lon_deg) << ","
          << CsvScalar(frame.validity.relative_altitude, frame.rel_alt_m) << ","
          << CsvScalar(frame.validity.battery, frame.battery_percent) << ","
          << CsvField(frame.validity.mode ? frame.mode : "") << ","

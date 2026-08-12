@@ -222,6 +222,9 @@ Commands include `ping`, `health`, `preflight`, `stats`, `capabilities`,
 `telemetry`, `command`, `sequence`, `goal`, `reports`, `message`, `artifact`,
 `lock`, `unlock`, `watch-authority`, and `swarm`.
 
+Telemetry CSV output uses round-trip precision for floating-point fields. In particular, WGS84
+coordinates are never reduced to the human-oriented console display precision.
+
 ## Environment Variables
 
 Client environment variables use the `SWARMKIT_CLIENT_` prefix:

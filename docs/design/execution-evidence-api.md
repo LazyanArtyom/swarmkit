@@ -100,6 +100,11 @@ that is ahead of the current producer. The
 per-drone ring is bounded by `telemetry.retention_frames_per_drone`; unavailable history is never
 presented as continuous. A non-zero cursor without its producer session is invalid.
 
+Backends that receive independent source messages faster than the requested normalized producer
+rate coalesce them before Agent sequencing. The MAVLink backend retains the latest per-group
+provenance within each cadence interval and emits at most the configured normalized frame rate; it
+does not turn six requested 5 Hz MAVLink message streams into a 30 Hz producer.
+
 The SDK callback receives one `TelemetryObservation` variant. Frame observations classify the
 producer sequence as first, next, gap, duplicate, reordered, or new session and expose any missing
 range. Status observations preserve replay/live and history/session facts. Reconnect attempts use

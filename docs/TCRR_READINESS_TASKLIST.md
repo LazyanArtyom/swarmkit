@@ -17,7 +17,7 @@ The implementation order is driven by two rules:
 
 - The repository configures with `cmake --preset mac-debug`.
 - The repository builds with `cmake --build --preset mac-debug`.
-- The canonical suite contains 91 cases (906 assertions) and passes in Debug, Release, and UBSan
+- The canonical suite contains 93 cases (919 assertions) and passes in Debug, Release, and UBSan
   builds; the installed-package CLI contract is registered as a separate CTest smoke test.
 - The protobuf and public C++ APIs now expose one canonical execution-handle and telemetry-evidence model.
 - SwarmKit is pre-release: compatibility-only fields, overloads, fixtures, and aliases are intentionally absent.
@@ -76,10 +76,13 @@ Outcomes:
 
 1. The external TCRR controller, calibration pipeline, experimental runner, statistical analysis,
    and paper result replacement remain future phases.
-2. SITL was reachable when originally announced, but the Ubuntu host was not routed during the
-   final Gate 1 run. Three local MAVLink Agents, gRPC ping, recorder clean-close, and strict log
-   validation succeeded; vehicle heartbeat/telemetry and flight commands remain to be rerun when
-   the external SITL sender is reachable.
+2. Three concurrent ArduPilot SITL vehicles completed the Gate 1 live-stack acceptance on
+   2026-08-12. The run covered health, capabilities, preflight, swarm arm, 2 m takeoff, two exact
+   supervised goal attempts and verified repositioning, independent bounded velocity/hold commands,
+   swarm landing, idempotent disarm, ordered telemetry, report lineage, and clean evidence close.
+   All three final runtime snapshots reported zero command and backend failures. Strict validation
+   accepted all three evidence logs (140, 47, and 45 events). This is SITL acceptance, not physical
+   airworthiness or completion of the later TCRR experimental matrix.
 3. AppleClang 17's ASan and TSan runtimes on macOS 26 fail inside sanitizer/dyld initialization
    before `main`; UBSan passes locally and Linux ASan/UBSan/TSan are required by CI.
 

@@ -187,6 +187,21 @@ auto stream = client.StartTelemetry(
 cannot update rotor state. Reported covariance or accuracy is not a deterministic hard bound unless
 its descriptor explicitly says so. SwarmKit does not provide shared rotor-state consensus.
 
+## Live SITL acceptance
+
+On 2026-08-12, three concurrent ArduPilot SITL vehicles completed a live Gate 1 acceptance run
+through three independent MAVLink Agents. The run covered capabilities and preflight checks, swarm
+arm and 2 m takeoff, exact goal/attempt lineage across two supervised goals, verified repositioning,
+bounded velocity and hold commands, ordered telemetry and reports, swarm landing, and idempotent
+disarm. All vehicles ended disarmed and landed with no Agent command or backend failures.
+
+The Agents cleanly closed three checksummed evidence files containing 140, 47, and 45 events; the
+strict evidence reader accepted every file as complete. Live validation also found and corrected
+two empirical-data defects: independent MAVLink source messages are now coalesced to the requested
+normalized frame cadence, and telemetry CSV floating-point fields now preserve round-trip
+precision. This acceptance validates the SwarmKit-to-ArduPilot SITL integration path, not physical
+airworthiness, calibrated physical motion bounds, or the future TCRR decision layer.
+
 Passing the software test matrix establishes this evidence/API contract. It does not constitute
 airworthiness certification, validate a physical vehicle's motion bounds, or replace SITL and
 flight-specific calibration.

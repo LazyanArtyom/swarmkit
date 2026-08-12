@@ -16,10 +16,14 @@ add_executable(swarmkit_tests
     test_mavlink_common.cpp
     test_phase3_experiment.cpp
     test_swarm_client.cpp
+    test_telemetry_sink.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../apps/cli/telemetry_sink.cpp
 )
 
 target_include_directories(swarmkit_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/agent/backends
+    ${CMAKE_CURRENT_SOURCE_DIR}/../apps
+    ${CMAKE_CURRENT_SOURCE_DIR}/../apps/cli
 )
 
 target_include_directories(swarmkit_tests SYSTEM PRIVATE

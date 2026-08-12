@@ -6,6 +6,8 @@
 
 #include "mavlink_telemetry_decoder.h"
 
+#include <algorithm>
+#include <chrono>
 #include <limits>
 
 namespace swarmkit::agent::mavlink {
@@ -65,7 +67,25 @@ void MarkUpdated(core::MeasurementProvenance* provenance, std::string source,
     }
     provenance->updated = true;
     provenance->source = std::move(source);
-    provenance->source_time = std::move(source_time);
+    provenance->source_time = source_time;
+}
+
+void MergeMeasurement(const core::MeasurementProvenance& update,
+                      core::MeasurementProvenance* pending) {
+    if (pending != nullptr && update.updated) {
+        *pending = update;
+    }
+}
+
+void MergeProvenance(const core::TelemetryProvenance& update, core::TelemetryProvenance* pending) {
+    if (pending == nullptr) {
+        return;
+    }
+    MergeMeasurement(update.position, &pending->position);
+    MergeMeasurement(update.velocity, &pending->velocity);
+    MergeMeasurement(update.accuracy, &pending->accuracy);
+    MergeMeasurement(update.estimator, &pending->estimator);
+    MergeMeasurement(update.vehicle_state, &pending->vehicle_state);
 }
 
 [[nodiscard]] core::GpsQuality GpsQualityFromFixType(std::uint8_t fix_type) {
@@ -183,6 +203,30 @@ void ApplyArdupilotEkfState(std::uint16_t flags, TelemetryCache* telemetry_cache
 }
 
 }  // namespace
+
+MavlinkTelemetryCoalescer::MavlinkTelemetryCoalescer(int rate_hz) {
+    Reset(rate_hz);
+}
+
+void MavlinkTelemetryCoalescer::Reset(int rate_hz) {
+    rate_hz_ = std::max(1, rate_hz);
+    last_publish_time_.reset();
+    pending_ = {};
+}
+
+std::optional<core::TelemetryProvenance> MavlinkTelemetryCoalescer::Push(
+    const core::TelemetryProvenance& update, std::chrono::steady_clock::time_point now) {
+    MergeProvenance(update, &pending_);
+    const auto period = std::chrono::nanoseconds{std::chrono::nanoseconds::period::den / rate_hz_};
+    if (last_publish_time_.has_value() && now - *last_publish_time_ < period) {
+        return std::nullopt;
+    }
+
+    last_publish_time_ = now;
+    core::TelemetryProvenance ready = std::move(pending_);
+    pending_ = {};
+    return ready;
+}
 
 MavlinkTelemetryDecodeResult MavlinkTelemetryDecoder::Decode(const mavlink_message_t& message,
                                                              TelemetryCache* telemetry_cache,

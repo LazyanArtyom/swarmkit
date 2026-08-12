@@ -98,7 +98,10 @@ struct ArmStateObservation {
 
 class MavlinkBackend final : public IDroneBackend {
    public:
-    explicit MavlinkBackend(MavlinkBackendConfig config) : config_(std::move(config)) {}
+    explicit MavlinkBackend(MavlinkBackendConfig config)
+        : config_(std::move(config)),
+          telemetry_rate_hz_(config_.telemetry_rate_hz),
+          telemetry_coalescer_(config_.telemetry_rate_hz) {}
 
     ~MavlinkBackend() override {
         running_.store(false, std::memory_order_relaxed);
@@ -165,15 +168,20 @@ class MavlinkBackend final : public IDroneBackend {
                                           config_.drone_id + "', not '" + drone_id + "'");
         }
 
+        const int normalized_rate_hz = std::max(1, rate_hertz);
         {
             std::lock_guard<std::mutex> lock(callback_mutex_);
             if (telemetry_active_) {
                 return core::Result::Rejected("MAVLink telemetry already running");
             }
+            {
+                std::lock_guard<std::mutex> telemetry_lock(telemetry_mutex_);
+                telemetry_coalescer_.Reset(normalized_rate_hz);
+            }
+            telemetry_rate_hz_.store(normalized_rate_hz, std::memory_order_relaxed);
             telemetry_active_ = true;
             active_drone_id_ = (drone_id == "default") ? config_.drone_id : drone_id;
             telemetry_callback_ = std::move(callback);
-            config_.telemetry_rate_hz = std::max(1, rate_hertz);
         }
 
         core::Result result = EnsureReceiverStarted();
@@ -296,17 +304,22 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         mav::MavlinkTelemetryDecodeResult decode_result;
+        std::optional<core::TelemetryProvenance> publish_provenance;
         {
             std::lock_guard<std::mutex> lock(telemetry_mutex_);
             decode_result = telemetry_decoder_.Decode(message, &telemetry_cache_, &state_cache_,
                                                       config_.autopilot_profile);
+            if (decode_result.should_publish) {
+                publish_provenance = telemetry_coalescer_.Push(decode_result.provenance,
+                                                               std::chrono::steady_clock::now());
+            }
         }
         if (message.msgid == MAVLINK_MSG_ID_HEARTBEAT) {
             RecordArmState(state_cache_.Snapshot().armed);
         }
 
-        if (decode_result.should_publish) {
-            PublishTelemetry(decode_result.provenance);
+        if (publish_provenance.has_value()) {
+            PublishTelemetry(*publish_provenance);
         }
         if (decode_result.should_request_intervals) {
             RequestTelemetryIntervals();
@@ -368,7 +381,7 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     void RequestTelemetryIntervals() {
-        const int rate_hz = std::max(1, config_.telemetry_rate_hz);
+        const int rate_hz = telemetry_rate_hz_.load(std::memory_order_relaxed);
         const float interval_us =
             static_cast<float>(mav::kMicrosecondsPerSecond) / static_cast<float>(rate_hz);
 
@@ -1002,6 +1015,7 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     MavlinkBackendConfig config_;
+    std::atomic<int> telemetry_rate_hz_{1};
 
     std::mutex start_mutex_;
     bool receiver_started_{false};
@@ -1020,6 +1034,7 @@ class MavlinkBackend final : public IDroneBackend {
     std::mutex telemetry_mutex_;
     mav::TelemetryCache telemetry_cache_;
     mav::MavlinkTelemetryDecoder telemetry_decoder_;
+    mav::MavlinkTelemetryCoalescer telemetry_coalescer_;
     mav::MavlinkStateCache state_cache_;
 
     std::mutex ack_mutex_;

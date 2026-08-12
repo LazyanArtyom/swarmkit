@@ -5,6 +5,7 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -221,6 +222,43 @@ TEST_CASE("MAVLink GPS accuracy retains backend-specific uncertainty semantics",
     CHECK(cache.accuracy.horizontal_position->descriptor.semantics !=
           core::UncertaintySemantics::kDeterministicHardBound);
     CHECK_FALSE(cache.accuracy.horizontal_position->descriptor.confidence_level.has_value());
+}
+
+TEST_CASE("MAVLink telemetry coalescer enforces cadence and preserves latest provenance",
+          "[agent][mavlink][telemetry]") {
+    using namespace std::chrono_literals;
+
+    MavlinkTelemetryCoalescer coalescer(5);
+    const auto start = std::chrono::steady_clock::time_point{};
+
+    core::TelemetryProvenance position;
+    position.position.updated = true;
+    position.position.source = "position-1";
+    const auto first = coalescer.Push(position, start);
+    REQUIRE(first.has_value());
+    CHECK(first->position.source == "position-1");
+
+    core::TelemetryProvenance estimator;
+    estimator.estimator.updated = true;
+    estimator.estimator.source = "estimator-1";
+    CHECK_FALSE(coalescer.Push(estimator, start + 50ms).has_value());
+
+    position.position.source = "position-2";
+    CHECK_FALSE(coalescer.Push(position, start + 100ms).has_value());
+
+    core::TelemetryProvenance vehicle_state;
+    vehicle_state.vehicle_state.updated = true;
+    vehicle_state.vehicle_state.source = "vehicle-state-1";
+    const auto coalesced = coalescer.Push(vehicle_state, start + 200ms);
+    REQUIRE(coalesced.has_value());
+    CHECK(coalesced->position.source == "position-2");
+    CHECK(coalesced->estimator.source == "estimator-1");
+    CHECK(coalesced->vehicle_state.source == "vehicle-state-1");
+
+    coalescer.Reset(10);
+    const auto after_reset = coalescer.Push(estimator, start + 201ms);
+    REQUIRE(after_reset.has_value());
+    CHECK(after_reset->estimator.source == "estimator-1");
 }
 
 TEST_CASE("MAVLink capability evidence is typed and motion bounds remain unknown",

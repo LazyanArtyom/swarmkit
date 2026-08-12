@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <chrono>
+#include <optional>
+
 #include "mavlink_common.h"
 #include "mavlink_state_cache.h"
 
@@ -15,6 +18,24 @@ struct MavlinkTelemetryDecodeResult {
     bool should_publish{false};
     bool should_request_intervals{false};
     core::TelemetryProvenance provenance;
+};
+
+/// Coalesces independently arriving MAVLink measurements into one normalized
+/// producer frame cadence. The latest provenance for every measurement group
+/// is retained until the next frame is emitted.
+class MavlinkTelemetryCoalescer {
+   public:
+    explicit MavlinkTelemetryCoalescer(int rate_hz);
+
+    void Reset(int rate_hz);
+
+    [[nodiscard]] std::optional<core::TelemetryProvenance> Push(
+        const core::TelemetryProvenance& update, std::chrono::steady_clock::time_point now);
+
+   private:
+    int rate_hz_{1};
+    std::optional<std::chrono::steady_clock::time_point> last_publish_time_;
+    core::TelemetryProvenance pending_;
 };
 
 class MavlinkTelemetryDecoder {
