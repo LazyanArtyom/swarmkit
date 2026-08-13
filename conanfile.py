@@ -14,11 +14,25 @@ class SwarmkitConan(ConanFile):
     name = "swarmkit"
     package_type = "library"
 
+    exports_sources = (
+        "CMakeLists.txt",
+        "VERSION",
+        "LICENSE.md",
+        "cmake/*",
+        "include/*",
+        "proto/*",
+        "src/*",
+        "apps/*",
+        "examples/*",
+        "third_party/*",
+    )
+
     settings = "os", "arch", "compiler", "build_type"
     options = {"shared": [True, False], "with_tools": [True, False], "with_tests": [True, False]}
     default_options = {"shared": False, "with_tools": False, "with_tests": False}
 
     requires = (
+        "fmt/12.1.0",
         "grpc/1.67.1",
         "protobuf/5.27.0",
         "spdlog/1.17.0",
@@ -56,3 +70,29 @@ class SwarmkitConan(ConanFile):
 
     def package_info(self):
         self.cpp_info.set_property("cmake_file_name", "SwarmKit")
+
+        components = self.cpp_info.components
+
+        components["core"].libs = ["swarmkit_core"]
+        components["core"].requires = ["fmt::fmt", "spdlog::spdlog"]
+        components["core"].set_property("cmake_target_name", "swarmkit::core")
+
+        components["proto"].libs = ["swarmkit_proto"]
+        components["proto"].requires = ["protobuf::libprotobuf", "grpc::grpc++"]
+        components["proto"].set_property("cmake_target_name", "swarmkit::proto")
+
+        components["evidence"].libs = ["swarmkit_evidence"]
+        components["evidence"].requires = ["core", "proto"]
+        components["evidence"].set_property("cmake_target_name", "swarmkit::evidence")
+
+        components["client"].libs = ["swarmkit_client"]
+        components["client"].requires = ["core", "proto", "yaml-cpp::yaml-cpp"]
+        components["client"].set_property("cmake_target_name", "swarmkit::client")
+
+        components["agent"].libs = ["swarmkit_agent"]
+        components["agent"].requires = ["core", "proto", "yaml-cpp::yaml-cpp"]
+        components["agent"].set_property("cmake_target_name", "swarmkit::agent")
+
+        components["experiment"].libs = ["swarmkit_experiment"]
+        components["experiment"].requires = ["agent", "evidence", "client"]
+        components["experiment"].set_property("cmake_target_name", "swarmkit::experiment")
