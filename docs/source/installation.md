@@ -6,7 +6,7 @@ SwarmKit is built as a modern C++23 CMake project.
 
 | Requirement | Version or note |
 | --- | --- |
-| C++ compiler | GCC 13+, Clang 17+, or Xcode Command Line Tools on macOS ARM64 |
+| C++ compiler | GCC 13+, Clang 17+, or Xcode 26+ Command Line Tools on macOS ARM64 |
 | CMake | 3.28 or newer for the main project |
 | Ninja | Recommended generator used by the shipped presets |
 | Conan | Conan 2 for dependency resolution |

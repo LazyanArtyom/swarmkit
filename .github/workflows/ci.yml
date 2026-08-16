@@ -57,6 +57,8 @@ jobs:
         env:
           SWARMKIT_SANITIZER: ${{ matrix.sanitizer }}
         run: |
+          set -o pipefail
+          mkdir -p build
           sanitizer_args=()
           build_args=("--build=missing")
           case "${SWARMKIT_SANITIZER}" in
@@ -96,7 +98,16 @@ jobs:
             -o '&:with_tools=True' \
             -o '&:with_tests=True' \
             "${sanitizer_args[@]}" \
-            "${build_args[@]}"
+            "${build_args[@]}" \
+            2>&1 | tee "build/conan-resolve-${{ matrix.preset }}.log"
+
+      - name: Publish dependency diagnostics
+        if: failure()
+        shell: bash
+        run: >-
+          bash scripts/ci_annotate_log.sh
+          "build/conan-resolve-${{ matrix.preset }}.log"
+          "Conan diagnostics (${{ matrix.preset }})"
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
@@ -119,7 +130,7 @@ jobs:
 
   macos-release:
     name: macOS ARM64 Release
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1

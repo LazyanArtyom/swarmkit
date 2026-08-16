@@ -105,10 +105,13 @@ class MavlinkBackend final : public IDroneBackend {
 
     ~MavlinkBackend() override {
         running_.store(false, std::memory_order_relaxed);
-        transport_.Close();
         if (receiver_.joinable()) {
             receiver_.join();
         }
+        // Receive() has a bounded socket timeout, so let the receiver observe
+        // the stop request before closing its file descriptor. Concurrent
+        // close()/recvfrom() on the same descriptor is a real shutdown race.
+        transport_.Close();
     }
 
     core::Result Start() override {

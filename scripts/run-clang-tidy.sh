@@ -72,15 +72,38 @@ run_single_file() {
     local file_path="$2"
     local escaped_workspace_dir
     local header_filter
+    local tidy_version
+    local -a cxx23_compat_args=()
+    local -a tidy_command
 
     escaped_workspace_dir="$(escape_regex "${workspace_dir}/")"
     header_filter="^${escaped_workspace_dir}(apps|include|src|tests)/"
 
-    clang-tidy \
-        "${file_path}" \
-        -p "${build_dir}" \
-        "--config-file=${workspace_dir}/.clang-tidy" \
-        "--header-filter=${header_filter}" \
+    # Clang 18 reports an older __cpp_concepts value even though its concepts
+    # implementation can parse C++23. libstdc++ consequently hides std::expected.
+    # Clang 19 corrected the feature-test macro; keep older hosted analyzers aligned
+    # with the project's real GCC 13 C++23 compilation database until they retire.
+    tidy_version="$(clang-tidy --version)"
+    if [[ "${tidy_version}" =~ version[[:space:]]+([0-9]+)\. ]] \
+        && ((BASH_REMATCH[1] < 19)); then
+        cxx23_compat_args+=(
+            "--extra-arg=-D__cpp_concepts=202002L"
+            "--extra-arg=-Wno-builtin-macro-redefined"
+        )
+    fi
+
+    tidy_command=(
+        clang-tidy
+        "${file_path}"
+        -p "${build_dir}"
+        "--config-file=${workspace_dir}/.clang-tidy"
+        "--header-filter=${header_filter}"
+    )
+    if ((${#cxx23_compat_args[@]} > 0)); then
+        tidy_command+=("${cxx23_compat_args[@]}")
+    fi
+
+    "${tidy_command[@]}" \
         2>&1 \
         | sed -E '/^[0-9]+ warnings generated\.$/d; /^Suppressed [0-9]+ warnings .*$/d; /^Use -header-filter=.*$/d' \
         | filter_project_diagnostics

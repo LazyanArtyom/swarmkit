@@ -26,7 +26,7 @@ test matrix is not an airworthiness certification.
 
 | Tool | macOS ARM64 | Linux x86\_64 |
 |------|-------------|----------------|
-| Compiler | Xcode CLT (`xcode-select --install`) | GCC 13+ or Clang 17+ |
+| Compiler | Xcode 26+ CLT (`xcode-select --install`) | GCC 13+ or Clang 17+ |
 | CMake | ≥ 3.28 | ≥ 3.28 |
 | Ninja | `brew install ninja` | `apt install ninja-build` |
 | Conan 2 | `pip install conan` | `pip install conan` |
