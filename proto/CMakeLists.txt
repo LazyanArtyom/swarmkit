@@ -9,7 +9,7 @@ cmake_minimum_required(VERSION 3.28)
 add_library(swarmkit_proto STATIC)
 
 set(proto_root_dir "${CMAKE_CURRENT_LIST_DIR}")
-set(proto_file "${proto_root_dir}/swarmkit.proto")
+set(proto_file "${proto_root_dir}/swarmkit/v1/swarmkit.proto")
 
 # Canonical generated root for the whole build tree
 set(gen_root "${CMAKE_BINARY_DIR}/generated")
@@ -17,8 +17,8 @@ set(gen_pkg  "${gen_root}/swarmkit/v1")
 
 file(MAKE_DIRECTORY "${gen_pkg}")
 
-# C++ protoc outputs go directly into --cpp_out directory (no package folders),
-# so we explicitly set output dir to gen_pkg to get generated/swarmkit/v1/...
+# The schema path mirrors its package, so protoc writes the generated files under
+# generated/swarmkit/v1 when given gen_root as its output directory.
 set(proto_hdr "${gen_pkg}/swarmkit.pb.h")
 set(proto_src "${gen_pkg}/swarmkit.pb.cc")
 set(grpc_hdr  "${gen_pkg}/swarmkit.grpc.pb.h")
@@ -31,8 +31,8 @@ add_custom_command(
   OUTPUT "${proto_hdr}" "${proto_src}" "${grpc_hdr}" "${grpc_src}"
   COMMAND "${protoc_path}"
           --proto_path=${proto_root_dir}
-          --cpp_out=${gen_pkg}
-          --grpc_out=${gen_pkg}
+          --cpp_out=${gen_root}
+          --grpc_out=${gen_root}
           --plugin=protoc-gen-grpc=${grpc_cpp_plugin_path}
           ${proto_file}
   DEPENDS "${proto_file}"

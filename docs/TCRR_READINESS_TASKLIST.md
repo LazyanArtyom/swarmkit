@@ -160,7 +160,7 @@ Tasks within each priority are ordered by dependency. Do not begin a task whose 
   - Return the exact finalized handle from `SetActiveGoal`; include it in `GetActiveGoal`, all goal reports, command/backend result records, and normalized telemetry.
   - Define and test `ACTIVE`, `REACHED`, `CANCELLED`, `SUPERSEDED`, `FAILED`, `TIMEOUT`, retry, and replacement semantics.
   - Bind cancellation to one complete handle; provide no weaker goal-ID-only overload.
-  - Primary files: `proto/swarmkit.proto`, `include/swarmkit/commands.h`, `include/swarmkit/client/client.h`, `src/agent/active_goal_supervisor.*`, `src/agent/server.cpp`, `src/client/client.cpp`, `src/client/swarm_client.cpp`.
+  - Primary files: `proto/swarmkit/v1/swarmkit.proto`, `include/swarmkit/commands.h`, `include/swarmkit/client/client.h`, `src/agent/active_goal_supervisor.*`, `src/agent/server.cpp`, `src/client/client.cpp`, `src/client/swarm_client.cpp`.
   - Tests: same goal/new revision, same revision/new attempt, supersession, delayed old report, and failed backend execution.
   - Dependencies: TCRR-010.
 
