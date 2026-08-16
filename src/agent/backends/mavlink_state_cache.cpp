@@ -26,6 +26,14 @@ constexpr auto kEstimatorRequiredFlags = static_cast<std::uint16_t>(
     return (flags & candidate) != 0U;
 }
 
+[[nodiscard]] const char* OptionalStateText(const std::optional<bool>& value, const char* true_text,
+                                            const char* false_text) {
+    if (!value.has_value()) {
+        return "unknown";
+    }
+    return *value ? true_text : false_text;
+}
+
 }  // namespace
 
 void MavlinkStateCache::UpdateHeartbeat(const mavlink_message_t& message,
@@ -67,8 +75,8 @@ void MavlinkStateCache::UpdateGlobalPosition(const mavlink_message_t& message,
 void MavlinkStateCache::UpdateGps(const mavlink_message_t& message,
                                   const mavlink_gps_raw_int_t& gps) {
     const bool has_hdop = gps.eph != kInvalidGpsEph;
-    const bool gps_ok = gps.fix_type >= kMinimumUsableGpsFixType &&
-                        gps.satellites_visible > 0U && has_hdop;
+    const bool gps_ok =
+        gps.fix_type >= kMinimumUsableGpsFixType && gps.satellites_visible > 0U && has_hdop;
 
     std::lock_guard<std::mutex> lock(mutex_);
     state_.last_telemetry_unix_ms = NowUnixMs();
@@ -126,8 +134,7 @@ void MavlinkStateCache::UpdateExtendedSysState(const mavlink_message_t& message,
 void MavlinkStateCache::UpdateEstimatorStatus(const mavlink_message_t& message,
                                               const mavlink_estimator_status_t& estimator) {
     const bool healthy = HasAllFlags(estimator.flags, kEstimatorRequiredFlags) &&
-                         !HasAnyFlag(estimator.flags,
-                                     ESTIMATOR_GPS_GLITCH | ESTIMATOR_ACCEL_ERROR);
+                         !HasAnyFlag(estimator.flags, ESTIMATOR_GPS_GLITCH | ESTIMATOR_ACCEL_ERROR);
 
     std::lock_guard<std::mutex> lock(mutex_);
     state_.last_telemetry_unix_ms = NowUnixMs();
@@ -164,15 +171,23 @@ BackendHealth MavlinkStateCache::Health() const {
     health.protocol = "mavlink";
     health.last_heartbeat_unix_ms = state.last_heartbeat_unix_ms;
     health.last_telemetry_unix_ms = state.last_telemetry_unix_ms;
-    health.armed = state.armed;
-    health.landed = state.landed_known ? state.landed : !state.armed;
+    if (state.last_heartbeat_unix_ms != 0) {
+        health.armed = state.armed;
+        health.failsafe = state.failsafe;
+    }
+    if (state.landed_known) {
+        health.landed = state.landed;
+    }
     health.custom_mode = state.custom_mode;
-    health.failsafe = state.failsafe;
-    health.gps_ok = state.gps_seen && state.gps_ok;
+    if (state.gps_seen) {
+        health.gps_ok = state.gps_ok;
+    }
     health.gps_fix_type = state.gps_fix_type;
     health.satellites_visible = state.satellites_visible;
     health.gps_hdop = state.gps_hdop;
-    health.ekf_ok = state.ekf_seen ? state.ekf_ok : !state.failsafe;
+    if (state.ekf_seen) {
+        health.ekf_ok = state.ekf_ok;
+    }
     health.has_relative_altitude = state.has_relative_altitude;
     health.relative_alt_m = state.relative_alt_m;
 
@@ -196,12 +211,12 @@ BackendHealth MavlinkStateCache::Health() const {
     health.message = "MAVLink ready sysid=" + std::to_string(state.system_id) +
                      " compid=" + std::to_string(state.component_id) +
                      " armed=" + (state.armed ? "true" : "false") +
-                     " landed=" + (health.landed ? "true" : "false") +
-                     " gps=" + (health.gps_ok ? "ok" : "bad") +
+                     " landed=" + OptionalStateText(health.landed, "true", "false") +
+                     " gps=" + OptionalStateText(health.gps_ok, "ok", "bad") +
                      " gps_fix=" + std::to_string(state.gps_fix_type) +
                      " sats=" + std::to_string(state.satellites_visible) +
                      " hdop=" + std::to_string(state.gps_hdop) +
-                     " ekf=" + (health.ekf_ok ? "ok" : "bad") +
+                     " ekf=" + OptionalStateText(health.ekf_ok, "ok", "bad") +
                      " custom_mode=" + std::to_string(state.custom_mode);
     if (state.last_telemetry_unix_ms != 0 &&
         now_ms - state.last_telemetry_unix_ms > kTelemetryStaleTimeoutMs) {

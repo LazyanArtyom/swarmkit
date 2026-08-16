@@ -19,7 +19,8 @@ build type:
 
 ```bash
 conan profile detect
-conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 ```
 
 If the compiler is too old, use GCC 13+, Clang 17+, or current Xcode Command

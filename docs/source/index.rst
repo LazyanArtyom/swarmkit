@@ -14,6 +14,8 @@ streaming telemetry, and coordinating small drone swarms.
    concepts
    examples
    architecture
+   production_readiness
+   operations
    configuration
    troubleshooting
    faq

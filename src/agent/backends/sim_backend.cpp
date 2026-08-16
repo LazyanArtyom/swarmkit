@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <limits>
@@ -56,6 +57,8 @@ struct VehicleState {
     std::string failure_detail;
     std::string mode{"SIM_HOLD"};
     std::int64_t simulation_time_ms{};
+    std::int64_t last_heartbeat_unix_ms{};
+    std::int64_t last_telemetry_unix_ms{};
     std::uint64_t truth_sequence{};
     std::optional<Target> target;
     std::optional<VelocityCommand> velocity_command;
@@ -63,6 +66,7 @@ struct VehicleState {
 
 struct StreamState {
     std::atomic<bool> running{true};
+    std::mutex callback_mutex;
     int rate_hertz{kDefaultTelemetryRateHz};
     int accumulated_ms{};
     IDroneBackend::TelemetryCallback callback;
@@ -71,6 +75,12 @@ struct StreamState {
 
 [[nodiscard]] double DegreesToRadians(double value) {
     return value * std::numbers::pi / 180.0;
+}
+
+[[nodiscard]] std::int64_t NowUnixMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
 }
 
 [[nodiscard]] double RadiansToDegrees(double value) {
@@ -134,6 +144,7 @@ namespace {
     if (inserted) {
         iter->second.battery_percent = state->config.initial_battery_percent;
         iter->second.cruise_speed_mps = state->config.default_cruise_speed_mps;
+        iter->second.last_heartbeat_unix_ms = NowUnixMs();
     }
     return iter->second;
 }
@@ -228,7 +239,9 @@ namespace {
         .alt_m = static_cast<float>(config.home_alt_m),
     };
     const core::TimestampEvidence source_time{
-        .timestamp_ms = config.initial_source_unix_time_ms + vehicle.simulation_time_ms,
+        .timestamp_ms = config.clock_mode == SimulationClockMode::kRealtime
+                            ? NowUnixMs()
+                            : config.initial_source_unix_time_ms + vehicle.simulation_time_ms,
         .clock_domain = core::ClockDomain::kUnixEpoch,
         .synchronization = core::ClockSynchronization::kSynchronized,
         .clock_uncertainty_ms = 0.0,
@@ -341,7 +354,7 @@ void AdvanceVehicle(const std::shared_ptr<SimBackendControl::State>& state,
                     const std::string& drone_id, int duration_ms) {
     std::vector<SimulationTruthFrame> truth_frames;
     std::vector<core::TelemetryFrame> telemetry_frames;
-    IDroneBackend::TelemetryCallback telemetry_callback;
+    std::shared_ptr<StreamState> telemetry_stream;
     SimulationTruthObserver truth_observer;
     {
         std::lock_guard<std::mutex> lock(state->mutex);
@@ -357,6 +370,7 @@ void AdvanceVehicle(const std::shared_ptr<SimBackendControl::State>& state,
                 step = std::min(step, period_ms - stream->accumulated_ms);
             }
             IntegrateVehicle(state->config, &vehicle, step);
+            vehicle.last_heartbeat_unix_ms = NowUnixMs();
             remaining -= step;
             truth_frames.push_back(TruthFrame(state->config, drone_id, vehicle));
             if (stream) {
@@ -365,12 +379,11 @@ void AdvanceVehicle(const std::shared_ptr<SimBackendControl::State>& state,
                 if (stream->accumulated_ms >= period_ms) {
                     stream->accumulated_ms %= period_ms;
                     telemetry_frames.push_back(TelemetryFrame(state->config, drone_id, vehicle));
+                    vehicle.last_telemetry_unix_ms = vehicle.last_heartbeat_unix_ms;
                 }
             }
         }
-        if (stream) {
-            telemetry_callback = stream->callback;
-        }
+        telemetry_stream = std::move(stream);
         truth_observer = state->config.truth_observer;
     }
     if (truth_observer) {
@@ -378,9 +391,13 @@ void AdvanceVehicle(const std::shared_ptr<SimBackendControl::State>& state,
             truth_observer(truth);
         }
     }
-    if (telemetry_callback) {
+    if (telemetry_stream) {
+        std::lock_guard<std::mutex> callback_lock(telemetry_stream->callback_mutex);
+        if (!telemetry_stream->running.load(std::memory_order_relaxed)) {
+            return;
+        }
         for (const auto& frame : telemetry_frames) {
-            telemetry_callback(frame);
+            telemetry_stream->callback(frame);
         }
     }
 }
@@ -642,6 +659,7 @@ class SimBackend final : public IDroneBackend {
                 },
             },
             envelope.command);
+        vehicle.last_heartbeat_unix_ms = NowUnixMs();
         return outcome;
     }
 
@@ -650,7 +668,10 @@ class SimBackend final : public IDroneBackend {
         if (!callback) {
             return core::Result::Rejected("simulator telemetry callback must not be empty");
         }
-        const int effective_rate = rate_hertz <= 0 ? kDefaultTelemetryRateHz : rate_hertz;
+        if (rate_hertz <= 0) {
+            return core::Result::Rejected("simulator telemetry rate must be greater than zero");
+        }
+        const int effective_rate = rate_hertz;
         if (effective_rate > 1000) {
             return core::Result::Rejected("simulator telemetry rate must not exceed 1000 Hz");
         }
@@ -703,6 +724,7 @@ class SimBackend final : public IDroneBackend {
         if (stream->worker.joinable()) {
             stream->worker.join();
         }
+        std::lock_guard<std::mutex> callback_lock(stream->callback_mutex);
         return core::Result::Success();
     }
 
@@ -713,11 +735,6 @@ class SimBackend final : public IDroneBackend {
             .message = "simulator ready",
             .backend_name = "sim",
             .protocol = "deterministic-model",
-            .gps_ok = true,
-            .gps_fix_type = 3,
-            .satellites_visible = 12,
-            .gps_hdop = 0.7F,
-            .ekf_ok = true,
             .link_quality_percent = 100.0F,
         };
         if (!state_->vehicles.empty()) {
@@ -728,9 +745,15 @@ class SimBackend final : public IDroneBackend {
             health.landed = vehicle.landed;
             health.mode = vehicle.mode;
             health.failsafe = vehicle.failed;
+            health.gps_ok = true;
+            health.gps_fix_type = 3;
+            health.satellites_visible = 12;
+            health.gps_hdop = 0.7F;
             health.ekf_ok = !vehicle.failed;
             health.has_relative_altitude = true;
             health.relative_alt_m = static_cast<float>(vehicle.up_m);
+            health.last_heartbeat_unix_ms = vehicle.last_heartbeat_unix_ms;
+            health.last_telemetry_unix_ms = vehicle.last_telemetry_unix_ms;
         }
         return health;
     }

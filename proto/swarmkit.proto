@@ -130,11 +130,11 @@ message HealthReply {
     string protocol = 9;
     int64 last_heartbeat_unix_ms = 10;
     int64 last_telemetry_unix_ms = 11;
-    bool armed = 12;
-    bool landed = 13;
-    bool failsafe = 14;
-    bool gps_ok = 15;
-    bool ekf_ok = 16;
+    optional bool armed = 12;
+    optional bool landed = 13;
+    optional bool failsafe = 14;
+    optional bool gps_ok = 15;
+    optional bool ekf_ok = 16;
     optional float link_quality_percent = 17;
     string mode = 18;
     int32 custom_mode = 19;

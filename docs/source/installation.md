@@ -35,7 +35,8 @@ conan profile detect
 On macOS ARM64:
 
 ```bash
-conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset mac-debug
 cmake --build --preset mac-debug
 ```
@@ -43,7 +44,8 @@ cmake --build --preset mac-debug
 For a release build:
 
 ```bash
-conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset mac-release
 cmake --build --preset mac-release
 ```
@@ -51,7 +53,8 @@ cmake --build --preset mac-release
 On Linux x86_64:
 
 ```bash
-conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset linux-debug
 cmake --build --preset linux-debug
 ```
@@ -59,7 +62,8 @@ cmake --build --preset linux-debug
 For a release build:
 
 ```bash
-conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset linux-release
 cmake --build --preset linux-release
 ```

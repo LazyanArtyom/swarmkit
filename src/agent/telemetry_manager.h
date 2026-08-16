@@ -177,6 +177,10 @@ class TelemetryManager {
     void PublishFrame(const std::shared_ptr<TelemetryState>& state, const std::string& drone_id,
                       const core::TelemetryFrame& frame);
 
+    void PublishFrameNoexcept(const std::shared_ptr<TelemetryState>& state,
+                              const std::string& drone_id,
+                              const core::TelemetryFrame& frame) noexcept;
+
     [[nodiscard]] int NormalizeRate(int requested_rate_hz) const;
 
     void ShutdownAll();

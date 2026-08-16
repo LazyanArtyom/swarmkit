@@ -16,6 +16,10 @@ flags, source timestamps, coordinate-frame metadata, home origin, GPS quality,
 estimator state, accuracy fields, and command/goal linkage for monitoring and
 3D swarm applications.
 
+Production hardening is tracked in the
+[Phase 0 production-readiness milestone](docs/source/production_readiness.md). A green software
+test matrix is not an airworthiness certification.
+
 ---
 
 ## Prerequisites
@@ -42,12 +46,14 @@ conan profile detect
 
 ```bash
 # Debug
-conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset mac-debug
 cmake --build --preset mac-debug
 
 # Release
-conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset mac-release
 cmake --build --preset mac-release
 ```
@@ -56,12 +62,14 @@ cmake --build --preset mac-release
 
 ```bash
 # Debug
-conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Debug -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset linux-debug
 cmake --build --preset linux-debug
 
 # Release
-conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 --build=missing
+conan install . -of build/conan -s build_type=Release -s compiler.cppstd=23 \
+  -o '&:with_tools=True' -o '&:with_tests=True' --build=missing
 cmake --preset linux-release
 cmake --build --preset linux-release
 ```
@@ -231,7 +239,8 @@ live in `docs/README.md`.
 
 ## Package (CI / release)
 
-The package script runs the full pipeline: Conan install → CMake configure → build → test → produce SDK and tools tarballs in `dist/`.
+The package script runs the full pipeline: Conan install → CMake configure → build → test → produce
+SDK and tools tarballs plus SHA-256 sidecars in `dist/`.
 Package filenames use the current project version from the root `VERSION` file.
 When `--preset` and `--platform` are omitted, `scripts/ci_package.sh`
 auto-detects the current supported host platform:
@@ -244,13 +253,17 @@ chmod +x scripts/ci_package.sh
 On macOS ARM64 this produces:
 ```
 dist/swarmkit-<version>-sdk-mac-arm64.tar.gz
+dist/swarmkit-<version>-sdk-mac-arm64.tar.gz.sha256
 dist/swarmkit-<version>-tools-mac-arm64.tar.gz
+dist/swarmkit-<version>-tools-mac-arm64.tar.gz.sha256
 ```
 
 On Linux x86\_64 this produces:
 ```
 dist/swarmkit-<version>-sdk-linux-x86_64.tar.gz
+dist/swarmkit-<version>-sdk-linux-x86_64.tar.gz.sha256
 dist/swarmkit-<version>-tools-linux-x86_64.tar.gz
+dist/swarmkit-<version>-tools-linux-x86_64.tar.gz.sha256
 ```
 
 **In VSCode** press **F8** to run the full package pipeline for the current platform.

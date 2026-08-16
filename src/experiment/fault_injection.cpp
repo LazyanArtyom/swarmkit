@@ -223,6 +223,9 @@ class FaultInjectingBackend final : public agent::IDroneBackend {
 
     core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,
                                 TelemetryCallback callback) override {
+        if (!callback) {
+            return core::Result::Rejected("fault-injected telemetry callback must not be empty");
+        }
         return inner_->StartTelemetry(
             drone_id, rate_hertz,
             [state = state_, callback = std::move(callback)](const core::TelemetryFrame& input) {

@@ -55,6 +55,37 @@ TEST_CASE("SimBackend validates configuration and advertises enforced model boun
           core::CapabilitySupport::kSupported);
 }
 
+TEST_CASE("SimBackend health only reports observed vehicle state", "[agent][sim][health][safety]") {
+    SimBackendConfig config;
+    config.clock_mode = SimulationClockMode::kManual;
+    auto simulator = MakeSimBackend(config);
+    REQUIRE(simulator.has_value());
+
+    const BackendHealth before_vehicle = simulator->backend->GetHealth();
+    CHECK_FALSE(before_vehicle.armed.has_value());
+    CHECK_FALSE(before_vehicle.landed.has_value());
+    CHECK_FALSE(before_vehicle.failsafe.has_value());
+    CHECK_FALSE(before_vehicle.gps_ok.has_value());
+    CHECK_FALSE(before_vehicle.ekf_ok.has_value());
+    CHECK(before_vehicle.last_heartbeat_unix_ms == 0);
+    CHECK(before_vehicle.last_telemetry_unix_ms == 0);
+
+    REQUIRE(simulator->backend->StartTelemetry("drone-1", 1, [](const core::TelemetryFrame&) {})
+                .IsOk());
+    const BackendHealth before_frame = simulator->backend->GetHealth();
+    CHECK(before_frame.armed == false);
+    CHECK(before_frame.landed == true);
+    CHECK(before_frame.failsafe == false);
+    CHECK(before_frame.gps_ok == true);
+    CHECK(before_frame.ekf_ok == true);
+    CHECK(before_frame.last_heartbeat_unix_ms > 0);
+    CHECK(before_frame.last_telemetry_unix_ms == 0);
+
+    REQUIRE(simulator->control->Advance("drone-1", std::chrono::seconds{1}).IsOk());
+    CHECK(simulator->backend->GetHealth().last_telemetry_unix_ms > 0);
+    CHECK(simulator->backend->StopTelemetry("drone-1").IsOk());
+}
+
 TEST_CASE("Built-in simulator factory validates experiment options", "[agent][sim][factory]") {
     BackendRegistry registry;
     RegisterBuiltinBackends(&registry);
@@ -146,7 +177,7 @@ TEST_CASE("SimBackend responds deterministically to takeoff velocity hold and fa
     truth = simulator->control->Truth("drone-1");
     REQUIRE(truth.has_value());
     CHECK(truth->failed);
-    CHECK(simulator->backend->GetHealth().failsafe);
+    CHECK(simulator->backend->GetHealth().failsafe == true);
     CHECK_FALSE(truth_log.empty());
     CHECK(simulator->backend->StopTelemetry("drone-1").IsOk());
 }

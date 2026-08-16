@@ -7,6 +7,7 @@
 add_executable(swarmkit_tests
     test_arbiter.cpp
     test_basic.cpp
+    test_backend_contract.cpp
     test_client_integration.cpp
     test_command_preconditions.cpp
     test_config.cpp
@@ -16,6 +17,7 @@ add_executable(swarmkit_tests
     test_mavlink_common.cpp
     test_phase3_experiment.cpp
     test_swarm_client.cpp
+    test_telemetry_manager.cpp
     test_telemetry_sink.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../apps/cli/telemetry_sink.cpp
 )
@@ -31,8 +33,6 @@ target_include_directories(swarmkit_tests SYSTEM PRIVATE
 )
 
 target_link_libraries(swarmkit_tests PRIVATE
-    swarmkit_agent
-    swarmkit_client
     swarmkit_experiment
     Catch2::Catch2WithMain
 )

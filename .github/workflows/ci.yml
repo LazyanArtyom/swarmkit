@@ -1,0 +1,193 @@
+name: Build and correctness
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Linux ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debug
+            build_type: Debug
+            preset: linux-debug
+          - name: Release
+            build_type: Release
+            preset: linux-release
+          - name: ASan-UBSan
+            build_type: Debug
+            preset: linux-asan
+          - name: TSan
+            build_type: Debug
+            preset: linux-tsan
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify build tools
+        run: |
+          cmake --version
+          ninja --version
+
+      - name: Install Conan
+        run: python3 -m pip install --upgrade "conan>=2.0,<3"
+
+      - name: Configure Conan profile
+        run: conan profile detect --force
+
+      - name: Resolve dependencies
+        run: >-
+          conan install . -of build/conan
+          -s build_type=${{ matrix.build_type }}
+          -s compiler.cppstd=23
+          -o '&:with_tools=True'
+          -o '&:with_tests=True'
+          --build=missing
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} --parallel 2
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
+
+  macos-release:
+    name: macOS ARM64 Release
+    runs-on: macos-15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Conan
+        run: pipx install "conan>=2.0,<3"
+
+      - name: Configure Conan profile
+        run: conan profile detect --force
+
+      - name: Resolve dependencies
+        run: >-
+          conan install . -of build/conan
+          -s build_type=Release
+          -s compiler.cppstd=23
+          -o '&:with_tools=True'
+          -o '&:with_tests=True'
+          --build=missing
+
+      - name: Configure
+        run: cmake --preset mac-release
+
+      - name: Build
+        run: cmake --build --preset mac-release --parallel 2
+
+      - name: Test
+        run: ctest --preset mac-release --output-on-failure
+
+  source-analysis:
+    name: Project source analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install CMake, Ninja, and clang-tidy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy ninja-build
+          python3 -m pip install --upgrade "conan>=2.0,<3"
+
+      - name: Configure dependencies
+        run: |
+          conan profile detect --force
+          conan install . -of build/conan \
+            -s build_type=Debug \
+            -s compiler.cppstd=23 \
+            -o '&:with_tools=True' \
+            -o '&:with_tests=True' \
+            --build=missing
+          cmake --preset linux-debug
+
+      - name: Run clang-tidy
+        run: ./scripts/run-clang-tidy.sh build/linux-debug
+
+  conan-package:
+    name: Conan package export
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Conan
+        run: python3 -m pip install --upgrade "conan>=2.0,<3"
+
+      - name: Build package from exported sources
+        run: |
+          conan profile detect --force
+          conan create . \
+            -s build_type=Release \
+            -s compiler.cppstd=23 \
+            -o '&:with_tools=False' \
+            -o '&:with_tests=False' \
+            --build=missing
+
+      - name: Build relocatable SDK and tools archives
+        run: >-
+          ./scripts/ci_package.sh
+          --preset linux-release
+          --platform linux-x86_64
+
+      - name: Compile and ping from the staged SDK
+        run: |
+          verify_root="$(mktemp -d)"
+          tar -xzf dist/swarmkit-*-sdk-linux-x86_64.tar.gz -C "${verify_root}"
+          tar -xzf dist/swarmkit-*-tools-linux-x86_64.tar.gz -C "${verify_root}"
+          sdk_root="$(find "${verify_root}" -maxdepth 1 -type d -name 'swarmkit-*-sdk-linux-x86_64' -print -quit)"
+          tools_root="$(find "${verify_root}" -maxdepth 1 -type d -name 'swarmkit-*-tools-linux-x86_64' -print -quit)"
+          cmake -S apps/test_tools -B "${verify_root}/consumer" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${sdk_root}"
+          cmake --build "${verify_root}/consumer" --parallel 2
+          "${tools_root}/bin/swarmkit-agent" \
+            --insecure --id package-smoke --bind 127.0.0.1:50191 &
+          agent_pid=$!
+          trap 'kill "${agent_pid}" 2>/dev/null || true' EXIT
+          sleep 1
+          "${verify_root}/consumer/swarmkit-sdk-ping" \
+            --addr 127.0.0.1:50191 --insecure
+          kill "${agent_pid}"
+          wait "${agent_pid}" || true
+          trap - EXIT
+
+      - name: Upload release archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarmkit-linux-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  protocol-lint:
+    name: Protocol schema lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Buf
+        uses: bufbuild/buf-setup-action@v1
+
+      - name: Lint canonical protobuf schema
+        run: buf lint

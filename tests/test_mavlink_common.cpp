@@ -190,6 +190,31 @@ TEST_CASE("MAVLink measurement provenance does not refresh position on heartbeat
     CHECK_FALSE(attitude_result.provenance.position.updated);
 }
 
+TEST_CASE("MAVLink health preserves unobserved vehicle states as unknown",
+          "[agent][mavlink][health][safety]") {
+    MavlinkStateCache state;
+    const BackendHealth empty = state.Health();
+    CHECK_FALSE(empty.ready);
+    CHECK_FALSE(empty.armed.has_value());
+    CHECK_FALSE(empty.landed.has_value());
+    CHECK_FALSE(empty.failsafe.has_value());
+    CHECK_FALSE(empty.gps_ok.has_value());
+    CHECK_FALSE(empty.ekf_ok.has_value());
+
+    mavlink_heartbeat_t heartbeat{};
+    heartbeat.system_status = MAV_STATE_ACTIVE;
+    mavlink_message_t heartbeat_message{};
+    mavlink_msg_heartbeat_encode(1, 1, &heartbeat_message, &heartbeat);
+    state.UpdateHeartbeat(heartbeat_message, heartbeat);
+
+    const BackendHealth heartbeat_only = state.Health();
+    CHECK(heartbeat_only.armed == false);
+    CHECK(heartbeat_only.failsafe == false);
+    CHECK_FALSE(heartbeat_only.landed.has_value());
+    CHECK_FALSE(heartbeat_only.gps_ok.has_value());
+    CHECK_FALSE(heartbeat_only.ekf_ok.has_value());
+}
+
 TEST_CASE("MAVLink GPS accuracy retains backend-specific uncertainty semantics",
           "[agent][mavlink][telemetry][uncertainty]") {
     MavlinkTelemetryDecoder decoder;

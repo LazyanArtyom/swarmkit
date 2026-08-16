@@ -135,27 +135,40 @@ int RunPreflight(Client& client, std::string_view drone_id, int argc, char** arg
                             ? "age_ms=" + TimestampAgeMsText(status.last_telemetry_unix_ms, now_ms)
                             : telemetry.error);
 
-    ready = ready && !status.armed;
-    PrintPreflightCheck(!status.armed, "armed state",
-                        status.armed ? "vehicle is already armed" : "disarmed");
+    const bool disarmed = status.armed == false;
+    std::string_view armed_detail = "unknown";
+    if (status.armed.has_value()) {
+        armed_detail = *status.armed ? "vehicle is already armed" : "disarmed";
+    }
+    ready = ready && disarmed;
+    PrintPreflightCheck(disarmed, "armed state", armed_detail);
 
-    ready = ready && status.landed;
-    PrintPreflightCheck(status.landed, "landed state",
+    const bool landed = status.landed == true;
+    ready = ready && landed;
+    PrintPreflightCheck(landed, "landed state",
                         std::string{"landed="} + BoolText(status.landed) +
                             " rel_alt=" + RelativeAltitudeText(status));
 
-    ready = ready && !status.failsafe;
-    PrintPreflightCheck(!status.failsafe, "failsafe", BoolText(status.failsafe));
+    const bool failsafe_clear = status.failsafe == false;
+    ready = ready && failsafe_clear;
+    PrintPreflightCheck(failsafe_clear, "failsafe", BoolText(status.failsafe));
 
-    ready = ready && status.ekf_ok;
-    PrintPreflightCheck(status.ekf_ok, "EKF", status.ekf_ok ? "healthy" : "unhealthy");
+    const bool ekf_ok = status.ekf_ok == true;
+    std::string_view ekf_detail = "unknown";
+    if (status.ekf_ok.has_value()) {
+        ekf_detail = *status.ekf_ok ? "healthy" : "unhealthy";
+    }
+    ready = ready && ekf_ok;
+    PrintPreflightCheck(ekf_ok, "EKF", ekf_detail);
 
     const std::string gps_detail = "fix=" + std::to_string(status.gps_fix_type) + " (" +
                                    GpsFixText(status.gps_fix_type) +
                                    ") sats=" + std::to_string(status.satellites_visible) +
                                    " hdop=" + FloatText(status.gps_hdop);
-    ready = ready && status.gps_ok;
-    PrintPreflightCheck(status.gps_ok, "GPS", gps_detail);
+    const bool gps_ok = status.gps_ok == true;
+    ready = ready && gps_ok;
+    PrintPreflightCheck(gps_ok, "GPS",
+                        status.gps_ok.has_value() ? gps_detail : "GPS health unknown");
 
     bool battery_ok = false;
     std::string battery_detail = "unknown";
@@ -171,7 +184,7 @@ int RunPreflight(Client& client, std::string_view drone_id, int argc, char** arg
     PrintPreflightCheck(true, "mode",
                         mode_text + " custom_mode=" + std::to_string(status.custom_mode));
 
-    if (!status.gps_ok) {
+    if (status.gps_ok != true) {
         std::cout << "  guidance: GPS is not ready. Normal GPS modes like GUIDED/takeoff may "
                      "reject arming or takeoff. Use emergency force-arm only for bench/no-prop "
                      "tests.\n";
@@ -204,18 +217,18 @@ int RunHealth(Client& client) {
               << "  protocol               : " << kStatus.protocol << "\n"
               << "  last_heartbeat_unix_ms : " << kStatus.last_heartbeat_unix_ms << "\n"
               << "  last_telemetry_unix_ms : " << kStatus.last_telemetry_unix_ms << "\n"
-              << "  armed                  : " << (kStatus.armed ? "true" : "false") << "\n"
-              << "  landed                 : " << (kStatus.landed ? "true" : "false") << "\n"
+              << "  armed                  : " << BoolText(kStatus.armed) << "\n"
+              << "  landed                 : " << BoolText(kStatus.landed) << "\n"
               << "  mode                   : " << (kStatus.mode.empty() ? "unknown" : kStatus.mode)
               << "\n"
               << "  custom_mode            : " << kStatus.custom_mode << "\n"
-              << "  failsafe               : " << (kStatus.failsafe ? "true" : "false") << "\n"
-              << "  gps_ok                 : " << (kStatus.gps_ok ? "true" : "false") << "\n"
+              << "  failsafe               : " << BoolText(kStatus.failsafe) << "\n"
+              << "  gps_ok                 : " << BoolText(kStatus.gps_ok) << "\n"
               << "  gps_fix                : " << kStatus.gps_fix_type << " ("
               << GpsFixText(kStatus.gps_fix_type) << ")\n"
               << "  satellites_visible     : " << kStatus.satellites_visible << "\n"
               << "  gps_hdop               : " << FloatText(kStatus.gps_hdop) << "\n"
-              << "  ekf_ok                 : " << (kStatus.ekf_ok ? "true" : "false") << "\n"
+              << "  ekf_ok                 : " << BoolText(kStatus.ekf_ok) << "\n"
               << "  relative_altitude      : " << RelativeAltitudeText(kStatus) << "\n"
               << "  autonomous_ready       : " << (kStatus.autonomous_ready ? "true" : "false")
               << "\n"

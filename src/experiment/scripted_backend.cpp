@@ -87,11 +87,14 @@ class ScriptedBackend final : public agent::IDroneBackend {
     core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,
                                 TelemetryCallback callback) override {
         std::lock_guard<std::mutex> lock(state_->mutex);
-        if (!state_->start_result.IsOk()) {
-            return state_->start_result;
-        }
         if (!callback) {
             return core::Result::Rejected("scripted telemetry callback must not be empty");
+        }
+        if (rate_hertz <= 0) {
+            return core::Result::Rejected("scripted telemetry rate must be greater than zero");
+        }
+        if (!state_->start_result.IsOk()) {
+            return state_->start_result;
         }
         if (state_->streams.contains(drone_id)) {
             return core::Result::Rejected("scripted telemetry already active");
@@ -157,17 +160,13 @@ void ScriptedBackendControl::SetTelemetryStopResult(core::Result result) {
 
 core::Result ScriptedBackendControl::EmitTelemetry(const std::string& drone_id,
                                                    const core::TelemetryFrame& frame) const {
-    agent::IDroneBackend::TelemetryCallback callback;
-    {
-        std::lock_guard<std::mutex> lock(state_->mutex);
-        const auto iter = state_->streams.find(drone_id);
-        if (iter == state_->streams.end()) {
-            return core::Result::Rejected("no scripted telemetry subscriber for drone '" +
-                                          drone_id + "'");
-        }
-        callback = iter->second.callback;
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    const auto iter = state_->streams.find(drone_id);
+    if (iter == state_->streams.end()) {
+        return core::Result::Rejected("no scripted telemetry subscriber for drone '" + drone_id +
+                                      "'");
     }
-    callback(frame);
+    iter->second.callback(frame);
     return core::Result::Success();
 }
 

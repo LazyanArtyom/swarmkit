@@ -28,22 +28,22 @@ using swarmkit::commands::CommandEnvelope;
 using swarmkit::commands::CommandPriority;
 
 struct BackendHealth {
-    bool ready{true};                           ///< Backend can accept normal commands.
-    std::string message{"ready"};               ///< Human-readable readiness summary.
-    std::string backend_name{"unknown"};        ///< Backend implementation name.
+    bool ready{false};                              ///< Backend can accept normal commands.
+    std::string message{"backend health unknown"};  ///< Human-readable readiness summary.
+    std::string backend_name{"unknown"};            ///< Backend implementation name.
     std::string protocol{"unknown"};            ///< Vehicle protocol name, for example "mavlink".
     std::int64_t last_heartbeat_unix_ms{};      ///< Last heartbeat time in Unix milliseconds.
     std::int64_t last_telemetry_unix_ms{};      ///< Last telemetry time in Unix milliseconds.
-    bool armed{false};                          ///< Vehicle is armed.
-    bool landed{false};                         ///< Vehicle reports landed or ground state.
+    std::optional<bool> armed;                  ///< Vehicle armed state, absent until observed.
+    std::optional<bool> landed;                 ///< Landed/ground state, absent until observed.
     std::string mode{};                         ///< Current autopilot/backend mode.
     int custom_mode{-1};                        ///< Backend-specific mode id; -1 when unavailable.
-    bool failsafe{false};                       ///< Vehicle reports failsafe state.
-    bool gps_ok{false};                         ///< GPS quality satisfies backend readiness checks.
+    std::optional<bool> failsafe;               ///< Failsafe state, absent until observed.
+    std::optional<bool> gps_ok;                 ///< GPS health, absent until observed.
     int gps_fix_type{};                         ///< Backend-specific GPS fix type.
     int satellites_visible{};                   ///< Visible/tracked satellite count.
     float gps_hdop{};                           ///< Horizontal dilution of precision.
-    bool ekf_ok{true};                          ///< Estimator/EKF state satisfies readiness checks.
+    std::optional<bool> ekf_ok;                 ///< Estimator health, absent until observed.
     bool has_relative_altitude{false};          ///< relative_alt_m contains a valid measurement.
     float relative_alt_m{};                     ///< Relative altitude in metres.
     std::optional<float> link_quality_percent;  ///< Optional link quality percentage.
@@ -78,7 +78,8 @@ struct BackendFactoryRequest {
 /// Execute() and StartTelemetry()/StopTelemetry() may be called from any
 /// thread.  The TelemetryCallback supplied to StartTelemetry() is invoked
 /// from the backend's own internal thread.  The callback must be thread-safe,
-/// return quickly, and must not call back into the backend.
+/// return quickly, and must not call back into the backend. The Agent-supplied
+/// callback does not throw.
 /// ---------------------------------------------------------------------------
 class IDroneBackend {
    public:
@@ -88,6 +89,7 @@ class IDroneBackend {
     virtual ~IDroneBackend() = default;
 
     /// @brief Start backend resources that should be active before the first RPC.
+    /// @note Idempotent; repeated calls must not duplicate worker resources.
     [[nodiscard]] virtual swarmkit::core::Result Start() {
         return swarmkit::core::Result::Success();
     }
@@ -103,12 +105,16 @@ class IDroneBackend {
     /// @p callback is invoked from the backend's internal thread for every
     /// frame produced.  Calling StartTelemetry() when a stream is already
     /// running returns Rejected without disturbing the existing stream.
+    /// @param rate_hertz Must be greater than zero.
+    /// @param callback Must not be empty.
     [[nodiscard]] virtual swarmkit::core::Result StartTelemetry(const std::string& drone_id,
                                                                 int rate_hertz,
                                                                 TelemetryCallback callback) = 0;
 
     /// @brief Stop the active telemetry stream for @p drone_id.
     /// @note Safe to call when no stream is running (returns Ok silently).
+    /// @post No callback for this stream is running or can begin after this
+    ///       function returns. Implementations must wait for in-flight callbacks.
     [[nodiscard]] virtual swarmkit::core::Result StopTelemetry(const std::string& drone_id) = 0;
 
     /// @brief Report backend-specific readiness/liveness state for health checks.

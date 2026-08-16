@@ -80,6 +80,14 @@
       }
     },
     {
+      "name": "mac-ubsan",
+      "inherits": "mac-debug",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "SWARMKIT_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
       "name": "linux-sdk-release",
       "inherits": "linux-release",
       "cacheVariables": {
@@ -127,6 +135,11 @@
     {
       "name": "mac-release",
       "configurePreset": "mac-release",
+      "jobs": 0
+    },
+    {
+      "name": "mac-ubsan",
+      "configurePreset": "mac-ubsan",
       "jobs": 0
     },
     {
@@ -179,6 +192,13 @@
     {
       "name": "mac-release",
       "configurePreset": "mac-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "mac-ubsan",
+      "configurePreset": "mac-ubsan",
       "output": {
         "outputOnFailure": true
       }

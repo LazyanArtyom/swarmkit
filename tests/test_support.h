@@ -117,6 +117,12 @@ class RecordingBackend final : public agent::IDroneBackend {
     [[nodiscard]] core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,
                                               TelemetryCallback callback) override {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (!callback) {
+            return core::Result::Rejected("telemetry callback must not be empty");
+        }
+        if (rate_hertz <= 0) {
+            return core::Result::Rejected("telemetry rate must be greater than zero");
+        }
         if (telemetry_streams_.contains(drone_id)) {
             return core::Result::Rejected("telemetry already active");
         }
@@ -151,16 +157,12 @@ class RecordingBackend final : public agent::IDroneBackend {
     }
 
     void EmitTelemetry(const std::string& drone_id, const core::TelemetryFrame& frame) {
-        TelemetryCallback callback;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            auto iter = telemetry_streams_.find(drone_id);
-            if (iter == telemetry_streams_.end()) {
-                return;
-            }
-            callback = iter->second.callback;
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto iter = telemetry_streams_.find(drone_id);
+        if (iter == telemetry_streams_.end()) {
+            return;
         }
-        callback(frame);
+        iter->second.callback(frame);
     }
 
     [[nodiscard]] std::size_t ExecuteCallCount() const {

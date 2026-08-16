@@ -175,8 +175,9 @@ int RunSwarmHealth(const SwarmRuntime& runtime) {
         const bool telemetry_stale =
             status.ok && IsStaleTimestamp(status.last_telemetry_unix_ms, now_ms);
         const std::string reason = SwarmHealthReason(status, heartbeat_stale, telemetry_stale);
-        const bool healthy = status.ok && status.ready && !status.failsafe && status.gps_ok &&
-                             status.ekf_ok && !heartbeat_stale && !telemetry_stale;
+        const bool healthy = status.ok && status.ready && status.failsafe == false &&
+                             status.gps_ok == true && status.ekf_ok == true && !heartbeat_stale &&
+                             !telemetry_stale;
         all_ok = all_ok && healthy;
         std::cout << drone_id << ": " << (status.ok ? "OK" : "FAILED");
         if (status.ok) {

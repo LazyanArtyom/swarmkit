@@ -1,5 +1,8 @@
 # SwarmKit TCRR Readiness and Empirical Evaluation Task List
 
+> Historical Gate 1 evidence milestone. It does not supersede the current
+> [Phase 0 production-readiness checklist](source/production_readiness.md).
+
 Status: Gate 1 accepted on 2026-08-12. Phases 0–3 are implemented and the canonical Debug,
 Release, UBSan, package-consumer, deterministic replay/fault, and simulator tests pass. No
 rotor-router, TCRR certificate, or commit logic has been added to SwarmKit.

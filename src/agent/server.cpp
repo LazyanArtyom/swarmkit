@@ -216,6 +216,14 @@ void AddReadinessCheck(swarmkit::v1::HealthReply* reply, std::string_view name, 
     check->set_severity(check_ok ? swarmkit::v1::READINESS_INFO : severity);
 }
 
+[[nodiscard]] const char* OptionalStateText(const std::optional<bool>& value, const char* true_text,
+                                            const char* false_text) {
+    if (!value.has_value()) {
+        return "unknown";
+    }
+    return *value ? true_text : false_text;
+}
+
 void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::HealthReply* reply) {
     if (reply == nullptr) {
         return;
@@ -223,9 +231,13 @@ void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::He
 
     const bool heartbeat_ok = HasFreshTimestamp(health.last_heartbeat_unix_ms);
     const bool telemetry_ok = HasFreshTimestamp(health.last_telemetry_unix_ms);
-    const bool not_failsafe = !health.failsafe;
-    const bool checks_ok =
-        ready && heartbeat_ok && telemetry_ok && health.gps_ok && health.ekf_ok && not_failsafe;
+    const bool gps_ok = health.gps_ok == true;
+    const bool ekf_ok = health.ekf_ok == true;
+    const bool not_failsafe = health.failsafe == false;
+    const bool disarmed = health.armed == false;
+    const bool landed = health.landed == true;
+    const bool checks_ok = ready && heartbeat_ok && telemetry_ok && gps_ok && ekf_ok &&
+                           not_failsafe && disarmed && landed;
     reply->set_autonomous_ready(checks_ok);
 
     AddReadinessCheck(reply, "backend", ready,
@@ -237,22 +249,31 @@ void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::He
     AddReadinessCheck(reply, "telemetry", telemetry_ok,
                       telemetry_ok ? "telemetry observed" : "no vehicle telemetry observed",
                       swarmkit::v1::READINESS_ERROR);
-    AddReadinessCheck(reply, "gps", health.gps_ok,
-                      "fix_type=" + std::to_string(health.gps_fix_type) +
-                          " sats=" + std::to_string(health.satellites_visible) +
-                          " hdop=" + std::to_string(health.gps_hdop),
+    AddReadinessCheck(reply, "gps", gps_ok,
+                      health.gps_ok.has_value()
+                          ? "fix_type=" + std::to_string(health.gps_fix_type) +
+                                " sats=" + std::to_string(health.satellites_visible) +
+                                " hdop=" + std::to_string(health.gps_hdop)
+                          : "GPS health unknown",
                       swarmkit::v1::READINESS_ERROR);
-    AddReadinessCheck(reply, "ekf", health.ekf_ok, health.ekf_ok ? "healthy" : "unhealthy",
+    AddReadinessCheck(reply, "ekf", ekf_ok,
+                      OptionalStateText(health.ekf_ok, "healthy", "unhealthy"),
                       swarmkit::v1::READINESS_ERROR);
     AddReadinessCheck(reply, "failsafe", not_failsafe,
-                      health.failsafe ? "failsafe active" : "inactive",
+                      OptionalStateText(health.failsafe, "failsafe active", "inactive"),
                       swarmkit::v1::READINESS_ERROR);
-    AddReadinessCheck(reply, "armed", !health.armed,
-                      health.armed ? "vehicle already armed" : "vehicle disarmed",
-                      swarmkit::v1::READINESS_WARNING);
-    AddReadinessCheck(reply, "landed", health.landed,
-                      std::string{"landed="} + (health.landed ? "true" : "false"),
-                      swarmkit::v1::READINESS_WARNING);
+    AddReadinessCheck(
+        reply, "armed", disarmed,
+        health.armed.has_value()
+            ? OptionalStateText(health.armed, "vehicle already armed", "vehicle disarmed")
+            : "armed state unknown",
+        swarmkit::v1::READINESS_WARNING);
+    AddReadinessCheck(
+        reply, "landed", landed,
+        health.landed.has_value()
+            ? std::string{"landed="} + OptionalStateText(health.landed, "true", "false")
+            : "landed state unknown",
+        swarmkit::v1::READINESS_WARNING);
 
     if (!ready) {
         reply->add_arming_blockers("backend_not_ready");
@@ -263,20 +284,21 @@ void PopulateReadiness(const BackendHealth& health, bool ready, swarmkit::v1::He
     if (!telemetry_ok) {
         reply->add_arming_blockers("telemetry_missing");
     }
-    if (!health.gps_ok) {
-        reply->add_arming_blockers("gps_unhealthy");
+    if (!gps_ok) {
+        reply->add_arming_blockers(health.gps_ok.has_value() ? "gps_unhealthy" : "gps_unknown");
     }
-    if (!health.ekf_ok) {
-        reply->add_arming_blockers("ekf_unhealthy");
+    if (!ekf_ok) {
+        reply->add_arming_blockers(health.ekf_ok.has_value() ? "ekf_unhealthy" : "ekf_unknown");
     }
-    if (health.failsafe) {
-        reply->add_arming_blockers("failsafe_active");
+    if (!not_failsafe) {
+        reply->add_arming_blockers(health.failsafe.has_value() ? "failsafe_active"
+                                                               : "failsafe_unknown");
     }
-    if (health.armed) {
-        reply->add_arming_blockers("already_armed");
+    if (!disarmed) {
+        reply->add_arming_blockers(health.armed.has_value() ? "already_armed" : "armed_unknown");
     }
-    if (!health.landed) {
-        reply->add_arming_blockers("not_landed");
+    if (!landed) {
+        reply->add_arming_blockers(health.landed.has_value() ? "not_landed" : "landed_unknown");
     }
 }
 
@@ -1341,16 +1363,26 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_protocol(backend_health.protocol);
         reply->set_last_heartbeat_unix_ms(backend_health.last_heartbeat_unix_ms);
         reply->set_last_telemetry_unix_ms(backend_health.last_telemetry_unix_ms);
-        reply->set_armed(backend_health.armed);
-        reply->set_landed(backend_health.landed);
+        if (backend_health.armed.has_value()) {
+            reply->set_armed(*backend_health.armed);
+        }
+        if (backend_health.landed.has_value()) {
+            reply->set_landed(*backend_health.landed);
+        }
         reply->set_mode(backend_health.mode);
         reply->set_custom_mode(backend_health.custom_mode);
-        reply->set_failsafe(backend_health.failsafe);
-        reply->set_gps_ok(backend_health.gps_ok);
+        if (backend_health.failsafe.has_value()) {
+            reply->set_failsafe(*backend_health.failsafe);
+        }
+        if (backend_health.gps_ok.has_value()) {
+            reply->set_gps_ok(*backend_health.gps_ok);
+        }
         reply->set_gps_fix_type(backend_health.gps_fix_type);
         reply->set_satellites_visible(backend_health.satellites_visible);
         reply->set_gps_hdop(backend_health.gps_hdop);
-        reply->set_ekf_ok(backend_health.ekf_ok);
+        if (backend_health.ekf_ok.has_value()) {
+            reply->set_ekf_ok(*backend_health.ekf_ok);
+        }
         reply->set_has_relative_altitude(backend_health.has_relative_altitude);
         reply->set_relative_alt_m(backend_health.relative_alt_m);
         PopulateReadiness(backend_health, kIsReady, reply);
@@ -1647,15 +1679,15 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         }
         PopulateBackendOutcome(exec_outcome, reply->mutable_backend_outcome());
         recorder_.RecordCommandCompleted(recorded_request, reply->backend_outcome());
-        const core::Result& kExecResult = exec_outcome.result;
+        const core::Result& exec_result = exec_outcome.result;
         reply->set_correlation_id(envelope.context.correlation_id);
-        reply->set_error_code(ToProtoErrorCode(kExecResult.error.code));
-        if (kExecResult.IsOk()) {
+        reply->set_error_code(ToProtoErrorCode(exec_result.error.code));
+        if (exec_result.IsOk()) {
             reply->set_status(swarmkit::v1::CommandReply::OK);
-            reply->set_message(kExecResult.message);
+            reply->set_message(exec_result.message);
             PublishCommandReport(
                 envelope.context, kCmdName, swarmkit::v1::COMMAND_ACKED, swarmkit::v1::REPORT_INFO,
-                kExecResult.message.empty() ? "command executed" : kExecResult.message);
+                exec_result.message.empty() ? "command executed" : exec_result.message);
         } else {
             counters_->IncrementCommandFailed();
             counters_->IncrementBackendFailures();
@@ -1663,16 +1695,16 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                 "rpc=SendCommand corr={} agent={} drone={} client={} result=backend_failure "
                 "detail={}",
                 envelope.context.correlation_id, config_.agent_id, envelope.context.drone_id,
-                envelope.context.client_id, kExecResult.message);
+                envelope.context.client_id, exec_result.message);
             reply->set_status(swarmkit::v1::CommandReply::FAILED);
-            reply->set_message(kExecResult.message.empty() ? "command execution failed"
-                                                           : kExecResult.message);
+            reply->set_message(exec_result.message.empty() ? "command execution failed"
+                                                           : exec_result.message);
             reply->set_error_code(swarmkit::v1::ERROR_CODE_BACKEND_FAILURE);
-            reply->set_debug_message(kExecResult.message);
+            reply->set_debug_message(exec_result.message);
             PublishCommandReport(
                 envelope.context, kCmdName, swarmkit::v1::COMMAND_FAILED,
                 swarmkit::v1::REPORT_ERROR,
-                kExecResult.message.empty() ? "command execution failed" : kExecResult.message);
+                exec_result.message.empty() ? "command execution failed" : exec_result.message);
         }
         if (kGrant.granted_for_call) {
             arbiter_.Release(envelope.context.drone_id, envelope.context.client_id,
@@ -2391,7 +2423,7 @@ int RunAgentServer(const AgentConfig& config, DroneBackendPtr backend) {
     g_shutdown_signal = 0;
     const auto previous_interrupt = std::signal(SIGINT, HandleShutdownSignal);
     const auto previous_terminate = std::signal(SIGTERM, HandleShutdownSignal);
-    std::jthread shutdown_watcher([&server](std::stop_token stop) {
+    std::jthread shutdown_watcher([&server](const std::stop_token& stop) {
         while (!stop.stop_requested() && g_shutdown_signal == 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds{50});
         }

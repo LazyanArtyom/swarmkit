@@ -241,6 +241,13 @@ template <typename T, typename Parser>
     return value ? "yes" : "no";
 }
 
+[[nodiscard]] const char* BoolName(const std::optional<bool>& value) {
+    if (!value.has_value()) {
+        return "unknown";
+    }
+    return BoolName(*value);
+}
+
 [[nodiscard]] bool HasToken(const std::vector<std::string>& tokens, std::string_view token) {
     return std::ranges::find(tokens, token) != tokens.end();
 }

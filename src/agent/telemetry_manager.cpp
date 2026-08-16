@@ -7,6 +7,7 @@
 #include "telemetry_manager.h"
 
 #include <algorithm>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -100,11 +101,34 @@ void TelemetryManager::PublishFrame(const std::shared_ptr<TelemetryState>& state
         while (state->retained_frames.size() > retention_frames_) {
             state->retained_frames.pop_front();
         }
-        if (normalized_frame_observer_) {
-            normalized_frame_observer_(normalized);
-        }
     }
     state->data_cv.notify_all();
+    if (normalized_frame_observer_) {
+        normalized_frame_observer_(normalized);
+    }
+}
+
+void TelemetryManager::PublishFrameNoexcept(const std::shared_ptr<TelemetryState>& state,
+                                            const std::string& drone_id,
+                                            const core::TelemetryFrame& frame) noexcept {
+    try {
+        PublishFrame(state, drone_id, frame);
+    } catch (const std::exception& exception) {
+        backend_failure_count_.fetch_add(1, std::memory_order_relaxed);
+        try {
+            core::Logger::ErrorFmt("TelemetryManager: discarded frame for drone '{}': {}", drone_id,
+                                   exception.what());
+        } catch (...) {
+            static_cast<void>(0);
+        }
+    } catch (...) {
+        backend_failure_count_.fetch_add(1, std::memory_order_relaxed);
+        try {
+            core::Logger::ErrorFmt("TelemetryManager: discarded frame for drone '{}'", drone_id);
+        } catch (...) {
+            static_cast<void>(0);
+        }
+    }
 }
 
 int TelemetryManager::NormalizeRate(int requested_rate_hz) const {
@@ -135,11 +159,13 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
     }
 
     if (!state->backend_running) {
-        const core::Result kStartResult =
-            backend_->StartTelemetry(drone_id, desired_backend_rate,
-                                     [this, state, drone_id](const core::TelemetryFrame& frame) {
-                                         PublishFrame(state, drone_id, frame);
-                                     });
+        const core::Result kStartResult = backend_->StartTelemetry(
+            drone_id, desired_backend_rate,
+            // PublishFrameNoexcept is the backend callback exception boundary.
+            // NOLINTNEXTLINE(bugprone-exception-escape)
+            [this, state, drone_id](const core::TelemetryFrame& frame) noexcept {
+                PublishFrameNoexcept(state, drone_id, frame);
+            });
 
         if (!kStartResult.IsOk()) {
             backend_failure_count_.fetch_add(1, std::memory_order_relaxed);
@@ -164,11 +190,13 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
                                         kStopResult.message);
         }
 
-        const core::Result kStartResult =
-            backend_->StartTelemetry(drone_id, desired_backend_rate,
-                                     [this, state, drone_id](const core::TelemetryFrame& frame) {
-                                         PublishFrame(state, drone_id, frame);
-                                     });
+        const core::Result kStartResult = backend_->StartTelemetry(
+            drone_id, desired_backend_rate,
+            // PublishFrameNoexcept is the backend callback exception boundary.
+            // NOLINTNEXTLINE(bugprone-exception-escape)
+            [this, state, drone_id](const core::TelemetryFrame& frame) noexcept {
+                PublishFrameNoexcept(state, drone_id, frame);
+            });
 
         if (!kStartResult.IsOk()) {
             backend_failure_count_.fetch_add(1, std::memory_order_relaxed);
@@ -179,8 +207,10 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
             // Attempt to restore the previous rate.
             const core::Result kRestoreResult = backend_->StartTelemetry(
                 drone_id, kPreviousRate,
-                [this, state, drone_id](const core::TelemetryFrame& frame) {
-                    PublishFrame(state, drone_id, frame);
+                // PublishFrameNoexcept is the backend callback exception boundary.
+                // NOLINTNEXTLINE(bugprone-exception-escape)
+                [this, state, drone_id](const core::TelemetryFrame& frame) noexcept {
+                    PublishFrameNoexcept(state, drone_id, frame);
                 });
 
             if (kRestoreResult.IsOk()) {
@@ -217,10 +247,12 @@ core::Result TelemetryManager::AcquireLease(const std::string& drone_id, int req
                                   cursor.expected_agent_session_id != agent_session_id_;
         replay.cursor_ahead =
             !replay.session_mismatch && cursor.after_sequence > replay.latest_available_sequence;
-        const std::uint64_t effective_after =
-            replay.session_mismatch
-                ? 0
-                : (replay.cursor_ahead ? replay.latest_available_sequence : cursor.after_sequence);
+        std::uint64_t effective_after = cursor.after_sequence;
+        if (replay.session_mismatch) {
+            effective_after = 0;
+        } else if (replay.cursor_ahead) {
+            effective_after = replay.latest_available_sequence;
+        }
         replay.history_evicted = !replay.session_mismatch && cursor.after_sequence > 0 &&
                                  replay.oldest_available_sequence > 1 &&
                                  cursor.after_sequence < replay.oldest_available_sequence - 1;

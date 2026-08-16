@@ -544,6 +544,13 @@ inline void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* conditi
     return value ? "true" : "false";
 }
 
+[[nodiscard]] inline const char* BoolText(const std::optional<bool>& value) {
+    if (!value.has_value()) {
+        return "unknown";
+    }
+    return BoolText(*value);
+}
+
 [[nodiscard]] inline std::string GpsFixText(int fix_type) {
     switch (fix_type) {
         case 0:
@@ -609,14 +616,17 @@ inline void ApplyCommonWaitFields(const YAML::Node& node, WaitCondition* conditi
     if (!status.ready) {
         return status.message.empty() ? "agent not ready" : status.message;
     }
-    if (status.failsafe) {
+    if (status.failsafe == true) {
         return "failsafe active";
     }
-    if (!status.ekf_ok) {
-        return "EKF unhealthy";
+    if (status.failsafe == std::nullopt) {
+        return "failsafe state unknown";
     }
-    if (!status.gps_ok) {
-        return "GPS unhealthy";
+    if (status.ekf_ok != true) {
+        return status.ekf_ok.has_value() ? "EKF unhealthy" : "EKF health unknown";
+    }
+    if (status.gps_ok != true) {
+        return status.gps_ok.has_value() ? "GPS unhealthy" : "GPS health unknown";
     }
     if (heartbeat_stale) {
         return "heartbeat stale";

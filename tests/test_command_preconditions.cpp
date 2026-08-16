@@ -67,6 +67,27 @@ TEST_CASE("Autonomous commands require flight readiness by default",
     CHECK(waypoint.result.message.find("healthy GPS") != std::string::npos);
 }
 
+TEST_CASE("Unknown backend health is never accepted as healthy state evidence",
+          "[agent][commands][preconditions][safety]") {
+    const BackendHealth default_health;
+    CHECK_FALSE(default_health.ready);
+    CHECK_FALSE(default_health.armed.has_value());
+    CHECK_FALSE(default_health.landed.has_value());
+    CHECK_FALSE(default_health.failsafe.has_value());
+    CHECK_FALSE(default_health.gps_ok.has_value());
+    CHECK_FALSE(default_health.ekf_ok.has_value());
+
+    BackendHealth observed = HealthWithVehicleState();
+    const core::Result readiness = ValidateAutonomousReadiness(observed, "takeoff", false);
+    CHECK_FALSE(readiness.IsOk());
+    CHECK(readiness.message.find("armed state is unknown") != std::string::npos);
+
+    const CommandPreconditionDecision disarm =
+        EvaluateCommandPreconditions(DisarmEnvelope(), observed);
+    CHECK(disarm.action == CommandPreconditionAction::kReject);
+    CHECK(disarm.result.message.find("armed state is unknown") != std::string::npos);
+}
+
 TEST_CASE("Bench override explicitly permits autonomous readiness bypass",
           "[agent][commands][preconditions][safety]") {
     BackendHealth health = HealthWithVehicleState();

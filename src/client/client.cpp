@@ -2304,16 +2304,26 @@ HealthStatus Client::GetHealth() const {
     out.protocol = rep.protocol();
     out.last_heartbeat_unix_ms = rep.last_heartbeat_unix_ms();
     out.last_telemetry_unix_ms = rep.last_telemetry_unix_ms();
-    out.armed = rep.armed();
-    out.landed = rep.landed();
+    if (rep.has_armed()) {
+        out.armed = rep.armed();
+    }
+    if (rep.has_landed()) {
+        out.landed = rep.landed();
+    }
     out.mode = rep.mode();
     out.custom_mode = rep.custom_mode();
-    out.failsafe = rep.failsafe();
-    out.gps_ok = rep.gps_ok();
+    if (rep.has_failsafe()) {
+        out.failsafe = rep.failsafe();
+    }
+    if (rep.has_gps_ok()) {
+        out.gps_ok = rep.gps_ok();
+    }
     out.gps_fix_type = rep.gps_fix_type();
     out.satellites_visible = rep.satellites_visible();
     out.gps_hdop = rep.gps_hdop();
-    out.ekf_ok = rep.ekf_ok();
+    if (rep.has_ekf_ok()) {
+        out.ekf_ok = rep.ekf_ok();
+    }
     out.has_relative_altitude = rep.has_relative_altitude();
     out.relative_alt_m = rep.relative_alt_m();
     out.autonomous_ready = rep.autonomous_ready();
@@ -2519,7 +2529,7 @@ struct VerificationSpec {
                                 .source = VerificationSource::kHealth,
                                 .label = "arm",
                                 .health_predicate =
-                                    [](const HealthStatus& health) { return health.armed; },
+                                    [](const HealthStatus& health) { return health.armed == true; },
                             };
                         },
                         [](const CmdForceArm&) {
@@ -2527,7 +2537,7 @@ struct VerificationSpec {
                                 .source = VerificationSource::kHealth,
                                 .label = "force-arm",
                                 .health_predicate =
-                                    [](const HealthStatus& health) { return health.armed; },
+                                    [](const HealthStatus& health) { return health.armed == true; },
                             };
                         },
                         [](const CmdDisarm&) {
@@ -2535,7 +2545,9 @@ struct VerificationSpec {
                                 .source = VerificationSource::kHealth,
                                 .label = "disarm",
                                 .health_predicate =
-                                    [](const HealthStatus& health) { return !health.armed; },
+                                    [](const HealthStatus& health) {
+                                        return health.armed == false;
+                                    },
                             };
                         },
                         [](const CmdForceDisarm&) {
@@ -2543,7 +2555,9 @@ struct VerificationSpec {
                                 .source = VerificationSource::kHealth,
                                 .label = "force-disarm",
                                 .health_predicate =
-                                    [](const HealthStatus& health) { return !health.armed; },
+                                    [](const HealthStatus& health) {
+                                        return health.armed == false;
+                                    },
                             };
                         },
                         [&](const CmdTakeoff& takeoff) {
@@ -2566,7 +2580,7 @@ struct VerificationSpec {
                                 .label = "land",
                                 .health_predicate =
                                     [](const HealthStatus& health) {
-                                        return health.landed || !health.armed;
+                                        return health.landed == true || health.armed == false;
                                     },
                             };
                         },

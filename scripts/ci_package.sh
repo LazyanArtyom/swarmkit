@@ -222,6 +222,23 @@ package_component() {
     echo "Created: ${out}"
 }
 
+write_checksum() {
+    local archive="$1"
+    local archive_dir
+    local archive_name
+    archive_dir="$(dirname "${archive}")"
+    archive_name="$(basename "${archive}")"
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        (cd "${archive_dir}" && sha256sum "${archive_name}" > "${archive_name}.sha256")
+    elif command -v shasum >/dev/null 2>&1; then
+        (cd "${archive_dir}" && shasum -a 256 "${archive_name}" > "${archive_name}.sha256")
+    else
+        echo "ERROR: sha256sum or shasum is required to checksum release archives" >&2
+        exit 2
+    fi
+}
+
 conan_install True
 cmake --preset "${preset}"
 cmake --build --preset "${preset}"
@@ -229,7 +246,9 @@ ctest --preset "${preset}" --output-on-failure
 
 package_component sdk
 package_component tools
+write_checksum "${dist_dir}/swarmkit-${version}-sdk-${platform_tag}.tar.gz"
+write_checksum "${dist_dir}/swarmkit-${version}-tools-${platform_tag}.tar.gz"
 
 echo ""
 echo "Artifacts in ${dist_dir}:"
-find "${dist_dir}" -maxdepth 1 -name "*${platform_tag}*.tar.gz" -type f -print | sort
+find "${dist_dir}" -maxdepth 1 -name "*${platform_tag}*.tar.gz*" -type f -print | sort

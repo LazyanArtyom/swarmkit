@@ -567,7 +567,7 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             config.execution_recorder.scenario_id = scenario_id->value_or("");
         }
         if (random_seed->has_value()) {
-            config.execution_recorder.random_seed = random_seed->value();
+            config.execution_recorder.random_seed = *random_seed;
         }
         if (calibration_profile_id->has_value()) {
             config.execution_recorder.calibration_profile_id = calibration_profile_id->value_or("");

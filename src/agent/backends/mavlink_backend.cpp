@@ -119,11 +119,13 @@ class MavlinkBackend final : public IDroneBackend {
         core::BackendCommandOutcome outcome;
         const auto finalize = [&outcome](core::Result result) {
             outcome.result = std::move(result);
-            outcome.dispatch_state = outcome.result.IsOk()
-                                         ? core::BackendDispatchState::kAccepted
-                                         : (outcome.result.code == core::StatusCode::kRejected
-                                                ? core::BackendDispatchState::kRejected
-                                                : core::BackendDispatchState::kFailed);
+            if (outcome.result.IsOk()) {
+                outcome.dispatch_state = core::BackendDispatchState::kAccepted;
+            } else if (outcome.result.code == core::StatusCode::kRejected) {
+                outcome.dispatch_state = core::BackendDispatchState::kRejected;
+            } else {
+                outcome.dispatch_state = core::BackendDispatchState::kFailed;
+            }
         };
         if (const core::Result result = EnsureReceiverStarted(); !result.IsOk()) {
             finalize(result);
@@ -163,12 +165,15 @@ class MavlinkBackend final : public IDroneBackend {
         if (callback == nullptr) {
             return core::Result::Rejected("telemetry callback must not be empty");
         }
+        if (rate_hertz <= 0) {
+            return core::Result::Rejected("telemetry rate must be greater than zero");
+        }
         if (drone_id != config_.drone_id && drone_id != "default") {
             return core::Result::Rejected("MAVLink backend is configured for drone '" +
                                           config_.drone_id + "', not '" + drone_id + "'");
         }
 
-        const int normalized_rate_hz = std::max(1, rate_hertz);
+        const int normalized_rate_hz = rate_hertz;
         {
             std::lock_guard<std::mutex> lock(callback_mutex_);
             if (telemetry_active_) {
@@ -327,17 +332,6 @@ class MavlinkBackend final : public IDroneBackend {
     }
 
     void PublishTelemetry(const core::TelemetryProvenance& provenance) {
-        TelemetryCallback callback;
-        std::string drone_id;
-        {
-            std::lock_guard<std::mutex> lock(callback_mutex_);
-            if (!telemetry_active_ || !telemetry_callback_) {
-                return;
-            }
-            callback = telemetry_callback_;
-            drone_id = active_drone_id_.empty() ? config_.drone_id : active_drone_id_;
-        }
-
         mav::TelemetryCache cache;
         {
             std::lock_guard<std::mutex> lock(telemetry_mutex_);
@@ -345,7 +339,6 @@ class MavlinkBackend final : public IDroneBackend {
         }
 
         core::TelemetryFrame frame;
-        frame.drone_id = drone_id;
         frame.lat_deg = cache.lat_deg;
         frame.lon_deg = cache.lon_deg;
         frame.rel_alt_m = cache.rel_alt_m;
@@ -377,7 +370,12 @@ class MavlinkBackend final : public IDroneBackend {
         frame.estimator_attitude_ok = cache.estimator_attitude_ok;
         frame.mode = cache.mode;
         frame.provenance = provenance;
-        callback(frame);
+        std::lock_guard<std::mutex> callback_lock(callback_mutex_);
+        if (!telemetry_active_ || !telemetry_callback_) {
+            return;
+        }
+        frame.drone_id = active_drone_id_.empty() ? config_.drone_id : active_drone_id_;
+        telemetry_callback_(frame);
     }
 
     void RequestTelemetryIntervals() {

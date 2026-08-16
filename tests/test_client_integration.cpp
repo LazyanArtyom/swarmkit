@@ -67,6 +67,7 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     healthy.last_telemetry_unix_ms = 1;
     healthy.armed = false;
     healthy.landed = true;
+    healthy.failsafe = false;
     healthy.gps_ok = true;
     healthy.ekf_ok = true;
     harness.Backend().SetHealth(healthy);
@@ -83,6 +84,11 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK(kHealth.ready);
     CHECK(kHealth.agent_id == "test-agent");
     CHECK_FALSE(kHealth.link_quality_percent.has_value());
+    CHECK(kHealth.armed == false);
+    CHECK(kHealth.landed == true);
+    CHECK(kHealth.failsafe == false);
+    CHECK(kHealth.gps_ok == true);
+    CHECK(kHealth.ekf_ok == true);
     CHECK(kHealth.autonomous_ready);
     CHECK(kHealth.arming_blockers.empty());
     CHECK_FALSE(kHealth.readiness_checks.empty());
@@ -122,6 +128,32 @@ TEST_CASE("Client integrates with agent service for ping health stats and comman
     CHECK(capabilities.backend.evidence.active_goal_lineage == core::CapabilitySupport::kSupported);
     CHECK(capabilities.backend.evidence.telemetry_sequence == core::CapabilitySupport::kSupported);
     CHECK(capabilities.backend.evidence.telemetry_replay == core::CapabilitySupport::kSupported);
+}
+
+TEST_CASE("Client health preserves unknown vehicle states across the RPC boundary",
+          "[client][integration][health][safety]") {
+    testsupport::AgentServerHarness harness;
+    swarmkit::agent::BackendHealth unknown;
+    unknown.ready = true;
+    unknown.message = "transport ready; vehicle state unknown";
+    unknown.last_heartbeat_unix_ms = 1;
+    unknown.last_telemetry_unix_ms = 1;
+    harness.Backend().SetHealth(unknown);
+    Client client = MakeClient(harness.Address());
+
+    const HealthStatus health = client.GetHealth();
+    REQUIRE(health.ok);
+    CHECK_FALSE(health.autonomous_ready);
+    CHECK_FALSE(health.armed.has_value());
+    CHECK_FALSE(health.landed.has_value());
+    CHECK_FALSE(health.failsafe.has_value());
+    CHECK_FALSE(health.gps_ok.has_value());
+    CHECK_FALSE(health.ekf_ok.has_value());
+    CHECK(std::ranges::contains(health.arming_blockers, "armed_unknown"));
+    CHECK(std::ranges::contains(health.arming_blockers, "landed_unknown"));
+    CHECK(std::ranges::contains(health.arming_blockers, "failsafe_unknown"));
+    CHECK(std::ranges::contains(health.arming_blockers, "gps_unknown"));
+    CHECK(std::ranges::contains(health.arming_blockers, "ekf_unknown"));
 }
 
 TEST_CASE("Client command reports are replayable and delivered live",

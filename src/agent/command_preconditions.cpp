@@ -53,7 +53,7 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
     const commands::CmdArm& /*unused*/, const BackendHealth& health,
     bool /*allow_unsafe_bench_commands*/) {
-    if (health.armed) {
+    if (health.armed == true) {
         return AlreadySatisfied("arm already satisfied: vehicle is already armed");
     }
     return Execute();
@@ -62,10 +62,15 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
     const commands::CmdDisarm& /*unused*/, const BackendHealth& health,
     bool /*allow_unsafe_bench_commands*/) {
-    if (!health.armed) {
+    if (health.armed == false) {
         return AlreadySatisfied("disarm already satisfied: vehicle is already disarmed");
     }
-    if (!health.landed && !RelativeAltitudeConfirmsLanded(health)) {
+    if (!health.armed.has_value()) {
+        return Reject(
+            "normal disarm refused because armed state is unknown; use emergency "
+            "force-disarm only when operationally justified");
+    }
+    if (health.landed != true && !RelativeAltitudeConfirmsLanded(health)) {
         std::string detail =
             "normal disarm refused while vehicle appears airborne; use emergency force-disarm";
         if (health.has_relative_altitude) {
@@ -81,7 +86,7 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(const commands::CmdTakeoff& takeoff,
                                                                 const BackendHealth& health,
                                                                 bool allow_unsafe_bench_commands) {
-    if (!health.armed) {
+    if (health.armed != true) {
         return RequireAutonomousReadiness(health, "takeoff", allow_unsafe_bench_commands);
     }
     if (health.has_relative_altitude &&
@@ -89,7 +94,8 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
         return AlreadySatisfied(
             "takeoff already satisfied: vehicle is at or above target altitude");
     }
-    if (!health.landed && health.has_relative_altitude && !RelativeAltitudeConfirmsLanded(health)) {
+    if (health.landed == false && health.has_relative_altitude &&
+        !RelativeAltitudeConfirmsLanded(health)) {
         return AlreadySatisfied("takeoff already satisfied: vehicle is already airborne");
     }
     return RequireAutonomousReadiness(health, "takeoff", allow_unsafe_bench_commands);
@@ -98,7 +104,7 @@ constexpr float kLandedRelativeAltitudeToleranceM = 0.75F;
 [[nodiscard]] CommandPreconditionDecision EvaluateFlightCommand(
     const commands::CmdLand& /*unused*/, const BackendHealth& health,
     bool /*allow_unsafe_bench_commands*/) {
-    if (!health.armed && RelativeAltitudeConfirmsLanded(health)) {
+    if (health.armed == false && RelativeAltitudeConfirmsLanded(health)) {
         return AlreadySatisfied(
             "land already satisfied: vehicle is disarmed and relative altitude is near ground");
     }
@@ -205,14 +211,20 @@ core::Result ValidateAutonomousReadiness(const BackendHealth& health, std::strin
     if (health.last_heartbeat_unix_ms == 0 || health.last_telemetry_unix_ms == 0) {
         return core::Result::Rejected(prefix + "fresh vehicle telemetry is required");
     }
-    if (requirements.require_armed && !health.armed) {
-        return core::Result::Rejected(prefix + "vehicle must be armed");
+    if (requirements.require_armed && health.armed != true) {
+        return core::Result::Rejected(prefix + (health.armed.has_value()
+                                                    ? "vehicle must be armed"
+                                                    : "vehicle armed state is unknown"));
     }
-    if (requirements.require_gps && !health.gps_ok) {
-        return core::Result::Rejected(prefix + "healthy GPS position is required");
+    if (requirements.require_gps && health.gps_ok != true) {
+        return core::Result::Rejected(prefix + (health.gps_ok.has_value()
+                                                    ? "healthy GPS position is required"
+                                                    : "GPS health is unknown"));
     }
-    if (requirements.require_ekf && !health.ekf_ok) {
-        return core::Result::Rejected(prefix + "healthy EKF state is required");
+    if (requirements.require_ekf && health.ekf_ok != true) {
+        return core::Result::Rejected(prefix + (health.ekf_ok.has_value()
+                                                    ? "healthy EKF state is required"
+                                                    : "estimator health is unknown"));
     }
     return core::Result::Success();
 }
