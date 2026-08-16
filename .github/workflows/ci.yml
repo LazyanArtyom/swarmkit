@@ -76,6 +76,7 @@ jobs:
                 -c "tools.build:exelinkflags=${link_flags}"
               )
               build_args=(
+                "--build=missing"
                 "--build=abseil/*"
                 "--build=protobuf/*"
                 "--build=grpc/*"
