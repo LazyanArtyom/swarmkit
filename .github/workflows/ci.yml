@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Verify build tools
         run: |
@@ -64,29 +64,24 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }} --parallel 2
 
       - name: Test
+        env:
+          TSAN_OPTIONS: ${{ matrix.preset == 'linux-tsan' && 'report_signal_unsafe=0' || '' }}
         run: ctest --preset ${{ matrix.preset }} --output-on-failure
 
       - name: Publish CTest diagnostics
         if: failure()
         shell: bash
-        run: |
-          test_log="build/${{ matrix.preset }}/Testing/Temporary/LastTest.log"
-          if [[ ! -f "${test_log}" ]]; then
-            exit 0
-          fi
-          diagnostic="$(tail -n 160 "${test_log}")"
-          diagnostic="${diagnostic//'%'/'%25'}"
-          diagnostic="${diagnostic//$'\r'/'%0D'}"
-          diagnostic="${diagnostic//$'\n'/'%0A'}"
-          printf '::error title=CTest diagnostics (%s)::%s\n' \
-            '${{ matrix.preset }}' "${diagnostic}"
+        run: >-
+          bash scripts/ci_annotate_log.sh
+          "build/${{ matrix.preset }}/Testing/Temporary/LastTest.log"
+          "CTest diagnostics (${{ matrix.preset }})"
 
   macos-release:
     name: macOS ARM64 Release
     runs-on: macos-15
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Install Conan
         run: pipx install "conan>=2.0,<3"
@@ -110,7 +105,15 @@ jobs:
         run: cmake --preset mac-release
 
       - name: Build
-        run: cmake --build --preset mac-release --parallel 2
+        run: cmake --build --preset mac-release --parallel 2 2>&1 | tee build/mac-release-build.log
+
+      - name: Publish build diagnostics
+        if: failure()
+        shell: bash
+        run: >-
+          bash scripts/ci_annotate_log.sh
+          build/mac-release-build.log
+          "macOS build diagnostics"
 
       - name: Test
         run: ctest --preset mac-release --output-on-failure
@@ -118,24 +121,17 @@ jobs:
       - name: Publish CTest diagnostics
         if: failure()
         shell: bash
-        run: |
-          test_log="build/mac-release/Testing/Temporary/LastTest.log"
-          if [[ ! -f "${test_log}" ]]; then
-            exit 0
-          fi
-          diagnostic="$(tail -n 160 "${test_log}")"
-          diagnostic="${diagnostic//'%'/'%25'}"
-          diagnostic="${diagnostic//$'\r'/'%0D'}"
-          diagnostic="${diagnostic//$'\n'/'%0A'}"
-          printf '::error title=CTest diagnostics (mac-release)::%s\n' \
-            "${diagnostic}"
+        run: >-
+          bash scripts/ci_annotate_log.sh
+          build/mac-release/Testing/Temporary/LastTest.log
+          "CTest diagnostics (mac-release)"
 
   source-analysis:
     name: Project source analysis
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Install CMake, Ninja, and clang-tidy
         run: |
@@ -160,22 +156,17 @@ jobs:
       - name: Publish clang-tidy diagnostics
         if: failure()
         shell: bash
-        run: |
-          if [[ ! -f build/clang-tidy.log ]]; then
-            exit 0
-          fi
-          diagnostic="$(tail -n 160 build/clang-tidy.log)"
-          diagnostic="${diagnostic//'%'/'%25'}"
-          diagnostic="${diagnostic//$'\r'/'%0D'}"
-          diagnostic="${diagnostic//$'\n'/'%0A'}"
-          printf '::error title=clang-tidy diagnostics::%s\n' "${diagnostic}"
+        run: >-
+          bash scripts/ci_annotate_log.sh
+          build/clang-tidy.log
+          "clang-tidy diagnostics"
 
   conan-package:
     name: Conan package export
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Install Conan
         run: python3 -m pip install --upgrade "conan>=2.0,<3"
@@ -230,7 +221,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Install Buf
         uses: bufbuild/buf-setup-action@v1
