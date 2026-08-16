@@ -63,26 +63,28 @@ jobs:
           build_args=("--build=missing")
           case "${SWARMKIT_SANITIZER}" in
             asan-ubsan)
-              compile_flags='["-fsanitize=address","-fsanitize=undefined","-fno-omit-frame-pointer"]'
-              link_flags='["-fsanitize=address","-fsanitize=undefined"]'
+              # Abseil changes inline Cord behavior when ASan is enabled, so
+              # every dependent binary must agree on ASan. Keep UBSan on the
+              # SwarmKit targets: GCC cannot constexpr-evaluate parts of
+              # Abseil when the dependency itself is UBSan-instrumented.
+              compile_flags='["-fsanitize=address","-fno-omit-frame-pointer"]'
+              link_flags='["-fsanitize=address"]'
               sanitizer_args+=(
                 -c "tools.build:cflags=${compile_flags}"
                 -c "tools.build:cxxflags=${compile_flags}"
                 -c "tools.build:sharedlinkflags=${link_flags}"
                 -c "tools.build:exelinkflags=${link_flags}"
               )
-              build_args=("--build=*")
+              build_args=(
+                "--build=abseil/*"
+                "--build=protobuf/*"
+                "--build=grpc/*"
+              )
               ;;
             tsan)
-              compile_flags='["-fsanitize=thread","-fno-omit-frame-pointer"]'
-              link_flags='["-fsanitize=thread"]'
-              sanitizer_args+=(
-                -c "tools.build:cflags=${compile_flags}"
-                -c "tools.build:cxxflags=${compile_flags}"
-                -c "tools.build:sharedlinkflags=${link_flags}"
-                -c "tools.build:exelinkflags=${link_flags}"
-              )
-              build_args=("--build=*")
+              # The CMake preset instruments every SwarmKit target. Unlike
+              # Abseil under ASan, the dependency graph has no TSan-dependent
+              # inline ABI and does not need an expensive source rebuild.
               ;;
             none)
               ;;
