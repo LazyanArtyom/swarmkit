@@ -91,8 +91,18 @@ incomplete scientific runs.
 
 The experiment library provides a manual runtime, scripted backend, explicit
 seeded fault decorator, normalized telemetry replay, and simulator controls.
-Ground truth is not normalized telemetry. None of these components implements
-arrival certification or rotor-router state.
+Ground truth is not normalized telemetry. None of these components assumes or modifies
+high-level application coordination state.
+
+## State Acceptance And Verification
+
+SwarmKit includes a common-time state acceptance runtime:
+
+- **Evidence Store**: Normalized telemetry is converted into typed causal evidence records.
+- **Clock Quality Arithmetic**: Source timestamps are mapped into common-time generation intervals $[g^-, g^+]$.
+- **Uncertainty Propagation**: Position error bounds are propagated conservatively over elapsed time ($\varepsilon_p = e_p + V_{\max}\Delta^+$).
+- **State-Quality Contracts**: Snapshots are accepted only if all required predicates (freshness, clock error, estimator health, coordinate frames, session epochs, completeness rules) are satisfied without silent downgrade.
+- **Certificates & Independent Verifier**: Accepted snapshots generate tamper-evident SHA-256 certificates verifiable by an offline replay verifier.
 
 ## Goals And Reports
 

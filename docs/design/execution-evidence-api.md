@@ -12,8 +12,8 @@ SwarmKit provides algorithm-neutral physical-execution evidence. It owns command
 session identity, goal and physical-attempt lineage, telemetry normalization, timing and uncertainty
 provenance, health, capabilities, and bounded evidence infrastructure.
 
-SwarmKit does not own graph nodes, rotor state, arrival certificates, logical commits, trace proofs,
-or distributed rotor-state serialization. Those remain in the external TCRR controller.
+SwarmKit does not own graph nodes, swarm coordination state, arrival certificates, logical commits, trace proofs,
+or distributed application state serialization. Those remain in external application controllers.
 
 ## Identity
 
@@ -63,7 +63,7 @@ opaque ID and a session-scoped positive revision on every accepted dispatch, inc
 the same goal revision.
 
 Goal states are `ACTIVE`, `REACHED`, `CANCELLED`, `SUPERSEDED`, `FAILED`, and `TIMEOUT`.
-`GOAL_REACHED` is only an execution-layer monitor result. It never commits TCRR state.
+`GOAL_REACHED` is only an execution-layer monitor result. It never commits higher-level application state.
 
 ## Telemetry identity and delivery
 
@@ -211,8 +211,8 @@ enforces its advertised kinematic limits and exposes independent `SimulationTrut
 through an experiment API. Simulation truth and normalized estimated telemetry are different types
 and channels.
 
-For a fixed normalized execution record and fixed higher-level configuration, TCRR must be able to
-reproduce the same certificate decisions. Console logs are diagnostic and are not correctness
+For a fixed normalized execution record and fixed higher-level configuration, an independent verifier must be able to
+reproduce the same acceptance and certificate decisions. Console logs are diagnostic and are not correctness
 evidence.
 
 ## Higher-level controller contract
@@ -221,4 +221,4 @@ A controller may rely on exact handle equality, Agent-session mismatch detection
 ordering, ingress-time execution binding, explicit measurement freshness, and typed but possibly
 unknown timing and uncertainty evidence. It may not infer arrival from an ACK or `GOAL_REACHED`,
 convert unknown uncertainty to zero, treat a configured command limit as a hard bound, or expect
-SwarmKit to serialize shared rotor state.
+SwarmKit to serialize application-specific coordination state.

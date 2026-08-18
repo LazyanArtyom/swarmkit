@@ -1,7 +1,6 @@
 # SwarmKit Development Contract
 
-SwarmKit is a greenfield, pre-release SDK. Its first intended production consumer is the external
-TCRR/rotor-router controller.
+SwarmKit is a greenfield, pre-release SDK and State Acceptance runtime.
 
 ## API evolution
 
@@ -17,9 +16,10 @@ TCRR/rotor-router controller.
 ## Architecture boundary
 
 SwarmKit owns physical command execution, exact goal/attempt identity, telemetry normalization,
-timing and uncertainty provenance, health, capabilities, logging, replay, and test infrastructure.
-Graph state, rotor state, arrival certification, guarded logical commit, and distributed state
-serialization belong to the external TCRR layer.
+evidence store decomposition, clock-quality interval arithmetic, state-quality contract evaluation,
+state-acceptance certificates, timing and uncertainty provenance, health, capabilities, logging,
+replay, and test infrastructure. High-level swarm coordination algorithms, mission planning, and
+distributed application state belong to external application layers.
 
-`Command ACK` is not physical arrival. `GOAL_REACHED` is not a TCRR certificate. Backend-reported
+`Command ACK` is not physical arrival. `GOAL_REACHED` is not physical state acceptance. Backend-reported
 accuracy is not a deterministic hard bound unless its declared semantics explicitly say so.

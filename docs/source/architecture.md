@@ -29,8 +29,9 @@ Vehicle backend
 ## Main Modules
 
 `include/swarmkit/core`
-: Common result/error types, telemetry model, transport-security helpers, and
-  the global logger facade.
+: Common result/error types, telemetry model, clock quality, evidence records,
+  evidence store, state-quality contracts, state acceptance engine,
+  state-acceptance certificates, independent verifier, and the global logger facade.
 
 `include/swarmkit/commands*.h`
 : Public command model. Commands are protocol-neutral C++ variants.
@@ -43,12 +44,20 @@ Vehicle backend
 : Public agent-side configuration, backend interface, backend registry,
   built-in backend factories, and command authority arbiter.
 
+`include/swarmkit/evidence`
+: Execution-event recorder, binary format encoding, and deterministic replay reader.
+
+`include/swarmkit/experiment`
+: Paired-trace state acceptance experiment runner, baseline evaluators,
+  scripted backend, manual runtime, and deterministic fault injection.
+
 `src/agent`
 : Agent server implementation, telemetry lifecycle management, report hub,
   readiness checks, runtime counters, and backend implementations.
 
-`apps/agent` and `apps/cli`
-: Command-line entry points and option parsing around the SDK libraries.
+`apps/`
+: Command-line executables (`swarmkit-agent`, `swarmkit-cli`, `swarmkit-evidence-inspect`,
+  and `swarmkit-dissertation-experiment`).
 
 `proto`
 : gRPC service definitions and generated protocol code.
