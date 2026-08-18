@@ -13,6 +13,7 @@ add_executable(swarmkit_tests
     test_state_quality_contract.cpp
     test_state_acceptance_engine.cpp
     test_state_acceptance_certificate.cpp
+    test_state_acceptance_verifier.cpp
     test_client_integration.cpp
     test_command_preconditions.cpp
     test_config.cpp
