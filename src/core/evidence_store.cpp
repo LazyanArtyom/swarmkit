@@ -52,7 +52,9 @@ AgentEvidenceBuffer::AgentEvidenceBuffer(std::size_t max_records_per_field)
     : max_per_field_(max_records_per_field) {}
 
 void AgentEvidenceBuffer::Insert(EvidenceRecord record) {
-    current_session_id_ = record.identity.agent_session_id;
+    if (!first_observed_session_id_.has_value()) {
+        first_observed_session_id_ = record.identity.agent_session_id;
+    }
     GetOrCreate(record.identity.field_id).Push(std::move(record));
 }
 
@@ -78,8 +80,12 @@ std::size_t AgentEvidenceBuffer::TotalRecords() const {
     return total;
 }
 
+void AgentEvidenceBuffer::SetCurrentSession(std::string session_id) {
+    first_observed_session_id_ = std::move(session_id);
+}
+
 std::optional<std::string> AgentEvidenceBuffer::CurrentSessionId() const {
-    return current_session_id_;
+    return first_observed_session_id_;
 }
 
 AgentEvidenceBuffer::FieldRing& AgentEvidenceBuffer::GetOrCreate(
@@ -106,9 +112,19 @@ const AgentEvidenceBuffer::FieldRing* AgentEvidenceBuffer::Find(
 EvidenceStore::EvidenceStore(EvidenceStoreConfig config)
     : config_(std::move(config)) {}
 
+void EvidenceStore::SetCurrentSession(const std::string& agent_id,
+                                      const std::string& session_id) {
+    std::lock_guard lock(mutex_);
+    authoritative_sessions_[agent_id] = session_id;
+}
+
 void EvidenceStore::Insert(const std::string& agent_id,
                            EvidenceRecord record) {
     std::lock_guard lock(mutex_);
+    if (!record.identity.agent_session_id.empty() &&
+        !authoritative_sessions_.contains(agent_id)) {
+        authoritative_sessions_[agent_id] = record.identity.agent_session_id;
+    }
     auto it = agents_.find(agent_id);
     if (it == agents_.end()) {
         it = agents_
@@ -122,6 +138,10 @@ void EvidenceStore::Insert(const std::string& agent_id,
 void EvidenceStore::InsertFrame(const TelemetryFrame& frame) {
     auto records = DecomposeToEvidence(frame);
     std::lock_guard lock(mutex_);
+    if (!frame.agent_session_id.empty() &&
+        !authoritative_sessions_.contains(frame.drone_id)) {
+        authoritative_sessions_[frame.drone_id] = frame.agent_session_id;
+    }
     auto it = agents_.find(frame.drone_id);
     if (it == agents_.end()) {
         it = agents_
@@ -164,6 +184,10 @@ std::vector<std::string> EvidenceStore::AgentIds() const {
 std::optional<std::string> EvidenceStore::CurrentSessionId(
     const std::string& agent_id) const {
     std::lock_guard lock(mutex_);
+    auto auth_it = authoritative_sessions_.find(agent_id);
+    if (auth_it != authoritative_sessions_.end()) {
+        return auth_it->second;
+    }
     auto it = agents_.find(agent_id);
     if (it == agents_.end()) return std::nullopt;
     return it->second.CurrentSessionId();

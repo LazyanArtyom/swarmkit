@@ -15,6 +15,8 @@ using Catch::Matchers::WithinAbs;
 TEST_CASE("StateAcceptanceExperimentRunner paired-trace matrix evaluation", "[experiment]") {
     ScenarioConfig config{
         .seed = 12345,
+        .runs = 1,
+        .steps_per_scenario = 20,
         .agent_ids = {"uav-1", "uav-2", "uav-3"},
         .fault_scenarios = {
             ScenarioFaultKind::kNormal,
@@ -26,20 +28,20 @@ TEST_CASE("StateAcceptanceExperimentRunner paired-trace matrix evaluation", "[ex
             ScenarioFaultKind::kAgentRestartDelayedPackets,
             ScenarioFaultKind::kFrameMismatch,
         },
-        .steps_per_scenario = 20,
         .step_dt_ms = 100.0,
         .max_speed_mps = 10.0,
         .max_age_ms = 300.0,
         .max_clock_unc_ms = 10.0,
         .max_pos_unc_m = 3.0,
+        .physical_error_tolerance_m = 3.0,
     };
 
     StateAcceptanceExperimentRunner runner(config);
     auto results = runner.Run();
 
-    const auto& m_latest = results.method_metrics.at(static_cast<uint8_t>(EvaluationMethod::kReceiveLatest));
-    const auto& m_age = results.method_metrics.at(static_cast<uint8_t>(EvaluationMethod::kTimestampAlignedAge));
-    const auto& m_proposed = results.method_metrics.at(static_cast<uint8_t>(EvaluationMethod::kProposedStateAcceptance));
+    const auto& m_latest = results.aggregate_method_metrics.at(static_cast<uint8_t>(EvaluationMethod::kReceiveLatest));
+    const auto& m_age = results.aggregate_method_metrics.at(static_cast<uint8_t>(EvaluationMethod::kTimestampAlignedAge));
+    const auto& m_proposed = results.aggregate_method_metrics.at(static_cast<uint8_t>(EvaluationMethod::kProposedStateAcceptance));
 
     SECTION("All methods evaluated across all requests") {
         REQUIRE(m_latest.total_requests == 160);     // 8 scenarios * 20 steps
@@ -80,8 +82,8 @@ TEST_CASE("StateAcceptanceExperimentRunner paired-trace matrix evaluation", "[ex
 
         const std::string table_iii = results.FormatTableIII();
         REQUIRE_FALSE(table_iii.empty());
-        REQUIRE(table_iii.find("Containment failures") != std::string::npos);
-        REQUIRE(table_iii.find("Runtime/verifier agreement") != std::string::npos);
+        REQUIRE(table_iii.find("Deterministic Enclosures Tested") != std::string::npos);
+        REQUIRE(table_iii.find("Verifier Replay Agreement") != std::string::npos);
 
         const std::string json = results.ToJson();
         REQUIRE_FALSE(json.empty());

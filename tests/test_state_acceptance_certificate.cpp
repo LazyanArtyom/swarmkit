@@ -177,3 +177,21 @@ TEST_CASE("StateAcceptanceCertificate tamper detection", "[certificate]") {
         REQUIRE_FALSE(VerifyCertificateIntegrity(mutated));
     }
 }
+
+TEST_CASE("StateAcceptanceCertificate canonical serialization roundtrip (P1.2)", "[certificate]") {
+    auto snapshot = CreateMockSnapshot();
+    auto contract = CreateMockContract();
+    auto cert = BuildCertificate(snapshot, contract);
+
+    const std::string serialized = SerializeCertificate(cert);
+    REQUIRE_FALSE(serialized.empty());
+    REQUIRE(serialized.size() > 100);
+
+    auto deserialized = DeserializeCertificate(serialized);
+    REQUIRE(deserialized.has_value());
+    REQUIRE(deserialized->certificate_id == cert.certificate_id);
+    REQUIRE(deserialized->contract_hash == cert.contract_hash);
+    REQUIRE(deserialized->certificate_hash == cert.certificate_hash);
+    REQUIRE(deserialized->evidence_entries.size() == cert.evidence_entries.size());
+    REQUIRE(VerifyCertificateIntegrity(*deserialized));
+}

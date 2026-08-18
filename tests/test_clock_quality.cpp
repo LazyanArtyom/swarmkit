@@ -129,7 +129,7 @@ TEST_CASE("ComputeGenerationInterval helper functions", "[clock_quality]") {
         REQUIRE_FALSE(opt_interval.has_value());
     }
 
-    SECTION("From per-sample evidence (fallback)") {
+    SECTION("From per-sample evidence with valid uncertainty") {
         TimestampEvidence te{
             .timestamp_ms = 5000,
             .clock_uncertainty_ms = 4.0,
@@ -141,16 +141,28 @@ TEST_CASE("ComputeGenerationInterval helper functions", "[clock_quality]") {
         REQUIRE_THAT(opt_interval->upper_ms, WithinAbs(5004.0, 1e-9));
     }
 
-    SECTION("From per-sample evidence without uncertainty") {
+    SECTION("From per-sample evidence without uncertainty returns nullopt (strict P0.3)") {
         TimestampEvidence te{
             .timestamp_ms = 5000,
             .clock_uncertainty_ms = std::nullopt,
         };
 
         auto opt_interval = ComputeGenerationIntervalFromSample(te);
-        REQUIRE(opt_interval.has_value());
-        REQUIRE_THAT(opt_interval->lower_ms, WithinAbs(5000.0, 1e-9));
-        REQUIRE_THAT(opt_interval->upper_ms, WithinAbs(5000.0, 1e-9));
+        REQUIRE_FALSE(opt_interval.has_value());
+    }
+
+    SECTION("From per-sample evidence with negative or NaN uncertainty returns nullopt") {
+        TimestampEvidence te_neg{
+            .timestamp_ms = 5000,
+            .clock_uncertainty_ms = -1.0,
+        };
+        REQUIRE_FALSE(ComputeGenerationIntervalFromSample(te_neg).has_value());
+
+        TimestampEvidence te_nan{
+            .timestamp_ms = 5000,
+            .clock_uncertainty_ms = std::numeric_limits<double>::quiet_NaN(),
+        };
+        REQUIRE_FALSE(ComputeGenerationIntervalFromSample(te_nan).has_value());
     }
 }
 

@@ -36,6 +36,12 @@ enum class RejectionReason : std::uint8_t {
     kUnsupportedUncertaintySemantics,
     kMissingClockQuality,
     kMissingSourceTimestamp,
+    kInvalidContract,
+    kMissingUncertainty,
+    kUncertaintySemanticsMismatch,
+    kInvalidUncertaintyBound,
+    kUnsupportedPropagationFrame,
+    kInvalidClockBound,
 };
 
 /// One predicate failure with context.
@@ -116,7 +122,6 @@ using AcceptanceResult = std::variant<AcceptedSnapshot, StructuredRejection>;
 
 /// Configuration for the state acceptance engine.
 struct AcceptanceEngineConfig {
-    /// When true, generate a unique snapshot ID for each acceptance.
     bool generate_snapshot_ids{true};
 };
 
@@ -126,9 +131,7 @@ struct AcceptanceEngineConfig {
 /// causally eligible evidence, propagates uncertainty to t*, evaluates
 /// all mandatory contract predicates, and returns ACCEPTED or REJECTED.
 ///
-/// This is the core dissertation mechanism: it determines whether
-/// physical observations are sufficient to justify an application-visible
-/// state at the requested time.
+/// Mathematically pure and stateless: identical inputs produce identical decisions.
 class StateAcceptanceEngine {
    public:
     explicit StateAcceptanceEngine(AcceptanceEngineConfig config = {});
@@ -149,7 +152,6 @@ class StateAcceptanceEngine {
 
    private:
     AcceptanceEngineConfig config_;
-    std::uint64_t next_snapshot_id_{1};
 
     /// Select the best causal evidence for one agent and one field.
     struct EvidenceSelection {
@@ -159,11 +161,13 @@ class StateAcceptanceEngine {
     };
 
     [[nodiscard]] std::optional<EvidenceSelection> SelectCausalEvidence(
+        const StateQualityContract& contract,
         const EvidenceStore& evidence,
         const std::string& agent_id,
         EvidenceFieldId field,
         double evaluation_time_ms,
-        const std::unordered_map<std::string, ClockQualityState>& clock_states)
+        const std::unordered_map<std::string, ClockQualityState>& clock_states,
+        std::vector<PredicateFailure>& failures)
         const;
 
     /// Evaluate a single field's evidence against the contract.

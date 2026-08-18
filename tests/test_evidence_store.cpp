@@ -212,6 +212,7 @@ TEST_CASE("AgentEvidenceBuffer ring buffer behavior", "[evidence_store]") {
 
     // Now insert 4th item, exceeding capacity 3. Oldest (r1) should be dropped.
     buf.Insert(r4);
+    buf.SetCurrentSession("sess-2");
     REQUIRE(buf.TotalRecords() == 3);
     REQUIRE(buf.CurrentSessionId() == "sess-2");
 
@@ -272,4 +273,57 @@ TEST_CASE("EvidenceStore multi-agent operations", "[evidence_store]") {
 
     auto uav2_bat = store.Recent("uav-2", EvidenceFieldId::kBattery, 1);
     REQUIRE(uav2_bat.empty());
+}
+
+TEST_CASE("EvidenceStore authoritative session management and delayed packet isolation", "[evidence_store]") {
+    EvidenceStore store(EvidenceStoreConfig{.max_records_per_field = 10});
+
+    // 1. Initial old session active
+    store.SetCurrentSession("uav-1", "session-old");
+    REQUIRE(store.CurrentSessionId("uav-1") == "session-old");
+
+    EvidenceRecord old_rec1{
+        .value = 10.0F,
+        .source_time = {.timestamp_ms = 100},
+        .identity = {.agent_id = "uav-1", .agent_session_id = "session-old", .field_id = EvidenceFieldId::kBattery, .sequence = 1},
+    };
+    store.Insert("uav-1", old_rec1);
+    REQUIRE(store.CurrentSessionId("uav-1") == "session-old");
+
+    // 2. Transition old -> new authoritative session
+    store.SetCurrentSession("uav-1", "session-new");
+    REQUIRE(store.CurrentSessionId("uav-1") == "session-new");
+
+    // 3. Delayed old-session packet arrives after transition
+    EvidenceRecord delayed_old_rec{
+        .value = 15.0F,
+        .source_time = {.timestamp_ms = 110},
+        .identity = {.agent_id = "uav-1", .agent_session_id = "session-old", .field_id = EvidenceFieldId::kBattery, .sequence = 2},
+    };
+    store.Insert("uav-1", delayed_old_rec);
+
+    // 4. Authoritative current session MUST remain new (never moves backwards)
+    REQUIRE(store.CurrentSessionId("uav-1") == "session-new");
+
+    // 5. Insert new session packet
+    EvidenceRecord new_rec{
+        .value = 95.0F,
+        .source_time = {.timestamp_ms = 200},
+        .identity = {.agent_id = "uav-1", .agent_session_id = "session-new", .field_id = EvidenceFieldId::kBattery, .sequence = 3},
+    };
+    store.Insert("uav-1", new_rec);
+    REQUIRE(store.CurrentSessionId("uav-1") == "session-new");
+
+    // 6. Another delayed old packet arrives
+    EvidenceRecord delayed_old_rec2{
+        .value = 12.0F,
+        .source_time = {.timestamp_ms = 105},
+        .identity = {.agent_id = "uav-1", .agent_session_id = "session-old", .field_id = EvidenceFieldId::kBattery, .sequence = 4},
+    };
+    store.Insert("uav-1", delayed_old_rec2);
+    REQUIRE(store.CurrentSessionId("uav-1") == "session-new");
+
+    // All records are retained for replay
+    auto all_records = store.All("uav-1", EvidenceFieldId::kBattery);
+    REQUIRE(all_records.size() == 4);
 }

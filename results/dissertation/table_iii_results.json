@@ -1,0 +1,15 @@
+{
+  "enclosures_tested": 38907,
+  "containment_failures": 0,
+  "containment_failure_rate": 0.0,
+  "replayed_decisions": 12969,
+  "verifier_agreements": 12969,
+  "verifier_agreement_rate": 1,
+  "tampered_certificates_tested": 142659,
+  "tampered_certificates_rejected": 142659,
+  "tamper_detection_rate": 1,
+  "latency_p50_us": 28,
+  "latency_p95_us": 63.458,
+  "latency_p99_us": 68.125,
+  "median_certificate_size_bytes": 1367
+}

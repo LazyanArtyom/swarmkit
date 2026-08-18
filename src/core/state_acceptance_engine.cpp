@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <sstream>
 
 namespace swarmkit::core {
@@ -13,51 +14,109 @@ StateAcceptanceEngine::StateAcceptanceEngine(AcceptanceEngineConfig config)
     : config_(std::move(config)) {}
 
 // ---------------------------------------------------------------------------
-// Evidence selection: find the most recent causal evidence (§8)
+// Evidence selection: find the newest causally valid physical evidence (§8)
 // ---------------------------------------------------------------------------
 
 std::optional<StateAcceptanceEngine::EvidenceSelection>
 StateAcceptanceEngine::SelectCausalEvidence(
+    const StateQualityContract& contract,
     const EvidenceStore& evidence,
     const std::string& agent_id,
     EvidenceFieldId field,
     double evaluation_time_ms,
-    const std::unordered_map<std::string, ClockQualityState>& clock_states)
-    const {
+    const std::unordered_map<std::string, ClockQualityState>& clock_states,
+    std::vector<PredicateFailure>& failures) const {
 
-    // Retrieve the most recent evidence records for this agent/field.
-    // We check up to 16 candidates to find the newest causal one.
-    auto candidates = evidence.Recent(agent_id, field, 16);
+    // Retrieve all retained evidence records for this agent/field to ensure
+    // we search all candidates beyond arbitrary limits (P0.4).
+    auto candidates = evidence.All(agent_id, field);
+    if (candidates.empty()) {
+        failures.push_back({
+            .reason = RejectionReason::kMissingRequiredEvidence,
+            .agent_id = agent_id,
+            .field = field,
+            .detail = "no evidence records stored for agent " + agent_id,
+        });
+        return std::nullopt;
+    }
+
+    std::optional<EvidenceSelection> best_selection;
+    double best_source_time = -std::numeric_limits<double>::infinity();
+    bool had_clock_quality_failure = false;
+    std::string clock_failure_detail;
 
     for (const auto& record : candidates) {
-        // Compute generation-time interval.
+        if (!record.source_time.timestamp_ms.has_value()) {
+            continue;
+        }
+
+        const double s = static_cast<double>(*record.source_time.timestamp_ms);
+        if (!std::isfinite(s)) continue;
+
+        // Compute generation-time interval [g⁻, g⁺].
         std::optional<GenerationTimeInterval> interval;
+        double clock_unc = 0.0;
 
         auto clock_it = clock_states.find(agent_id);
         if (clock_it != clock_states.end() && clock_it->second.IsValid()) {
-            // Use persistent clock quality state.
-            interval = ComputeGenerationInterval(
-                record.source_time, clock_it->second);
-        } else {
-            // Fall back to per-sample clock evidence.
+            if (contract.require_deterministic_bounds && !clock_it->second.deterministic_bound) {
+                had_clock_quality_failure = true;
+                clock_failure_detail = "clock state has non-deterministic bound for agent " + agent_id;
+                continue;
+            }
+            interval = ComputeGenerationInterval(record.source_time, clock_it->second);
+            clock_unc = clock_it->second.uncertainty_radius_ms;
+        } else if (record.source_time.clock_uncertainty_ms.has_value()) {
+            const double rho = *record.source_time.clock_uncertainty_ms;
+            if (!std::isfinite(rho) || rho < 0.0) {
+                had_clock_quality_failure = true;
+                clock_failure_detail = "invalid per-sample clock uncertainty bound";
+                continue;
+            }
             interval = ComputeGenerationIntervalFromSample(record.source_time);
+            clock_unc = rho;
+        } else {
+            had_clock_quality_failure = true;
+            clock_failure_detail = "missing clock quality and per-sample clock uncertainty";
+            continue;
         }
 
         if (!interval.has_value()) continue;
 
-        // Causal check: g⁺ ≤ t* (§8 Eq.7).
-        if (!interval->IsCausal(evaluation_time_ms)) continue;
+        // Causal condition: g⁺ ≤ t* (§8 Eq.7).
+        if (!interval->IsCausal(evaluation_time_ms)) {
+            continue;
+        }
 
-        const double clock_unc =
-            (clock_it != clock_states.end() && clock_it->second.IsValid())
-                ? clock_it->second.uncertainty_radius_ms
-                : record.source_time.clock_uncertainty_ms.value_or(0.0);
+        // Select the candidate with the newest physical source generation time.
+        if (!best_selection.has_value() || s > best_source_time) {
+            best_source_time = s;
+            best_selection = EvidenceSelection{
+                .record = record,
+                .generation_interval = *interval,
+                .clock_uncertainty_ms = clock_unc,
+            };
+        }
+    }
 
-        return EvidenceSelection{
-            .record = record,
-            .generation_interval = *interval,
-            .clock_uncertainty_ms = clock_unc,
-        };
+    if (best_selection.has_value()) {
+        return best_selection;
+    }
+
+    if (had_clock_quality_failure) {
+        failures.push_back({
+            .reason = RejectionReason::kMissingClockQuality,
+            .agent_id = agent_id,
+            .field = field,
+            .detail = clock_failure_detail,
+        });
+    } else {
+        failures.push_back({
+            .reason = RejectionReason::kCausalSampleUnavailable,
+            .agent_id = agent_id,
+            .field = field,
+            .detail = "no causal evidence with g⁺ ≤ t*",
+        });
     }
 
     return std::nullopt;
@@ -103,6 +162,37 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
                 .field = field,
                 .detail = "ρ=" + std::to_string(selection.clock_uncertainty_ms) +
                           "ms > max=" + std::to_string(*contract.max_clock_uncertainty_ms) + "ms",
+            };
+        }
+    }
+
+    // Deterministic bound semantics check (§10, P0.2).
+    if (contract.require_deterministic_bounds) {
+        if (!record.quality.uncertainty.has_value()) {
+            return PredicateFailure{
+                .reason = RejectionReason::kMissingUncertainty,
+                .agent_id = agent_id,
+                .field = field,
+                .detail = "deterministic contract requires uncertainty bound but none was provided",
+            };
+        }
+
+        const auto& unc = *record.quality.uncertainty;
+        if (unc.descriptor.semantics != UncertaintySemantics::kDeterministicHardBound) {
+            return PredicateFailure{
+                .reason = RejectionReason::kUncertaintySemanticsMismatch,
+                .agent_id = agent_id,
+                .field = field,
+                .detail = "deterministic contract requires DeterministicHardBound semantics",
+            };
+        }
+
+        if (!std::isfinite(unc.value) || unc.value < 0.0f) {
+            return PredicateFailure{
+                .reason = RejectionReason::kInvalidUncertaintyBound,
+                .agent_id = agent_id,
+                .field = field,
+                .detail = "invalid uncertainty bound value",
             };
         }
     }
@@ -167,31 +257,31 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
         }
     }
 
-    // Frame predicates (P).
-    if (field == EvidenceFieldId::kPosition &&
-        contract.required_position_frame != CoordinateFrame::kUnknown) {
-        if (record.identity.coordinate_frame != contract.required_position_frame) {
+    // Frame predicates (P, P0.6).
+    if (field == EvidenceFieldId::kPosition) {
+        if (contract.required_position_frame != CoordinateFrame::kUnknown &&
+            record.identity.coordinate_frame != contract.required_position_frame) {
             return PredicateFailure{
                 .reason = RejectionReason::kFrameMismatch,
                 .agent_id = agent_id,
                 .field = field,
-                .detail = "position frame mismatch",
+                .detail = "position coordinate frame mismatch",
             };
         }
     }
-    if (field == EvidenceFieldId::kVelocity &&
-        contract.required_velocity_frame != CoordinateFrame::kUnknown) {
-        if (record.identity.coordinate_frame != contract.required_velocity_frame) {
+    if (field == EvidenceFieldId::kVelocity) {
+        if (contract.required_velocity_frame != CoordinateFrame::kUnknown &&
+            record.identity.coordinate_frame != contract.required_velocity_frame) {
             return PredicateFailure{
                 .reason = RejectionReason::kFrameMismatch,
                 .agent_id = agent_id,
                 .field = field,
-                .detail = "velocity frame mismatch",
+                .detail = "velocity coordinate frame mismatch",
             };
         }
     }
 
-    // Agent epoch predicate (P/§6): E_msg == E_cur.
+    // Agent epoch predicate (P/§6, P0.1): E_msg == E_cur.
     if (contract.require_current_epoch) {
         if (record.identity.agent_session_id != current_session_id) {
             return PredicateFailure{
@@ -199,7 +289,7 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
                 .agent_id = agent_id,
                 .field = field,
                 .detail = "evidence session '" + record.identity.agent_session_id +
-                          "' != current '" + current_session_id + "'",
+                          "' != current authoritative session '" + current_session_id + "'",
             };
         }
     }
@@ -217,28 +307,11 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
         }
     }
 
-    // Deterministic bound semantics check (§10).
-    if (contract.require_deterministic_bounds &&
-        record.quality.uncertainty.has_value()) {
-        const auto sem = record.quality.uncertainty->descriptor.semantics;
-        if (sem != UncertaintySemantics::kDeterministicHardBound &&
-            sem != UncertaintySemantics::kEmpiricallyCalibratedBound &&
-            sem != UncertaintySemantics::kUnknown) {
-            return PredicateFailure{
-                .reason = RejectionReason::kUnsupportedUncertaintySemantics,
-                .agent_id = agent_id,
-                .field = field,
-                .detail = "contract requires deterministic bounds but evidence has "
-                          "probabilistic uncertainty",
-            };
-        }
-    }
-
     return std::nullopt;  // All predicates passed.
 }
 
 // ---------------------------------------------------------------------------
-// Main acceptance decision
+// Main acceptance decision (Mathematically Pure & Stateless, P0.7)
 // ---------------------------------------------------------------------------
 
 AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
@@ -248,19 +321,19 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
     const std::unordered_map<std::string, ClockQualityState>& clock_states)
     const {
 
-    std::vector<PredicateFailure> failures;
-
-    // Determine the set of agents to evaluate.
-    const auto& required = contract.required_agents;
-    if (required.empty()) {
-        failures.push_back({
-            .reason = RejectionReason::kIncompleteAgentSet,
-            .detail = "no required agents specified in contract",
+    // Step 0: Contract validation (P0.5).
+    const auto contract_valid = ValidateStateQualityContract(contract);
+    if (!contract_valid.IsOk()) {
+        std::vector<PredicateFailure> contract_failures;
+        contract_failures.push_back({
+            .reason = RejectionReason::kInvalidContract,
+            .detail = contract_valid.error.user_message.empty() ? "malformed contract"
+                                                                : contract_valid.error.user_message,
         });
         return StructuredRejection{
             .evaluation_time_ms = evaluation_time_ms,
             .contract_id = contract.contract_id,
-            .failures = std::move(failures),
+            .failures = std::move(contract_failures),
         };
     }
 
@@ -276,41 +349,25 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
     snapshot.model_version = contract.propagation_model_version;
 
     std::size_t agents_accepted = 0;
-
     std::vector<PredicateFailure> all_agent_failures;
 
+    const auto& required = contract.required_agents;
+
     for (const auto& agent_id : required) {
-        // Determine current session for epoch check.
+        // Determine authoritative current session for epoch check (P0.1).
         const auto current_session = evidence.CurrentSessionId(agent_id);
-        const std::string current_session_id =
-            current_session.value_or("");
+        const std::string current_session_id = current_session.value_or("");
 
         bool agent_ok = true;
         std::vector<PredicateFailure> agent_failures;
 
         for (const auto field : contract.required_fields) {
-            // Select causal evidence.
+            // Select causal evidence (P0.4).
             auto selection = SelectCausalEvidence(
-                evidence, agent_id, field, evaluation_time_ms, clock_states);
+                contract, evidence, agent_id, field, evaluation_time_ms,
+                clock_states, agent_failures);
 
             if (!selection.has_value()) {
-                // Try to distinguish missing evidence from non-causal.
-                auto any_evidence = evidence.Recent(agent_id, field, 1);
-                if (any_evidence.empty()) {
-                    agent_failures.push_back({
-                        .reason = RejectionReason::kMissingRequiredEvidence,
-                        .agent_id = agent_id,
-                        .field = field,
-                        .detail = "no evidence available",
-                    });
-                } else {
-                    agent_failures.push_back({
-                        .reason = RejectionReason::kCausalSampleUnavailable,
-                        .agent_id = agent_id,
-                        .field = field,
-                        .detail = "no causal evidence with g⁺ ≤ t*",
-                    });
-                }
                 agent_ok = false;
                 continue;
             }
@@ -373,7 +430,6 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
             snapshot.accepted_agents.push_back(agent_id);
             ++agents_accepted;
         } else {
-            // Clean up any partially stored fields for this rejected agent
             snapshot.agent_states.erase(agent_id);
             for (auto& f : agent_failures) {
                 all_agent_failures.push_back(std::move(f));
@@ -393,8 +449,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
     }
 
     if (!completeness_ok) {
-        failures = std::move(all_agent_failures);
-        failures.push_back({
+        all_agent_failures.push_back({
             .reason = RejectionReason::kIncompleteAgentSet,
             .detail = "accepted " + std::to_string(agents_accepted) + "/" +
                       std::to_string(required.size()) + " required agents",
@@ -402,14 +457,14 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
         return StructuredRejection{
             .evaluation_time_ms = evaluation_time_ms,
             .contract_id = contract.contract_id,
-            .failures = std::move(failures),
+            .failures = std::move(all_agent_failures),
         };
     }
 
-    // Generate snapshot ID.
+    // Deterministic snapshot ID.
     if (config_.generate_snapshot_ids) {
-        snapshot.snapshot_id = "snap-" + std::to_string(
-            const_cast<StateAcceptanceEngine*>(this)->next_snapshot_id_++);
+        snapshot.snapshot_id = "snap-" + contract.contract_id + "-" +
+                              std::to_string(static_cast<std::int64_t>(evaluation_time_ms));
     }
 
     // Production timestamp.

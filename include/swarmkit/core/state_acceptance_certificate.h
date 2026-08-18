@@ -43,6 +43,9 @@ struct CertificateEvidenceEntry {
     /// Propagated uncertainty ε(t*).
     double propagated_uncertainty{};
 
+    /// SHA-256 digest of the exact EvidenceRecord used (P1.1).
+    std::string evidence_hash;
+
     bool operator==(const CertificateEvidenceEntry&) const = default;
 };
 
@@ -109,6 +112,10 @@ struct StateAcceptanceCertificate {
     const AcceptedSnapshot& snapshot,
     const StateQualityContract& contract);
 
+/// Compute the canonical SHA-256 hash of an individual EvidenceRecord (P1.1).
+[[nodiscard]] std::string ComputeEvidenceHash(
+    const EvidenceRecord& record);
+
 /// Compute the canonical hash h_K for a certificate.
 /// Used both during building and during verification.
 ///
@@ -123,5 +130,13 @@ struct StateAcceptanceCertificate {
 /// @return true if h_K matches the recomputed hash.
 [[nodiscard]] bool VerifyCertificateIntegrity(
     const StateAcceptanceCertificate& cert);
+
+/// Canonical deterministic serialization of a certificate to byte string (P1.2).
+[[nodiscard]] std::string SerializeCertificate(
+    const StateAcceptanceCertificate& cert);
+
+/// Canonical deserialization of a certificate from byte string.
+[[nodiscard]] std::optional<StateAcceptanceCertificate> DeserializeCertificate(
+    std::string_view data);
 
 }  // namespace swarmkit::core

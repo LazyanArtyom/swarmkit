@@ -1,0 +1,213 @@
+{
+  "total_runs": 30,
+  "steps_per_scenario": 100,
+  "seed_base": 42,
+  "swarm_size": 3,
+  "table_ii_aggregate": {
+    "receive_latest": {
+      "total_requests": 27000,
+      "accepted": 26530,
+      "true_accepts": 22487,
+      "false_accepts": 4043,
+      "true_rejects": 0,
+      "false_rejects": 470,
+      "false_valid_rate": 0.152394,
+      "true_reject_rate": 0,
+      "availability": 0.982593,
+      "unsafe_acceptance_per_request": 0.149741
+    },
+    "timestamp_aligned_age": {
+      "total_requests": 27000,
+      "accepted": 23052,
+      "true_accepts": 19009,
+      "false_accepts": 4043,
+      "true_rejects": 0,
+      "false_rejects": 3948,
+      "false_valid_rate": 0.175386,
+      "true_reject_rate": 0,
+      "availability": 0.853778,
+      "unsafe_acceptance_per_request": 0.149741
+    },
+    "proposed_state_acceptance": {
+      "total_requests": 27000,
+      "accepted": 12969,
+      "true_accepts": 12969,
+      "false_accepts": 0,
+      "true_rejects": 0,
+      "false_rejects": 14031,
+      "false_valid_rate": 0,
+      "true_reject_rate": 1,
+      "availability": 0.480333,
+      "unsafe_acceptance_per_request": 0
+    }
+  },
+  "table_iii_soundness_and_replay": {
+    "enclosures_tested": 38907,
+    "containment_failures": 0,
+    "containment_failure_rate": 0.0,
+    "replayed_decisions": 12969,
+    "verifier_agreements": 12969,
+    "verifier_agreement_rate": 1,
+    "tampered_certificates_tested": 142659,
+    "tampered_certificates_rejected": 142659,
+    "tamper_detection_rate": 1,
+    "latency_p50_us": 28,
+    "latency_p95_us": 63.458,
+    "latency_p99_us": 68.125,
+    "median_certificate_size_bytes": 1367
+  },
+  "scalability": [
+    {
+      "uav_count": 3,
+      "latency_p50_us": 7,
+      "latency_p95_us": 7.25,
+      "latency_p99_us": 8.833,
+      "serialized_certificate_size_bytes": 1123,
+      "memory_per_agent_kb": 0.71875
+    },
+    {
+      "uav_count": 5,
+      "latency_p50_us": 7.541,
+      "latency_p95_us": 7.875,
+      "latency_p99_us": 9.916,
+      "serialized_certificate_size_bytes": 1688,
+      "memory_per_agent_kb": 0.71875
+    },
+    {
+      "uav_count": 10,
+      "latency_p50_us": 9.75,
+      "latency_p95_us": 10.125,
+      "latency_p99_us": 14.791,
+      "serialized_certificate_size_bytes": 3106,
+      "memory_per_agent_kb": 0.71875
+    }
+  ],
+  "per_scenario": [
+    {
+      "scenario": "normal",
+      "requests": 3000,
+      "b0_false_valid_rate": 0,
+      "b0_availability": 0.99,
+      "b0_unsafe_acceptance_per_request": 0,
+      "b1_false_valid_rate": 0,
+      "b1_availability": 0.99,
+      "b1_unsafe_acceptance_per_request": 0,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0.99,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "network_delay",
+      "requests": 3000,
+      "b0_false_valid_rate": 0,
+      "b0_availability": 0.95,
+      "b0_unsafe_acceptance_per_request": 0,
+      "b1_false_valid_rate": 0,
+      "b1_availability": 0,
+      "b1_unsafe_acceptance_per_request": 0,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "network_reorder",
+      "requests": 3000,
+      "b0_false_valid_rate": 0,
+      "b0_availability": 0.98,
+      "b0_unsafe_acceptance_per_request": 0,
+      "b1_false_valid_rate": 0,
+      "b1_availability": 0.98,
+      "b1_unsafe_acceptance_per_request": 0,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0.98,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "packet_loss",
+      "requests": 3000,
+      "b0_false_valid_rate": 0,
+      "b0_availability": 0.973333,
+      "b0_unsafe_acceptance_per_request": 0,
+      "b1_false_valid_rate": 0,
+      "b1_availability": 0.764,
+      "b1_unsafe_acceptance_per_request": 0,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0.530667,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "clock_offset_drift",
+      "requests": 3000,
+      "b0_false_valid_rate": 0,
+      "b0_availability": 0.99,
+      "b0_unsafe_acceptance_per_request": 0,
+      "b1_false_valid_rate": 0,
+      "b1_availability": 0.99,
+      "b1_unsafe_acceptance_per_request": 0,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "estimator_degradation",
+      "requests": 3000,
+      "b0_false_valid_rate": 0,
+      "b0_availability": 0.99,
+      "b0_unsafe_acceptance_per_request": 0,
+      "b1_false_valid_rate": 0,
+      "b1_availability": 0.99,
+      "b1_unsafe_acceptance_per_request": 0,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0.2,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "high_speed_motion",
+      "requests": 3000,
+      "b0_false_valid_rate": 0,
+      "b0_availability": 0.99,
+      "b0_unsafe_acceptance_per_request": 0,
+      "b1_false_valid_rate": 0,
+      "b1_availability": 0.99,
+      "b1_unsafe_acceptance_per_request": 0,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0.99,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "agent_restart_delayed_packets",
+      "requests": 3000,
+      "b0_false_valid_rate": 0.361279,
+      "b0_availability": 0.99,
+      "b0_unsafe_acceptance_per_request": 0.357667,
+      "b1_false_valid_rate": 0.361279,
+      "b1_availability": 0.99,
+      "b1_unsafe_acceptance_per_request": 0.357667,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0.632333,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    },
+    {
+      "scenario": "frame_mismatch",
+      "requests": 3000,
+      "b0_false_valid_rate": 1,
+      "b0_availability": 0.99,
+      "b0_unsafe_acceptance_per_request": 0.99,
+      "b1_false_valid_rate": 1,
+      "b1_availability": 0.99,
+      "b1_unsafe_acceptance_per_request": 0.99,
+      "proposed_false_valid_rate": 0,
+      "proposed_availability": 0,
+      "proposed_unsafe_acceptance_per_request": 0,
+      "status": "evaluated"
+    }
+  ]
+}

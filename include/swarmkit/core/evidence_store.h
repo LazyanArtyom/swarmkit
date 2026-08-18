@@ -55,7 +55,10 @@ class AgentEvidenceBuffer {
     /// Total records stored across all fields.
     [[nodiscard]] std::size_t TotalRecords() const;
 
-    /// Current agent session ID from the most recently inserted record (if any).
+    /// Explicitly set the authoritative active session ID.
+    void SetCurrentSession(std::string session_id);
+
+    /// Current agent session ID.
     [[nodiscard]] std::optional<std::string> CurrentSessionId() const;
 
    private:
@@ -74,7 +77,7 @@ class AgentEvidenceBuffer {
 
     std::size_t max_per_field_;
     std::unordered_map<std::uint8_t, FieldRing> rings_;
-    std::optional<std::string> current_session_id_;
+    std::optional<std::string> first_observed_session_id_;
 
     [[nodiscard]] FieldRing& GetOrCreate(EvidenceFieldId field);
     [[nodiscard]] const FieldRing* Find(EvidenceFieldId field) const;
@@ -87,6 +90,11 @@ class AgentEvidenceBuffer {
 class EvidenceStore {
    public:
     explicit EvidenceStore(EvidenceStoreConfig config = {});
+
+    /// Explicitly set the authoritative active session ID for an agent.
+    /// Session transitions must only occur via authoritative lifecycle events
+    /// (e.g. registration, reconnect, restart), NEVER via delayed packet insertion.
+    void SetCurrentSession(const std::string& agent_id, const std::string& session_id);
 
     /// Insert an evidence record for the identified agent.
     void Insert(const std::string& agent_id, EvidenceRecord record);
@@ -106,7 +114,7 @@ class EvidenceStore {
     /// Return all known agent IDs.
     [[nodiscard]] std::vector<std::string> AgentIds() const;
 
-    /// Current session ID for an agent (if evidence has been received).
+    /// Authoritative current session ID for an agent.
     [[nodiscard]] std::optional<std::string> CurrentSessionId(
         const std::string& agent_id) const;
 
@@ -117,6 +125,7 @@ class EvidenceStore {
     EvidenceStoreConfig config_;
     mutable std::mutex mutex_;
     std::unordered_map<std::string, AgentEvidenceBuffer> agents_;
+    std::unordered_map<std::string, std::string> authoritative_sessions_;
 };
 
 /// Decompose a TelemetryFrame into individual evidence records.

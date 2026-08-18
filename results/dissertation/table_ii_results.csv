@@ -1,0 +1,4 @@
+method,total_requests,accepted,true_accepts,false_accepts,true_rejects,false_rejects,false_valid_rate,true_reject_rate,availability,unsafe_acceptance_per_request
+Receive-latest (B0),27000,26530,22487,4043,0,470,0.152394,0,0.982593,0.149741
+Timestamp-aligned + age (B1),27000,23052,19009,4043,0,3948,0.175386,0,0.853778,0.149741
+Proposed state acceptance (P),27000,12969,12969,0,0,14031,0,1,0.480333,0

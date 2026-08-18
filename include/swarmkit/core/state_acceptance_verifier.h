@@ -26,18 +26,32 @@ enum class VerificationFailureReason : std::uint8_t {
     kContractHashMismatch,
     /// Contract version mismatch between certificate and provided contract.
     kContractVersionMismatch,
-    /// Could not reconstruct the acceptance decision from evidence.
-    kDecisionReconstructionFailed,
+    /// Acceptance semantics version mismatch.
+    kSemanticVersionMismatch,
+    /// Missing evidence for a certified entry.
+    kMissingEvidence,
+    /// Evidence hash does not match computed SHA-256 of stored record.
+    kEvidenceHashMismatch,
+    /// Authoritative agent session mismatch.
+    kSessionMismatch,
+    /// Common evaluation time mismatch.
+    kEvaluationTimeMismatch,
+    /// Clock uncertainty / interval reconstruction mismatch.
+    kClockMismatch,
+    /// Propagated uncertainty mismatch.
+    kPropagationMismatch,
+    /// Coordinate frame mismatch.
+    kFrameMismatch,
+    /// Mission / provenance mismatch.
+    kProvenanceMismatch,
+    /// Predicate evaluation mismatch.
+    kPredicateMismatch,
     /// Reconstructed decision disagrees with certificate contents.
     kDecisionMismatch,
-    /// Missing evidence for a certified entry.
-    kMissingCertifiedEvidence,
-    /// Evidence sequence mismatch.
-    kEvidenceSequenceMismatch,
-    /// Timing inconsistency (generation interval does not match).
-    kTimingInconsistency,
-    /// Uncertainty propagation inconsistency.
-    kUncertaintyInconsistency,
+    /// Accepted agent set or completeness rule mismatch.
+    kCompletenessMismatch,
+    /// General decision reconstruction failed.
+    kDecisionReconstructionFailed,
 };
 
 /// One verification failure with context.

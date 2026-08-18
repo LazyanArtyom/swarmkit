@@ -90,9 +90,12 @@ struct ClockQualityState {
 
     /// Whether this clock state has been initialized with a real estimate.
     [[nodiscard]] bool IsValid() const {
-        return synchronization != ClockSynchronization::kUnknown &&
+        return std::isfinite(offset_estimate_ms) &&
+               std::isfinite(uncertainty_radius_ms) &&
+               uncertainty_radius_ms >= 0.0 &&
+               synchronization != ClockSynchronization::kUnknown &&
                source_domain != ClockDomain::kUnknown &&
-               uncertainty_radius_ms >= 0.0 && last_update_ms > 0;
+               last_update_ms > 0;
     }
 
     bool operator==(const ClockQualityState&) const = default;
@@ -113,28 +116,30 @@ ComputeGenerationInterval(const TimestampEvidence& source_time,
     if (!source_time.timestamp_ms.has_value()) return std::nullopt;
     if (!clock_state.IsValid()) return std::nullopt;
 
-    return clock_state.ComputeGenerationInterval(
-        static_cast<double>(*source_time.timestamp_ms));
+    const double s = static_cast<double>(*source_time.timestamp_ms);
+    if (!std::isfinite(s)) return std::nullopt;
+
+    return clock_state.ComputeGenerationInterval(s);
 }
 
 /// Compute a generation-time interval using only per-sample evidence.
 ///
-/// This is a simpler fallback when no persistent ClockQualityState is
-/// maintained.  It uses the per-sample clock_uncertainty_ms directly.
-/// If clock_uncertainty_ms is absent, the interval degenerates to a point
-/// (uncertainty = 0), which is explicit about unknown error rather than
-/// silently treating it as zero.
+/// This is used when per-sample clock uncertainty is available in
+/// TimestampEvidence. If clock_uncertainty_ms is absent or negative/NaN,
+/// this returns nullopt (missing clock evidence is NOT zero error).
 ///
 /// @param source_time  Per-sample timestamp evidence.
-/// @return Generation interval, or nullopt if timestamp is absent.
+/// @return Generation interval, or nullopt if timestamp or clock uncertainty is absent.
 [[nodiscard]] inline std::optional<GenerationTimeInterval>
 ComputeGenerationIntervalFromSample(const TimestampEvidence& source_time) {
     if (!source_time.timestamp_ms.has_value()) return std::nullopt;
+    if (!source_time.clock_uncertainty_ms.has_value()) return std::nullopt;
+
+    const double rho = *source_time.clock_uncertainty_ms;
+    if (!std::isfinite(rho) || rho < 0.0) return std::nullopt;
 
     const double s = static_cast<double>(*source_time.timestamp_ms);
-    // Per-sample clock uncertainty, if provided.  When absent, we do NOT
-    // default to zero — the caller must handle the missing uncertainty.
-    const double rho = source_time.clock_uncertainty_ms.value_or(0.0);
+    if (!std::isfinite(s)) return std::nullopt;
 
     return GenerationTimeInterval{
         .lower_ms = s - rho,

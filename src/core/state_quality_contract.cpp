@@ -4,6 +4,7 @@
 #include "swarmkit/core/state_quality_contract.h"
 
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 
 #include "sha256.h"
@@ -66,6 +67,62 @@ std::string ComputeContractHash(const StateQualityContract& contract) {
 
     const std::string content = oss.str();
     return swarmkit::core::internal::Sha256Hex(content);
+}
+
+core::Result ValidateStateQualityContract(const StateQualityContract& contract) {
+    if (contract.contract_id.empty()) {
+        return core::Result::Rejected("Contract validation error: contract_id cannot be empty");
+    }
+    if (contract.required_fields.empty()) {
+        return core::Result::Rejected("Contract validation error: required_fields cannot be empty");
+    }
+    if (contract.required_agents.empty()) {
+        return core::Result::Rejected("Contract validation error: required_agents cannot be empty");
+    }
+    if (contract.completeness == CompletenessRule::kMinimumCount) {
+        if (contract.min_required_agents < 1 ||
+            contract.min_required_agents > contract.required_agents.size()) {
+            return core::Result::Rejected(
+                "Contract validation error: min_required_agents out of range [1, required_agents.size()]");
+        }
+    }
+    if (contract.max_evidence_age_ms.has_value()) {
+        if (!std::isfinite(*contract.max_evidence_age_ms) || *contract.max_evidence_age_ms < 0.0) {
+            return core::Result::Rejected(
+                "Contract validation error: max_evidence_age_ms must be finite and non-negative");
+        }
+    }
+    if (contract.max_clock_uncertainty_ms.has_value()) {
+        if (!std::isfinite(*contract.max_clock_uncertainty_ms) || *contract.max_clock_uncertainty_ms < 0.0) {
+            return core::Result::Rejected(
+                "Contract validation error: max_clock_uncertainty_ms must be finite and non-negative");
+        }
+    }
+    if (contract.max_position_uncertainty_m.has_value()) {
+        if (!std::isfinite(*contract.max_position_uncertainty_m) || *contract.max_position_uncertainty_m < 0.0) {
+            return core::Result::Rejected(
+                "Contract validation error: max_position_uncertainty_m must be finite and non-negative");
+        }
+    }
+    if (contract.max_velocity_uncertainty_mps.has_value()) {
+        if (!std::isfinite(*contract.max_velocity_uncertainty_mps) || *contract.max_velocity_uncertainty_mps < 0.0) {
+            return core::Result::Rejected(
+                "Contract validation error: max_velocity_uncertainty_mps must be finite and non-negative");
+        }
+    }
+    if (!std::isfinite(contract.max_horizontal_speed_mps) || contract.max_horizontal_speed_mps < 0.0f) {
+        return core::Result::Rejected(
+            "Contract validation error: max_horizontal_speed_mps must be finite and non-negative");
+    }
+    if (!std::isfinite(contract.max_vertical_speed_mps) || contract.max_vertical_speed_mps < 0.0f) {
+        return core::Result::Rejected(
+            "Contract validation error: max_vertical_speed_mps must be finite and non-negative");
+    }
+    if (contract.propagation_model_id.empty()) {
+        return core::Result::Rejected(
+            "Contract validation error: propagation_model_id cannot be empty");
+    }
+    return core::Result::Success();
 }
 
 }  // namespace swarmkit::core

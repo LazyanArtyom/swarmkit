@@ -139,3 +139,79 @@ TEST_CASE("StateQualityContract hash computation is deterministic and sensitive"
         REQUIRE(ComputeContractHash(c1) != ComputeContractHash(c2));
     }
 }
+
+TEST_CASE("ValidateStateQualityContract rejects malformed contract parameters", "[contract]") {
+    StateQualityContract valid{
+        .contract_id = "sqc-valid",
+        .required_fields = {EvidenceFieldId::kPosition},
+        .max_evidence_age_ms = 500.0,
+        .max_clock_uncertainty_ms = 10.0,
+        .max_position_uncertainty_m = 2.0,
+        .required_agents = {"uav-1", "uav-2"},
+        .completeness = CompletenessRule::kAllRequired,
+        .propagation_model_id = "ball-enclosure-v1",
+        .max_horizontal_speed_mps = 10.0F,
+        .max_vertical_speed_mps = 5.0F,
+    };
+
+    REQUIRE(ValidateStateQualityContract(valid).IsOk());
+
+    SECTION("Empty contract_id") {
+        auto invalid = valid;
+        invalid.contract_id = "";
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+    }
+
+    SECTION("Empty required_fields") {
+        auto invalid = valid;
+        invalid.required_fields.clear();
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+    }
+
+    SECTION("Empty required_agents") {
+        auto invalid = valid;
+        invalid.required_agents.clear();
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+    }
+
+    SECTION("Invalid min_required_agents") {
+        auto invalid = valid;
+        invalid.completeness = CompletenessRule::kMinimumCount;
+        invalid.min_required_agents = 0;
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+
+        invalid.min_required_agents = 5;  // Greater than required_agents.size() == 2
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+
+        invalid.min_required_agents = 2;  // Valid
+        REQUIRE(ValidateStateQualityContract(invalid).IsOk());
+    }
+
+    SECTION("Negative or NaN thresholds") {
+        auto invalid = valid;
+        invalid.max_evidence_age_ms = -10.0;
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+
+        invalid = valid;
+        invalid.max_evidence_age_ms = std::numeric_limits<double>::quiet_NaN();
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+
+        invalid = valid;
+        invalid.max_clock_uncertainty_ms = -1.0;
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+
+        invalid = valid;
+        invalid.max_position_uncertainty_m = -0.5;
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+
+        invalid = valid;
+        invalid.max_horizontal_speed_mps = -1.0F;
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+    }
+
+    SECTION("Empty propagation_model_id") {
+        auto invalid = valid;
+        invalid.propagation_model_id = "";
+        REQUIRE_FALSE(ValidateStateQualityContract(invalid).IsOk());
+    }
+}

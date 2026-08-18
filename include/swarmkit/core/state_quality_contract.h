@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "swarmkit/core/evidence_record.h"
+#include "swarmkit/core/result.h"
 #include "swarmkit/core/telemetry.h"
 
 namespace swarmkit::core {
@@ -137,5 +138,9 @@ struct StateQualityContract {
 /// Compute a SHA-256 content hash of the contract's configuration fields.
 /// Used for certificate binding (§14 h_C).
 [[nodiscard]] std::string ComputeContractHash(const StateQualityContract& contract);
+
+/// Validate contract parameters. Returns an error result if the contract is malformed.
+[[nodiscard]] core::Result ValidateStateQualityContract(
+    const StateQualityContract& contract);
 
 }  // namespace swarmkit::core

@@ -320,6 +320,7 @@ TEST_CASE("StateAcceptanceEngine rejection on stale agent epoch (E_msg != E_cur)
     frame_new.validity.battery = true;
     frame_new.battery_percent = 95.0F;
     store.InsertFrame(frame_new);
+    store.SetCurrentSession("uav-1", "session-new");
 
     // Current session is now "session-new", but position evidence is from "session-old"
     REQUIRE(store.CurrentSessionId("uav-1") == "session-new");
@@ -358,7 +359,8 @@ TEST_CASE("StateAcceptanceEngine rejection on non-deterministic uncertainty sema
     REQUIRE(std::holds_alternative<StructuredRejection>(result));
     const auto& rej = std::get<StructuredRejection>(result);
     auto it = std::find_if(rej.failures.begin(), rej.failures.end(), [](const PredicateFailure& f) {
-        return f.reason == RejectionReason::kUnsupportedUncertaintySemantics;
+        return f.reason == RejectionReason::kUncertaintySemanticsMismatch ||
+               f.reason == RejectionReason::kUnsupportedUncertaintySemantics;
     });
     REQUIRE(it != rej.failures.end());
 }
@@ -391,4 +393,51 @@ TEST_CASE("StateAcceptanceEngine completeness rules", "[acceptance_engine]") {
         const auto& snap = std::get<AcceptedSnapshot>(result);
         REQUIRE(snap.accepted_agents.size() == 2);
     }
+}
+
+TEST_CASE("StateAcceptanceEngine causal search beyond 16 records and reordering (P0.4)", "[acceptance_engine]") {
+    StateAcceptanceEngine engine;
+    EvidenceStore store(EvidenceStoreConfig{.max_records_per_field = 50});
+
+    // Insert 1 causal record at source_time = 1000 ms (seq 1)
+    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1010));
+
+    // Insert 20 non-causal records at source_time = 1200..1220 ms (g^+ > t* = 1100 ms)
+    for (int i = 2; i <= 21; ++i) {
+        store.InsertFrame(CreateTestFrame("uav-1", "sess-1", i, 1200 + i, 1300 + i));
+    }
+
+    auto contract = CreateStandardContract({"uav-1"});
+    std::unordered_map<std::string, ClockQualityState> clock_states;
+
+    // t* = 1100 ms: The 20 newest records are non-causal. The engine MUST search beyond 16 records
+    // and find the older causal record at source_time = 1000 ms.
+    auto result = engine.RequestSnapshot(contract, 1100.0, store, clock_states);
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(result));
+    const auto& snap = std::get<AcceptedSnapshot>(result);
+    REQUIRE(snap.accepted_agents.size() == 1);
+    auto pos_it = snap.agent_states.at("uav-1").at(static_cast<std::uint8_t>(EvidenceFieldId::kPosition));
+    REQUIRE(pos_it.evidence.identity.sequence == 1);
+}
+
+TEST_CASE("StateAcceptanceEngine statelessness and deterministic repeatability (P0.7)", "[acceptance_engine]") {
+    StateAcceptanceEngine engine;
+    EvidenceStore store;
+
+    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
+    auto contract = CreateStandardContract({"uav-1"});
+    std::unordered_map<std::string, ClockQualityState> clock_states;
+
+    auto res1 = engine.RequestSnapshot(contract, 1100.0, store, clock_states);
+    auto res2 = engine.RequestSnapshot(contract, 1100.0, store, clock_states);
+
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(res1));
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(res2));
+
+    const auto& snap1 = std::get<AcceptedSnapshot>(res1);
+    const auto& snap2 = std::get<AcceptedSnapshot>(res2);
+
+    REQUIRE(snap1.snapshot_id == snap2.snapshot_id);
+    REQUIRE(snap1.contract_hash == snap2.contract_hash);
+    REQUIRE(snap1.evaluation_time_ms == snap2.evaluation_time_ms);
 }
