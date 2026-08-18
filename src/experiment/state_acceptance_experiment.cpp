@@ -587,7 +587,12 @@ std::string ExperimentResults::ToJson() const {
     std::ostringstream oss;
     oss << "{\n";
     oss << "  \"table_ii\": {\n";
+    bool first = true;
     for (const auto& [method_id, m] : method_metrics) {
+        if (!first) {
+            oss << ",\n";
+        }
+        first = false;
         oss << "    \"" << EvaluationMethodToString(m.method) << "\": {\n";
         oss << "      \"total_requests\": " << m.total_requests << ",\n";
         oss << "      \"accepted_count\": " << m.accepted_count << ",\n";
@@ -595,9 +600,9 @@ std::string ExperimentResults::ToJson() const {
         oss << "      \"false_valid_rate\": " << m.FalseValidRate() << ",\n";
         oss << "      \"availability\": " << m.Availability() << ",\n";
         oss << "      \"unsafe_acceptance_per_request\": " << m.UnsafeAcceptancePerRequest() << "\n";
-        oss << "    }" << (method_id == static_cast<uint8_t>(EvaluationMethod::kProposedStateAcceptance) ? "" : ",") << "\n";
+        oss << "    }";
     }
-    oss << "  },\n";
+    oss << "\n  },\n";
     oss << "  \"table_iii\": {\n";
     oss << "    \"enclosures_tested\": " << soundness_metrics.enclosures_tested << ",\n";
     oss << "    \"containment_failures\": " << soundness_metrics.containment_failures << ",\n";

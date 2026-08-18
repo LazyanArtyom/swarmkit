@@ -1,0 +1,37 @@
+{
+  "table_ii": {
+    "Proposed state acceptance": {
+      "total_requests": 900,
+      "accepted_count": 636,
+      "invalid_accepted_count": 76,
+      "false_valid_rate": 0.119497,
+      "availability": 0.706667,
+      "unsafe_acceptance_per_request": 0.0844444
+    },
+    "Timestamp-aligned + age": {
+      "total_requests": 900,
+      "accepted_count": 799,
+      "invalid_accepted_count": 232,
+      "false_valid_rate": 0.290363,
+      "availability": 0.887778,
+      "unsafe_acceptance_per_request": 0.257778
+    },
+    "Receive-latest": {
+      "total_requests": 900,
+      "accepted_count": 900,
+      "invalid_accepted_count": 332,
+      "false_valid_rate": 0.368889,
+      "availability": 1,
+      "unsafe_acceptance_per_request": 0.368889
+    }
+  },
+  "table_iii": {
+    "enclosures_tested": 1908,
+    "containment_failures": 0,
+    "verifier_agreement_rate": 1,
+    "tampered_rejected": 636,
+    "tampered_tested": 636,
+    "p95_latency_ms": 0.0185,
+    "median_certificate_size_bytes": 344
+  }
+}
