@@ -49,6 +49,13 @@ target_link_libraries(swarmkit-evidence-inspect PRIVATE swarmkit_evidence)
 swarmkit_set_warnings(swarmkit-evidence-inspect)
 swarmkit_enable_sanitizers(swarmkit-evidence-inspect)
 
+add_executable(swarmkit-dissertation-experiment
+    ${CMAKE_CURRENT_SOURCE_DIR}/experiment/dissertation_experiment.cpp
+)
+target_link_libraries(swarmkit-dissertation-experiment PRIVATE swarmkit_experiment)
+swarmkit_set_warnings(swarmkit-dissertation-experiment)
+swarmkit_enable_sanitizers(swarmkit-dissertation-experiment)
+
 if(BUILD_TESTING)
     add_test(NAME swarmkit_evidence_inspect_help
         COMMAND swarmkit-evidence-inspect --help
