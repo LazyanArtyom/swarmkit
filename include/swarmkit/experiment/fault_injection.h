@@ -36,6 +36,7 @@ struct FaultInjectionConfig {
     double uniform_vertical_noise_m{};
     double position_spike_m{25.0};
     std::int64_t source_clock_offset_ms{};
+    double source_clock_drift_ms_per_frame{};
     double source_clock_uncertainty_ms{};
     bool record_unapplied_decisions{true};
 

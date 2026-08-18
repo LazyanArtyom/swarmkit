@@ -43,6 +43,27 @@ struct CertificateEvidenceEntry {
     /// Propagated uncertainty ε(t*).
     double propagated_uncertainty{};
 
+    /// Coordinate frame of the observation.
+    CoordinateFrame coordinate_frame{CoordinateFrame::kUnknown};
+
+    /// Uncertainty semantics of the observation.
+    UncertaintySemantics uncertainty_semantics{UncertaintySemantics::kUnknown};
+
+    /// Clock domain.
+    ClockDomain clock_domain{ClockDomain::kUnknown};
+
+    /// Clock synchronization state.
+    ClockSynchronization clock_synchronization{ClockSynchronization::kUnknown};
+
+    /// Estimator health flags.
+    bool estimator_healthy{false};
+    bool estimator_position_ok{false};
+    bool estimator_velocity_ok{false};
+
+    /// Mission provenance.
+    std::string mission_id;
+    std::uint64_t mission_revision{0};
+
     /// SHA-256 digest of the exact EvidenceRecord used (P1.1).
     std::string evidence_hash;
 

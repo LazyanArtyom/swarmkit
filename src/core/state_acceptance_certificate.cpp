@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <limits>
+#include <locale>
 #include <sstream>
 
 #include "sha256.h"
@@ -15,7 +17,8 @@ namespace {
 
 std::string CanonicalSerializeEvidenceValue(const EvidenceValue& val) {
     std::ostringstream oss;
-    oss << std::setprecision(10);
+    oss.imbue(std::locale::classic());
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
     std::visit([&oss](const auto& v) {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, std::array<double, 3>>) {
@@ -51,23 +54,33 @@ std::string CanonicalSerializeEvidenceValue(const EvidenceValue& val) {
 
 std::string ComputeEvidenceHash(const EvidenceRecord& record) {
     std::ostringstream oss;
-    oss << std::setprecision(10);
+    oss.imbue(std::locale::classic());
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
+
     oss << "agent:" << record.identity.agent_id << "\n";
+    oss << "session:" << record.identity.agent_session_id << "\n";
     oss << "field:" << static_cast<int>(record.identity.field_id) << "\n";
     oss << "seq:" << record.identity.sequence << "\n";
-    oss << "session:" << record.identity.agent_session_id << "\n";
-    oss << "source:" << record.identity.source_component << "\n";
+    oss << "source_comp:" << record.identity.source_component << "\n";
     oss << "frame:" << static_cast<int>(record.identity.coordinate_frame) << "\n";
     oss << "est_id:" << record.identity.estimator_id << "\n";
+    oss << "unc_kind:" << static_cast<int>(record.identity.uncertainty_kind) << "\n";
     oss << "mission_id:" << record.identity.mission_id << "\n";
     oss << "mission_rev:" << record.identity.mission_revision << "\n";
 
     if (record.source_time.timestamp_ms.has_value()) {
-        oss << "src_time:" << *record.source_time.timestamp_ms << "\n";
+        oss << "src_time:present:" << *record.source_time.timestamp_ms << "\n";
+    } else {
+        oss << "src_time:absent\n";
     }
+    oss << "src_clk_domain:" << static_cast<int>(record.source_time.clock_domain) << "\n";
+    oss << "src_clk_sync:" << static_cast<int>(record.source_time.synchronization) << "\n";
     if (record.source_time.clock_uncertainty_ms.has_value()) {
-        oss << "src_clk_unc:" << *record.source_time.clock_uncertainty_ms << "\n";
+        oss << "src_clk_unc:present:" << *record.source_time.clock_uncertainty_ms << "\n";
+    } else {
+        oss << "src_clk_unc:absent\n";
     }
+
     oss << "receive_time_ms:" << record.receive_time_ms << "\n";
 
     oss << "est_healthy:" << (record.quality.estimator_healthy ? "1" : "0") << "\n";
@@ -75,8 +88,21 @@ std::string ComputeEvidenceHash(const EvidenceRecord& record) {
     oss << "est_vel_ok:" << (record.quality.estimator_velocity_ok ? "1" : "0") << "\n";
 
     if (record.quality.uncertainty.has_value()) {
-        oss << "unc_val:" << record.quality.uncertainty->value << "\n";
-        oss << "unc_sem:" << static_cast<int>(record.quality.uncertainty->descriptor.semantics) << "\n";
+        const auto& unc = *record.quality.uncertainty;
+        oss << "unc:present:" << unc.value
+            << ":" << static_cast<int>(unc.descriptor.semantics)
+            << ":";
+        if (unc.descriptor.confidence_level.has_value()) {
+            oss << "conf:present:" << *unc.descriptor.confidence_level;
+        } else {
+            oss << "conf:absent";
+        }
+        oss << ":" << unc.descriptor.calibration_profile_id
+            << ":" << unc.descriptor.calibration_version
+            << ":" << unc.descriptor.source
+            << ":" << unc.descriptor.measurement_generation << "\n";
+    } else {
+        oss << "unc:absent\n";
     }
 
     oss << "val:" << CanonicalSerializeEvidenceValue(record.value) << "\n";
@@ -86,7 +112,9 @@ std::string ComputeEvidenceHash(const EvidenceRecord& record) {
 
 std::string ComputeCertificateHash(const StateAcceptanceCertificate& cert) {
     std::ostringstream oss;
-    oss << std::setprecision(10);
+    oss.imbue(std::locale::classic());
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
+
     oss << "cert_id:" << cert.certificate_id << "\n";
     oss << "contract_id:" << cert.contract_id << "\n";
     oss << "contract_schema_version:" << cert.contract_schema_version << "\n";
@@ -112,6 +140,15 @@ std::string ComputeCertificateHash(const StateAcceptanceCertificate& cert) {
             << ":" << entry.clock_uncertainty_ms
             << ":" << entry.observation_uncertainty
             << ":" << entry.propagated_uncertainty
+            << ":" << static_cast<int>(entry.coordinate_frame)
+            << ":" << static_cast<int>(entry.uncertainty_semantics)
+            << ":" << static_cast<int>(entry.clock_domain)
+            << ":" << static_cast<int>(entry.clock_synchronization)
+            << ":" << (entry.estimator_healthy ? "1" : "0")
+            << ":" << (entry.estimator_position_ok ? "1" : "0")
+            << ":" << (entry.estimator_velocity_ok ? "1" : "0")
+            << ":" << entry.mission_id
+            << ":" << entry.mission_revision
             << ":" << entry.evidence_hash
             << "\n";
     }
@@ -196,6 +233,22 @@ StateAcceptanceCertificate BuildCertificate(
             entry.clock_uncertainty_ms = field_state.clock_uncertainty_ms;
             entry.observation_uncertainty = field_state.observation_uncertainty;
             entry.propagated_uncertainty = field_state.propagated_uncertainty;
+
+            entry.coordinate_frame = field_state.evidence.identity.coordinate_frame;
+            if (field_state.evidence.quality.uncertainty.has_value()) {
+                entry.uncertainty_semantics =
+                    field_state.evidence.quality.uncertainty->descriptor.semantics;
+            }
+            entry.clock_domain = field_state.evidence.source_time.clock_domain;
+            entry.clock_synchronization = field_state.evidence.source_time.synchronization;
+
+            entry.estimator_healthy = field_state.evidence.quality.estimator_healthy;
+            entry.estimator_position_ok = field_state.evidence.quality.estimator_position_ok;
+            entry.estimator_velocity_ok = field_state.evidence.quality.estimator_velocity_ok;
+
+            entry.mission_id = field_state.evidence.identity.mission_id;
+            entry.mission_revision = field_state.evidence.identity.mission_revision;
+
             entry.evidence_hash = ComputeEvidenceHash(field_state.evidence);
 
             max_clock_unc = std::max(max_clock_unc, field_state.clock_uncertainty_ms);
@@ -240,8 +293,10 @@ StateAcceptanceCertificate BuildCertificate(
 
 std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
     std::ostringstream oss;
-    oss << std::setprecision(10);
-    oss << "CERT_V1\n";
+    oss.imbue(std::locale::classic());
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
+
+    oss << "CERT_V2\n";
     oss << cert.certificate_id << "\n";
     oss << cert.contract_id << "\n";
     oss << cert.contract_schema_version << "\n";
@@ -270,8 +325,8 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
         oss << e.agent_id << "\n";
         oss << static_cast<int>(e.field) << "\n";
         oss << e.sequence << "\n";
-        oss << e.agent_session_id << "\n";
-        oss << e.source_component << "\n";
+        oss << (e.agent_session_id.empty() ? "-" : e.agent_session_id) << "\n";
+        oss << (e.source_component.empty() ? "-" : e.source_component) << "\n";
         oss << (e.source_time_ms.has_value() ? *e.source_time_ms : -1) << "\n";
         oss << e.generation_interval.lower_ms << "\n";
         oss << e.generation_interval.upper_ms << "\n";
@@ -279,6 +334,15 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
         oss << e.clock_uncertainty_ms << "\n";
         oss << e.observation_uncertainty << "\n";
         oss << e.propagated_uncertainty << "\n";
+        oss << static_cast<int>(e.coordinate_frame) << "\n";
+        oss << static_cast<int>(e.uncertainty_semantics) << "\n";
+        oss << static_cast<int>(e.clock_domain) << "\n";
+        oss << static_cast<int>(e.clock_synchronization) << "\n";
+        oss << (e.estimator_healthy ? 1 : 0) << "\n";
+        oss << (e.estimator_position_ok ? 1 : 0) << "\n";
+        oss << (e.estimator_velocity_ok ? 1 : 0) << "\n";
+        oss << (e.mission_id.empty() ? "-" : e.mission_id) << "\n";
+        oss << e.mission_revision << "\n";
         oss << e.evidence_hash << "\n";
     }
 
@@ -287,8 +351,10 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
 
 std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_view data) {
     std::istringstream iss{std::string(data)};
+    iss.imbue(std::locale::classic());
+
     std::string header;
-    if (!(iss >> header) || header != "CERT_V1") return std::nullopt;
+    if (!(iss >> header) || (header != "CERT_V1" && header != "CERT_V2")) return std::nullopt;
 
     StateAcceptanceCertificate cert;
     if (!(iss >> cert.certificate_id >> cert.contract_id
@@ -318,15 +384,48 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
         auto& e = cert.evidence_entries[i];
         int field_int = 0;
         std::int64_t src_time = -1;
-        if (!(iss >> e.agent_id >> field_int >> e.sequence >> e.agent_session_id
-                  >> e.source_component >> src_time
-                  >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
-                  >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
-                  >> e.observation_uncertainty >> e.propagated_uncertainty
-                  >> e.evidence_hash)) {
-            return std::nullopt;
+        std::string sess, src_comp;
+
+        if (header == "CERT_V2") {
+            int frame_int = 0, unc_sem_int = 0, clk_dom_int = 0, clk_sync_int = 0;
+            int est_h = 0, est_pos = 0, est_vel = 0;
+            std::string mission_id_str;
+            std::uint64_t mission_rev = 0;
+
+            if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
+                      >> src_comp >> src_time
+                      >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
+                      >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
+                      >> e.observation_uncertainty >> e.propagated_uncertainty
+                      >> frame_int >> unc_sem_int >> clk_dom_int >> clk_sync_int
+                      >> est_h >> est_pos >> est_vel >> mission_id_str >> mission_rev
+                      >> e.evidence_hash)) {
+                return std::nullopt;
+            }
+
+            e.coordinate_frame = static_cast<CoordinateFrame>(frame_int);
+            e.uncertainty_semantics = static_cast<UncertaintySemantics>(unc_sem_int);
+            e.clock_domain = static_cast<ClockDomain>(clk_dom_int);
+            e.clock_synchronization = static_cast<ClockSynchronization>(clk_sync_int);
+            e.estimator_healthy = (est_h != 0);
+            e.estimator_position_ok = (est_pos != 0);
+            e.estimator_velocity_ok = (est_vel != 0);
+            e.mission_id = (mission_id_str == "-") ? "" : mission_id_str;
+            e.mission_revision = mission_rev;
+        } else {
+            if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
+                      >> src_comp >> src_time
+                      >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
+                      >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
+                      >> e.observation_uncertainty >> e.propagated_uncertainty
+                      >> e.evidence_hash)) {
+                return std::nullopt;
+            }
         }
+
         e.field = static_cast<EvidenceFieldId>(field_int);
+        e.agent_session_id = (sess == "-") ? "" : sess;
+        e.source_component = (src_comp == "-") ? "" : src_comp;
         if (src_time >= 0) {
             e.source_time_ms = src_time;
         }

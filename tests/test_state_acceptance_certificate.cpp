@@ -194,4 +194,123 @@ TEST_CASE("StateAcceptanceCertificate canonical serialization roundtrip (P1.2)",
     REQUIRE(deserialized->certificate_hash == cert.certificate_hash);
     REQUIRE(deserialized->evidence_entries.size() == cert.evidence_entries.size());
     REQUIRE(VerifyCertificateIntegrity(*deserialized));
+
+    // Byte-identical serialization roundtrip
+    const std::string reserialized = SerializeCertificate(*deserialized);
+    REQUIRE(reserialized == serialized);
+}
+
+TEST_CASE("StateAcceptanceCertificate precision with large timestamps and small deltas", "[certificate]") {
+    auto snapshot = CreateMockSnapshot();
+    snapshot.evaluation_time_ms = 1'700'000'000'000.12345;
+    auto contract = CreateMockContract();
+    auto cert1 = BuildCertificate(snapshot, contract);
+
+    snapshot.evaluation_time_ms = 1'700'000'000'001.12345;  // 1 ms delta at large timestamp
+    auto cert2 = BuildCertificate(snapshot, contract);
+
+    REQUIRE(cert1.certificate_hash != cert2.certificate_hash);
+
+    const std::string ser1 = SerializeCertificate(cert1);
+    const std::string ser2 = SerializeCertificate(cert2);
+    REQUIRE(ser1 != ser2);
+
+    auto deser1 = DeserializeCertificate(ser1);
+    auto deser2 = DeserializeCertificate(ser2);
+    REQUIRE(deser1.has_value());
+    REQUIRE(deser2.has_value());
+    REQUIRE_THAT(deser1->evaluation_time_ms, WithinAbs(1'700'000'000'000.12345, 1e-6));
+    REQUIRE_THAT(deser2->evaluation_time_ms, WithinAbs(1'700'000'000'001.12345, 1e-6));
+}
+
+TEST_CASE("ComputeEvidenceHash is sensitive to every decision-relevant field", "[certificate][evidence_hash]") {
+    EvidenceRecord base{
+        .value = std::array<double, 3>{37.7749, -122.4194, 10.0},
+        .source_time = {
+            .timestamp_ms = 1'700'000'000'000LL,
+            .clock_domain = ClockDomain::kUnixEpoch,
+            .synchronization = ClockSynchronization::kSynchronized,
+            .clock_uncertainty_ms = 2.0,
+        },
+        .receive_time_ms = 1'700'000'000'020LL,
+        .quality = {
+            .uncertainty = UncertaintyEstimate{
+                .value = 0.25F,
+                .descriptor = {.semantics = UncertaintySemantics::kDeterministicHardBound},
+            },
+            .estimator_healthy = true,
+            .estimator_position_ok = true,
+            .estimator_velocity_ok = true,
+        },
+        .identity = {
+            .agent_id = "uav-1",
+            .agent_session_id = "sess-1",
+            .field_id = EvidenceFieldId::kPosition,
+            .sequence = 100,
+            .coordinate_frame = CoordinateFrame::kWgs84,
+            .source_component = "ekf",
+            .estimator_id = "ekf3",
+            .uncertainty_kind = UncertaintySemantics::kDeterministicHardBound,
+            .mission_id = "mission-alpha",
+            .mission_revision = 1,
+        },
+    };
+
+    const std::string base_hash = ComputeEvidenceHash(base);
+    REQUIRE_FALSE(base_hash.empty());
+
+    // Agent ID mutation
+    auto m_agent = base;
+    m_agent.identity.agent_id = "uav-2";
+    REQUIRE(ComputeEvidenceHash(m_agent) != base_hash);
+
+    // Session ID mutation
+    auto m_sess = base;
+    m_sess.identity.agent_session_id = "sess-2";
+    REQUIRE(ComputeEvidenceHash(m_sess) != base_hash);
+
+    // Sequence mutation
+    auto m_seq = base;
+    m_seq.identity.sequence = 101;
+    REQUIRE(ComputeEvidenceHash(m_seq) != base_hash);
+
+    // Timestamp mutation
+    auto m_ts = base;
+    *m_ts.source_time.timestamp_ms += 1;
+    REQUIRE(ComputeEvidenceHash(m_ts) != base_hash);
+
+    // Timestamp absent mutation
+    auto m_ts_abs = base;
+    m_ts_abs.source_time.timestamp_ms = std::nullopt;
+    REQUIRE(ComputeEvidenceHash(m_ts_abs) != base_hash);
+
+    // Clock uncertainty mutation
+    auto m_clk_unc = base;
+    *m_clk_unc.source_time.clock_uncertainty_ms = 5.0;
+    REQUIRE(ComputeEvidenceHash(m_clk_unc) != base_hash);
+
+    // Coordinate frame mutation
+    auto m_frame = base;
+    m_frame.identity.coordinate_frame = CoordinateFrame::kLocalNed;
+    REQUIRE(ComputeEvidenceHash(m_frame) != base_hash);
+
+    // Estimator health mutation
+    auto m_health = base;
+    m_health.quality.estimator_healthy = false;
+    REQUIRE(ComputeEvidenceHash(m_health) != base_hash);
+
+    // Observation uncertainty value mutation
+    auto m_unc_val = base;
+    m_unc_val.quality.uncertainty->value = 0.5F;
+    REQUIRE(ComputeEvidenceHash(m_unc_val) != base_hash);
+
+    // Observation uncertainty semantics mutation
+    auto m_unc_sem = base;
+    m_unc_sem.quality.uncertainty->descriptor.semantics = UncertaintySemantics::kStandardDeviation;
+    REQUIRE(ComputeEvidenceHash(m_unc_sem) != base_hash);
+
+    // Value mutation
+    auto m_val = base;
+    m_val.value = std::array<double, 3>{37.7750, -122.4194, 10.0};
+    REQUIRE(ComputeEvidenceHash(m_val) != base_hash);
 }

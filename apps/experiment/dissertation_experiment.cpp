@@ -146,8 +146,7 @@ int main(int argc, char* argv[]) {
                     << "    \"latency_p50_us\": " << s.latency_p50_us << ",\n"
                     << "    \"latency_p95_us\": " << s.latency_p95_us << ",\n"
                     << "    \"latency_p99_us\": " << s.latency_p99_us << ",\n"
-                    << "    \"serialized_certificate_size_bytes\": " << s.serialized_certificate_size_bytes << ",\n"
-                    << "    \"memory_per_agent_kb\": " << s.memory_per_agent_kb << "\n"
+                    << "    \"serialized_certificate_size_bytes\": " << s.serialized_certificate_size_bytes << "\n"
                     << "  }" << (i + 1 < results.scalability_results.size() ? "," : "") << "\n";
             }
             ofs << "]\n";

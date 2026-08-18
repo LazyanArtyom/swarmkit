@@ -168,7 +168,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
 
             const auto& cert_entry = *cert_entry_it;
 
-            // Verify evidence sequence, session, and content hash (P1.1)
+            // Verify evidence sequence, session, provenance, and content hash (P1.1, Problem 14)
             if (cert_entry.sequence != best_rec->identity.sequence) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kDecisionMismatch,
@@ -186,6 +186,35 @@ VerificationResult StateAcceptanceVerifier::Verify(
                     .detail = "evidence session mismatch for agent " + agent_id +
                               ": cert=" + cert_entry.agent_session_id +
                               " rec=" + best_rec->identity.agent_session_id,
+                });
+                agent_ok = false;
+                break;
+            }
+
+            if (cert_entry.source_component != best_rec->identity.source_component) {
+                failures.push_back({
+                    .reason = VerificationFailureReason::kProvenanceMismatch,
+                    .detail = "source component mismatch for agent " + agent_id +
+                              ": cert=" + cert_entry.source_component +
+                              " rec=" + best_rec->identity.source_component,
+                });
+                agent_ok = false;
+                break;
+            }
+
+            if (cert_entry.source_time_ms != best_rec->source_time.timestamp_ms) {
+                failures.push_back({
+                    .reason = VerificationFailureReason::kClockMismatch,
+                    .detail = "source timestamp mismatch for agent " + agent_id,
+                });
+                agent_ok = false;
+                break;
+            }
+
+            if (cert_entry.coordinate_frame != best_rec->identity.coordinate_frame) {
+                failures.push_back({
+                    .reason = VerificationFailureReason::kFrameMismatch,
+                    .detail = "coordinate frame mismatch for agent " + agent_id,
                 });
                 agent_ok = false;
                 break;
@@ -300,11 +329,20 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 break;
             }
 
-            // Verify certificate timing & propagated uncertainty consistency within tolerance
+            // Verify certificate timing, observation uncertainty, and propagated uncertainty consistency within tolerance
             if (std::abs(cert_entry.clock_uncertainty_ms - best_clock_unc) > kUncertaintyTolerance) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kClockMismatch,
                     .detail = "clock uncertainty mismatch for agent " + agent_id,
+                });
+                agent_ok = false;
+                break;
+            }
+
+            if (std::abs(cert_entry.observation_uncertainty - obs_unc) > kUncertaintyTolerance) {
+                failures.push_back({
+                    .reason = VerificationFailureReason::kPropagationMismatch,
+                    .detail = "observation uncertainty mismatch for agent " + agent_id,
                 });
                 agent_ok = false;
                 break;

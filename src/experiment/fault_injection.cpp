@@ -306,20 +306,25 @@ class FaultInjectingBackend final : public agent::IDroneBackend {
                     if (invalidate_accuracy) {
                         frame.accuracy = {};
                     }
+                    const std::int64_t dynamic_offset_ms =
+                        state->config.source_clock_offset_ms +
+                        static_cast<std::int64_t>(state->config.source_clock_drift_ms_per_frame *
+                                                  static_cast<double>(state->source_frame_index));
+
                     OffsetSourceTime(&frame.provenance.position,
-                                     state->config.source_clock_offset_ms,
+                                     dynamic_offset_ms,
                                      state->config.source_clock_uncertainty_ms);
                     OffsetSourceTime(&frame.provenance.velocity,
-                                     state->config.source_clock_offset_ms,
+                                     dynamic_offset_ms,
                                      state->config.source_clock_uncertainty_ms);
                     OffsetSourceTime(&frame.provenance.accuracy,
-                                     state->config.source_clock_offset_ms,
+                                     dynamic_offset_ms,
                                      state->config.source_clock_uncertainty_ms);
                     OffsetSourceTime(&frame.provenance.estimator,
-                                     state->config.source_clock_offset_ms,
+                                     dynamic_offset_ms,
                                      state->config.source_clock_uncertainty_ms);
                     OffsetSourceTime(&frame.provenance.vehicle_state,
-                                     state->config.source_clock_offset_ms,
+                                     dynamic_offset_ms,
                                      state->config.source_clock_uncertainty_ms);
 
                     const auto enqueue = [&](State::Delivery delivery) {
@@ -478,8 +483,8 @@ core::Result FaultInjectionConfig::Validate() const {
         return core::Result::Rejected("fault magnitudes must be finite and non-negative");
     }
     if (!std::isfinite(horizontal_bias_north_m) || !std::isfinite(horizontal_bias_east_m) ||
-        !std::isfinite(vertical_bias_m)) {
-        return core::Result::Rejected("fault biases must be finite");
+        !std::isfinite(vertical_bias_m) || !std::isfinite(source_clock_drift_ms_per_frame)) {
+        return core::Result::Rejected("fault biases and clock drift must be finite");
     }
     return core::Result::Success();
 }

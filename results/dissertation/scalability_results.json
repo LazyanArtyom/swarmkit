@@ -1,26 +1,23 @@
 [
   {
     "uav_count": 3,
-    "latency_p50_us": 7,
-    "latency_p95_us": 7.25,
-    "latency_p99_us": 8.833,
-    "serialized_certificate_size_bytes": 1123,
-    "memory_per_agent_kb": 0.71875
+    "latency_p50_us": 65.291,
+    "latency_p95_us": 65.916,
+    "latency_p99_us": 70.5,
+    "serialized_certificate_size_bytes": 1545
   },
   {
     "uav_count": 5,
-    "latency_p50_us": 7.541,
-    "latency_p95_us": 7.875,
-    "latency_p99_us": 9.916,
-    "serialized_certificate_size_bytes": 1688,
-    "memory_per_agent_kb": 0.71875
+    "latency_p50_us": 97.25,
+    "latency_p95_us": 101.833,
+    "latency_p99_us": 111.667,
+    "serialized_certificate_size_bytes": 2360
   },
   {
     "uav_count": 10,
-    "latency_p50_us": 9.75,
-    "latency_p95_us": 10.125,
-    "latency_p99_us": 14.791,
-    "serialized_certificate_size_bytes": 3106,
-    "memory_per_agent_kb": 0.71875
+    "latency_p50_us": 184.5,
+    "latency_p95_us": 188.292,
+    "latency_p99_us": 194.25,
+    "serialized_certificate_size_bytes": 4401
   }
 ]

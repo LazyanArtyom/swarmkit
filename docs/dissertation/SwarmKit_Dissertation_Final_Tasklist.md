@@ -193,21 +193,21 @@ Priority meanings:
 ## P2.16-P2.20 Main 3-UAV scientific campaign & generated results
 - [x] Executed defense-grade 3-UAV campaign (30 runs, 100 steps per scenario, seed 42, 27,000 requests per method on `SimBackend`).
 - [x] **Table II Result (Common Physical Validity Oracle $U_{\max}=3.0$m)**:
-  - Receive-latest ($B_0$): Requests = 27,000, Accepted = 26,530, FV = **15.2%**, TR = 0.0%, Availability = 98.3%, UAR = **15.0%**
-  - Timestamp-aligned + age ($B_1$): Requests = 27,000, Accepted = 23,052, FV = **17.5%**, TR = 0.0%, Availability = 85.4%, UAR = **15.0%**
-  - **Proposed state acceptance ($P$)**: Requests = 27,000, Accepted = 12,969, **FV = 0.0%**, **TR = 100.0%**, Availability = 48.0%, **UAR = 0.0%**
+  - Receive-latest ($B_0$): Requests = 27,000, Accepted = 26,866, FV = **22.1%**, Availability = 99.5%, UAR = **22.0%**
+  - Timestamp-aligned + age ($B_1$): Requests = 27,000, Accepted = 26,541, FV = **30.5%**, Availability = 98.3%, UAR = **30.0%**
+  - **Proposed state acceptance ($P$)**: Requests = 27,000, Accepted = 16,684, **FV = 1.8%**, Availability = 61.8%, **UAR = 1.1%**
 - [x] **Table III Result**:
-  - Deterministic enclosures tested: **38,907**
+  - Deterministic enclosures tested: **50,052**
   - Containment failures ($CF$): **0 (0.00%)**
-  - Replayed acceptance decisions: **12,969**
-  - Verifier replay agreement: **12,969 / 12,969 (100.0%)**
-  - Tampered certificates tested / caught: **142,659 / 142,659 (100.0%)**
-  - Snapshot decision latency (p50 / p95 / p99): **28.0 µs / 63.5 µs / 68.1 µs**
-  - Serialized certificate size (median): **1,367 bytes**
+  - Replayed acceptance decisions: **16,684**
+  - Verifier replay agreement: **16,684 / 16,684 (100.0%)**
+  - Tampered certificates tested / caught: **250,260 / 250,260 (100.0%)** (15 mutation classes)
+  - Snapshot decision latency (p50 / p95 / p99): **60.7 µs / 89.8 µs / 93.3 µs**
+  - Serialized certificate size (median): **1,461 bytes**
 - [x] **Scalability Benchmark ($N \in \{3, 5, 10\}$)**:
-  - 3 UAVs: p50 = 7.0 µs, p95 = 7.2 µs, p99 = 8.8 µs, cert = 1,123 B
-  - 5 UAVs: p50 = 7.5 µs, p95 = 7.9 µs, p99 = 9.9 µs, cert = 1,688 B
-  - 10 UAVs: p50 = 9.8 µs, p95 = 10.1 µs, p99 = 14.8 µs, cert = 3,106 B
+  - 3 UAVs: p50 = 65.3 µs, p95 = 65.9 µs, p99 = 70.5 µs, cert = 1,545 B
+  - 5 UAVs: p50 = 97.2 µs, p95 = 101.8 µs, p99 = 111.7 µs, cert = 2,360 B
+  - 10 UAVs: p50 = 184.5 µs, p95 = 188.3 µs, p99 = 194.2 µs, cert = 4,401 B
 
 ---
 

@@ -26,6 +26,7 @@
 #include "swarmkit/core/state_acceptance_verifier.h"
 #include "swarmkit/core/state_quality_contract.h"
 #include "swarmkit/core/telemetry.h"
+#include "swarmkit/experiment/fault_injection.h"
 
 namespace swarmkit::experiment {
 
@@ -46,9 +47,9 @@ enum class ScenarioFaultKind : std::uint8_t {
 
 /// Evaluation baseline / method (§21.1).
 enum class EvaluationMethod : std::uint8_t {
-    /// Baseline 0 / Baseline 1: Newest received value for each field (B_0).
+    /// Baseline 0: Newest received value for each field (B_0).
     kReceiveLatest,
-    /// Baseline 1 / Baseline 2: Timestamp-aligned proximity + age rejection (B_1).
+    /// Baseline 1: Timestamp-aligned proximity + age rejection (B_1).
     kTimestampAlignedAge,
     /// Proposed: Full common-time State-Quality Contract acceptance (P).
     kProposedStateAcceptance,
@@ -114,9 +115,10 @@ struct MethodMetrics {
     }
 
     /// True-reject rate: TR = N_{rejected and invalid} / N_{invalid requests}
-    [[nodiscard]] double TrueRejectRate() const {
+    /// Returns std::nullopt when no invalid requests occurred (denominator = 0).
+    [[nodiscard]] std::optional<double> TrueRejectRate() const {
         const auto total_invalid = false_accepts + true_rejects;
-        if (total_invalid == 0) return 1.0;
+        if (total_invalid == 0) return std::nullopt;
         return static_cast<double>(true_rejects) / static_cast<double>(total_invalid);
     }
 
@@ -180,7 +182,6 @@ struct ScalabilityBenchmarkResult {
     double latency_p95_us{0.0};
     double latency_p99_us{0.0};
     std::size_t serialized_certificate_size_bytes{};
-    double memory_per_agent_kb{0.0};
 };
 
 /// Complete paired-trace experiment results.
@@ -232,7 +233,7 @@ struct ScenarioConfig {
 /// Evaluator baseline implementations.
 class BaselineEvaluator {
    public:
-    /// Evaluate Baseline 1 / Baseline 0: Receive-latest.
+    /// Evaluate Baseline 0: Receive-latest (B_0).
     [[nodiscard]] static MethodEvaluationOutcome EvaluateReceiveLatest(
         const core::StateQualityContract& contract,
         double evaluation_time_ms,
@@ -240,7 +241,7 @@ class BaselineEvaluator {
         const std::unordered_map<std::string, GroundTruthState>& truth,
         double u_max_meters);
 
-    /// Evaluate Baseline 2 / Baseline 1: Timestamp-aligned + age.
+    /// Evaluate Baseline 1: Timestamp-aligned + age (B_1).
     [[nodiscard]] static MethodEvaluationOutcome EvaluateTimestampAlignedAge(
         const core::StateQualityContract& contract,
         double evaluation_time_ms,

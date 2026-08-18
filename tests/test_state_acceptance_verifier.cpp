@@ -201,28 +201,77 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto res = verifier.Verify(tampered, store, contract, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
+
+    SECTION("12. Tampered source timestamp") {
+        auto tampered = cert;
+        tampered.evidence_entries[0].source_time_ms =
+            tampered.evidence_entries[0].source_time_ms.value_or(0) + 1000;
+        tampered.certificate_hash = ComputeCertificateHash(tampered);
+        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        REQUIRE(std::holds_alternative<VerificationRejection>(res));
+    }
+
+    SECTION("13. Tampered source component provenance") {
+        auto tampered = cert;
+        tampered.evidence_entries[0].source_component = "compromised-sensor";
+        tampered.certificate_hash = ComputeCertificateHash(tampered);
+        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        REQUIRE(std::holds_alternative<VerificationRejection>(res));
+    }
+
+    SECTION("14. Tampered coordinate frame") {
+        auto tampered = cert;
+        tampered.evidence_entries[0].coordinate_frame = CoordinateFrame::kLocalNed;
+        tampered.certificate_hash = ComputeCertificateHash(tampered);
+        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        REQUIRE(std::holds_alternative<VerificationRejection>(res));
+    }
+
+    SECTION("15. Tampered observation uncertainty") {
+        auto tampered = cert;
+        tampered.evidence_entries[0].observation_uncertainty = 0.001;
+        tampered.certificate_hash = ComputeCertificateHash(tampered);
+        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        REQUIRE(std::holds_alternative<VerificationRejection>(res));
+    }
 }
 
-TEST_CASE("StateAcceptanceVerifier offline deserialization and verification", "[verifier]") {
+TEST_CASE("StateAcceptanceVerifier offline deserialization and fresh-store verification", "[verifier]") {
     StateAcceptanceEngine engine;
-    EvidenceStore store;
+    EvidenceStore live_store;
 
-    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 10, 1000));
-    store.InsertFrame(CreateTestFrame("uav-2", "sess-2", 20, 1005));
+    auto frame1 = CreateTestFrame("uav-1", "sess-1", 10, 1000);
+    auto frame2 = CreateTestFrame("uav-2", "sess-2", 20, 1005);
+    live_store.InsertFrame(frame1);
+    live_store.InsertFrame(frame2);
 
     auto contract = CreateTestContract();
     std::unordered_map<std::string, ClockQualityState> clock_states;
 
-    auto engine_result = engine.RequestSnapshot(contract, 1100.0, store, clock_states);
+    auto engine_result = engine.RequestSnapshot(contract, 1100.0, live_store, clock_states);
     const auto& snapshot = std::get<AcceptedSnapshot>(engine_result);
     auto cert = BuildCertificate(snapshot, contract);
 
-    // Simulate saving certificate to wire / disk and reloading in a fresh process
+    // Save certificate to wire string
     std::string wire_bytes = SerializeCertificate(cert);
     auto loaded_cert = DeserializeCertificate(wire_bytes);
     REQUIRE(loaded_cert.has_value());
 
+    // Construct a completely fresh, separate EvidenceStore for offline replay
+    EvidenceStore fresh_offline_store;
+    fresh_offline_store.SetCurrentSession("uav-1", "sess-1");
+    fresh_offline_store.SetCurrentSession("uav-2", "sess-2");
+    fresh_offline_store.InsertFrame(frame1);
+    fresh_offline_store.InsertFrame(frame2);
+
+    std::unordered_map<std::string, ClockQualityState> fresh_clock_states;
+
     StateAcceptanceVerifier offline_verifier;
-    auto verify_result = offline_verifier.Verify(*loaded_cert, store, contract, clock_states);
+    auto verify_result = offline_verifier.Verify(*loaded_cert, fresh_offline_store, contract, fresh_clock_states);
     REQUIRE(std::holds_alternative<VerifiedAcceptance>(verify_result));
+
+    // If an observation is missing in fresh offline store, replay MUST fail
+    EvidenceStore empty_offline_store;
+    auto empty_result = offline_verifier.Verify(*loaded_cert, empty_offline_store, contract, fresh_clock_states);
+    REQUIRE(std::holds_alternative<VerificationRejection>(empty_result));
 }
