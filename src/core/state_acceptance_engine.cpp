@@ -277,6 +277,8 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
 
     std::size_t agents_accepted = 0;
 
+    std::vector<PredicateFailure> all_agent_failures;
+
     for (const auto& agent_id : required) {
         // Determine current session for epoch check.
         const auto current_session = evidence.CurrentSessionId(agent_id);
@@ -284,6 +286,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
             current_session.value_or("");
 
         bool agent_ok = true;
+        std::vector<PredicateFailure> agent_failures;
 
         for (const auto field : contract.required_fields) {
             // Select causal evidence.
@@ -294,14 +297,14 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
                 // Try to distinguish missing evidence from non-causal.
                 auto any_evidence = evidence.Recent(agent_id, field, 1);
                 if (any_evidence.empty()) {
-                    failures.push_back({
+                    agent_failures.push_back({
                         .reason = RejectionReason::kMissingRequiredEvidence,
                         .agent_id = agent_id,
                         .field = field,
                         .detail = "no evidence available",
                     });
                 } else {
-                    failures.push_back({
+                    agent_failures.push_back({
                         .reason = RejectionReason::kCausalSampleUnavailable,
                         .agent_id = agent_id,
                         .field = field,
@@ -314,7 +317,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
 
             // Check source timestamp availability.
             if (!selection->record.source_time.timestamp_ms.has_value()) {
-                failures.push_back({
+                agent_failures.push_back({
                     .reason = RejectionReason::kMissingSourceTimestamp,
                     .agent_id = agent_id,
                     .field = field,
@@ -338,10 +341,6 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
             if (field == EvidenceFieldId::kPosition) {
                 max_speed = static_cast<double>(contract.max_horizontal_speed_mps);
             } else if (field == EvidenceFieldId::kVelocity) {
-                // For velocity, propagation uses acceleration bound.
-                // For now, use 0 (velocity uncertainty doesn't grow with time
-                // in the simple ball model).  A more sophisticated model
-                // can replace this.
                 max_speed = 0.0;
             }
 
@@ -354,7 +353,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
                 evaluation_time_ms, propagated_unc, current_session_id);
 
             if (failure.has_value()) {
-                failures.push_back(std::move(*failure));
+                agent_failures.push_back(std::move(*failure));
                 agent_ok = false;
                 continue;
             }
@@ -373,6 +372,12 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
         if (agent_ok) {
             snapshot.accepted_agents.push_back(agent_id);
             ++agents_accepted;
+        } else {
+            // Clean up any partially stored fields for this rejected agent
+            snapshot.agent_states.erase(agent_id);
+            for (auto& f : agent_failures) {
+                all_agent_failures.push_back(std::move(f));
+            }
         }
     }
 
@@ -388,15 +393,12 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
     }
 
     if (!completeness_ok) {
+        failures = std::move(all_agent_failures);
         failures.push_back({
             .reason = RejectionReason::kIncompleteAgentSet,
             .detail = "accepted " + std::to_string(agents_accepted) + "/" +
                       std::to_string(required.size()) + " required agents",
         });
-    }
-
-    // Final decision: any failure means REJECTED — no silent downgrade (§11).
-    if (!failures.empty()) {
         return StructuredRejection{
             .evaluation_time_ms = evaluation_time_ms,
             .contract_id = contract.contract_id,

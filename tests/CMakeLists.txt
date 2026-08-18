@@ -11,6 +11,7 @@ add_executable(swarmkit_tests
     test_clock_quality.cpp
     test_evidence_store.cpp
     test_state_quality_contract.cpp
+    test_state_acceptance_engine.cpp
     test_client_integration.cpp
     test_command_preconditions.cpp
     test_config.cpp
