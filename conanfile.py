@@ -29,7 +29,7 @@ class SwarmkitConan(ConanFile):
 
     settings = "os", "arch", "compiler", "build_type"
     options = {"shared": [True, False], "with_tools": [True, False], "with_tests": [True, False]}
-    default_options = {"shared": False, "with_tools": False, "with_tests": False}
+    default_options = {"shared": False, "with_tools": True, "with_tests": True}
 
     requires = (
         "fmt/12.1.0",
