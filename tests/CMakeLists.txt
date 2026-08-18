@@ -9,6 +9,7 @@ add_executable(swarmkit_tests
     test_basic.cpp
     test_backend_contract.cpp
     test_clock_quality.cpp
+    test_evidence_store.cpp
     test_client_integration.cpp
     test_command_preconditions.cpp
     test_config.cpp
