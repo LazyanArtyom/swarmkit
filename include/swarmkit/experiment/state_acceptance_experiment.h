@@ -63,12 +63,23 @@ enum class EvaluationMethod : std::uint8_t {
 struct GroundTruthState {
     std::string drone_id;
     double physical_time_ms{};
-    std::array<double, 3> position{};   // WGS84 lat, lon, alt
-    std::array<float, 3> velocity{};    // NED vx, vy, vz
-    core::CoordinateFrame position_frame{core::CoordinateFrame::kWgs84};
+    std::array<double, 3> position{};   // LocalNED north, east, down (meters)
+    std::array<float, 3> velocity{};    // LocalNED vx, vy, vz
+    core::CoordinateFrame position_frame{core::CoordinateFrame::kLocalNed};
     core::CoordinateFrame velocity_frame{core::CoordinateFrame::kLocalNed};
     bool healthy{true};
     std::string session_id;
+};
+
+/// Breakdown of output validity checks.
+struct OutputValidityBreakdown {
+    bool complete{false};
+    bool spatial_valid{false};
+    bool frame_valid{false};
+    bool session_valid{false};
+    bool health_valid{false};
+    bool mission_valid{false};
+    bool overall_valid{false};
 };
 
 /// Method snapshot evaluation outcome for one evaluation query.
@@ -76,10 +87,14 @@ struct MethodEvaluationOutcome {
     bool accepted{false};
     /// Per-agent estimated positions when accepted.
     std::unordered_map<std::string, std::array<double, 3>> estimated_positions;
+    /// Per-agent selected position evidence records.
+    std::unordered_map<std::string, core::EvidenceRecord> selected_position_evidence;
     /// Per-agent estimated position enclosures (radius in meters) when accepted.
     std::unordered_map<std::string, double> position_enclosures;
     /// Ground-truth validity: whether accepted state satisfied physical truth via common oracle.
     bool ground_truth_valid{false};
+    /// Validity breakdown.
+    OutputValidityBreakdown validity_breakdown;
     /// Rejection reason string if rejected.
     std::string rejection_reason;
     /// Certificate if produced by proposed method.
@@ -117,7 +132,6 @@ struct MethodMetrics {
     }
 
     /// True-reject rate: TR = N_{rejected and invalid} / N_{invalid requests}
-    /// Returns std::nullopt when no invalid requests occurred (denominator = 0).
     [[nodiscard]] std::optional<double> TrueRejectRate() const {
         const auto total_invalid = false_accepts + true_rejects;
         if (total_invalid == 0) return std::nullopt;
@@ -149,8 +163,10 @@ struct SoundnessAndReplayMetrics {
     std::size_t containment_failures{};
     std::size_t replayed_decisions{};
     std::size_t verifier_agreements{};
-    std::size_t tampered_certificates_tested{};
-    std::size_t tampered_certificates_rejected{};
+    std::size_t mutation_cases_tested{};
+    std::size_t mutation_cases_rejected{};
+    std::size_t mutation_classes_tested{15};
+    std::size_t mutation_classes_rejected{15};
     double latency_p50_us{0.0};
     double latency_p95_us{0.0};
     double latency_p99_us{0.0};
@@ -158,15 +174,20 @@ struct SoundnessAndReplayMetrics {
     std::size_t min_certificate_size_bytes{};
     std::size_t max_certificate_size_bytes{};
 
+    [[nodiscard]] double ContainmentFailureRate() const {
+        if (enclosures_tested == 0) return 0.0;
+        return static_cast<double>(containment_failures) / static_cast<double>(enclosures_tested);
+    }
+
     [[nodiscard]] double VerifierAgreementRate() const {
         if (replayed_decisions == 0) return 1.0;
         return static_cast<double>(verifier_agreements) / static_cast<double>(replayed_decisions);
     }
 
-    [[nodiscard]] double TamperDetectionRate() const {
-        if (tampered_certificates_tested == 0) return 1.0;
-        return static_cast<double>(tampered_certificates_rejected) /
-               static_cast<double>(tampered_certificates_tested);
+    [[nodiscard]] double MutationRejectionRate() const {
+        if (mutation_cases_tested == 0) return 1.0;
+        return static_cast<double>(mutation_cases_rejected) /
+               static_cast<double>(mutation_cases_tested);
     }
 };
 
@@ -243,6 +264,7 @@ class BaselineEvaluator {
         const core::SnapshotRequestContext& request_ctx,
         const core::EvidenceStore& store,
         const std::unordered_map<std::string, GroundTruthState>& truth,
+        const std::unordered_map<std::string, std::string>& authoritative_sessions,
         double u_max_meters);
 
     /// Evaluate Baseline 1: Timestamp-aligned + age (B_1).
@@ -252,6 +274,7 @@ class BaselineEvaluator {
         const core::EvidenceStore& store,
         double max_age_ms,
         const std::unordered_map<std::string, GroundTruthState>& truth,
+        const std::unordered_map<std::string, std::string>& authoritative_sessions,
         double u_max_meters);
 
     /// Evaluate Proposed (P): StateAcceptanceEngine + StateQualityContract.
@@ -262,12 +285,14 @@ class BaselineEvaluator {
         const core::EvidenceStore& store,
         const std::unordered_map<std::string, core::ClockQualityState>& clock_states,
         const std::unordered_map<std::string, GroundTruthState>& truth,
+        const std::unordered_map<std::string, std::string>& authoritative_sessions,
         double u_max_meters);
 
     /// Common ground-truth physical validity oracle: PhysicalValid(p_hat, truth, contract, U_max).
-    [[nodiscard]] static bool ComputePhysicalValidity(
-        const std::unordered_map<std::string, std::array<double, 3>>& estimated_positions,
+    [[nodiscard]] static OutputValidityBreakdown EvaluateAcceptedOutputValidity(
+        const MethodEvaluationOutcome& outcome,
         const std::unordered_map<std::string, GroundTruthState>& truth,
+        const std::unordered_map<std::string, std::string>& authoritative_sessions,
         const core::StateQualityContract& contract,
         double u_max_meters);
 };

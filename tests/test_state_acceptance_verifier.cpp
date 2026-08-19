@@ -66,6 +66,29 @@ StateQualityContract CreateTestContract() {
     };
 }
 
+std::unordered_map<std::string, ClockQualityState> CreateStandardClockStates() {
+    std::unordered_map<std::string, ClockQualityState> map;
+    map["uav-1"] = ClockQualityState{
+        .offset_estimate_ms = 0.0,
+        .uncertainty_radius_ms = 2.0,
+        .source_domain = ClockDomain::kUnixEpoch,
+        .synchronization = ClockSynchronization::kSynchronized,
+        .last_update_ms = 500,
+        .deterministic_bound = true,
+        .agent_incarnation_id = "sess-1",
+    };
+    map["uav-2"] = ClockQualityState{
+        .offset_estimate_ms = 0.0,
+        .uncertainty_radius_ms = 2.0,
+        .source_domain = ClockDomain::kUnixEpoch,
+        .synchronization = ClockSynchronization::kSynchronized,
+        .last_update_ms = 500,
+        .deterministic_bound = true,
+        .agent_incarnation_id = "sess-2",
+    };
+    return map;
+}
+
 SnapshotRequestContext CreateTestReqCtx(double t_star = 1100.0, std::int64_t r_star = 1100) {
     return SnapshotRequestContext{
         .evaluation_time_ms = t_star,
@@ -88,7 +111,7 @@ TEST_CASE("StateAcceptanceVerifier independent replay equivalence", "[verifier]"
     store.InsertFrame(CreateTestFrame("uav-2", "sess-2", 20, 1005));
 
     auto contract = CreateTestContract();
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates();
 
     const auto req_ctx = CreateTestReqCtx(1100.0, 1100);
     auto engine_result = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
@@ -117,10 +140,11 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
     store.InsertFrame(CreateTestFrame("uav-2", "sess-2", 20, 1005));
 
     auto contract = CreateTestContract();
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates();
 
     const auto req_ctx = CreateTestReqCtx(1100.0, 1100);
     auto engine_result = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(engine_result));
     const auto& snapshot = std::get<AcceptedSnapshot>(engine_result);
     auto cert = BuildCertificate(snapshot, contract, req_ctx);
 
@@ -257,10 +281,11 @@ TEST_CASE("StateAcceptanceVerifier offline deserialization and fresh-store verif
     live_store.InsertFrame(frame2);
 
     auto contract = CreateTestContract();
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates();
 
     const auto req_ctx = CreateTestReqCtx(1100.0, 1100);
     auto engine_result = engine.RequestSnapshot(contract, req_ctx, live_store, clock_states);
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(engine_result));
     const auto& snapshot = std::get<AcceptedSnapshot>(engine_result);
     auto cert = BuildCertificate(snapshot, contract, req_ctx);
 
@@ -276,7 +301,7 @@ TEST_CASE("StateAcceptanceVerifier offline deserialization and fresh-store verif
     fresh_offline_store.InsertFrame(frame1);
     fresh_offline_store.InsertFrame(frame2);
 
-    std::unordered_map<std::string, ClockQualityState> fresh_clock_states;
+    auto fresh_clock_states = CreateStandardClockStates();
 
     StateAcceptanceVerifier offline_verifier;
     auto verify_result = offline_verifier.Verify(*loaded_cert, fresh_offline_store, contract, req_ctx, fresh_clock_states);

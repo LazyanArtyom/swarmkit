@@ -26,6 +26,24 @@ std::string EscapeString(const std::string& s) {
     return out;
 }
 
+std::string UnescapeString(const std::string& s) {
+    std::string out;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size()) {
+            char next = s[++i];
+            if (next == '\"') out += '\"';
+            else if (next == '\\') out += '\\';
+            else if (next == 'n') out += '\n';
+            else if (next == 'r') out += '\r';
+            else if (next == 't') out += '\t';
+            else out += next;
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 std::string ReplayTrace::ToJsonLines() const {
@@ -64,8 +82,24 @@ std::string ReplayTrace::ToJsonLines() const {
                 oss << ",\"estimator_position_ok\":" << (e.record.quality.estimator_position_ok ? "true" : "false");
                 oss << ",\"estimator_velocity_ok\":" << (e.record.quality.estimator_velocity_ok ? "true" : "false");
                 if (e.record.quality.uncertainty.has_value()) {
-                    oss << ",\"uncertainty\":" << e.record.quality.uncertainty->value;
-                    oss << ",\"uncertainty_semantics\":" << static_cast<int>(e.record.quality.uncertainty->descriptor.semantics);
+                    const auto& u = *e.record.quality.uncertainty;
+                    oss << ",\"uncertainty\":" << u.value;
+                    oss << ",\"uncertainty_semantics\":" << static_cast<int>(u.descriptor.semantics);
+                    if (u.descriptor.confidence_level.has_value()) {
+                        oss << ",\"uncertainty_conf\":" << *u.descriptor.confidence_level;
+                    }
+                    if (!u.descriptor.calibration_profile_id.empty()) {
+                        oss << ",\"uncertainty_cal_prof\":\"" << EscapeString(u.descriptor.calibration_profile_id) << "\"";
+                    }
+                    if (!u.descriptor.calibration_version.empty()) {
+                        oss << ",\"uncertainty_cal_ver\":\"" << EscapeString(u.descriptor.calibration_version) << "\"";
+                    }
+                    if (!u.descriptor.source.empty()) {
+                        oss << ",\"uncertainty_source\":\"" << EscapeString(u.descriptor.source) << "\"";
+                    }
+                    if (u.descriptor.measurement_generation != 0) {
+                        oss << ",\"uncertainty_meas_gen\":" << u.descriptor.measurement_generation;
+                    }
                 }
                 // Value serialization
                 std::visit([&oss](const auto& v) {
@@ -78,6 +112,10 @@ std::string ReplayTrace::ToJsonLines() const {
                         oss << ",\"val_f\":" << v;
                     } else if constexpr (std::is_same_v<VT, bool>) {
                         oss << ",\"val_b\":" << (v ? "true" : "false");
+                    } else if constexpr (std::is_same_v<VT, GpsQuality>) {
+                        oss << ",\"val_gps\":" << static_cast<int>(v);
+                    } else if constexpr (std::is_same_v<VT, EstimatorState>) {
+                        oss << ",\"val_est\":" << static_cast<int>(v);
                     }
                 }, e.record.value);
                 oss << "}\n";
@@ -110,7 +148,14 @@ std::string ReplayTrace::ToJsonLines() const {
                 oss << "{\"type\":\"snapshot_request\",\"request_id\":\"" << EscapeString(e.request_id) << "\""
                     << ",\"evaluation_time_ms\":" << e.evaluation_time_ms
                     << ",\"evidence_freeze_ms\":" << e.evidence_freeze_ms
-                    << ",\"contract_hash\":\"" << EscapeString(e.contract_hash) << "\"";
+                    << ",\"contract_hash\":\"" << EscapeString(e.contract_hash) << "\""
+                    << ",\"membership_revision\":" << e.participants.membership_revision
+                    << ",\"participants\":[";
+                for (std::size_t i = 0; i < e.participants.agent_ids.size(); ++i) {
+                    if (i > 0) oss << ",";
+                    oss << "\"" << EscapeString(e.participants.agent_ids[i]) << "\"";
+                }
+                oss << "]";
                 if (e.certificate.has_value()) {
                     oss << ",\"certificate_serialized\":\"" << EscapeString(SerializeCertificate(*e.certificate)) << "\"";
                 }
@@ -135,6 +180,13 @@ std::optional<ReplayTrace> ReplayTrace::FromJsonLines(std::string_view json_line
                 auto end_pos = line.find('"', pos + 12);
                 if (end_pos != std::string::npos) {
                     trace.trace_id = line.substr(pos + 12, end_pos - (pos + 12));
+                }
+            }
+            auto ver_pos = line.find("\"version\":\"");
+            if (ver_pos != std::string::npos) {
+                auto end_pos = line.find('"', ver_pos + 11);
+                if (end_pos != std::string::npos) {
+                    trace.version = line.substr(ver_pos + 11, end_pos - (ver_pos + 11));
                 }
             }
         } else if (line.find("\"type\":\"session_transition\"") != std::string::npos) {
@@ -249,6 +301,35 @@ std::optional<ReplayTrace> ReplayTrace::FromJsonLines(std::string_view json_line
                 if (sem_pos != std::string::npos) {
                     unc.descriptor.semantics = static_cast<UncertaintySemantics>(std::stoi(line.substr(sem_pos + 24)));
                 }
+                auto conf_pos = line.find("\"uncertainty_conf\":");
+                if (conf_pos != std::string::npos) {
+                    unc.descriptor.confidence_level = std::stod(line.substr(conf_pos + 19));
+                }
+                auto calprof_pos = line.find("\"uncertainty_cal_prof\":\"");
+                if (calprof_pos != std::string::npos) {
+                    auto end_pos = line.find('"', calprof_pos + 24);
+                    if (end_pos != std::string::npos) {
+                        unc.descriptor.calibration_profile_id = line.substr(calprof_pos + 24, end_pos - (calprof_pos + 24));
+                    }
+                }
+                auto calver_pos = line.find("\"uncertainty_cal_ver\":\"");
+                if (calver_pos != std::string::npos) {
+                    auto end_pos = line.find('"', calver_pos + 23);
+                    if (end_pos != std::string::npos) {
+                        unc.descriptor.calibration_version = line.substr(calver_pos + 23, end_pos - (calver_pos + 23));
+                    }
+                }
+                auto src_pos2 = line.find("\"uncertainty_source\":\"");
+                if (src_pos2 != std::string::npos) {
+                    auto end_pos = line.find('"', src_pos2 + 22);
+                    if (end_pos != std::string::npos) {
+                        unc.descriptor.source = line.substr(src_pos2 + 22, end_pos - (src_pos2 + 22));
+                    }
+                }
+                auto measgen_pos = line.find("\"uncertainty_meas_gen\":");
+                if (measgen_pos != std::string::npos) {
+                    unc.descriptor.measurement_generation = std::stoull(line.substr(measgen_pos + 23));
+                }
                 ev.record.quality.uncertainty = unc;
             }
 
@@ -257,6 +338,28 @@ std::optional<ReplayTrace> ReplayTrace::FromJsonLines(std::string_view json_line
                 std::array<double, 3> pos_arr{};
                 std::sscanf(line.c_str() + val3d_pos + 10, "%lf,%lf,%lf", &pos_arr[0], &pos_arr[1], &pos_arr[2]);
                 ev.record.value = pos_arr;
+            }
+            auto val3f_pos = line.find("\"val_3f\":[");
+            if (val3f_pos != std::string::npos) {
+                std::array<float, 3> vel_arr{};
+                std::sscanf(line.c_str() + val3f_pos + 10, "%f,%f,%f", &vel_arr[0], &vel_arr[1], &vel_arr[2]);
+                ev.record.value = vel_arr;
+            }
+            auto valf_pos = line.find("\"val_f\":");
+            if (valf_pos != std::string::npos) {
+                ev.record.value = std::stof(line.substr(valf_pos + 8));
+            }
+            auto valb_pos = line.find("\"val_b\":");
+            if (valb_pos != std::string::npos) {
+                ev.record.value = (line.substr(valb_pos + 8, 4) == "true");
+            }
+            auto valest_pos = line.find("\"val_est\":");
+            if (valest_pos != std::string::npos) {
+                ev.record.value = static_cast<EstimatorState>(std::stoi(line.substr(valest_pos + 10)));
+            }
+            auto valgps_pos = line.find("\"val_gps\":");
+            if (valgps_pos != std::string::npos) {
+                ev.record.value = static_cast<GpsQuality>(std::stoi(line.substr(valgps_pos + 10)));
             }
 
             trace.events.push_back(ev);
@@ -305,6 +408,40 @@ std::optional<ReplayTrace> ReplayTrace::FromJsonLines(std::string_view json_line
                     ev.clock_state.agent_incarnation_id = line.substr(inc_pos + 24, end_pos - (inc_pos + 24));
                 }
             }
+            auto cmv_pos = line.find("\"clock_model_version\":\"");
+            if (cmv_pos != std::string::npos) {
+                auto end_pos = line.find('"', cmv_pos + 23);
+                if (end_pos != std::string::npos) {
+                    ev.clock_state.clock_model_version = line.substr(cmv_pos + 23, end_pos - (cmv_pos + 23));
+                }
+            }
+            trace.events.push_back(ev);
+        } else if (line.find("\"type\":\"membership_change\"") != std::string::npos) {
+            MembershipChangeEvent ev;
+            auto ts_pos = line.find("\"timestamp_ms\":");
+            if (ts_pos != std::string::npos) {
+                ev.timestamp_ms = std::stoll(line.substr(ts_pos + 15));
+            }
+            auto rev_pos = line.find("\"membership_revision\":");
+            if (rev_pos != std::string::npos) {
+                ev.participants.membership_revision = std::stoull(line.substr(rev_pos + 22));
+            }
+            auto agents_pos = line.find("\"agents\":[");
+            if (agents_pos != std::string::npos) {
+                auto end_agents = line.find(']', agents_pos + 10);
+                if (end_agents != std::string::npos) {
+                    std::string agents_str = line.substr(agents_pos + 10, end_agents - (agents_pos + 10));
+                    std::istringstream aiss{agents_str};
+                    std::string a_token;
+                    while (std::getline(aiss, a_token, ',')) {
+                        while (!a_token.empty() && (a_token.front() == ' ' || a_token.front() == '"')) a_token.erase(0, 1);
+                        while (!a_token.empty() && (a_token.back() == ' ' || a_token.back() == '"')) a_token.pop_back();
+                        if (!a_token.empty()) {
+                            ev.participants.agent_ids.push_back(a_token);
+                        }
+                    }
+                }
+            }
             trace.events.push_back(ev);
         } else if (line.find("\"type\":\"snapshot_request\"") != std::string::npos) {
             SnapshotRequestEvent ev;
@@ -328,6 +465,34 @@ std::optional<ReplayTrace> ReplayTrace::FromJsonLines(std::string_view json_line
                 auto end_pos = line.find('"', ch_pos + 17);
                 if (end_pos != std::string::npos) {
                     ev.contract_hash = line.substr(ch_pos + 17, end_pos - (ch_pos + 17));
+                }
+            }
+            auto rev_pos = line.find("\"membership_revision\":");
+            if (rev_pos != std::string::npos) {
+                ev.participants.membership_revision = std::stoull(line.substr(rev_pos + 22));
+            }
+            auto part_pos = line.find("\"participants\":[");
+            if (part_pos != std::string::npos) {
+                auto end_part = line.find(']', part_pos + 16);
+                if (end_part != std::string::npos) {
+                    std::string part_str = line.substr(part_pos + 16, end_part - (part_pos + 16));
+                    std::istringstream piss{part_str};
+                    std::string p_token;
+                    while (std::getline(piss, p_token, ',')) {
+                        while (!p_token.empty() && (p_token.front() == ' ' || p_token.front() == '"')) p_token.erase(0, 1);
+                        while (!p_token.empty() && (p_token.back() == ' ' || p_token.back() == '"')) p_token.pop_back();
+                        if (!p_token.empty()) {
+                            ev.participants.agent_ids.push_back(p_token);
+                        }
+                    }
+                }
+            }
+            auto cert_pos = line.find("\"certificate_serialized\":\"");
+            if (cert_pos != std::string::npos) {
+                auto end_pos = line.find('"', cert_pos + 26);
+                if (end_pos != std::string::npos) {
+                    std::string cert_str = line.substr(cert_pos + 26, end_pos - (cert_pos + 26));
+                    ev.certificate = DeserializeCertificate(UnescapeString(cert_str));
                 }
             }
             trace.events.push_back(ev);

@@ -67,6 +67,7 @@ enum class RejectionReason : std::uint8_t {
     kInvalidUncertaintyBound,
     kUnsupportedPropagationFrame,
     kInvalidClockBound,
+    kGpsQualityInsufficient,
 };
 
 /// One predicate failure with context.

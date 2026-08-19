@@ -89,7 +89,26 @@ StateQualityContract CreateStandardContract(const std::unordered_set<std::string
         .completeness = CompletenessRule::kAllRequired,
         .require_deterministic_bounds = true,
         .max_horizontal_speed_mps = 10.0F,
+        .max_vertical_speed_mps = 0.0F,
     };
+}
+
+std::unordered_map<std::string, ClockQualityState> CreateStandardClockStates(
+    const std::unordered_set<std::string>& agents = {"uav-1"},
+    const std::string& session_id = "sess-1") {
+    std::unordered_map<std::string, ClockQualityState> map;
+    for (const auto& a : agents) {
+        map[a] = ClockQualityState{
+            .offset_estimate_ms = 0.0,
+            .uncertainty_radius_ms = 2.0,
+            .source_domain = ClockDomain::kUnixEpoch,
+            .synchronization = ClockSynchronization::kSynchronized,
+            .last_update_ms = 500,
+            .deterministic_bound = true,
+            .agent_incarnation_id = session_id,
+        };
+    }
+    return map;
 }
 
 SnapshotRequestContext MakeReqCtx(double t_star, std::int64_t r_star = 0, std::vector<std::string> agents = {"uav-1"}) {
@@ -116,7 +135,7 @@ TEST_CASE("StateAcceptanceEngine single-UAV acceptance", "[acceptance_engine]") 
 
     // Evaluation time t* = 1100 ms, r* = 1100 ms
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
 
@@ -151,6 +170,9 @@ TEST_CASE("StateAcceptanceEngine multi-UAV common-time acceptance", "[acceptance
 
     auto contract = CreateStandardContract({"uav-1", "uav-2", "uav-3"});
     std::unordered_map<std::string, ClockQualityState> clock_states;
+    clock_states["uav-1"] = ClockQualityState{.uncertainty_radius_ms = 2.0, .source_domain = ClockDomain::kUnixEpoch, .synchronization = ClockSynchronization::kSynchronized, .last_update_ms = 500, .deterministic_bound = true, .agent_incarnation_id = "sess-1"};
+    clock_states["uav-2"] = ClockQualityState{.uncertainty_radius_ms = 2.0, .source_domain = ClockDomain::kUnixEpoch, .synchronization = ClockSynchronization::kSynchronized, .last_update_ms = 500, .deterministic_bound = true, .agent_incarnation_id = "sess-2"};
+    clock_states["uav-3"] = ClockQualityState{.uncertainty_radius_ms = 2.0, .source_domain = ClockDomain::kUnixEpoch, .synchronization = ClockSynchronization::kSynchronized, .last_update_ms = 500, .deterministic_bound = true, .agent_incarnation_id = "sess-3"};
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1050.0, 1050, {"uav-1", "uav-2", "uav-3"}), store, clock_states);
 
@@ -164,7 +186,7 @@ TEST_CASE("StateAcceptanceEngine rejection on missing evidence", "[acceptance_en
     EvidenceStore store;
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1000.0, 1000), store, clock_states);
 
@@ -183,7 +205,7 @@ TEST_CASE("StateAcceptanceEngine rejection on non-causal evidence (g^+ > t*)", "
 
     // Request snapshot at evaluation time t* = 1100 ms
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1300), store, clock_states);
 
@@ -201,10 +223,9 @@ TEST_CASE("StateAcceptanceEngine receive frontier r* enforcement (P0.1)", "[acce
     store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1200));
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     // Request with evidence-freeze cutoff r* = 1100 ms (before frame was received)
-    // Even though g^+ (1002 ms) <= t* (1100 ms), record is excluded because receive_time (1200 ms) > r* (1100 ms)
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
 
     REQUIRE(std::holds_alternative<StructuredRejection>(result));
@@ -222,13 +243,11 @@ TEST_CASE("StateAcceptanceEngine deterministic selector tie-breaking (P0.5)", "[
     EvidenceStore store(EvidenceStoreConfig{.max_records_per_field = 10});
 
     // Insert two records with equal generation intervals (same source time, same clock)
-    // Record 1: seq 10, receive 1010
-    // Record 2: seq 20, receive 1020
     store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 10, 1000, 1010));
     store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 20, 1000, 1020));
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
     REQUIRE(std::holds_alternative<AcceptedSnapshot>(result));
@@ -251,7 +270,7 @@ TEST_CASE("StateAcceptanceEngine context-invalid pre-filtering (P0.6)", "[accept
     store.SetCurrentSession("uav-1", "sess-new");
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-new");
 
     // The old-session record should be filtered BEFORE ranking, so it does not displace
     // or block the valid new-session record.
@@ -268,7 +287,6 @@ TEST_CASE("StateAcceptanceEngine clock drift expands effective rho (P0.4)", "[ac
     StateAcceptanceEngine engine;
     EvidenceStore store;
 
-    // Frame with no per-sample clock uncertainty, relying on ClockQualityState
     auto frame = CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020);
     frame.provenance.position.source_time.clock_uncertainty_ms = std::nullopt;
     frame.provenance.velocity.source_time.clock_uncertainty_ms = std::nullopt;
@@ -276,7 +294,7 @@ TEST_CASE("StateAcceptanceEngine clock drift expands effective rho (P0.4)", "[ac
 
     auto contract = CreateStandardContract({"uav-1"});
 
-    // Clock state with 100 ppm drift rate, last updated at 1000 ms
+    // Clock state with 100 ppm drift rate, last updated at 900 ms
     std::unordered_map<std::string, ClockQualityState> clock_states;
     clock_states["uav-1"] = ClockQualityState{
         .offset_estimate_ms = 0.0,
@@ -302,12 +320,10 @@ TEST_CASE("StateAcceptanceEngine rejection on evidence age exceeded", "[acceptan
     StateAcceptanceEngine engine;
     EvidenceStore store;
 
-    // Evidence at 1000 ms, g^- = 998 ms
     store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
 
-    // t* = 1600 ms -> Delta^+ = 1600 - 998 = 602 ms > max_evidence_age_ms (500 ms)
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1600.0, 1600), store, clock_states);
 
@@ -324,13 +340,20 @@ TEST_CASE("StateAcceptanceEngine rejection on clock uncertainty exceeded", "[acc
     EvidenceStore store;
 
     auto frame = CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020);
-    // Clock uncertainty is 15 ms > contract limit (10 ms)
-    frame.provenance.position.source_time.clock_uncertainty_ms = 15.0;
-    frame.provenance.velocity.source_time.clock_uncertainty_ms = 15.0;
     store.InsertFrame(frame);
 
     auto contract = CreateStandardContract({"uav-1"});
+    // Clock uncertainty is 15 ms > contract limit (10 ms)
     std::unordered_map<std::string, ClockQualityState> clock_states;
+    clock_states["uav-1"] = ClockQualityState{
+        .offset_estimate_ms = 0.0,
+        .uncertainty_radius_ms = 15.0,
+        .source_domain = ClockDomain::kUnixEpoch,
+        .synchronization = ClockSynchronization::kSynchronized,
+        .last_update_ms = 500,
+        .deterministic_bound = true,
+        .agent_incarnation_id = "sess-1",
+    };
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
 
@@ -346,7 +369,6 @@ TEST_CASE("StateAcceptanceEngine rejection on propagated uncertainty exceeded", 
     StateAcceptanceEngine engine;
     EvidenceStore store;
 
-    // Observation unc = 4.0 m
     auto frame = CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020);
     frame.accuracy.horizontal_position = UncertaintyEstimate{
         .value = 4.0F,
@@ -354,10 +376,8 @@ TEST_CASE("StateAcceptanceEngine rejection on propagated uncertainty exceeded", 
     };
     store.InsertFrame(frame);
 
-    // Delta^+ = 1200 - 998 = 202 ms = 0.202 s
-    // propagated = 4.0 + 10.0 * 0.202 = 4.0 + 2.02 = 6.02 m > max_position_uncertainty (5.0 m)
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1200.0, 1200), store, clock_states);
 
@@ -379,7 +399,7 @@ TEST_CASE("StateAcceptanceEngine rejection on unhealthy estimator", "[acceptance
     store.InsertFrame(frame);
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
 
@@ -396,12 +416,11 @@ TEST_CASE("StateAcceptanceEngine rejection on frame mismatch", "[acceptance_engi
     EvidenceStore store;
 
     auto frame = CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020);
-    // Contract expects kWgs84, frame provides kLocalNed
     frame.position_frame = CoordinateFrame::kLocalNed;
     store.InsertFrame(frame);
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
 
@@ -414,11 +433,9 @@ TEST_CASE("StateAcceptanceEngine rejection on stale agent epoch (E_msg != E_cur)
     StateAcceptanceEngine engine;
     EvidenceStore store;
 
-    // Old frame from "session-old"
     auto frame_old = CreateTestFrame("uav-1", "session-old", 1, 1000, 1020);
     store.InsertFrame(frame_old);
 
-    // Agent restarted, new frame in "session-new"
     TelemetryFrame frame_new;
     frame_new.drone_id = "uav-1";
     frame_new.agent_session_id = "session-new";
@@ -432,7 +449,7 @@ TEST_CASE("StateAcceptanceEngine rejection on stale agent epoch (E_msg != E_cur)
     REQUIRE(store.CurrentSessionId("uav-1") == "session-new");
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "session-new");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
 
@@ -452,7 +469,7 @@ TEST_CASE("StateAcceptanceEngine rejection on non-deterministic uncertainty sema
 
     auto contract = CreateStandardContract({"uav-1"});
     contract.require_deterministic_bounds = true;
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1100), store, clock_states);
 
@@ -467,6 +484,9 @@ TEST_CASE("StateAcceptanceEngine completeness rules", "[acceptance_engine]") {
     store.InsertFrame(CreateTestFrame("uav-2", "sess-2", 1, 1000, 1020));
 
     std::unordered_map<std::string, ClockQualityState> clock_states;
+    clock_states["uav-1"] = ClockQualityState{.uncertainty_radius_ms = 2.0, .source_domain = ClockDomain::kUnixEpoch, .synchronization = ClockSynchronization::kSynchronized, .last_update_ms = 500, .deterministic_bound = true, .agent_incarnation_id = "sess-1"};
+    clock_states["uav-2"] = ClockQualityState{.uncertainty_radius_ms = 2.0, .source_domain = ClockDomain::kUnixEpoch, .synchronization = ClockSynchronization::kSynchronized, .last_update_ms = 500, .deterministic_bound = true, .agent_incarnation_id = "sess-2"};
+    clock_states["uav-3"] = ClockQualityState{.uncertainty_radius_ms = 2.0, .source_domain = ClockDomain::kUnixEpoch, .synchronization = ClockSynchronization::kSynchronized, .last_update_ms = 500, .deterministic_bound = true, .agent_incarnation_id = "sess-3"};
 
     SECTION("kAllRequired fails when 1 of 3 missing") {
         auto contract = CreateStandardContract({"uav-1", "uav-2", "uav-3"});
@@ -501,7 +521,7 @@ TEST_CASE("StateAcceptanceEngine causal search beyond 16 records and reordering 
     }
 
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto result = engine.RequestSnapshot(contract, MakeReqCtx(1100.0, 1400), store, clock_states);
     REQUIRE(std::holds_alternative<AcceptedSnapshot>(result));
@@ -517,7 +537,7 @@ TEST_CASE("StateAcceptanceEngine statelessness and deterministic repeatability (
 
     store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
     auto contract = CreateStandardContract({"uav-1"});
-    std::unordered_map<std::string, ClockQualityState> clock_states;
+    auto clock_states = CreateStandardClockStates({"uav-1"}, "sess-1");
 
     auto req_ctx = MakeReqCtx(1100.0, 1100);
     auto res1 = engine.RequestSnapshot(contract, req_ctx, store, clock_states);

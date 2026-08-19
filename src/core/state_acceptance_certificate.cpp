@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <iostream>
 #include <limits>
 #include <locale>
 #include <sstream>

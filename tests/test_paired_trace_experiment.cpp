@@ -157,8 +157,8 @@ TEST_CASE("StateAcceptanceExperimentRunner paired-trace matrix evaluation", "[ex
     }
 
     SECTION("Tampered certificate rejection rate is 100% across 15 mutation classes") {
-        REQUIRE(results.soundness_metrics.tampered_certificates_tested > 0);
-        REQUIRE(results.soundness_metrics.tampered_certificates_rejected == results.soundness_metrics.tampered_certificates_tested);
+        REQUIRE(results.soundness_metrics.mutation_cases_tested > 0);
+        REQUIRE(results.soundness_metrics.mutation_cases_rejected == results.soundness_metrics.mutation_cases_tested);
     }
 
     SECTION("Result formatting is valid and populated") {

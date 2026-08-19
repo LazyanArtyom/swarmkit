@@ -194,3 +194,78 @@ TEST_CASE("ReplayTrace file persist, reload, and independent verification (P0.9)
     // Clean up
     std::filesystem::remove(trace_path);
 }
+
+TEST_CASE("Critical r* evidence freeze frontier exclusion test", "[replay][frontier]") {
+    // Generate trace:
+    // Packet A: s = 90, rx = 95
+    // Packet B: s = 95, rx = 105
+    // Query: t* = 100, r* = 100
+    // Packet B satisfies causality (s=95 <= t*=100), but rx=105 > r*=100.
+    // Packet A satisfies causality AND rx <= r*.
+    // Verify that Packet B is excluded SOLELY because rx > r*, and Packet A is selected.
+
+    StateAcceptanceEngine engine;
+    EvidenceStore store;
+    store.SetCurrentSession("uav-1", "sess-uav-1");
+
+    auto rec_a = MakeSampleRecord("uav-1", 1, 90, 95);
+    rec_a.value = std::array<double, 3>{10.0, 20.0, 30.0};
+    auto rec_b = MakeSampleRecord("uav-1", 2, 95, 105);
+    rec_b.value = std::array<double, 3>{50.0, 60.0, 70.0};
+
+    store.Insert("uav-1", rec_a);
+    store.Insert("uav-1", rec_b);
+
+    StateQualityContract contract{
+        .contract_id = "sqc-rstar-test",
+        .schema_version = 1,
+        .content_version = 1,
+        .required_fields = {EvidenceFieldId::kPosition},
+        .max_evidence_age_ms = 500.0,
+        .max_clock_uncertainty_ms = 10.0,
+        .max_position_uncertainty_m = 100.0,
+        .require_estimator_position_ok = true,
+        .required_position_frame = CoordinateFrame::kWgs84,
+        .require_current_epoch = true,
+        .required_agents = {"uav-1"},
+        .completeness = CompletenessRule::kAllRequired,
+        .require_deterministic_bounds = true,
+        .max_horizontal_speed_mps = 10.0F,
+    };
+
+    std::unordered_map<std::string, ClockQualityState> clock_states;
+    clock_states["uav-1"] = ClockQualityState{
+        .offset_estimate_ms = 0.0,
+        .uncertainty_radius_ms = 1.0,
+        .source_domain = ClockDomain::kUnixEpoch,
+        .synchronization = ClockSynchronization::kSynchronized,
+        .last_update_ms = 50,
+        .deterministic_bound = true,
+        .agent_incarnation_id = "sess-uav-1",
+    };
+
+    SnapshotRequestContext req_ctx{
+        .evaluation_time_ms = 100.0,
+        .evidence_freeze_ms = 100,  // r* = 100 excludes rec_b (rx = 105)
+        .participants = {
+            .agent_ids = {"uav-1"},
+            .membership_revision = 1,
+        },
+    };
+
+    auto res = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(res));
+    const auto& snapshot = std::get<AcceptedSnapshot>(res);
+
+    // Selected evidence MUST be Packet A (sequence 1), NOT Packet B (sequence 2)
+    const auto& agent_map = snapshot.agent_states.at("uav-1");
+    const auto& pos_state = agent_map.at(static_cast<std::uint8_t>(EvidenceFieldId::kPosition));
+    REQUIRE(pos_state.evidence.identity.sequence == 1);
+    REQUIRE(pos_state.evidence.receive_time_ms == 95);
+
+    // Build and verify certificate independently
+    auto cert = BuildCertificate(snapshot, contract, req_ctx);
+    StateAcceptanceVerifier verifier;
+    auto ver_res = verifier.Verify(cert, store, contract, req_ctx, clock_states);
+    REQUIRE(std::holds_alternative<VerifiedAcceptance>(ver_res));
+}

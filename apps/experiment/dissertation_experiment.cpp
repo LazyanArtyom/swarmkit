@@ -22,6 +22,7 @@ int main(int argc, char* argv[]) {
     std::string table3_output_path = "results/dissertation/table_iii_results.json";
     std::string scal_output_path = "results/dissertation/scalability_results.json";
     std::string per_scenario_output_path = "results/dissertation/per_scenario_results.json";
+    std::string replicate_csv_path = "results/dissertation/replicate_results.csv";
 
     std::size_t uav_count = 3;
     std::size_t runs = 50;
@@ -45,7 +46,7 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--help" || arg == "-h") {
             std::cout << "Usage: swarmkit-dissertation-experiment [options]\n\n"
                       << "Options:\n"
-                      << "  --runs <N>                 Monte Carlo runs per scenario (default: 30)\n"
+                      << "  --runs <N>                 Monte Carlo runs per scenario (default: 50)\n"
                       << "  --steps-per-scenario <N>   Evaluation steps per run (default: 100)\n"
                       << "  --seed-base <S>            Base random seed (default: 42)\n"
                       << "  --uav-count <N>            Number of UAVs in swarm (default: 3)\n"
@@ -118,13 +119,15 @@ int main(int argc, char* argv[]) {
             ofs << "{\n"
                 << "  \"enclosures_tested\": " << results.soundness_metrics.enclosures_tested << ",\n"
                 << "  \"containment_failures\": " << results.soundness_metrics.containment_failures << ",\n"
-                << "  \"containment_failure_rate\": 0.0,\n"
+                << "  \"containment_failure_rate\": " << results.soundness_metrics.ContainmentFailureRate() << ",\n"
                 << "  \"replayed_decisions\": " << results.soundness_metrics.replayed_decisions << ",\n"
                 << "  \"verifier_agreements\": " << results.soundness_metrics.verifier_agreements << ",\n"
                 << "  \"verifier_agreement_rate\": " << results.soundness_metrics.VerifierAgreementRate() << ",\n"
-                << "  \"tampered_certificates_tested\": " << results.soundness_metrics.tampered_certificates_tested << ",\n"
-                << "  \"tampered_certificates_rejected\": " << results.soundness_metrics.tampered_certificates_rejected << ",\n"
-                << "  \"tamper_detection_rate\": " << results.soundness_metrics.TamperDetectionRate() << ",\n"
+                << "  \"mutation_classes_tested\": " << results.soundness_metrics.mutation_classes_tested << ",\n"
+                << "  \"mutation_classes_rejected\": " << results.soundness_metrics.mutation_classes_rejected << ",\n"
+                << "  \"mutation_cases_tested\": " << results.soundness_metrics.mutation_cases_tested << ",\n"
+                << "  \"mutation_cases_rejected\": " << results.soundness_metrics.mutation_cases_rejected << ",\n"
+                << "  \"mutation_rejection_rate\": " << results.soundness_metrics.MutationRejectionRate() << ",\n"
                 << "  \"latency_p50_us\": " << results.soundness_metrics.latency_p50_us << ",\n"
                 << "  \"latency_p95_us\": " << results.soundness_metrics.latency_p95_us << ",\n"
                 << "  \"latency_p99_us\": " << results.soundness_metrics.latency_p99_us << ",\n"
@@ -151,6 +154,60 @@ int main(int argc, char* argv[]) {
             }
             ofs << "]\n";
             std::cout << "Saved Scalability JSON to " << scal_output_path << "\n";
+        }
+    }
+
+    // Write Per-Scenario JSON output
+    if (!per_scenario_output_path.empty()) {
+        std::ofstream ofs(per_scenario_output_path);
+        if (ofs.is_open()) {
+            ofs << "[\n";
+            for (std::size_t i = 0; i < results.per_scenario_metrics.size(); ++i) {
+                const auto& sc = results.per_scenario_metrics[i];
+                const auto& b0 = sc.metrics_by_method.at(static_cast<uint8_t>(swarmkit::experiment::EvaluationMethod::kReceiveLatest));
+                const auto& b1 = sc.metrics_by_method.at(static_cast<uint8_t>(swarmkit::experiment::EvaluationMethod::kTimestampAlignedAge));
+                const auto& p = sc.metrics_by_method.at(static_cast<uint8_t>(swarmkit::experiment::EvaluationMethod::kProposedStateAcceptance));
+
+                ofs << "  {\n"
+                    << "    \"scenario\": \"" << swarmkit::experiment::ScenarioFaultKindToString(sc.fault_kind) << "\",\n"
+                    << "    \"requests\": " << sc.requests << ",\n"
+                    << "    \"b0_accepted\": " << b0.AcceptedCount() << ",\n"
+                    << "    \"b0_false_valid_rate\": " << b0.FalseValidRate() << ",\n"
+                    << "    \"b0_availability\": " << b0.Availability() << ",\n"
+                    << "    \"b1_accepted\": " << b1.AcceptedCount() << ",\n"
+                    << "    \"b1_false_valid_rate\": " << b1.FalseValidRate() << ",\n"
+                    << "    \"b1_availability\": " << b1.Availability() << ",\n"
+                    << "    \"proposed_accepted\": " << p.AcceptedCount() << ",\n"
+                    << "    \"proposed_false_valid_rate\": " << p.FalseValidRate() << ",\n"
+                    << "    \"proposed_availability\": " << p.Availability() << "\n"
+                    << "  }" << (i + 1 < results.per_scenario_metrics.size() ? "," : "") << "\n";
+            }
+            ofs << "]\n";
+            std::cout << "Saved Per-Scenario JSON to " << per_scenario_output_path << "\n";
+        }
+    }
+
+    // Write Replicate CSV output
+    if (!replicate_csv_path.empty()) {
+        std::ofstream ofs(replicate_csv_path);
+        if (ofs.is_open()) {
+            ofs << "replicate_id,motion_seed,fault_seed,scenario_id,method,requests,accepted,true_accepts,false_accepts,true_rejects,false_rejects,enclosures_tested,containment_failures\n";
+            for (const auto& rep : results.replicate_records) {
+                ofs << rep.replicate_id << ","
+                    << rep.motion_seed << ","
+                    << rep.fault_seed << ","
+                    << static_cast<int>(rep.scenario_id) << ","
+                    << static_cast<int>(rep.method) << ","
+                    << rep.requests << ","
+                    << rep.accepted << ","
+                    << rep.true_accepts << ","
+                    << rep.false_accepts << ","
+                    << rep.true_rejects << ","
+                    << rep.false_rejects << ","
+                    << rep.enclosures_tested << ","
+                    << rep.containment_failures << "\n";
+            }
+            std::cout << "Saved Replicate CSV to " << replicate_csv_path << "\n";
         }
     }
 

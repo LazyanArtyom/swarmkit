@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <limits>
 #include <sstream>
 
@@ -186,13 +187,15 @@ VerificationResult StateAcceptanceVerifier::Verify(
                         continue;
                     }
 
-                    clock_unc = clk.ComputeEffectiveUncertainty(s);
-                    const double ref_time = s - clk.offset_estimate_ms;
+                    // Reference domain estimated generation time g_hat = s - theta_hat
+                    const double g_hat = s - clk.offset_estimate_ms;
+                    clock_unc = clk.ComputeEffectiveUncertainty(g_hat);
                     interval = GenerationTimeInterval{
-                        .lower_ms = ref_time - clock_unc,
-                        .upper_ms = ref_time + clock_unc,
+                        .lower_ms = g_hat - clock_unc,
+                        .upper_ms = g_hat + clock_unc,
                     };
-                } else if (rec.source_time.clock_uncertainty_ms.has_value()) {
+                } else if (!contract.require_deterministic_bounds && rec.source_time.clock_uncertainty_ms.has_value()) {
+                    // Non-deterministic legacy mode only
                     const double rho = *rec.source_time.clock_uncertainty_ms;
                     if (!std::isfinite(rho) || rho < 0.0) continue;
                     interval = ComputeGenerationIntervalFromSample(rec.source_time);
@@ -392,10 +395,10 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 }
             }
 
-            // Propagated uncertainty: ε(t*) = e_p + V_max · Δ⁺.
+            // Propagated uncertainty: ε(t*) = e_p + V_3D_max · Δ⁺.
             double max_speed = 0.0;
             if (field == EvidenceFieldId::kPosition) {
-                max_speed = static_cast<double>(contract.max_horizontal_speed_mps);
+                max_speed = Compute3DSpeedBound(contract.max_horizontal_speed_mps, contract.max_vertical_speed_mps);
             }
 
             const double propagated_unc = ComputePropagatedUncertainty(

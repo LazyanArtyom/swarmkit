@@ -119,15 +119,16 @@ StateAcceptanceEngine::SelectCausalEvidence(
                 continue;
             }
 
-            // Use effective uncertainty with drift budget.
-            clock_unc = clk.ComputeEffectiveUncertainty(s);
+            // Reference domain estimated generation time g_hat = s - theta_hat
             theta_hat = clk.offset_estimate_ms;
-            const double ref_time = s - theta_hat;
+            const double g_hat = s - theta_hat;
+            clock_unc = clk.ComputeEffectiveUncertainty(g_hat);
             interval = GenerationTimeInterval{
-                .lower_ms = ref_time - clock_unc,
-                .upper_ms = ref_time + clock_unc,
+                .lower_ms = g_hat - clock_unc,
+                .upper_ms = g_hat + clock_unc,
             };
-        } else if (record.source_time.clock_uncertainty_ms.has_value()) {
+        } else if (!contract.require_deterministic_bounds && record.source_time.clock_uncertainty_ms.has_value()) {
+            // Non-deterministic legacy mode only
             const double rho = *record.source_time.clock_uncertainty_ms;
             if (!std::isfinite(rho) || rho < 0.0) {
                 had_clock_quality_failure = true;
@@ -138,9 +139,9 @@ StateAcceptanceEngine::SelectCausalEvidence(
             clock_unc = rho;
             theta_hat = 0.0;  // Per-sample: no offset estimate.
         } else {
-            // P0.3: No silent θ̂=0 fallback. Missing clock → reject, not assume.
+            // Missing valid deterministic clock quality state -> ineligible
             had_clock_quality_failure = true;
-            clock_failure_detail = "missing clock quality and per-sample clock uncertainty";
+            clock_failure_detail = "missing valid deterministic clock quality state for agent " + agent_id;
             continue;
         }
 
@@ -347,6 +348,21 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
         }
     }
 
+    // GPS Quality predicate (H).
+    if (contract.min_gps_quality != GpsQuality::kUnknown && field == EvidenceFieldId::kGpsQuality) {
+        if (std::holds_alternative<GpsQuality>(record.value)) {
+            const auto q = std::get<GpsQuality>(record.value);
+            if (static_cast<std::uint8_t>(q) < static_cast<std::uint8_t>(contract.min_gps_quality)) {
+                return PredicateFailure{
+                    .reason = RejectionReason::kGpsQualityInsufficient,
+                    .agent_id = agent_id,
+                    .field = field,
+                    .detail = "GPS quality below required threshold",
+                };
+            }
+        }
+    }
+
     // Frame predicates (P, P0.6) — note: context-invalid records were already
     // filtered out in SelectCausalEvidence, but we re-check here for completeness
     // and for the post-selection predicate evaluation record.
@@ -495,7 +511,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
 
             double max_speed = 0.0;
             if (field == EvidenceFieldId::kPosition) {
-                max_speed = static_cast<double>(contract.max_horizontal_speed_mps);
+                max_speed = Compute3DSpeedBound(contract.max_horizontal_speed_mps, contract.max_vertical_speed_mps);
             } else if (field == EvidenceFieldId::kVelocity) {
                 max_speed = 0.0;
             }
