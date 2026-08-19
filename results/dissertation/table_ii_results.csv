@@ -1,4 +1,4 @@
 method,total_requests,accepted_count,false_valid_rate,availability,unsafe_acceptance_per_request
-"Receive-latest (B0)",27000,26866,0.220837,0.995037,0.219741
-"Timestamp-aligned + age (B1)",27000,26541,0.305075,0.983,0.299889
-"Proposed state acceptance (P)",27000,16684,0.0179214,0.617926,0.0110741
+"Receive-latest (B0)",45000,44614,0.0908459,0.991422,0.0900667
+"Timestamp-aligned + age (B1)",45000,39225,0.101976,0.871667,0.0888889
+"Proposed state acceptance (P)",45000,22307,0.000268974,0.495711,0.000133333

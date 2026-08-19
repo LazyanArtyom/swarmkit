@@ -14,7 +14,7 @@ StateAcceptanceEngine::StateAcceptanceEngine(AcceptanceEngineConfig config)
     : config_(std::move(config)) {}
 
 // ---------------------------------------------------------------------------
-// Evidence selection: find the newest causally valid physical evidence (§8)
+// Evidence selection with r* frontier and deterministic tie-breaking (§8)
 // ---------------------------------------------------------------------------
 
 std::optional<StateAcceptanceEngine::EvidenceSelection>
@@ -23,9 +23,13 @@ StateAcceptanceEngine::SelectCausalEvidence(
     const EvidenceStore& evidence,
     const std::string& agent_id,
     EvidenceFieldId field,
-    double evaluation_time_ms,
+    const SnapshotRequestContext& request_ctx,
     const std::unordered_map<std::string, ClockQualityState>& clock_states,
+    const std::string& current_session_id,
     std::vector<PredicateFailure>& failures) const {
+
+    const double evaluation_time_ms = request_ctx.evaluation_time_ms;
+    const std::int64_t evidence_freeze_ms = request_ctx.evidence_freeze_ms;
 
     // Retrieve all retained evidence records for this agent/field to ensure
     // we search all candidates beyond arbitrary limits (P0.4).
@@ -41,11 +45,50 @@ StateAcceptanceEngine::SelectCausalEvidence(
     }
 
     std::optional<EvidenceSelection> best_selection;
-    double best_source_time = -std::numeric_limits<double>::infinity();
+    double best_g_lower = -std::numeric_limits<double>::infinity();
+    std::uint64_t best_sequence = 0;
+    std::string best_evidence_id;
     bool had_clock_quality_failure = false;
     std::string clock_failure_detail;
 
     for (const auto& record : candidates) {
+        // ---------- P0.1: Evidence-freeze cutoff r* ----------
+        // Only evidence with receive_time <= r* is eligible.
+        if (record.receive_time_ms > evidence_freeze_ms) {
+            continue;
+        }
+
+        // ---------- P0.6: Context-invalid filtering BEFORE ranking ----------
+        // Filter records that cannot possibly participate because of wrong
+        // incarnation, wrong context, or unusable clock mapping.
+
+        // Incarnation/epoch check: skip stale-session records before ranking.
+        if (contract.require_current_epoch) {
+            if (record.identity.agent_session_id != current_session_id) {
+                continue;
+            }
+        }
+
+        // Frame eligibility check before ranking.
+        if (field == EvidenceFieldId::kPosition &&
+            contract.required_position_frame != CoordinateFrame::kUnknown &&
+            record.identity.coordinate_frame != contract.required_position_frame) {
+            continue;
+        }
+        if (field == EvidenceFieldId::kVelocity &&
+            contract.required_velocity_frame != CoordinateFrame::kUnknown &&
+            record.identity.coordinate_frame != contract.required_velocity_frame) {
+            continue;
+        }
+
+        // Mission eligibility before ranking.
+        if (contract.require_current_mission) {
+            if (record.identity.mission_id != contract.required_mission_id ||
+                record.identity.mission_revision != contract.required_mission_revision) {
+                continue;
+            }
+        }
+
         if (!record.source_time.timestamp_ms.has_value()) {
             continue;
         }
@@ -53,19 +96,37 @@ StateAcceptanceEngine::SelectCausalEvidence(
         const double s = static_cast<double>(*record.source_time.timestamp_ms);
         if (!std::isfinite(s)) continue;
 
-        // Compute generation-time interval [g⁻, g⁺].
+        // Compute generation-time interval [g⁻, g⁺] with incarnation-scoped clock.
         std::optional<GenerationTimeInterval> interval;
         double clock_unc = 0.0;
+        double theta_hat = 0.0;
 
         auto clock_it = clock_states.find(agent_id);
         if (clock_it != clock_states.end() && clock_it->second.IsValid()) {
-            if (contract.require_deterministic_bounds && !clock_it->second.deterministic_bound) {
+            const auto& clk = clock_it->second;
+
+            // P0.4: Verify clock incarnation matches evidence incarnation.
+            if (!clk.agent_incarnation_id.empty() &&
+                !record.identity.agent_session_id.empty() &&
+                clk.agent_incarnation_id != record.identity.agent_session_id) {
+                // Clock model is for a different incarnation — skip this record.
+                continue;
+            }
+
+            if (contract.require_deterministic_bounds && !clk.deterministic_bound) {
                 had_clock_quality_failure = true;
                 clock_failure_detail = "clock state has non-deterministic bound for agent " + agent_id;
                 continue;
             }
-            interval = ComputeGenerationInterval(record.source_time, clock_it->second);
-            clock_unc = clock_it->second.uncertainty_radius_ms;
+
+            // Use effective uncertainty with drift budget.
+            clock_unc = clk.ComputeEffectiveUncertainty(s);
+            theta_hat = clk.offset_estimate_ms;
+            const double ref_time = s - theta_hat;
+            interval = GenerationTimeInterval{
+                .lower_ms = ref_time - clock_unc,
+                .upper_ms = ref_time + clock_unc,
+            };
         } else if (record.source_time.clock_uncertainty_ms.has_value()) {
             const double rho = *record.source_time.clock_uncertainty_ms;
             if (!std::isfinite(rho) || rho < 0.0) {
@@ -75,7 +136,9 @@ StateAcceptanceEngine::SelectCausalEvidence(
             }
             interval = ComputeGenerationIntervalFromSample(record.source_time);
             clock_unc = rho;
+            theta_hat = 0.0;  // Per-sample: no offset estimate.
         } else {
+            // P0.3: No silent θ̂=0 fallback. Missing clock → reject, not assume.
             had_clock_quality_failure = true;
             clock_failure_detail = "missing clock quality and per-sample clock uncertainty";
             continue;
@@ -88,9 +151,36 @@ StateAcceptanceEngine::SelectCausalEvidence(
             continue;
         }
 
-        // Select the candidate with the newest physical source generation time.
-        if (!best_selection.has_value() || s > best_source_time) {
-            best_source_time = s;
+        // ---------- P0.5: Deterministic tie-breaking ----------
+        // 1. Maximize g⁻ (reference-domain, not raw s).
+        // 2. If tied, greater sequence number.
+        // 3. If still tied, lexicographically greater canonical EvidenceId.
+        const double g_lower = interval->lower_ms;
+        const std::uint64_t seq = record.identity.sequence;
+        // Canonical EvidenceId: agent_id:field:session:sequence
+        const std::string eid =
+            record.identity.agent_id + ":" +
+            std::to_string(static_cast<int>(record.identity.field_id)) + ":" +
+            record.identity.agent_session_id + ":" +
+            std::to_string(record.identity.sequence);
+
+        bool is_better = false;
+        if (!best_selection.has_value()) {
+            is_better = true;
+        } else if (g_lower > best_g_lower) {
+            is_better = true;
+        } else if (g_lower == best_g_lower) {
+            if (seq > best_sequence) {
+                is_better = true;
+            } else if (seq == best_sequence && eid > best_evidence_id) {
+                is_better = true;
+            }
+        }
+
+        if (is_better) {
+            best_g_lower = g_lower;
+            best_sequence = seq;
+            best_evidence_id = eid;
             best_selection = EvidenceSelection{
                 .record = record,
                 .generation_interval = *interval,
@@ -115,7 +205,7 @@ StateAcceptanceEngine::SelectCausalEvidence(
             .reason = RejectionReason::kCausalSampleUnavailable,
             .agent_id = agent_id,
             .field = field,
-            .detail = "no causal evidence with g⁺ ≤ t*",
+            .detail = "no causal evidence with g⁺ ≤ t* and receive_time ≤ r*",
         });
     }
 
@@ -153,7 +243,7 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
         }
     }
 
-    // Clock uncertainty check (R): ρ ≤ max_clock_uncertainty.
+    // Clock uncertainty check (R): ρ_eff ≤ max_clock_uncertainty.
     if (contract.max_clock_uncertainty_ms.has_value()) {
         if (selection.clock_uncertainty_ms > *contract.max_clock_uncertainty_ms) {
             return PredicateFailure{
@@ -257,7 +347,9 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
         }
     }
 
-    // Frame predicates (P, P0.6).
+    // Frame predicates (P, P0.6) — note: context-invalid records were already
+    // filtered out in SelectCausalEvidence, but we re-check here for completeness
+    // and for the post-selection predicate evaluation record.
     if (field == EvidenceFieldId::kPosition) {
         if (contract.required_position_frame != CoordinateFrame::kUnknown &&
             record.identity.coordinate_frame != contract.required_position_frame) {
@@ -282,6 +374,8 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
     }
 
     // Agent epoch predicate (P/§6, P0.1): E_msg == E_cur.
+    // Note: context-invalid records already filtered pre-ranking,
+    // but this provides the formal predicate check in the decision record.
     if (contract.require_current_epoch) {
         if (record.identity.agent_session_id != current_session_id) {
             return PredicateFailure{
@@ -316,10 +410,12 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
 
 AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
     const StateQualityContract& contract,
-    double evaluation_time_ms,
+    const SnapshotRequestContext& request_ctx,
     const EvidenceStore& evidence,
     const std::unordered_map<std::string, ClockQualityState>& clock_states)
     const {
+
+    const double evaluation_time_ms = request_ctx.evaluation_time_ms;
 
     // Step 0: Contract validation (P0.5).
     const auto contract_valid = ValidateStateQualityContract(contract);
@@ -332,6 +428,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
         });
         return StructuredRejection{
             .evaluation_time_ms = evaluation_time_ms,
+            .evidence_freeze_ms = request_ctx.evidence_freeze_ms,
             .contract_id = contract.contract_id,
             .failures = std::move(contract_failures),
         };
@@ -342,11 +439,13 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
 
     AcceptedSnapshot snapshot;
     snapshot.evaluation_time_ms = evaluation_time_ms;
+    snapshot.evidence_freeze_ms = request_ctx.evidence_freeze_ms;
     snapshot.contract_id = contract.contract_id;
     snapshot.contract_version = contract.content_version;
     snapshot.contract_hash = contract_hash;
     snapshot.model_id = contract.propagation_model_id;
     snapshot.model_version = contract.propagation_model_version;
+    snapshot.participants = request_ctx.participants;
 
     std::size_t agents_accepted = 0;
     std::vector<PredicateFailure> all_agent_failures;
@@ -362,10 +461,10 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
         std::vector<PredicateFailure> agent_failures;
 
         for (const auto field : contract.required_fields) {
-            // Select causal evidence (P0.4).
+            // Select causal evidence with r* filter and deterministic tie-breaking.
             auto selection = SelectCausalEvidence(
-                contract, evidence, agent_id, field, evaluation_time_ms,
-                clock_states, agent_failures);
+                contract, evidence, agent_id, field, request_ctx,
+                clock_states, current_session_id, agent_failures);
 
             if (!selection.has_value()) {
                 agent_ok = false;
@@ -456,6 +555,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
         });
         return StructuredRejection{
             .evaluation_time_ms = evaluation_time_ms,
+            .evidence_freeze_ms = request_ctx.evidence_freeze_ms,
             .contract_id = contract.contract_id,
             .failures = std::move(all_agent_failures),
         };

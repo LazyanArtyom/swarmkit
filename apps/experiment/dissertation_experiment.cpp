@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) {
     std::string per_scenario_output_path = "results/dissertation/per_scenario_results.json";
 
     std::size_t uav_count = 3;
-    std::size_t runs = 30;
+    std::size_t runs = 50;
     std::size_t steps_per_scenario = 100;
     std::uint64_t seed_base = 42;
 

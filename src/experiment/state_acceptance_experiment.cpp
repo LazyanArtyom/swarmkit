@@ -79,6 +79,14 @@ GroundTruthState ConvertSimTruth(
     };
 }
 
+std::uint64_t HashSeed(std::uint64_t base, std::size_t rep, const std::string& label) {
+    std::uint64_t h = base ^ (static_cast<std::uint64_t>(rep) * 0x517cc1b727220a95ULL);
+    for (char c : label) {
+        h = (h ^ static_cast<std::uint64_t>(c)) * 0x9e3779b97f4a7c15ULL;
+    }
+    return h;
+}
+
 }  // namespace
 
 std::string ScenarioFaultKindToString(ScenarioFaultKind kind) {
@@ -141,31 +149,42 @@ bool BaselineEvaluator::ComputePhysicalValidity(
 
 MethodEvaluationOutcome BaselineEvaluator::EvaluateReceiveLatest(
     const core::StateQualityContract& contract,
-    double evaluation_time_ms,
+    const core::SnapshotRequestContext& request_ctx,
     const core::EvidenceStore& store,
     const std::unordered_map<std::string, GroundTruthState>& truth,
     double u_max_meters) {
 
-    (void)evaluation_time_ms;
     const auto t_start = std::chrono::steady_clock::now();
     MethodEvaluationOutcome outcome;
     outcome.accepted = false;
 
     bool all_found = true;
     for (const auto& agent_id : contract.required_agents) {
-        auto pos_records = store.Recent(agent_id, core::EvidenceFieldId::kPosition, 1);
+        auto pos_records = store.All(agent_id, core::EvidenceFieldId::kPosition);
         if (pos_records.empty()) {
             all_found = false;
             break;
         }
 
-        const auto& rec = pos_records[0];
-        if (!std::holds_alternative<std::array<double, 3>>(rec.value)) {
+        // Select newest received record with receive_time <= r*
+        std::optional<core::EvidenceRecord> best_rec;
+        std::int64_t best_rx = -1;
+
+        for (const auto& rec : pos_records) {
+            if (rec.receive_time_ms <= request_ctx.evidence_freeze_ms) {
+                if (!best_rec.has_value() || rec.receive_time_ms > best_rx) {
+                    best_rx = rec.receive_time_ms;
+                    best_rec = rec;
+                }
+            }
+        }
+
+        if (!best_rec.has_value() || !std::holds_alternative<std::array<double, 3>>(best_rec->value)) {
             all_found = false;
             break;
         }
 
-        outcome.estimated_positions[agent_id] = std::get<std::array<double, 3>>(rec.value);
+        outcome.estimated_positions[agent_id] = std::get<std::array<double, 3>>(best_rec->value);
         outcome.position_enclosures[agent_id] = 1.0;
     }
 
@@ -173,21 +192,6 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateReceiveLatest(
         outcome.accepted = true;
         outcome.ground_truth_valid = ComputePhysicalValidity(
             outcome.estimated_positions, truth, contract, u_max_meters);
-
-        for (const auto& agent_id : contract.required_agents) {
-            auto pos_records = store.Recent(agent_id, core::EvidenceFieldId::kPosition, 1);
-            if (!pos_records.empty()) {
-                const auto& rec = pos_records[0];
-                const auto truth_it = truth.find(agent_id);
-                if (truth_it != truth.end()) {
-                    if (rec.identity.coordinate_frame != core::CoordinateFrame::kWgs84 ||
-                        rec.identity.agent_session_id != truth_it->second.session_id ||
-                        !rec.quality.estimator_healthy) {
-                        outcome.ground_truth_valid = false;
-                    }
-                }
-            }
-        }
     } else {
         outcome.rejection_reason = "missing_recent_position_evidence";
     }
@@ -199,7 +203,7 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateReceiveLatest(
 
 MethodEvaluationOutcome BaselineEvaluator::EvaluateTimestampAlignedAge(
     const core::StateQualityContract& contract,
-    double evaluation_time_ms,
+    const core::SnapshotRequestContext& request_ctx,
     const core::EvidenceStore& store,
     double max_age_ms,
     const std::unordered_map<std::string, GroundTruthState>& truth,
@@ -221,9 +225,10 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateTimestampAlignedAge(
         double best_source_time = -1e18;
 
         for (const auto& rec : pos_records) {
+            if (rec.receive_time_ms > request_ctx.evidence_freeze_ms) continue;
             if (!rec.source_time.timestamp_ms.has_value()) continue;
             const double s = static_cast<double>(*rec.source_time.timestamp_ms);
-            if (s <= evaluation_time_ms) {
+            if (s <= request_ctx.evaluation_time_ms) {
                 if (!best_rec.has_value() || s > best_source_time) {
                     best_source_time = s;
                     best_rec = rec;
@@ -236,7 +241,7 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateTimestampAlignedAge(
             break;
         }
 
-        const double raw_age = evaluation_time_ms - best_source_time;
+        const double raw_age = request_ctx.evaluation_time_ms - best_source_time;
         if (raw_age > max_age_ms) {
             all_found = false;
             break;
@@ -253,24 +258,9 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateTimestampAlignedAge(
 
     if (all_found) {
         outcome.accepted = true;
+        // P1.10 / Section 11 fix: common physical validity oracle on selected positions only
         outcome.ground_truth_valid = ComputePhysicalValidity(
             outcome.estimated_positions, truth, contract, u_max_meters);
-
-        for (const auto& agent_id : contract.required_agents) {
-            auto pos_records = store.All(agent_id, core::EvidenceFieldId::kPosition);
-            for (const auto& rec : pos_records) {
-                if (rec.source_time.timestamp_ms.has_value()) {
-                    const auto truth_it = truth.find(agent_id);
-                    if (truth_it != truth.end()) {
-                        if (rec.identity.coordinate_frame != core::CoordinateFrame::kWgs84 ||
-                            rec.identity.agent_session_id != truth_it->second.session_id ||
-                            !rec.quality.estimator_healthy) {
-                            outcome.ground_truth_valid = false;
-                        }
-                    }
-                }
-            }
-        }
     } else {
         outcome.rejection_reason = "age_exceeded_or_no_causal_sample";
     }
@@ -283,7 +273,7 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateTimestampAlignedAge(
 MethodEvaluationOutcome BaselineEvaluator::EvaluateProposed(
     const core::StateAcceptanceEngine& engine,
     const core::StateQualityContract& contract,
-    double evaluation_time_ms,
+    const core::SnapshotRequestContext& request_ctx,
     const core::EvidenceStore& store,
     const std::unordered_map<std::string, core::ClockQualityState>& clock_states,
     const std::unordered_map<std::string, GroundTruthState>& truth,
@@ -293,7 +283,7 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateProposed(
     MethodEvaluationOutcome outcome;
     outcome.accepted = false;
 
-    auto result = engine.RequestSnapshot(contract, evaluation_time_ms, store, clock_states);
+    auto result = engine.RequestSnapshot(contract, request_ctx, store, clock_states);
 
     if (std::holds_alternative<core::AcceptedSnapshot>(result)) {
         const auto& snapshot = std::get<core::AcceptedSnapshot>(result);
@@ -313,7 +303,7 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateProposed(
             }
         }
 
-        outcome.certificate = core::BuildCertificate(snapshot, contract);
+        outcome.certificate = core::BuildCertificate(snapshot, contract, request_ctx);
         outcome.ground_truth_valid = ComputePhysicalValidity(
             outcome.estimated_positions, truth, contract, u_max_meters);
     } else {
@@ -397,8 +387,9 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
         }
 
         for (std::size_t run_idx = 0; run_idx < config_.runs; ++run_idx) {
-            const std::uint64_t run_seed = config_.seed + run_idx * 1000 +
-                                           static_cast<std::uint64_t>(fault_kind) * 100;
+            // P2.2: Independent deterministic seeds per replicate
+            const std::uint64_t motion_seed = HashSeed(config_.seed, run_idx, "motion");
+            const std::uint64_t fault_seed = HashSeed(config_.seed, run_idx, ScenarioFaultKindToString(fault_kind));
 
             // 1. Configure SimBackend
             agent::SimBackendConfig sim_config{
@@ -420,7 +411,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
 
             // 2. Configure FaultInjectingBackend
             FaultInjectionConfig fault_cfg{
-                .seed = run_seed,
+                .seed = fault_seed,
             };
 
             if (fault_kind == ScenarioFaultKind::kNetworkDelay) {
@@ -453,16 +444,22 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
             // Step simulator forward by 1s so UAVs reach airborne cruising altitude
             (void)sim_control->AdvanceAll(std::chrono::seconds(1));
 
-            // Set deterministic velocity motion
+            // Set varied motion from motion_seed (P2.2)
+            std::mt19937_64 motion_rng(motion_seed);
+            std::uniform_real_distribution<float> speed_dist(2.0F, 5.5F);
+            std::uniform_real_distribution<float> angle_dist(-std::numbers::pi_v<float>, std::numbers::pi_v<float>);
+
             for (std::size_t i = 0; i < config_.agent_ids.size(); ++i) {
                 const auto& agent_id = config_.agent_ids[i];
-                float vx = 3.0F + 0.5F * static_cast<float>(i % 3);
-                float vy = 0.5F - 1.0F * static_cast<float>(i % 2);
+                float speed = speed_dist(motion_rng);
+                float angle = angle_dist(motion_rng);
+                float vx = speed * std::cos(angle);
+                float vy = speed * std::sin(angle);
 
                 if (fault_kind == ScenarioFaultKind::kHighSpeedMotion) {
-                    // Close to but within theorem bound V_max (10 m/s)
-                    vx = 8.8F;
-                    vy = 1.0F;  // speed = sqrt(8.8^2 + 1^2) = 8.857 m/s <= 10.0 m/s
+                    // Close to but strictly within declared V_max (10 m/s)
+                    vx = 8.5F;
+                    vy = 1.0F;  // speed = sqrt(8.5^2 + 1^2) = 8.558 m/s <= 10.0 m/s
                 }
 
                 (void)fault_backend->Execute(NavCommand(
@@ -486,6 +483,8 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                     .synchronization = core::ClockSynchronization::kSynchronized,
                     .last_update_ms = 1'700'000'000'000LL,
                     .deterministic_bound = true,
+                    .agent_incarnation_id = sess,
+                    .clock_model_version = "clock-v1",
                 };
             }
 
@@ -506,6 +505,29 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
             std::vector<ReplayTraceFrame> trace_frames;
             std::vector<ReplaySessionTransition> trace_sessions;
 
+            // Per-run replicate measurements (P2.1)
+            ReplicateRecord rep_b0{
+                .replicate_id = run_idx,
+                .motion_seed = motion_seed,
+                .fault_seed = fault_seed,
+                .scenario_id = static_cast<std::uint8_t>(fault_kind),
+                .method = static_cast<std::uint8_t>(EvaluationMethod::kReceiveLatest),
+            };
+            ReplicateRecord rep_b1{
+                .replicate_id = run_idx,
+                .motion_seed = motion_seed,
+                .fault_seed = fault_seed,
+                .scenario_id = static_cast<std::uint8_t>(fault_kind),
+                .method = static_cast<std::uint8_t>(EvaluationMethod::kTimestampAlignedAge),
+            };
+            ReplicateRecord rep_p{
+                .replicate_id = run_idx,
+                .motion_seed = motion_seed,
+                .fault_seed = fault_seed,
+                .scenario_id = static_cast<std::uint8_t>(fault_kind),
+                .method = static_cast<std::uint8_t>(EvaluationMethod::kProposedStateAcceptance),
+            };
+
             for (std::size_t step = 0; step < config_.steps_per_scenario; ++step) {
                 physical_time_ms += config_.step_dt_ms;
 
@@ -521,7 +543,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                     delivered_batch.clear();
                 }
 
-                // Problem 6: Authentic restart handling
+                // Problem 6 / Phase 5: Authentic restart handling
                 if (fault_kind == ScenarioFaultKind::kAgentRestartDelayedPackets) {
                     const std::string restarted_agent = config_.agent_ids[0];
 
@@ -540,10 +562,12 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                         const std::string new_sess = "session-" + restarted_agent + "-restarted";
                         active_sessions[restarted_agent] = new_sess;
                         store.SetCurrentSession(restarted_agent, new_sess);
+                        // Update clock state incarnation binding
+                        clock_states[restarted_agent].agent_incarnation_id = new_sess;
                         trace_sessions.push_back({physical_time_ms, restarted_agent, new_sess});
                     }
 
-                    // Deliver historical old frame at step 35
+                    // Deliver authentic old-session frame at step 35 (retaining old session ID)
                     if (step == 35 && saved_old_session_frame.has_value()) {
                         auto delayed_old = *saved_old_session_frame;
                         delayed_old.agent_receive_unix_time_ms = static_cast<std::int64_t>(physical_time_ms);
@@ -560,6 +584,12 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                     if (fault_kind == ScenarioFaultKind::kFrameMismatch &&
                         frame.drone_id == config_.agent_ids[0]) {
                         frame.position_frame = core::CoordinateFrame::kLocalNed;
+                    }
+
+                    if (fault_kind == ScenarioFaultKind::kEstimatorDegradation && step >= 20) {
+                        frame.estimator_state = core::EstimatorState::kDegraded;
+                        frame.estimator_position_ok = false;
+                        frame.estimator_velocity_ok = false;
                     }
 
                     store.InsertFrame(frame);
@@ -594,18 +624,28 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                     }
                 }
 
-                // 6. Evaluate All Methods at Common Reference Time t* = physical_time_ms
+                // 6. Evaluate All Methods at Common Reference Time t* and Evidence Frontier r*
                 const double t_star = physical_time_ms;
+                const std::int64_t r_star = static_cast<std::int64_t>(physical_time_ms);
+
+                core::SnapshotRequestContext request_ctx{
+                    .evaluation_time_ms = t_star,
+                    .evidence_freeze_ms = r_star,
+                    .participants = {
+                        .agent_ids = config_.agent_ids,
+                        .membership_revision = 1,
+                    },
+                };
 
                 auto outcome_b0 = BaselineEvaluator::EvaluateReceiveLatest(
-                    contract, t_star, store, ground_truth, config_.physical_error_tolerance_m);
+                    contract, request_ctx, store, ground_truth, config_.physical_error_tolerance_m);
 
                 auto outcome_b1 = BaselineEvaluator::EvaluateTimestampAlignedAge(
-                    contract, t_star, store, config_.max_age_ms, ground_truth,
+                    contract, request_ctx, store, config_.max_age_ms, ground_truth,
                     config_.physical_error_tolerance_m);
 
                 auto outcome_p = BaselineEvaluator::EvaluateProposed(
-                    engine, contract, t_star, store, clock_states, ground_truth,
+                    engine, contract, request_ctx, store, clock_states, ground_truth,
                     config_.physical_error_tolerance_m);
 
                 results.latencies_us.push_back(outcome_p.latency_us);
@@ -613,35 +653,43 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                 // Record confusion matrix outcomes fairly using common oracle
                 const bool ground_truth_valid_at_reference = physical_truth_healthy;
 
-                auto record_outcome = [&](EvaluationMethod method, const MethodEvaluationOutcome& outcome) {
+                auto record_outcome = [&](EvaluationMethod method,
+                                         const MethodEvaluationOutcome& outcome,
+                                         ReplicateRecord& rep) {
                     auto& agg = results.aggregate_method_metrics[static_cast<uint8_t>(method)];
                     auto& scm = sc_metrics.metrics_by_method[static_cast<uint8_t>(method)];
 
                     ++agg.total_requests;
                     ++scm.total_requests;
+                    ++rep.requests;
 
                     if (outcome.accepted) {
+                        ++rep.accepted;
                         if (outcome.ground_truth_valid) {
                             ++agg.true_accepts;
                             ++scm.true_accepts;
+                            ++rep.true_accepts;
                         } else {
                             ++agg.false_accepts;
                             ++scm.false_accepts;
+                            ++rep.false_accepts;
                         }
                     } else {
                         if (ground_truth_valid_at_reference) {
                             ++agg.false_rejects;
                             ++scm.false_rejects;
+                            ++rep.false_rejects;
                         } else {
                             ++agg.true_rejects;
                             ++scm.true_rejects;
+                            ++rep.true_rejects;
                         }
                     }
                 };
 
-                record_outcome(EvaluationMethod::kReceiveLatest, outcome_b0);
-                record_outcome(EvaluationMethod::kTimestampAlignedAge, outcome_b1);
-                record_outcome(EvaluationMethod::kProposedStateAcceptance, outcome_p);
+                record_outcome(EvaluationMethod::kReceiveLatest, outcome_b0, rep_b0);
+                record_outcome(EvaluationMethod::kTimestampAlignedAge, outcome_b1, rep_b1);
+                record_outcome(EvaluationMethod::kProposedStateAcceptance, outcome_p, rep_p);
 
                 // 7. Table III Verification, Enclosure Soundness, and 15-Class Tamper Testing
                 if (outcome_p.accepted && outcome_p.certificate.has_value()) {
@@ -655,14 +703,16 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                         const auto est_it = outcome_p.estimated_positions.find(agent_id);
                         if (truth_it != ground_truth.end() && est_it != outcome_p.estimated_positions.end()) {
                             ++results.soundness_metrics.enclosures_tested;
+                            ++rep_p.enclosures_tested;
                             const double err = DistanceMeters(est_it->second, truth_it->second.position);
                             if (err > enclosure_radius) {
                                 ++results.soundness_metrics.containment_failures;
+                                ++rep_p.containment_failures;
                             }
                         }
                     }
 
-                    // Problem 15: Genuine Fresh-State Offline Replay Verification
+                    // Genuine Fresh-State Offline Replay Verification with r* cutoff
                     ++results.soundness_metrics.replayed_decisions;
                     core::EvidenceStore offline_store;
                     for (const auto& [aid, sess] : active_sessions) {
@@ -682,13 +732,13 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                     auto deserialized_cert = core::DeserializeCertificate(serialized_cert);
                     if (deserialized_cert.has_value()) {
                         auto ver_res = verifier.Verify(
-                            *deserialized_cert, offline_store, contract, clock_states);
+                            *deserialized_cert, offline_store, contract, request_ctx, clock_states);
                         if (std::holds_alternative<core::VerifiedAcceptance>(ver_res)) {
                             ++results.soundness_metrics.verifier_agreements;
                         }
                     }
 
-                    // Problem 16: Complete 15-Class Tamper Matrix
+                    // Complete 15-Class Tamper Matrix (P1.4 / Table III)
                     if (deserialized_cert.has_value() && !deserialized_cert->evidence_entries.empty()) {
                         const auto base_cert = *deserialized_cert;
 
@@ -713,7 +763,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                                     tampered.certificate_hash = core::ComputeCertificateHash(tampered);
                                     break;
                                 case 5:
-                                    tampered.acceptance_semantics_version = "2.0";
+                                    tampered.acceptance_semantics_version = "3.0";
                                     tampered.certificate_hash = core::ComputeCertificateHash(tampered);
                                     break;
                                 case 6:
@@ -760,7 +810,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                             }
 
                             auto tamper_res = verifier.Verify(
-                                tampered, offline_store, contract, clock_states);
+                                tampered, offline_store, contract, request_ctx, clock_states);
                             if (std::holds_alternative<core::VerificationRejection>(tamper_res)) {
                                 ++results.soundness_metrics.tampered_certificates_rejected;
                             }
@@ -770,10 +820,17 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
             }
 
             sc_metrics.requests += config_.steps_per_scenario;
+
+            results.replicate_records.push_back(rep_b0);
+            results.replicate_records.push_back(rep_b1);
+            results.replicate_records.push_back(rep_p);
         }
 
         results.per_scenario_metrics.push_back(sc_metrics);
     }
+
+    // Compute Cluster Bootstrap CIs (P2.4)
+    results.bootstrap_results = ComputeClusterBootstrap(results.replicate_records, config_.runs);
 
     // Compute Latency Percentiles & Certificate Sizes
     if (!results.latencies_us.empty()) {
@@ -835,6 +892,16 @@ std::vector<ScalabilityBenchmarkResult> StateAcceptanceExperimentRunner::RunScal
         std::unordered_map<std::string, core::ClockQualityState> clock_states;
 
         const double t_star = 1'700'000'000'100.0;
+        const std::int64_t r_star = 1'700'000'000'100LL;
+
+        core::SnapshotRequestContext req_ctx{
+            .evaluation_time_ms = t_star,
+            .evidence_freeze_ms = r_star,
+            .participants = {
+                .agent_ids = agents,
+                .membership_revision = 1,
+            },
+        };
 
         for (const auto& id : agents) {
             store.SetCurrentSession(id, "scale-session-" + id);
@@ -845,6 +912,7 @@ std::vector<ScalabilityBenchmarkResult> StateAcceptanceExperimentRunner::RunScal
                 .synchronization = core::ClockSynchronization::kSynchronized,
                 .last_update_ms = 1'700'000'000'000LL,
                 .deterministic_bound = true,
+                .agent_incarnation_id = "scale-session-" + id,
             };
 
             core::EvidenceRecord pos_rec{
@@ -905,12 +973,12 @@ std::vector<ScalabilityBenchmarkResult> StateAcceptanceExperimentRunner::RunScal
             store.Insert(id, vel_rec);
         }
 
-        // Problem 17: Measure End-to-End Latency (RequestSnapshot + BuildCertificate + SerializeCertificate)
+        // Measure End-to-End Latency (RequestSnapshot + BuildCertificate + SerializeCertificate)
         // 50 warmup iterations
         for (int w = 0; w < 50; ++w) {
-            auto res = engine.RequestSnapshot(contract, t_star, store, clock_states);
+            auto res = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
             if (std::holds_alternative<core::AcceptedSnapshot>(res)) {
-                auto cert = core::BuildCertificate(std::get<core::AcceptedSnapshot>(res), contract);
+                auto cert = core::BuildCertificate(std::get<core::AcceptedSnapshot>(res), contract, req_ctx);
                 (void)core::SerializeCertificate(cert);
             }
         }
@@ -922,9 +990,9 @@ std::vector<ScalabilityBenchmarkResult> StateAcceptanceExperimentRunner::RunScal
 
         for (int iter = 0; iter < 500; ++iter) {
             const auto t0 = std::chrono::steady_clock::now();
-            auto res = engine.RequestSnapshot(contract, t_star, store, clock_states);
+            auto res = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
             if (std::holds_alternative<core::AcceptedSnapshot>(res)) {
-                auto cert = core::BuildCertificate(std::get<core::AcceptedSnapshot>(res), contract);
+                auto cert = core::BuildCertificate(std::get<core::AcceptedSnapshot>(res), contract, req_ctx);
                 std::string ser = core::SerializeCertificate(cert);
                 cert_size = ser.size();
             }
@@ -1100,6 +1168,21 @@ std::string ExperimentResults::ToJson() const {
         }
     }
     oss << "\n  ],\n";
+
+    oss << "  \"bootstrap_ci\": {\n";
+    oss << "    \"proposed_fv\": {\"point\": " << bootstrap_results.proposed_fv.point_estimate
+        << ", \"lower_95\": " << bootstrap_results.proposed_fv.lower_95
+        << ", \"upper_95\": " << bootstrap_results.proposed_fv.upper_95 << "},\n";
+    oss << "    \"b1_fv\": {\"point\": " << bootstrap_results.b1_fv.point_estimate
+        << ", \"lower_95\": " << bootstrap_results.b1_fv.lower_95
+        << ", \"upper_95\": " << bootstrap_results.b1_fv.upper_95 << "},\n";
+    oss << "    \"delta_fv_proposed_vs_b1\": {\"point\": " << bootstrap_results.delta_fv_proposed_vs_b1.point_estimate
+        << ", \"lower_95\": " << bootstrap_results.delta_fv_proposed_vs_b1.lower_95
+        << ", \"upper_95\": " << bootstrap_results.delta_fv_proposed_vs_b1.upper_95 << "},\n";
+    oss << "    \"proposed_availability\": {\"point\": " << bootstrap_results.proposed_availability.point_estimate
+        << ", \"lower_95\": " << bootstrap_results.proposed_availability.lower_95
+        << ", \"upper_95\": " << bootstrap_results.proposed_availability.upper_95 << "}\n";
+    oss << "  },\n";
 
     oss << "  \"soundness_and_replay\": {\n";
     oss << "    \"enclosures_tested\": " << soundness_metrics.enclosures_tested << ",\n";

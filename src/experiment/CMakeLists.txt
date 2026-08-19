@@ -7,6 +7,7 @@ add_library(swarmkit_experiment STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/fault_injection.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/telemetry_replay.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/state_acceptance_experiment.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/bootstrap_statistics.cpp
 )
 
 target_include_directories(swarmkit_experiment PUBLIC

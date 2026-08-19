@@ -28,6 +28,8 @@
 #include "swarmkit/core/telemetry.h"
 #include "swarmkit/experiment/fault_injection.h"
 
+#include "swarmkit/experiment/bootstrap_statistics.h"
+
 namespace swarmkit::experiment {
 
 /// Scenario fault condition (§21.1).
@@ -186,12 +188,14 @@ struct ScalabilityBenchmarkResult {
 
 /// Complete paired-trace experiment results.
 struct ExperimentResults {
-    std::size_t total_runs{1};
+    std::size_t total_runs{50};
     std::size_t steps_per_scenario{100};
     std::uint64_t seed_base{42};
     std::vector<std::string> agent_ids;
     std::unordered_map<uint8_t, MethodMetrics> aggregate_method_metrics;
     std::vector<ScenarioMetrics> per_scenario_metrics;
+    std::vector<ReplicateRecord> replicate_records;
+    BootstrapAnalysisResult bootstrap_results;
     SoundnessAndReplayMetrics soundness_metrics;
     std::vector<ScalabilityBenchmarkResult> scalability_results;
     std::vector<double> latencies_us;
@@ -208,7 +212,7 @@ struct ExperimentResults {
 /// Configuration for paired-trace scenario generation.
 struct ScenarioConfig {
     std::uint64_t seed{42};
-    std::size_t runs{30};
+    std::size_t runs{50};
     std::size_t steps_per_scenario{100};
     std::vector<std::string> agent_ids{"uav-1", "uav-2", "uav-3"};
     std::vector<ScenarioFaultKind> fault_scenarios{
@@ -236,7 +240,7 @@ class BaselineEvaluator {
     /// Evaluate Baseline 0: Receive-latest (B_0).
     [[nodiscard]] static MethodEvaluationOutcome EvaluateReceiveLatest(
         const core::StateQualityContract& contract,
-        double evaluation_time_ms,
+        const core::SnapshotRequestContext& request_ctx,
         const core::EvidenceStore& store,
         const std::unordered_map<std::string, GroundTruthState>& truth,
         double u_max_meters);
@@ -244,7 +248,7 @@ class BaselineEvaluator {
     /// Evaluate Baseline 1: Timestamp-aligned + age (B_1).
     [[nodiscard]] static MethodEvaluationOutcome EvaluateTimestampAlignedAge(
         const core::StateQualityContract& contract,
-        double evaluation_time_ms,
+        const core::SnapshotRequestContext& request_ctx,
         const core::EvidenceStore& store,
         double max_age_ms,
         const std::unordered_map<std::string, GroundTruthState>& truth,
@@ -254,7 +258,7 @@ class BaselineEvaluator {
     [[nodiscard]] static MethodEvaluationOutcome EvaluateProposed(
         const core::StateAcceptanceEngine& engine,
         const core::StateQualityContract& contract,
-        double evaluation_time_ms,
+        const core::SnapshotRequestContext& request_ctx,
         const core::EvidenceStore& store,
         const std::unordered_map<std::string, core::ClockQualityState>& clock_states,
         const std::unordered_map<std::string, GroundTruthState>& truth,

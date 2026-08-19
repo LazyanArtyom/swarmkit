@@ -14,6 +14,7 @@ add_executable(swarmkit_tests
     test_state_acceptance_engine.cpp
     test_state_acceptance_certificate.cpp
     test_state_acceptance_verifier.cpp
+    test_replay_trace.cpp
     test_paired_trace_experiment.cpp
     test_client_integration.cpp
     test_command_preconditions.cpp

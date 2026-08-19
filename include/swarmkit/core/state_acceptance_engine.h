@@ -20,6 +20,31 @@
 
 namespace swarmkit::core {
 
+/// Participant snapshot bound into the acceptance decision (§8).
+struct ParticipantSnapshot {
+    /// Resolved participant set I* at the time of the request.
+    std::vector<std::string> agent_ids;
+    /// Membership revision v_I.
+    std::uint64_t membership_revision{0};
+
+    bool operator==(const ParticipantSnapshot&) const = default;
+};
+
+/// Snapshot request context fixing both t* and r* (§8).
+///
+/// t* = physical/reference-domain evaluation time.
+/// r* = runtime evidence-freeze cutoff: only evidence with receive_time ≤ r*
+///      can influence the decision.
+struct SnapshotRequestContext {
+    /// Physical evaluation time t* (reference domain, Unix ms).
+    double evaluation_time_ms{};
+    /// Evidence-freeze cutoff r* (reference domain, Unix ms).
+    /// Only evidence records with receive_time ≤ r* are eligible.
+    std::int64_t evidence_freeze_ms{};
+    /// Resolved participant snapshot at request time.
+    ParticipantSnapshot participants;
+};
+
 /// Rejection reason for a single predicate failure (§47).
 enum class RejectionReason : std::uint8_t {
     kMissingRequiredEvidence,
@@ -81,6 +106,9 @@ struct AcceptedSnapshot {
     /// Common evaluation time t* (§8).
     double evaluation_time_ms{};
 
+    /// Evidence-freeze cutoff r* (§8).
+    std::int64_t evidence_freeze_ms{};
+
     /// Contract that was satisfied.
     std::string contract_id;
     std::uint32_t contract_version{};
@@ -89,6 +117,9 @@ struct AcceptedSnapshot {
     /// Propagation model binding (§14 item M).
     std::string model_id;
     std::string model_version;
+
+    /// Resolved participant snapshot at request time.
+    ParticipantSnapshot participants;
 
     /// Per-agent, per-field accepted state.
     /// Key: agent_id → field_id → AcceptedFieldState
@@ -107,6 +138,9 @@ struct AcceptedSnapshot {
 struct StructuredRejection {
     /// Evaluation time that was requested.
     double evaluation_time_ms{};
+
+    /// Evidence-freeze cutoff r* that was requested.
+    std::int64_t evidence_freeze_ms{};
 
     /// Contract that could not be satisfied.
     std::string contract_id;
@@ -136,16 +170,18 @@ class StateAcceptanceEngine {
    public:
     explicit StateAcceptanceEngine(AcceptanceEngineConfig config = {});
 
-    /// Request a multi-UAV state snapshot satisfying contract C at time t*.
+    /// Request a multi-UAV state snapshot satisfying contract C at time t*
+    /// with evidence-freeze cutoff r*.
     ///
-    /// @param contract        State-Quality Contract defining requirements.
-    /// @param evaluation_time Requested common evaluation time t* (Unix ms).
-    /// @param evidence        Evidence store containing per-agent observations.
-    /// @param clock_states    Per-agent clock quality state (agent_id → state).
+    /// @param contract    State-Quality Contract defining requirements.
+    /// @param request_ctx Snapshot request context with t*, r*, participants.
+    /// @param evidence    Evidence store containing per-agent observations.
+    /// @param clock_states Per-agent clock quality state
+    ///                     keyed by (agent_id) with incarnation binding.
     /// @return AcceptedSnapshot on success, StructuredRejection on failure.
     [[nodiscard]] AcceptanceResult RequestSnapshot(
         const StateQualityContract& contract,
-        double evaluation_time_ms,
+        const SnapshotRequestContext& request_ctx,
         const EvidenceStore& evidence,
         const std::unordered_map<std::string, ClockQualityState>& clock_states)
         const;
@@ -165,8 +201,9 @@ class StateAcceptanceEngine {
         const EvidenceStore& evidence,
         const std::string& agent_id,
         EvidenceFieldId field,
-        double evaluation_time_ms,
+        const SnapshotRequestContext& request_ctx,
         const std::unordered_map<std::string, ClockQualityState>& clock_states,
+        const std::string& current_session_id,
         std::vector<PredicateFailure>& failures)
         const;
 

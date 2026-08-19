@@ -88,6 +88,12 @@ struct FaultInjectionControl::State {
         core::TelemetryFrame frame;
     };
 
+    struct DroneStreamState {
+        std::uint64_t source_frame_index{};
+        std::deque<Delivery> delayed;
+        std::optional<Delivery> reorder_held;
+    };
+
     explicit State(FaultInjectionConfig input) : config(input), rng(config.seed) {}
 
     mutable std::mutex mutex;
@@ -97,8 +103,7 @@ struct FaultInjectionControl::State {
     std::uint64_t decision_sequence{};
     std::uint64_t evidence_sequence{};
     std::vector<FaultDecision> decisions;
-    std::deque<Delivery> delayed;
-    std::optional<Delivery> reorder_held;
+    std::unordered_map<std::string, DroneStreamState> drone_streams;
     agent::IDroneBackend::EvidenceCallback evidence_callback;
     bool configuration_emitted{false};
 };
@@ -234,15 +239,18 @@ class FaultInjectingBackend final : public agent::IDroneBackend {
                 EvidenceCallback evidence_callback;
                 {
                     std::lock_guard<std::mutex> lock(state->mutex);
+                    const std::string event_drone = input.drone_id;
+                    auto& stream = state->drone_streams[event_drone];
+                    ++stream.source_frame_index;
                     ++state->source_frame_index;
-                    while (!state->delayed.empty() &&
-                           state->delayed.front().due_frame_index <= state->source_frame_index) {
-                        ready.push_back(std::move(state->delayed.front()));
-                        state->delayed.pop_front();
+
+                    while (!stream.delayed.empty() &&
+                           stream.delayed.front().due_frame_index <= stream.source_frame_index) {
+                        ready.push_back(std::move(stream.delayed.front()));
+                        stream.delayed.pop_front();
                     }
 
                     core::TelemetryFrame frame = input;
-                    const std::string event_drone = input.drone_id;
                     const bool loss =
                         RandomDecision(state.get(), state->config.telemetry_loss_probability);
                     if (auto output =
@@ -309,7 +317,7 @@ class FaultInjectingBackend final : public agent::IDroneBackend {
                     const std::int64_t dynamic_offset_ms =
                         state->config.source_clock_offset_ms +
                         static_cast<std::int64_t>(state->config.source_clock_drift_ms_per_frame *
-                                                  static_cast<double>(state->source_frame_index));
+                                                  static_cast<double>(stream.source_frame_index));
 
                     OffsetSourceTime(&frame.provenance.position,
                                      dynamic_offset_ms,
@@ -332,30 +340,30 @@ class FaultInjectingBackend final : public agent::IDroneBackend {
                             ready.push_back(std::move(delivery));
                         } else {
                             delivery.due_frame_index =
-                                state->source_frame_index + state->config.telemetry_delay_frames;
-                            state->delayed.push_back(std::move(delivery));
+                                stream.source_frame_index + state->config.telemetry_delay_frames;
+                            stream.delayed.push_back(std::move(delivery));
                         }
                     };
 
                     if (loss) {
-                        if (state->reorder_held.has_value()) {
-                            enqueue(std::move(*state->reorder_held));
-                            state->reorder_held.reset();
+                        if (stream.reorder_held.has_value()) {
+                            enqueue(std::move(*stream.reorder_held));
+                            stream.reorder_held.reset();
                         }
                     } else {
                         State::Delivery current{
                             .callback = callback,
                             .frame = std::move(frame),
                         };
-                        if (state->reorder_held.has_value()) {
+                        if (stream.reorder_held.has_value()) {
                             enqueue(current);
                             if (duplicate) {
                                 enqueue(current);
                             }
-                            enqueue(std::move(*state->reorder_held));
-                            state->reorder_held.reset();
+                            enqueue(std::move(*stream.reorder_held));
+                            stream.reorder_held.reset();
                         } else if (reorder) {
-                            state->reorder_held = std::move(current);
+                            stream.reorder_held = std::move(current);
                         } else {
                             enqueue(current);
                             if (duplicate) {
@@ -496,15 +504,15 @@ void FaultInjectionControl::Flush() {
     std::vector<State::Delivery> ready;
     {
         std::lock_guard<std::mutex> lock(state_->mutex);
-        while (!state_->delayed.empty()) {
-            ready.push_back(std::move(state_->delayed.front()));
-            state_->delayed.pop_front();
-        }
-        if (state_->reorder_held.has_value()) {
-            // Guarded immediately above; move preserves the exact queued frame.
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            ready.push_back(std::move(state_->reorder_held).value());
-            state_->reorder_held.reset();
+        for (auto& [_, stream] : state_->drone_streams) {
+            while (!stream.delayed.empty()) {
+                ready.push_back(std::move(stream.delayed.front()));
+                stream.delayed.pop_front();
+            }
+            if (stream.reorder_held.has_value()) {
+                ready.push_back(std::move(*stream.reorder_held));
+                stream.reorder_held.reset();
+            }
         }
     }
     Deliver(std::move(ready));

@@ -25,8 +25,17 @@ struct CertificateEvidenceEntry {
     std::string agent_session_id;
     std::string source_component;
 
+    /// Canonical evidence identifier for deterministic replay.
+    std::string evidence_id;
+
+    /// Agent incarnation ID bound to this evidence.
+    std::string agent_incarnation_id;
+
     /// Source timestamp (s) in source domain.
     std::optional<std::int64_t> source_time_ms;
+
+    /// Evidence receive time r in runtime reference domain (Unix ms).
+    std::int64_t receive_time_ms{};
 
     /// Generation-time interval in reference domain.
     GenerationTimeInterval generation_interval;
@@ -34,8 +43,17 @@ struct CertificateEvidenceEntry {
     /// Conservative elapsed Δ⁺ at t*.
     double conservative_elapsed_ms{};
 
-    /// Clock uncertainty ρ used.
+    /// Clock offset estimate θ̂ used for this evidence item.
+    double theta_hat_ms{};
+
+    /// Effective clock uncertainty ρ_eff used (including drift budget).
+    double effective_rho_ms{};
+
+    /// Base clock uncertainty ρ_sync.
     double clock_uncertainty_ms{};
+
+    /// Clock model version identifier.
+    std::string clock_model_version;
 
     /// Observation-time uncertainty e.
     double observation_uncertainty{};
@@ -81,6 +99,9 @@ struct StateAcceptanceCertificate {
     // -- id: Certificate identity --
     std::string certificate_id;
 
+    // -- Schema version for deterministic replay --
+    std::string certificate_schema_version{"CERT_V3"};
+
     // -- h_C: Contract binding --
     std::string contract_id;
     std::uint32_t contract_schema_version{};
@@ -89,6 +110,9 @@ struct StateAcceptanceCertificate {
 
     // -- t*: Common evaluation time --
     double evaluation_time_ms{};
+
+    // -- r*: Evidence-freeze cutoff (§8) --
+    std::int64_t evidence_freeze_ms{};
 
     // -- E: Evidence entries --
     std::vector<CertificateEvidenceEntry> evidence_entries;
@@ -110,13 +134,16 @@ struct StateAcceptanceCertificate {
     // -- V: Accepted agent set --
     std::vector<std::string> accepted_agents;
 
+    // -- I*: Participant snapshot with membership revision --
+    ParticipantSnapshot participants;
+
     // -- Acceptance semantics version --
-    std::string acceptance_semantics_version{"1.0"};
+    std::string acceptance_semantics_version{"2.0"};
 
     // -- Production timestamp (runtime reference clock) --
     std::int64_t produced_at_ms{};
 
-    // -- h_K: Tamper-evident hash binding --
+    // -- h_K: Integrity hash binding --
     /// SHA-256 hex digest of the canonical serialization of all preceding fields.
     /// Computed last, after all other fields are populated.
     std::string certificate_hash;
@@ -126,12 +153,14 @@ struct StateAcceptanceCertificate {
 
 /// Build a State-Acceptance Certificate from an AcceptedSnapshot.
 ///
-/// @param snapshot  The accepted state produced by the engine.
-/// @param contract  The contract that was satisfied.
+/// @param snapshot    The accepted state produced by the engine.
+/// @param contract    The contract that was satisfied.
+/// @param request_ctx The request context with t*, r*, participants.
 /// @return Complete certificate with computed h_K.
 [[nodiscard]] StateAcceptanceCertificate BuildCertificate(
     const AcceptedSnapshot& snapshot,
-    const StateQualityContract& contract);
+    const StateQualityContract& contract,
+    const SnapshotRequestContext& request_ctx);
 
 /// Compute the canonical SHA-256 hash of an individual EvidenceRecord (P1.1).
 [[nodiscard]] std::string ComputeEvidenceHash(

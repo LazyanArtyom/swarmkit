@@ -1,15 +1,15 @@
 {
-  "enclosures_tested": 50052,
+  "enclosures_tested": 66921,
   "containment_failures": 0,
   "containment_failure_rate": 0.0,
-  "replayed_decisions": 16684,
-  "verifier_agreements": 16684,
+  "replayed_decisions": 22307,
+  "verifier_agreements": 22307,
   "verifier_agreement_rate": 1,
-  "tampered_certificates_tested": 250260,
-  "tampered_certificates_rejected": 250260,
+  "tampered_certificates_tested": 334605,
+  "tampered_certificates_rejected": 334605,
   "tamper_detection_rate": 1,
-  "latency_p50_us": 60.709,
-  "latency_p95_us": 89.792,
-  "latency_p99_us": 93.292,
-  "median_certificate_size_bytes": 1461
+  "latency_p50_us": 70.958,
+  "latency_p95_us": 131.083,
+  "latency_p99_us": 140.75,
+  "median_certificate_size_bytes": 1967
 }

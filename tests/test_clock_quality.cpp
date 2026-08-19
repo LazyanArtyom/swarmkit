@@ -181,3 +181,37 @@ TEST_CASE("ComputePropagatedUncertainty formula epsilon = e_p + V_max * Delta^+"
     // Zero velocity
     REQUIRE_THAT(ComputePropagatedUncertainty(e_p, 0.0, elapsed_ms), WithinAbs(0.5, 1e-9));
 }
+
+TEST_CASE("ClockQualityState effective uncertainty and drift budget (P0.4)", "[clock_quality]") {
+    ClockQualityState clock_state{
+        .offset_estimate_ms = 0.0,
+        .uncertainty_radius_ms = 2.0,
+        .max_drift_rate_ppm = 50.0,  // 50 ppm
+        .source_domain = ClockDomain::kUnixEpoch,
+        .synchronization = ClockSynchronization::kSynchronized,
+        .last_update_ms = 1000,
+        .deterministic_bound = true,
+        .agent_incarnation_id = "sess-1",
+    };
+
+    SECTION("At update time, effective rho equals base rho") {
+        REQUIRE_THAT(clock_state.ComputeEffectiveUncertainty(1000.0), WithinAbs(2.0, 1e-9));
+    }
+
+    SECTION("After elapsed time, effective rho expands by drift budget") {
+        // elapsed = 100,000 ms = 100 s
+        // drift = 50 * 1e-6 * 100,000 = 5.0 ms
+        // rho_eff = 2.0 + 5.0 = 7.0 ms
+        REQUIRE_THAT(clock_state.ComputeEffectiveUncertainty(101000.0), WithinAbs(7.0, 1e-9));
+    }
+
+    SECTION("ComputeGenerationInterval incorporates drift budget") {
+        auto interval = clock_state.ComputeGenerationInterval(101000.0);
+        // ref_time = 101000.0
+        // rho_eff = 7.0
+        // lower = 101000 - 7 = 100993, upper = 101000 + 7 = 101007
+        REQUIRE_THAT(interval.lower_ms, WithinAbs(100993.0, 1e-9));
+        REQUIRE_THAT(interval.upper_ms, WithinAbs(101007.0, 1e-9));
+    }
+}
+

@@ -5,6 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <limits>
+#include <locale>
 #include <sstream>
 
 #include "sha256.h"
@@ -16,6 +19,8 @@ std::string ComputeContractHash(const StateQualityContract& contract) {
     // for hashing.  This ensures certificate binding captures the
     // exact contract semantics.
     std::ostringstream oss;
+    oss.imbue(std::locale::classic());
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
     oss << "contract_id:" << contract.contract_id << "\n";
     oss << "schema_version:" << contract.schema_version << "\n";
     oss << "content_version:" << contract.content_version << "\n";

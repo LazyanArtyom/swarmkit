@@ -14,10 +14,14 @@ VerificationResult StateAcceptanceVerifier::Verify(
     const StateAcceptanceCertificate& cert,
     const EvidenceStore& evidence,
     const StateQualityContract& contract,
+    const SnapshotRequestContext& request_ctx,
     const std::unordered_map<std::string, ClockQualityState>& clock_states)
     const {
 
     std::vector<VerificationFailure> failures;
+
+    const double evaluation_time_ms = request_ctx.evaluation_time_ms;
+    const std::int64_t evidence_freeze_ms = request_ctx.evidence_freeze_ms;
 
     // Step 1: Certificate integrity check (h_K binding).
     if (!VerifyCertificateIntegrity(cert)) {
@@ -57,7 +61,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
         });
     }
 
-    if (cert.acceptance_semantics_version != "1.0") {
+    if (cert.acceptance_semantics_version != "2.0") {
         failures.push_back({
             .reason = VerificationFailureReason::kSemanticVersionMismatch,
             .detail = "unsupported acceptance semantics version: " +
@@ -65,18 +69,38 @@ VerificationResult StateAcceptanceVerifier::Verify(
         });
     }
 
+    // Verify r* binding.
+    if (cert.evidence_freeze_ms != evidence_freeze_ms) {
+        failures.push_back({
+            .reason = VerificationFailureReason::kEvaluationTimeMismatch,
+            .detail = "evidence_freeze_ms mismatch: cert=" +
+                      std::to_string(cert.evidence_freeze_ms) + " ctx=" +
+                      std::to_string(evidence_freeze_ms),
+        });
+    }
+
+    // Verify t* binding.
+    if (std::abs(cert.evaluation_time_ms - evaluation_time_ms) > kUncertaintyTolerance) {
+        failures.push_back({
+            .reason = VerificationFailureReason::kEvaluationTimeMismatch,
+            .detail = "evaluation_time_ms mismatch",
+        });
+    }
+
     // Step 3: Independent Decision & Evidence Reconstruction
-    // Note: StateAcceptanceVerifier independently reconstructs every predicate
+    // The verifier independently reconstructs every predicate
     // without instantiating or invoking StateAcceptanceEngine.
 
     AcceptedSnapshot reconstructed;
     reconstructed.snapshot_id = "reconstructed-" + cert.certificate_id;
     reconstructed.evaluation_time_ms = cert.evaluation_time_ms;
+    reconstructed.evidence_freeze_ms = cert.evidence_freeze_ms;
     reconstructed.contract_id = contract.contract_id;
     reconstructed.contract_version = contract.content_version;
     reconstructed.contract_hash = expected_contract_hash;
     reconstructed.model_id = contract.propagation_model_id;
     reconstructed.model_version = contract.propagation_model_version;
+    reconstructed.participants = request_ctx.participants;
 
     std::size_t agents_accepted = 0;
 
@@ -98,13 +122,48 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 break;
             }
 
-            // Find newest causal record independently
+            // Independent evidence selection with r* filter,
+            // context-invalid pre-filtering, and deterministic tie-breaking (max g⁻).
             std::optional<EvidenceRecord> best_rec;
             std::optional<GenerationTimeInterval> best_interval;
             double best_clock_unc = 0.0;
-            double best_source_time = -std::numeric_limits<double>::infinity();
+            double best_g_lower = -std::numeric_limits<double>::infinity();
+            std::uint64_t best_sequence = 0;
+            std::string best_evidence_id;
 
             for (const auto& rec : candidates) {
+                // P0.1: Evidence-freeze cutoff r*.
+                if (rec.receive_time_ms > evidence_freeze_ms) {
+                    continue;
+                }
+
+                // P0.6: Context-invalid filtering BEFORE ranking.
+                if (contract.require_current_epoch) {
+                    if (rec.identity.agent_session_id != current_session_id) {
+                        continue;
+                    }
+                }
+
+                // Frame eligibility before ranking.
+                if (field == EvidenceFieldId::kPosition &&
+                    contract.required_position_frame != CoordinateFrame::kUnknown &&
+                    rec.identity.coordinate_frame != contract.required_position_frame) {
+                    continue;
+                }
+                if (field == EvidenceFieldId::kVelocity &&
+                    contract.required_velocity_frame != CoordinateFrame::kUnknown &&
+                    rec.identity.coordinate_frame != contract.required_velocity_frame) {
+                    continue;
+                }
+
+                // Mission eligibility before ranking.
+                if (contract.require_current_mission) {
+                    if (rec.identity.mission_id != contract.required_mission_id ||
+                        rec.identity.mission_revision != contract.required_mission_revision) {
+                        continue;
+                    }
+                }
+
                 if (!rec.source_time.timestamp_ms.has_value()) continue;
                 const double s = static_cast<double>(*rec.source_time.timestamp_ms);
                 if (!std::isfinite(s)) continue;
@@ -114,11 +173,25 @@ VerificationResult StateAcceptanceVerifier::Verify(
 
                 auto clock_it = clock_states.find(agent_id);
                 if (clock_it != clock_states.end() && clock_it->second.IsValid()) {
-                    if (contract.require_deterministic_bounds && !clock_it->second.deterministic_bound) {
+                    const auto& clk = clock_it->second;
+
+                    // Clock incarnation check.
+                    if (!clk.agent_incarnation_id.empty() &&
+                        !rec.identity.agent_session_id.empty() &&
+                        clk.agent_incarnation_id != rec.identity.agent_session_id) {
                         continue;
                     }
-                    interval = ComputeGenerationInterval(rec.source_time, clock_it->second);
-                    clock_unc = clock_it->second.uncertainty_radius_ms;
+
+                    if (contract.require_deterministic_bounds && !clk.deterministic_bound) {
+                        continue;
+                    }
+
+                    clock_unc = clk.ComputeEffectiveUncertainty(s);
+                    const double ref_time = s - clk.offset_estimate_ms;
+                    interval = GenerationTimeInterval{
+                        .lower_ms = ref_time - clock_unc,
+                        .upper_ms = ref_time + clock_unc,
+                    };
                 } else if (rec.source_time.clock_uncertainty_ms.has_value()) {
                     const double rho = *rec.source_time.clock_uncertainty_ms;
                     if (!std::isfinite(rho) || rho < 0.0) continue;
@@ -129,10 +202,34 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 }
 
                 if (!interval.has_value()) continue;
-                if (!interval->IsCausal(cert.evaluation_time_ms)) continue;
+                if (!interval->IsCausal(evaluation_time_ms)) continue;
 
-                if (!best_rec.has_value() || s > best_source_time) {
-                    best_source_time = s;
+                // Deterministic tie-breaking: max(g⁻), then sequence, then EvidenceId.
+                const double g_lower = interval->lower_ms;
+                const std::uint64_t seq = rec.identity.sequence;
+                const std::string eid =
+                    rec.identity.agent_id + ":" +
+                    std::to_string(static_cast<int>(rec.identity.field_id)) + ":" +
+                    rec.identity.agent_session_id + ":" +
+                    std::to_string(rec.identity.sequence);
+
+                bool is_better = false;
+                if (!best_rec.has_value()) {
+                    is_better = true;
+                } else if (g_lower > best_g_lower) {
+                    is_better = true;
+                } else if (g_lower == best_g_lower) {
+                    if (seq > best_sequence) {
+                        is_better = true;
+                    } else if (seq == best_sequence && eid > best_evidence_id) {
+                        is_better = true;
+                    }
+                }
+
+                if (is_better) {
+                    best_g_lower = g_lower;
+                    best_sequence = seq;
+                    best_evidence_id = eid;
                     best_rec = rec;
                     best_interval = *interval;
                     best_clock_unc = clock_unc;
@@ -143,13 +240,13 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 failures.push_back({
                     .reason = VerificationFailureReason::kMissingEvidence,
                     .detail = "could not find causally valid evidence for agent " +
-                              agent_id + " at t*=" + std::to_string(cert.evaluation_time_ms),
+                              agent_id + " at t*=" + std::to_string(evaluation_time_ms),
                 });
                 agent_ok = false;
                 break;
             }
 
-            // Find matching certified evidence entry in the certificate
+            // Find matching certified evidence entry in the certificate.
             const auto cert_entry_it = std::find_if(
                 cert.evidence_entries.begin(), cert.evidence_entries.end(),
                 [&](const CertificateEvidenceEntry& e) {
@@ -168,7 +265,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
 
             const auto& cert_entry = *cert_entry_it;
 
-            // Verify evidence sequence, session, provenance, and content hash (P1.1, Problem 14)
+            // Verify evidence identity: sequence, session, provenance, content hash (P1.1).
             if (cert_entry.sequence != best_rec->identity.sequence) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kDecisionMismatch,
@@ -183,9 +280,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
             if (cert_entry.agent_session_id != best_rec->identity.agent_session_id) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kSessionMismatch,
-                    .detail = "evidence session mismatch for agent " + agent_id +
-                              ": cert=" + cert_entry.agent_session_id +
-                              " rec=" + best_rec->identity.agent_session_id,
+                    .detail = "evidence session mismatch for agent " + agent_id,
                 });
                 agent_ok = false;
                 break;
@@ -194,9 +289,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
             if (cert_entry.source_component != best_rec->identity.source_component) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kProvenanceMismatch,
-                    .detail = "source component mismatch for agent " + agent_id +
-                              ": cert=" + cert_entry.source_component +
-                              " rec=" + best_rec->identity.source_component,
+                    .detail = "source component mismatch for agent " + agent_id,
                 });
                 agent_ok = false;
                 break;
@@ -224,31 +317,31 @@ VerificationResult StateAcceptanceVerifier::Verify(
             if (cert_entry.evidence_hash != computed_evidence_hash) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kEvidenceHashMismatch,
-                    .detail = "evidence hash mismatch for agent " + agent_id +
-                              ": cert=" + cert_entry.evidence_hash +
-                              " computed=" + computed_evidence_hash,
+                    .detail = "evidence hash mismatch for agent " + agent_id,
                 });
                 agent_ok = false;
                 break;
             }
 
-            // Session check (P0.1)
+            // Independent predicate evaluation — ALL contract predicates.
+
+            // Session/epoch check (P0.1).
             if (contract.require_current_epoch &&
                 best_rec->identity.agent_session_id != current_session_id) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kSessionMismatch,
-                    .detail = "authoritative session mismatch for agent " + agent_id +
-                              ": record=" + best_rec->identity.agent_session_id +
-                              " current=" + current_session_id,
+                    .detail = "authoritative session mismatch for agent " + agent_id,
                 });
                 agent_ok = false;
                 break;
             }
 
-            // Conservative elapsed time Δ⁺ = t* - g⁻
+            // Recompute derived values (g⁻, g⁺, Δ⁺, ε) — verifier MUST NOT trust
+            // certificate values for these.
             const double conservative_elapsed =
-                best_interval->ConservativeElapsed(cert.evaluation_time_ms);
+                best_interval->ConservativeElapsed(evaluation_time_ms);
 
+            // Age predicate (A): Δ⁺ ≤ max_evidence_age.
             if (contract.max_evidence_age_ms.has_value() &&
                 conservative_elapsed > *contract.max_evidence_age_ms) {
                 failures.push_back({
@@ -259,6 +352,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 break;
             }
 
+            // Clock uncertainty predicate (R): ρ ≤ max_clock_uncertainty.
             if (contract.max_clock_uncertainty_ms.has_value() &&
                 best_clock_unc > *contract.max_clock_uncertainty_ms) {
                 failures.push_back({
@@ -269,7 +363,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 break;
             }
 
-            // Propagated uncertainty calculation
+            // Deterministic bounds check (P0.2).
             double obs_unc = 0.0;
             if (best_rec->quality.uncertainty.has_value()) {
                 obs_unc = static_cast<double>(best_rec->quality.uncertainty->value);
@@ -286,8 +380,19 @@ VerificationResult StateAcceptanceVerifier::Verify(
                     agent_ok = false;
                     break;
                 }
+
+                if (!std::isfinite(best_rec->quality.uncertainty->value) ||
+                    best_rec->quality.uncertainty->value < 0.0f) {
+                    failures.push_back({
+                        .reason = VerificationFailureReason::kPredicateMismatch,
+                        .detail = "invalid uncertainty bound for agent " + agent_id,
+                    });
+                    agent_ok = false;
+                    break;
+                }
             }
 
+            // Propagated uncertainty: ε(t*) = e_p + V_max · Δ⁺.
             double max_speed = 0.0;
             if (field == EvidenceFieldId::kPosition) {
                 max_speed = static_cast<double>(contract.max_horizontal_speed_mps);
@@ -296,6 +401,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
             const double propagated_unc = ComputePropagatedUncertainty(
                 obs_unc, max_speed, conservative_elapsed);
 
+            // Position uncertainty predicate (U).
             if (field == EvidenceFieldId::kPosition &&
                 contract.max_position_uncertainty_m.has_value() &&
                 propagated_unc > *contract.max_position_uncertainty_m) {
@@ -307,17 +413,56 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 break;
             }
 
-            // Health check
-            if (contract.require_estimator_healthy && !best_rec->quality.estimator_healthy) {
+            // Velocity uncertainty predicate (U).
+            if (field == EvidenceFieldId::kVelocity &&
+                contract.max_velocity_uncertainty_mps.has_value() &&
+                propagated_unc > *contract.max_velocity_uncertainty_mps) {
                 failures.push_back({
-                    .reason = VerificationFailureReason::kPredicateMismatch,
-                    .detail = "estimator unhealthy for agent " + agent_id,
+                    .reason = VerificationFailureReason::kPropagationMismatch,
+                    .detail = "propagated velocity uncertainty exceeded for agent " + agent_id,
                 });
                 agent_ok = false;
                 break;
             }
 
-            // Coordinate frame check
+            // Estimator health predicates (H).
+            if (contract.require_estimator_healthy &&
+                (field == EvidenceFieldId::kPosition || field == EvidenceFieldId::kVelocity)) {
+                if (!best_rec->quality.estimator_healthy) {
+                    failures.push_back({
+                        .reason = VerificationFailureReason::kPredicateMismatch,
+                        .detail = "estimator unhealthy for agent " + agent_id,
+                    });
+                    agent_ok = false;
+                    break;
+                }
+            }
+
+            // Estimator position ok (H).
+            if (contract.require_estimator_position_ok && field == EvidenceFieldId::kPosition) {
+                if (!best_rec->quality.estimator_position_ok) {
+                    failures.push_back({
+                        .reason = VerificationFailureReason::kPredicateMismatch,
+                        .detail = "estimator position not ok for agent " + agent_id,
+                    });
+                    agent_ok = false;
+                    break;
+                }
+            }
+
+            // Estimator velocity ok (H).
+            if (contract.require_estimator_velocity_ok && field == EvidenceFieldId::kVelocity) {
+                if (!best_rec->quality.estimator_velocity_ok) {
+                    failures.push_back({
+                        .reason = VerificationFailureReason::kPredicateMismatch,
+                        .detail = "estimator velocity not ok for agent " + agent_id,
+                    });
+                    agent_ok = false;
+                    break;
+                }
+            }
+
+            // Frame predicate (P) — position.
             if (field == EvidenceFieldId::kPosition &&
                 contract.required_position_frame != CoordinateFrame::kUnknown &&
                 best_rec->identity.coordinate_frame != contract.required_position_frame) {
@@ -329,7 +474,32 @@ VerificationResult StateAcceptanceVerifier::Verify(
                 break;
             }
 
-            // Verify certificate timing, observation uncertainty, and propagated uncertainty consistency within tolerance
+            // Frame predicate (P) — velocity.
+            if (field == EvidenceFieldId::kVelocity &&
+                contract.required_velocity_frame != CoordinateFrame::kUnknown &&
+                best_rec->identity.coordinate_frame != contract.required_velocity_frame) {
+                failures.push_back({
+                    .reason = VerificationFailureReason::kFrameMismatch,
+                    .detail = "velocity frame mismatch for agent " + agent_id,
+                });
+                agent_ok = false;
+                break;
+            }
+
+            // Mission predicate (M).
+            if (contract.require_current_mission) {
+                if (best_rec->identity.mission_id != contract.required_mission_id ||
+                    best_rec->identity.mission_revision != contract.required_mission_revision) {
+                    failures.push_back({
+                        .reason = VerificationFailureReason::kProvenanceMismatch,
+                        .detail = "mission mismatch for agent " + agent_id,
+                    });
+                    agent_ok = false;
+                    break;
+                }
+            }
+
+            // Cross-check recomputed values against certificate entries (tolerance).
             if (std::abs(cert_entry.clock_uncertainty_ms - best_clock_unc) > kUncertaintyTolerance) {
                 failures.push_back({
                     .reason = VerificationFailureReason::kClockMismatch,
@@ -385,7 +555,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
         }
     }
 
-    // Step 4: Completeness Rule Verification
+    // Step 4: Completeness Rule Verification.
     bool completeness_ok = false;
     switch (contract.completeness) {
         case CompletenessRule::kAllRequired:
@@ -405,7 +575,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
         });
     }
 
-    // Step 5: Verify accepted agent set matches certificate
+    // Step 5: Verify accepted agent set matches certificate.
     auto cert_agents = cert.accepted_agents;
     auto recon_agents = reconstructed.accepted_agents;
     std::sort(cert_agents.begin(), cert_agents.end());

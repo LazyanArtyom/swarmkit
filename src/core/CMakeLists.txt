@@ -11,6 +11,7 @@ add_library(swarmkit_core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/state_acceptance_engine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/state_acceptance_certificate.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/state_acceptance_verifier.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/replay_trace.cpp
 )
 
 target_include_directories(swarmkit_core PUBLIC

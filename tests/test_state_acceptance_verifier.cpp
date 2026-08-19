@@ -66,6 +66,17 @@ StateQualityContract CreateTestContract() {
     };
 }
 
+SnapshotRequestContext CreateTestReqCtx(double t_star = 1100.0, std::int64_t r_star = 1100) {
+    return SnapshotRequestContext{
+        .evaluation_time_ms = t_star,
+        .evidence_freeze_ms = r_star,
+        .participants = {
+            .agent_ids = {"uav-1", "uav-2"},
+            .membership_revision = 1,
+        },
+    };
+}
+
 }  // namespace
 
 TEST_CASE("StateAcceptanceVerifier independent replay equivalence", "[verifier]") {
@@ -79,15 +90,15 @@ TEST_CASE("StateAcceptanceVerifier independent replay equivalence", "[verifier]"
     auto contract = CreateTestContract();
     std::unordered_map<std::string, ClockQualityState> clock_states;
 
-    const double t_star = 1100.0;
-    auto engine_result = engine.RequestSnapshot(contract, t_star, store, clock_states);
+    const auto req_ctx = CreateTestReqCtx(1100.0, 1100);
+    auto engine_result = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
     REQUIRE(std::holds_alternative<AcceptedSnapshot>(engine_result));
 
     const auto& snapshot = std::get<AcceptedSnapshot>(engine_result);
-    auto cert = BuildCertificate(snapshot, contract);
+    auto cert = BuildCertificate(snapshot, contract, req_ctx);
 
     StateAcceptanceVerifier verifier;
-    auto verify_result = verifier.Verify(cert, store, contract, clock_states);
+    auto verify_result = verifier.Verify(cert, store, contract, req_ctx, clock_states);
 
     SECTION("Verifier accepts valid certificate and reconstructed snapshot matches") {
         REQUIRE(std::holds_alternative<VerifiedAcceptance>(verify_result));
@@ -108,25 +119,25 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
     auto contract = CreateTestContract();
     std::unordered_map<std::string, ClockQualityState> clock_states;
 
-    auto engine_result = engine.RequestSnapshot(contract, 1100.0, store, clock_states);
+    const auto req_ctx = CreateTestReqCtx(1100.0, 1100);
+    auto engine_result = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
     const auto& snapshot = std::get<AcceptedSnapshot>(engine_result);
-    auto cert = BuildCertificate(snapshot, contract);
+    auto cert = BuildCertificate(snapshot, contract, req_ctx);
 
     StateAcceptanceVerifier verifier;
 
     SECTION("1. Tampered certificate hash") {
         auto tampered = cert;
         tampered.certificate_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
     SECTION("2. Tampered evaluation time") {
         auto tampered = cert;
         tampered.evaluation_time_ms += 50.0;
-        // Even if hash is recomputed, verifier independently reconstructs t* decision
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -134,7 +145,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.contract_hash = "1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff";
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -142,15 +153,15 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.contract_content_version += 1;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
     SECTION("5. Tampered semantic version") {
         auto tampered = cert;
-        tampered.acceptance_semantics_version = "2.0";
+        tampered.acceptance_semantics_version = "3.0";
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -158,7 +169,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].sequence += 99;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -166,7 +177,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].evidence_hash = "badhash000000000000000000000000000000000000000000000000000000000";
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -174,7 +185,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].agent_session_id = "stale-session";
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -182,7 +193,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].propagated_uncertainty = 0.001;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -190,7 +201,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].clock_uncertainty_ms = 0.001;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -198,7 +209,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.accepted_agents.push_back("uav-rogue");
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -207,7 +218,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         tampered.evidence_entries[0].source_time_ms =
             tampered.evidence_entries[0].source_time_ms.value_or(0) + 1000;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -215,7 +226,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].source_component = "compromised-sensor";
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -223,7 +234,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].coordinate_frame = CoordinateFrame::kLocalNed;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 
@@ -231,7 +242,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         auto tampered = cert;
         tampered.evidence_entries[0].observation_uncertainty = 0.001;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
-        auto res = verifier.Verify(tampered, store, contract, clock_states);
+        auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
     }
 }
@@ -248,9 +259,10 @@ TEST_CASE("StateAcceptanceVerifier offline deserialization and fresh-store verif
     auto contract = CreateTestContract();
     std::unordered_map<std::string, ClockQualityState> clock_states;
 
-    auto engine_result = engine.RequestSnapshot(contract, 1100.0, live_store, clock_states);
+    const auto req_ctx = CreateTestReqCtx(1100.0, 1100);
+    auto engine_result = engine.RequestSnapshot(contract, req_ctx, live_store, clock_states);
     const auto& snapshot = std::get<AcceptedSnapshot>(engine_result);
-    auto cert = BuildCertificate(snapshot, contract);
+    auto cert = BuildCertificate(snapshot, contract, req_ctx);
 
     // Save certificate to wire string
     std::string wire_bytes = SerializeCertificate(cert);
@@ -267,11 +279,11 @@ TEST_CASE("StateAcceptanceVerifier offline deserialization and fresh-store verif
     std::unordered_map<std::string, ClockQualityState> fresh_clock_states;
 
     StateAcceptanceVerifier offline_verifier;
-    auto verify_result = offline_verifier.Verify(*loaded_cert, fresh_offline_store, contract, fresh_clock_states);
+    auto verify_result = offline_verifier.Verify(*loaded_cert, fresh_offline_store, contract, req_ctx, fresh_clock_states);
     REQUIRE(std::holds_alternative<VerifiedAcceptance>(verify_result));
 
     // If an observation is missing in fresh offline store, replay MUST fail
     EvidenceStore empty_offline_store;
-    auto empty_result = offline_verifier.Verify(*loaded_cert, empty_offline_store, contract, fresh_clock_states);
+    auto empty_result = offline_verifier.Verify(*loaded_cert, empty_offline_store, contract, req_ctx, fresh_clock_states);
     REQUIRE(std::holds_alternative<VerificationRejection>(empty_result));
 }

@@ -101,6 +101,7 @@ class StateAcceptanceVerifier {
     /// @param cert          Certificate to verify.
     /// @param evidence      Evidence store containing the original trace.
     /// @param contract      The State-Quality Contract.
+    /// @param request_ctx   Request context with t*, r*, participants.
     /// @param clock_states  Per-agent clock quality state.
     /// @return VerifiedAcceptance if the decision is reproducible,
     ///         VerificationRejection otherwise.
@@ -108,6 +109,7 @@ class StateAcceptanceVerifier {
         const StateAcceptanceCertificate& cert,
         const EvidenceStore& evidence,
         const StateQualityContract& contract,
+        const SnapshotRequestContext& request_ctx,
         const std::unordered_map<std::string, ClockQualityState>& clock_states)
         const;
 

@@ -54,9 +54,14 @@ struct ClockQualityState {
     /// Positive means source clock is ahead of reference.
     double offset_estimate_ms{};
 
-    /// Deterministic uncertainty radius in milliseconds (ρ ≥ 0).
-    /// The true offset lies within [θ̂ - ρ, θ̂ + ρ].
+    /// Base synchronization uncertainty radius in milliseconds (ρ_sync ≥ 0).
+    /// This is the uncertainty at the time of the last clock update.
     double uncertainty_radius_ms{};
+
+    /// Maximum clock drift rate in parts-per-million (ppm).
+    /// Used to compute drift budget: ρ_drift = drift_rate_ppm * 1e-3 * elapsed_ms.
+    /// A value of 0.0 means no drift model (base uncertainty only).
+    double max_drift_rate_ppm{0.0};
 
     /// Clock domain of the source.
     ClockDomain source_domain{ClockDomain::kUnknown};
@@ -72,19 +77,50 @@ struct ClockQualityState {
     /// deterministic soundness theorem (§12) does not apply.
     bool deterministic_bound{false};
 
-    /// Compute the generation-time interval for a source timestamp (§7).
+    /// Agent incarnation ID this clock model is bound to (§6).
+    /// On an incarnation change, the previous clock model is invalid
+    /// until synchronization is re-established.
+    std::string agent_incarnation_id;
+
+    /// Clock model version identifier for certificate binding.
+    std::string clock_model_version{"clock-v1"};
+
+    /// Compute effective uncertainty radius including bounded drift (§7).
     ///
-    /// g⁻ = s - θ̂ - ρ
-    /// g⁺ = s - θ̂ + ρ
+    /// ρ_eff = ρ_sync + ρ_drift
+    /// where ρ_drift = max_drift_rate_ppm * 1e-3 * (reference_time_ms - last_update_ms)
+    ///
+    /// @param reference_time_ms  The reference time at which to evaluate.
+    /// @return Effective uncertainty radius in milliseconds.
+    [[nodiscard]] double ComputeEffectiveUncertainty(
+        double reference_time_ms) const {
+        double rho = uncertainty_radius_ms;
+        if (max_drift_rate_ppm > 0.0 && last_update_ms > 0) {
+            const double elapsed = reference_time_ms -
+                                   static_cast<double>(last_update_ms);
+            if (elapsed > 0.0) {
+                // drift_rate_ppm * 1e-6 (ppm→ratio) * elapsed_ms
+                rho += max_drift_rate_ppm * 1e-6 * elapsed;
+            }
+        }
+        return rho;
+    }
+
+    /// Compute the generation-time interval for a source timestamp (§7).
+    /// Uses effective uncertainty including drift budget.
+    ///
+    /// g⁻ = s - θ̂ - ρ_eff
+    /// g⁺ = s - θ̂ + ρ_eff
     ///
     /// @param source_time_ms  Source timestamp s in the source clock domain.
     /// @return Generation-time interval in the reference domain.
     [[nodiscard]] GenerationTimeInterval ComputeGenerationInterval(
         double source_time_ms) const {
+        const double rho = ComputeEffectiveUncertainty(source_time_ms);
         const double reference_time = source_time_ms - offset_estimate_ms;
         return {
-            .lower_ms = reference_time - uncertainty_radius_ms,
-            .upper_ms = reference_time + uncertainty_radius_ms,
+            .lower_ms = reference_time - rho,
+            .upper_ms = reference_time + rho,
         };
     }
 

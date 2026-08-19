@@ -116,11 +116,13 @@ std::string ComputeCertificateHash(const StateAcceptanceCertificate& cert) {
     oss << std::setprecision(std::numeric_limits<double>::max_digits10);
 
     oss << "cert_id:" << cert.certificate_id << "\n";
+    oss << "cert_schema:" << cert.certificate_schema_version << "\n";
     oss << "contract_id:" << cert.contract_id << "\n";
     oss << "contract_schema_version:" << cert.contract_schema_version << "\n";
     oss << "contract_content_version:" << cert.contract_content_version << "\n";
     oss << "contract_hash:" << cert.contract_hash << "\n";
     oss << "evaluation_time_ms:" << cert.evaluation_time_ms << "\n";
+    oss << "evidence_freeze_ms:" << cert.evidence_freeze_ms << "\n";
 
     // Evidence entries in deterministic order.
     for (const auto& entry : cert.evidence_entries) {
@@ -128,16 +130,22 @@ std::string ComputeCertificateHash(const StateAcceptanceCertificate& cert) {
             << ":" << static_cast<int>(entry.field)
             << ":" << entry.sequence
             << ":" << entry.agent_session_id
-            << ":" << entry.source_component;
+            << ":" << entry.source_component
+            << ":" << entry.evidence_id
+            << ":" << entry.agent_incarnation_id;
         if (entry.source_time_ms.has_value()) {
             oss << ":" << *entry.source_time_ms;
         } else {
             oss << ":absent";
         }
-        oss << ":" << entry.generation_interval.lower_ms
+        oss << ":" << entry.receive_time_ms
+            << ":" << entry.generation_interval.lower_ms
             << ":" << entry.generation_interval.upper_ms
             << ":" << entry.conservative_elapsed_ms
+            << ":" << entry.theta_hat_ms
+            << ":" << entry.effective_rho_ms
             << ":" << entry.clock_uncertainty_ms
+            << ":" << entry.clock_model_version
             << ":" << entry.observation_uncertainty
             << ":" << entry.propagated_uncertainty
             << ":" << static_cast<int>(entry.coordinate_frame)
@@ -173,6 +181,15 @@ std::string ComputeCertificateHash(const StateAcceptanceCertificate& cert) {
     }
     oss << "\n";
 
+    // Participant snapshot binding.
+    oss << "participants:";
+    std::vector<std::string> sorted_participants = cert.participants.agent_ids;
+    std::sort(sorted_participants.begin(), sorted_participants.end());
+    for (const auto& p : sorted_participants) {
+        oss << p << ",";
+    }
+    oss << ":" << cert.participants.membership_revision << "\n";
+
     oss << "acceptance_semantics_version:" << cert.acceptance_semantics_version << "\n";
     oss << "produced_at_ms:" << cert.produced_at_ms << "\n";
 
@@ -186,15 +203,18 @@ bool VerifyCertificateIntegrity(const StateAcceptanceCertificate& cert) {
 
 StateAcceptanceCertificate BuildCertificate(
     const AcceptedSnapshot& snapshot,
-    const StateQualityContract& contract) {
+    const StateQualityContract& contract,
+    const SnapshotRequestContext& request_ctx) {
 
     StateAcceptanceCertificate cert;
     cert.certificate_id = "cert-" + snapshot.snapshot_id;
+    cert.certificate_schema_version = "CERT_V3";
     cert.contract_id = snapshot.contract_id;
     cert.contract_schema_version = contract.schema_version;
     cert.contract_content_version = snapshot.contract_version;
     cert.contract_hash = snapshot.contract_hash;
     cert.evaluation_time_ms = snapshot.evaluation_time_ms;
+    cert.evidence_freeze_ms = request_ctx.evidence_freeze_ms;
 
     cert.propagation_model_id = snapshot.model_id;
     cert.propagation_model_version = snapshot.model_version;
@@ -202,6 +222,7 @@ StateAcceptanceCertificate BuildCertificate(
     cert.max_vertical_speed_mps = contract.max_vertical_speed_mps;
 
     cert.accepted_agents = snapshot.accepted_agents;
+    cert.participants = request_ctx.participants;
     cert.produced_at_ms = snapshot.produced_at_ms;
 
     double max_clock_unc = 0.0;
@@ -227,10 +248,34 @@ StateAcceptanceCertificate BuildCertificate(
             entry.sequence = field_state.evidence.identity.sequence;
             entry.agent_session_id = field_state.evidence.identity.agent_session_id;
             entry.source_component = field_state.evidence.identity.source_component;
+
+            // Canonical evidence ID.
+            entry.evidence_id =
+                field_state.evidence.identity.agent_id + ":" +
+                std::to_string(static_cast<int>(field_state.evidence.identity.field_id)) + ":" +
+                field_state.evidence.identity.agent_session_id + ":" +
+                std::to_string(field_state.evidence.identity.sequence);
+
+            entry.agent_incarnation_id = field_state.evidence.identity.agent_session_id;
             entry.source_time_ms = field_state.evidence.source_time.timestamp_ms;
+            entry.receive_time_ms = field_state.evidence.receive_time_ms;
             entry.generation_interval = field_state.generation_interval;
             entry.conservative_elapsed_ms = field_state.conservative_elapsed_ms;
+
+            // Bind clock operands: θ̂ is derived from generation interval.
+            // θ̂ = s - midpoint(g⁻, g⁺) = s - (g⁻+g⁺)/2 ... but more precisely:
+            // We stored clock_uncertainty_ms as the effective ρ used.
+            // Reconstruct θ̂ from s, g⁻, ρ: g⁻ = s - θ̂ - ρ => θ̂ = s - g⁻ - ρ
+            if (field_state.evidence.source_time.timestamp_ms.has_value()) {
+                const double s = static_cast<double>(
+                    *field_state.evidence.source_time.timestamp_ms);
+                entry.theta_hat_ms = s - field_state.generation_interval.lower_ms -
+                                     field_state.clock_uncertainty_ms;
+            }
+            entry.effective_rho_ms = field_state.clock_uncertainty_ms;
             entry.clock_uncertainty_ms = field_state.clock_uncertainty_ms;
+            entry.clock_model_version = "clock-v1";  // Default.
+
             entry.observation_uncertainty = field_state.observation_uncertainty;
             entry.propagated_uncertainty = field_state.propagated_uncertainty;
 
@@ -285,7 +330,7 @@ StateAcceptanceCertificate BuildCertificate(
     cert.max_propagated_position_uncertainty_m = max_pos_unc;
     cert.max_propagated_velocity_uncertainty_mps = max_vel_unc;
 
-    // Compute the tamper-evident hash h_K last.
+    // Compute the integrity hash h_K last.
     cert.certificate_hash = ComputeCertificateHash(cert);
 
     return cert;
@@ -296,13 +341,15 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
     oss.imbue(std::locale::classic());
     oss << std::setprecision(std::numeric_limits<double>::max_digits10);
 
-    oss << "CERT_V2\n";
+    oss << "CERT_V3\n";
     oss << cert.certificate_id << "\n";
+    oss << cert.certificate_schema_version << "\n";
     oss << cert.contract_id << "\n";
     oss << cert.contract_schema_version << "\n";
     oss << cert.contract_content_version << "\n";
     oss << cert.contract_hash << "\n";
     oss << cert.evaluation_time_ms << "\n";
+    oss << cert.evidence_freeze_ms << "\n";
     oss << cert.max_clock_uncertainty_ms << "\n";
     oss << cert.max_conservative_elapsed_ms << "\n";
     oss << cert.max_propagated_position_uncertainty_m << "\n";
@@ -320,6 +367,13 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
         oss << a << "\n";
     }
 
+    // Participant snapshot.
+    oss << cert.participants.agent_ids.size() << "\n";
+    for (const auto& p : cert.participants.agent_ids) {
+        oss << p << "\n";
+    }
+    oss << cert.participants.membership_revision << "\n";
+
     oss << cert.evidence_entries.size() << "\n";
     for (const auto& e : cert.evidence_entries) {
         oss << e.agent_id << "\n";
@@ -327,11 +381,17 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
         oss << e.sequence << "\n";
         oss << (e.agent_session_id.empty() ? "-" : e.agent_session_id) << "\n";
         oss << (e.source_component.empty() ? "-" : e.source_component) << "\n";
+        oss << (e.evidence_id.empty() ? "-" : e.evidence_id) << "\n";
+        oss << (e.agent_incarnation_id.empty() ? "-" : e.agent_incarnation_id) << "\n";
         oss << (e.source_time_ms.has_value() ? *e.source_time_ms : -1) << "\n";
+        oss << e.receive_time_ms << "\n";
         oss << e.generation_interval.lower_ms << "\n";
         oss << e.generation_interval.upper_ms << "\n";
         oss << e.conservative_elapsed_ms << "\n";
+        oss << e.theta_hat_ms << "\n";
+        oss << e.effective_rho_ms << "\n";
         oss << e.clock_uncertainty_ms << "\n";
+        oss << (e.clock_model_version.empty() ? "-" : e.clock_model_version) << "\n";
         oss << e.observation_uncertainty << "\n";
         oss << e.propagated_uncertainty << "\n";
         oss << static_cast<int>(e.coordinate_frame) << "\n";
@@ -354,48 +414,66 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
     iss.imbue(std::locale::classic());
 
     std::string header;
-    if (!(iss >> header) || (header != "CERT_V1" && header != "CERT_V2")) return std::nullopt;
+    if (!(iss >> header)) return std::nullopt;
+
+    if (header != "CERT_V1" && header != "CERT_V2" && header != "CERT_V3") return std::nullopt;
 
     StateAcceptanceCertificate cert;
-    if (!(iss >> cert.certificate_id >> cert.contract_id
-              >> cert.contract_schema_version >> cert.contract_content_version
-              >> cert.contract_hash >> cert.evaluation_time_ms
-              >> cert.max_clock_uncertainty_ms >> cert.max_conservative_elapsed_ms
-              >> cert.max_propagated_position_uncertainty_m
-              >> cert.max_propagated_velocity_uncertainty_mps
-              >> cert.propagation_model_id >> cert.propagation_model_version
-              >> cert.max_horizontal_speed_mps >> cert.max_vertical_speed_mps
-              >> cert.acceptance_semantics_version >> cert.produced_at_ms
-              >> cert.certificate_hash)) {
-        return std::nullopt;
-    }
 
-    std::size_t num_agents = 0;
-    if (!(iss >> num_agents)) return std::nullopt;
-    cert.accepted_agents.resize(num_agents);
-    for (std::size_t i = 0; i < num_agents; ++i) {
-        if (!(iss >> cert.accepted_agents[i])) return std::nullopt;
-    }
+    if (header == "CERT_V3") {
+        cert.certificate_schema_version = "CERT_V3";
+        if (!(iss >> cert.certificate_id
+                  >> cert.certificate_schema_version
+                  >> cert.contract_id
+                  >> cert.contract_schema_version >> cert.contract_content_version
+                  >> cert.contract_hash >> cert.evaluation_time_ms
+                  >> cert.evidence_freeze_ms
+                  >> cert.max_clock_uncertainty_ms >> cert.max_conservative_elapsed_ms
+                  >> cert.max_propagated_position_uncertainty_m
+                  >> cert.max_propagated_velocity_uncertainty_mps
+                  >> cert.propagation_model_id >> cert.propagation_model_version
+                  >> cert.max_horizontal_speed_mps >> cert.max_vertical_speed_mps
+                  >> cert.acceptance_semantics_version >> cert.produced_at_ms
+                  >> cert.certificate_hash)) {
+            return std::nullopt;
+        }
 
-    std::size_t num_entries = 0;
-    if (!(iss >> num_entries)) return std::nullopt;
-    cert.evidence_entries.resize(num_entries);
-    for (std::size_t i = 0; i < num_entries; ++i) {
-        auto& e = cert.evidence_entries[i];
-        int field_int = 0;
-        std::int64_t src_time = -1;
-        std::string sess, src_comp;
+        std::size_t num_agents = 0;
+        if (!(iss >> num_agents)) return std::nullopt;
+        cert.accepted_agents.resize(num_agents);
+        for (std::size_t i = 0; i < num_agents; ++i) {
+            if (!(iss >> cert.accepted_agents[i])) return std::nullopt;
+        }
 
-        if (header == "CERT_V2") {
+        // Participant snapshot.
+        std::size_t num_participants = 0;
+        if (!(iss >> num_participants)) return std::nullopt;
+        cert.participants.agent_ids.resize(num_participants);
+        for (std::size_t i = 0; i < num_participants; ++i) {
+            if (!(iss >> cert.participants.agent_ids[i])) return std::nullopt;
+        }
+        if (!(iss >> cert.participants.membership_revision)) return std::nullopt;
+
+        std::size_t num_entries = 0;
+        if (!(iss >> num_entries)) return std::nullopt;
+        cert.evidence_entries.resize(num_entries);
+        for (std::size_t i = 0; i < num_entries; ++i) {
+            auto& e = cert.evidence_entries[i];
+            int field_int = 0;
+            std::int64_t src_time = -1;
+            std::string sess, src_comp, eid, incarnation, clk_model_ver;
             int frame_int = 0, unc_sem_int = 0, clk_dom_int = 0, clk_sync_int = 0;
             int est_h = 0, est_pos = 0, est_vel = 0;
             std::string mission_id_str;
             std::uint64_t mission_rev = 0;
 
             if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
-                      >> src_comp >> src_time
+                      >> src_comp >> eid >> incarnation >> src_time
+                      >> e.receive_time_ms
                       >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
-                      >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
+                      >> e.conservative_elapsed_ms
+                      >> e.theta_hat_ms >> e.effective_rho_ms >> e.clock_uncertainty_ms
+                      >> clk_model_ver
                       >> e.observation_uncertainty >> e.propagated_uncertainty
                       >> frame_int >> unc_sem_int >> clk_dom_int >> clk_sync_int
                       >> est_h >> est_pos >> est_vel >> mission_id_str >> mission_rev
@@ -403,6 +481,15 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
                 return std::nullopt;
             }
 
+            e.field = static_cast<EvidenceFieldId>(field_int);
+            e.agent_session_id = (sess == "-") ? "" : sess;
+            e.source_component = (src_comp == "-") ? "" : src_comp;
+            e.evidence_id = (eid == "-") ? "" : eid;
+            e.agent_incarnation_id = (incarnation == "-") ? "" : incarnation;
+            if (src_time >= 0) {
+                e.source_time_ms = src_time;
+            }
+            e.clock_model_version = (clk_model_ver == "-") ? "" : clk_model_ver;
             e.coordinate_frame = static_cast<CoordinateFrame>(frame_int);
             e.uncertainty_semantics = static_cast<UncertaintySemantics>(unc_sem_int);
             e.clock_domain = static_cast<ClockDomain>(clk_dom_int);
@@ -412,22 +499,81 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
             e.estimator_velocity_ok = (est_vel != 0);
             e.mission_id = (mission_id_str == "-") ? "" : mission_id_str;
             e.mission_revision = mission_rev;
-        } else {
-            if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
-                      >> src_comp >> src_time
-                      >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
-                      >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
-                      >> e.observation_uncertainty >> e.propagated_uncertainty
-                      >> e.evidence_hash)) {
-                return std::nullopt;
-            }
+        }
+    } else {
+        // Legacy CERT_V1/V2 deserialization.
+        if (!(iss >> cert.certificate_id >> cert.contract_id
+                  >> cert.contract_schema_version >> cert.contract_content_version
+                  >> cert.contract_hash >> cert.evaluation_time_ms
+                  >> cert.max_clock_uncertainty_ms >> cert.max_conservative_elapsed_ms
+                  >> cert.max_propagated_position_uncertainty_m
+                  >> cert.max_propagated_velocity_uncertainty_mps
+                  >> cert.propagation_model_id >> cert.propagation_model_version
+                  >> cert.max_horizontal_speed_mps >> cert.max_vertical_speed_mps
+                  >> cert.acceptance_semantics_version >> cert.produced_at_ms
+                  >> cert.certificate_hash)) {
+            return std::nullopt;
         }
 
-        e.field = static_cast<EvidenceFieldId>(field_int);
-        e.agent_session_id = (sess == "-") ? "" : sess;
-        e.source_component = (src_comp == "-") ? "" : src_comp;
-        if (src_time >= 0) {
-            e.source_time_ms = src_time;
+        std::size_t num_agents = 0;
+        if (!(iss >> num_agents)) return std::nullopt;
+        cert.accepted_agents.resize(num_agents);
+        for (std::size_t i = 0; i < num_agents; ++i) {
+            if (!(iss >> cert.accepted_agents[i])) return std::nullopt;
+        }
+
+        std::size_t num_entries = 0;
+        if (!(iss >> num_entries)) return std::nullopt;
+        cert.evidence_entries.resize(num_entries);
+        for (std::size_t i = 0; i < num_entries; ++i) {
+            auto& e = cert.evidence_entries[i];
+            int field_int = 0;
+            std::int64_t src_time = -1;
+            std::string sess, src_comp;
+
+            if (header == "CERT_V2") {
+                int frame_int = 0, unc_sem_int = 0, clk_dom_int = 0, clk_sync_int = 0;
+                int est_h = 0, est_pos = 0, est_vel = 0;
+                std::string mission_id_str;
+                std::uint64_t mission_rev = 0;
+
+                if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
+                          >> src_comp >> src_time
+                          >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
+                          >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
+                          >> e.observation_uncertainty >> e.propagated_uncertainty
+                          >> frame_int >> unc_sem_int >> clk_dom_int >> clk_sync_int
+                          >> est_h >> est_pos >> est_vel >> mission_id_str >> mission_rev
+                          >> e.evidence_hash)) {
+                    return std::nullopt;
+                }
+
+                e.coordinate_frame = static_cast<CoordinateFrame>(frame_int);
+                e.uncertainty_semantics = static_cast<UncertaintySemantics>(unc_sem_int);
+                e.clock_domain = static_cast<ClockDomain>(clk_dom_int);
+                e.clock_synchronization = static_cast<ClockSynchronization>(clk_sync_int);
+                e.estimator_healthy = (est_h != 0);
+                e.estimator_position_ok = (est_pos != 0);
+                e.estimator_velocity_ok = (est_vel != 0);
+                e.mission_id = (mission_id_str == "-") ? "" : mission_id_str;
+                e.mission_revision = mission_rev;
+            } else {
+                if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
+                          >> src_comp >> src_time
+                          >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
+                          >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
+                          >> e.observation_uncertainty >> e.propagated_uncertainty
+                          >> e.evidence_hash)) {
+                    return std::nullopt;
+                }
+            }
+
+            e.field = static_cast<EvidenceFieldId>(field_int);
+            e.agent_session_id = (sess == "-") ? "" : sess;
+            e.source_component = (src_comp == "-") ? "" : src_comp;
+            if (src_time >= 0) {
+                e.source_time_ms = src_time;
+            }
         }
     }
 
