@@ -1,0 +1,11 @@
+{
+  "label": "SITL integration latency on this host",
+  "scope": "RequestSnapshot + BuildCertificate + SerializeCertificate",
+  "count": 800,
+  "mean_us": 2118.6057812500003,
+  "stddev_us": 2572.2664271809394,
+  "p50_us": 758.95849999999996,
+  "p95_us": 6676.7253500000006,
+  "p99_us": 6775.0017599999992,
+  "max_us": 6851
+}

@@ -1,0 +1,7 @@
+{
+  "persisted_sitl_decisions": 800,
+  "agreements": 800,
+  "disagreements": 0,
+  "agreement_rate": 1,
+  "state_reconstructed_from_disk": true
+}

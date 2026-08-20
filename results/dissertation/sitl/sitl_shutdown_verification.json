@@ -1,0 +1,42 @@
+{
+  "verification_source": "production SwarmKit Agent Health RPC after verified LAND commands",
+  "vehicles": [
+    {
+      "drone_id": "drone-1",
+      "agent_id": "sitl-agent-1",
+      "health_time_unix_ms": 1787257372009,
+      "last_telemetry_unix_ms": 1787257371979,
+      "armed": false,
+      "landed": true,
+      "mode": "LAND",
+      "failsafe": false,
+      "relative_altitude_m": -0.13
+    },
+    {
+      "drone_id": "drone-2",
+      "agent_id": "sitl-agent-2",
+      "health_time_unix_ms": 1787257369076,
+      "last_telemetry_unix_ms": 1787257369002,
+      "armed": false,
+      "landed": true,
+      "mode": "LAND",
+      "failsafe": false,
+      "relative_altitude_m": -0.13
+    },
+    {
+      "drone_id": "drone-3",
+      "agent_id": "sitl-agent-3",
+      "health_time_unix_ms": 1787257372034,
+      "last_telemetry_unix_ms": 1787257371980,
+      "armed": false,
+      "landed": true,
+      "mode": "LAND",
+      "failsafe": false,
+      "relative_altitude_m": 0.22
+    }
+  ],
+  "local_agents_stopped": true,
+  "ubuntu_sitl_stop_command": "~/swarm_sitl_direct.sh stop",
+  "ubuntu_sitl_stop_output": "Stopped.",
+  "ubuntu_arducopter_or_router_processes_after_stop": 0
+}

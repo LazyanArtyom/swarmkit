@@ -1,0 +1,41 @@
+{
+  "clock_domain": "vehicle_boot",
+  "synchronization": "estimated",
+  "deterministic_bound": false,
+  "estimation_method": "For each agent incarnation, five GLOBAL_POSITION_INT samples produced source_boot_ms - agent_receive_unix_ms candidates. theta_hat is the observed envelope midpoint and base rho is half its range plus 1 ms, with a 2 ms floor.",
+  "max_drift_rate_ppm": 0,
+  "effective_rho_note": "Effective rho equals base rho because the declared drift rate is zero.",
+  "initial_s0_models": [
+    {
+      "drone_id": "drone-1",
+      "theta_hat_ms": -1787256925112,
+      "base_rho_ms": 113,
+      "effective_rho_ms": 113,
+      "clock_model_version": "sitl-observed-receive-envelope-v1",
+      "agent_incarnation_id": "agent-session-1787255276918-19508172377872517948717267141108568655-1"
+    },
+    {
+      "drone_id": "drone-2",
+      "theta_hat_ms": -1787256930125,
+      "base_rho_ms": 120,
+      "effective_rho_ms": 120,
+      "clock_model_version": "sitl-observed-receive-envelope-v1",
+      "agent_incarnation_id": "agent-session-1787255276922-1412525859096521706715300069754288583200-1"
+    },
+    {
+      "drone_id": "drone-3",
+      "theta_hat_ms": -1787256935163.5,
+      "base_rho_ms": 116.5,
+      "effective_rho_ms": 116.5,
+      "clock_model_version": "sitl-observed-receive-envelope-v1",
+      "agent_incarnation_id": "agent-session-1787255276918-1790892970145920185013645599045014863377-1"
+    }
+  ],
+  "drone_2_e2_model": {
+    "theta_hat_ms": -1787256930172,
+    "base_rho_ms": 95,
+    "effective_rho_ms": 95,
+    "clock_model_version": "sitl-observed-receive-envelope-v1",
+    "agent_incarnation_id": "agent-session-1787257288113-175144100154114150108422047801532694376-1"
+  }
+}

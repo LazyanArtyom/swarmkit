@@ -1,0 +1,11 @@
+{
+  "configured_delay_ms": 300,
+  "scenarios": [
+    {"scenario": "normal_moving_flight", "frames_received": 78, "frames_delayed": 0, "actual_delay_mean_ms": 0, "actual_delay_p95_ms": 0, "actual_delay_max_ms": 0},
+    {"scenario": "delayed_telemetry", "frames_received": 67, "frames_delayed": 67, "actual_delay_mean_ms": 309.38908982812507, "actual_delay_p95_ms": 321.13173484999999, "actual_delay_max_ms": 325.98037499999998},
+    {"scenario": "agent_restart_delayed_old_epoch", "frames_received": 901, "frames_delayed": 0, "actual_delay_mean_ms": 0, "actual_delay_p95_ms": 0, "actual_delay_max_ms": 0},
+    {"scenario": "high_speed_delayed_motion", "frames_received": 66, "frames_delayed": 66, "actual_delay_mean_ms": 312.48150264062497, "actual_delay_p95_ms": 321.49735625, "actual_delay_max_ms": 327.24400000000003}
+  ],
+  "delay_location": "after SDK delivery of production-normalized TelemetryFrame and before DecomposeToEvidence/EvidenceStore delivery",
+  "source_timestamps_modified": false
+}

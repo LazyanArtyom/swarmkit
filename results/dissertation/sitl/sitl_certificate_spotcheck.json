@@ -1,0 +1,16 @@
+{
+  "certificates_selected": 10,
+  "outer_hash_recomputed": true,
+  "mutation_classes": [
+    {"name": "clock_model_version", "cases": 10, "rejected": 10},
+    {"name": "frame", "cases": 10, "rejected": 10},
+    {"name": "participant_set", "cases": 10, "rejected": 10},
+    {"name": "propagated_uncertainty", "cases": 10, "rejected": 10},
+    {"name": "r_star", "cases": 10, "rejected": 10},
+    {"name": "session_incarnation", "cases": 10, "rejected": 10},
+    {"name": "theta_hat", "cases": 10, "rejected": 10}
+  ],
+  "cases_tested": 70,
+  "cases_rejected": 70,
+  "all_rejected": true
+}

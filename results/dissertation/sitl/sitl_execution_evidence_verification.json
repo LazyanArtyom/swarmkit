@@ -1,0 +1,33 @@
+{
+  "tool": "build/mac-release/apps/swarmkit-evidence-inspect",
+  "logs": [
+    {
+      "path": "execution_evidence/agent1-final.evidence",
+      "agent_session_id": "agent-session-1787255276918-19508172377872517948717267141108568655-1",
+      "run_id": "sitl-final-agent-1-20260820",
+      "events": 685,
+      "clean_complete": true
+    },
+    {
+      "path": "execution_evidence/agent2-e1-interrupted.evidence",
+      "agent_session_id": "agent-session-1787255276922-1412525859096521706715300069754288583200-1",
+      "run_id": "sitl-final-agent-2-20260820",
+      "clean_complete": false,
+      "expected_interruption": "The E1 process was terminated at the S2 restart barrier; the incomplete trailer is retained as evidence of that interruption, not represented as a clean run."
+    },
+    {
+      "path": "execution_evidence/agent2-e2b-final.evidence",
+      "agent_session_id": "agent-session-1787257288113-175144100154114150108422047801532694376-1",
+      "run_id": "sitl-final-agent-2-e2b-20260821",
+      "events": 72,
+      "clean_complete": true
+    },
+    {
+      "path": "execution_evidence/agent3-final.evidence",
+      "agent_session_id": "agent-session-1787255276918-1790892970145920185013645599045014863377-1",
+      "run_id": "sitl-final-agent-3-20260820",
+      "events": 632,
+      "clean_complete": true
+    }
+  ]
+}

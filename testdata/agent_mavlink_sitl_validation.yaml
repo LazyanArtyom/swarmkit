@@ -1,0 +1,43 @@
+agent:
+  agent_id: "sitl-agent"
+  bind_addr: "127.0.0.1:50061"
+  backend: "mavlink"
+  default_authority_ttl_ms: 15000
+  default_telemetry_rate_hz: 5
+  min_telemetry_rate_hz: 1
+  vehicle_profile:
+    profile_id: "sitl-arducopter-cross-host"
+    cruise_speed_mps: 4.0
+    climb_speed_mps: 1.5
+    descent_speed_mps: 1.0
+    max_altitude_m: 120.0
+    min_battery_percent: 20.0
+    battery_reserve_percent: 15.0
+    tracking_tolerance_m: 2.0
+    goal_margin_ms: 15000
+    takeoff_timeout_margin_ms: 20000
+    land_timeout_margin_ms: 30000
+    max_goal_timeout_ms: 300000
+    min_gps_fix_type: 3
+    min_satellites_visible: 6
+    max_gps_hdop: 2.5
+  mavlink:
+    drone_id: "drone-1"
+    bind_addr: "0.0.0.0:14601"
+    autopilot_profile: "ardupilot-copter"
+    target_system: 1
+    target_component: 1
+    source_system: 245
+    source_component: 191
+    telemetry_rate_hz: 5
+    peer_discovery_timeout_ms: 5000
+    # Keep backend ACK handling (plus the 1 s arm-state confirmation grace)
+    # within the SDK's 5 s unary RPC deadline so retries cannot overlap a
+    # still-executing command on delayed cross-host SITL links.
+    command_ack_timeout_ms: 3500
+    set_guided_before_arm: true
+    set_guided_before_takeoff: true
+    guided_mode: 4
+    allow_flight_termination: false
+  security:
+    transport_security: "insecure"

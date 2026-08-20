@@ -1,0 +1,7 @@
+{
+  "vehicles": [
+    {"drone_id": "drone-1", "initial_lat_deg": -35.363261899999998, "initial_lon_deg": 149.1652368, "initial_alt_m": 4.999000072479248, "final_lat_deg": -35.362951199999998, "final_lon_deg": 149.165254, "final_alt_m": 4.9920001029968262, "distance_moved_m": 34.583451994117226, "max_observed_horizontal_speed_mps": 5.7400084819129056, "armed_seen": true, "takeoff_success": true, "final_armed": true, "final_landed": false, "final_mode": "GUIDED"},
+    {"drone_id": "drone-2", "initial_lat_deg": -35.363261899999998, "initial_lon_deg": 149.1659367, "initial_alt_m": 5, "final_lat_deg": -35.363040499999997, "final_lon_deg": 149.16621330000001, "final_alt_m": 5.000999927520752, "distance_moved_m": 35.145089279801383, "max_observed_horizontal_speed_mps": 6.4404966931100294, "armed_seen": true, "takeoff_success": true, "final_armed": true, "final_landed": false, "final_mode": "GUIDED"},
+    {"drone_id": "drone-3", "initial_lat_deg": -35.363261899999998, "initial_lon_deg": 149.1666367, "initial_alt_m": 4.999000072479248, "final_lat_deg": -35.363023200000001, "final_lon_deg": 149.16633060000001, "final_alt_m": 4.9920001029968262, "distance_moved_m": 38.404954926928482, "max_observed_horizontal_speed_mps": 6.8041238528242252, "armed_seen": true, "takeoff_success": true, "final_armed": true, "final_landed": false, "final_mode": "GUIDED"}
+  ]
+}

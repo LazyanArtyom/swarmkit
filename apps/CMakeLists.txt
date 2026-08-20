@@ -82,6 +82,20 @@ target_link_libraries(swarmkit-dissertation-experiment PRIVATE swarmkit_experime
 swarmkit_set_warnings(swarmkit-dissertation-experiment)
 swarmkit_enable_sanitizers(swarmkit-dissertation-experiment)
 
+add_executable(swarmkit-sitl-validation
+    ${CMAKE_CURRENT_SOURCE_DIR}/experiment/sitl_validation.cpp
+)
+target_compile_definitions(swarmkit-sitl-validation PRIVATE
+    SWARMKIT_EXPERIMENT_GIT_COMMIT="${SWARMKIT_EXPERIMENT_GIT_COMMIT}"
+    SWARMKIT_EXPERIMENT_GIT_DIRTY=${SWARMKIT_EXPERIMENT_GIT_DIRTY}
+    SWARMKIT_EXPERIMENT_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+    SWARMKIT_EXPERIMENT_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+    SWARMKIT_EXPERIMENT_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+)
+target_link_libraries(swarmkit-sitl-validation PRIVATE swarmkit_client)
+swarmkit_set_warnings(swarmkit-sitl-validation)
+swarmkit_enable_sanitizers(swarmkit-sitl-validation)
+
 if(BUILD_TESTING)
     add_test(NAME swarmkit_evidence_inspect_help
         COMMAND swarmkit-evidence-inspect --help
