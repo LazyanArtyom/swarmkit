@@ -215,3 +215,29 @@ TEST_CASE("ClockQualityState effective uncertainty and drift budget (P0.4)", "[c
     }
 }
 
+TEST_CASE("test_clock_drift_uses_reference_domain", "[clock_quality][drift]") {
+    const ClockQualityState clock{
+        .offset_estimate_ms = 100.0,
+        .uncertainty_radius_ms = 1.0,
+        .max_drift_rate_ppm = 1000.0,
+        .source_domain = ClockDomain::kUnixEpoch,
+        .synchronization = ClockSynchronization::kSynchronized,
+        .last_update_ms = 900,
+        .deterministic_bound = true,
+        .agent_incarnation_id = "E1",
+    };
+    const auto interval = clock.ComputeGenerationInterval(1100.0);
+    // g-hat is 1000 ms, so drift elapsed is 100 ms in the reference domain.
+    REQUIRE_THAT(interval.lower_ms, WithinAbs(998.9, 1e-12));
+    REQUIRE_THAT(interval.upper_ms, WithinAbs(1001.1, 1e-12));
+}
+
+TEST_CASE("test_uncertainty_monotonic_in_age_and_high_speed_delay_expands_uncertainty",
+          "[clock_quality][propagation]") {
+    const double observation_bound = 0.25;
+    const double short_age = ComputePropagatedUncertainty(observation_bound, 5.0, 100.0);
+    const double long_age = ComputePropagatedUncertainty(observation_bound, 5.0, 200.0);
+    const double high_speed = ComputePropagatedUncertainty(observation_bound, 10.0, 200.0);
+    REQUIRE(long_age > short_age);
+    REQUIRE(high_speed > long_age);
+}

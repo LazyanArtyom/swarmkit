@@ -1,23 +1,10 @@
-[
-  {
-    "uav_count": 3,
-    "latency_p50_us": 74.625,
-    "latency_p95_us": 83,
-    "latency_p99_us": 91.333,
-    "serialized_certificate_size_bytes": 2047
-  },
-  {
-    "uav_count": 5,
-    "latency_p50_us": 113.708,
-    "latency_p95_us": 124.417,
-    "latency_p99_us": 146.166,
-    "serialized_certificate_size_bytes": 3180
-  },
-  {
-    "uav_count": 10,
-    "latency_p50_us": 211.959,
-    "latency_p95_us": 221.5,
-    "latency_p99_us": 242.708,
-    "serialized_certificate_size_bytes": 6024
-  }
-]
+{
+  "operation": "RequestSnapshot + BuildCertificate + SerializeCertificate",
+  "clock": "std::chrono::steady_clock",
+  "build_type": "Release",
+  "results": [
+    {"N": 3, "warmup_iterations": 100, "count": 1000, "mean_us": 139.09073899999996, "stddev_us": 1.4977779266622255, "min_us": 135.833, "p50_us": 138.916, "p90_us": 140.042, "p95_us": 140.625, "p99_us": 145.209, "max_us": 160.125, "certificate_size_min_bytes": 2563, "certificate_size_median_bytes": 2563, "certificate_size_p95_bytes": 2563, "certificate_size_max_bytes": 2563},
+    {"N": 5, "warmup_iterations": 100, "count": 1000, "mean_us": 221.33678599999993, "stddev_us": 2.8646868668406067, "min_us": 217.291, "p50_us": 220.833, "p90_us": 223.125, "p95_us": 225.458, "p99_us": 233.125, "max_us": 264.16699999999997, "certificate_size_min_bytes": 4040, "certificate_size_median_bytes": 4040, "certificate_size_p95_bytes": 4040, "certificate_size_max_bytes": 4040},
+    {"N": 10, "warmup_iterations": 100, "count": 1000, "mean_us": 406.74568400000004, "stddev_us": 9.1371779489629628, "min_us": 398.70800000000003, "p50_us": 402.625, "p90_us": 424.58300000000003, "p95_us": 426, "p99_us": 431.66699999999997, "max_us": 465.79199999999997, "certificate_size_min_bytes": 7744, "certificate_size_median_bytes": 7744, "certificate_size_p95_bytes": 7744, "certificate_size_max_bytes": 7744}
+  ]
+}

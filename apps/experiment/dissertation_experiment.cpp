@@ -1,215 +1,297 @@
 // Copyright (c) 2026 Artyom Lazyan. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
-//
-// This file is part of SwarmKit.
-// See LICENSE.md in the repository root for full license terms.
 
-#include <cstdlib>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string>
-#include <vector>
+#include <string_view>
+#include <sys/utsname.h>
 
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
+
+#include "swarmkit/core/state_acceptance_certificate.h"
 #include "swarmkit/experiment/state_acceptance_experiment.h"
 
+#ifndef SWARMKIT_EXPERIMENT_GIT_COMMIT
+#define SWARMKIT_EXPERIMENT_GIT_COMMIT "unknown"
+#endif
+#ifndef SWARMKIT_EXPERIMENT_GIT_DIRTY
+#define SWARMKIT_EXPERIMENT_GIT_DIRTY false
+#endif
+#ifndef SWARMKIT_EXPERIMENT_BUILD_TYPE
+#define SWARMKIT_EXPERIMENT_BUILD_TYPE "unknown"
+#endif
+#ifndef SWARMKIT_EXPERIMENT_COMPILER_ID
+#define SWARMKIT_EXPERIMENT_COMPILER_ID "unknown"
+#endif
+#ifndef SWARMKIT_EXPERIMENT_COMPILER_VERSION
+#define SWARMKIT_EXPERIMENT_COMPILER_VERSION "unknown"
+#endif
+
 namespace fs = std::filesystem;
+using swarmkit::experiment::EvaluationMethod;
+using swarmkit::experiment::ExperimentResults;
+using swarmkit::experiment::ReplicateRecord;
+using swarmkit::experiment::ScenarioFaultKind;
+
+namespace {
+
+bool WriteFile(const fs::path& path, std::string_view content) {
+    std::ofstream output(path);
+    if (!output.is_open()) return false;
+    output << content;
+    return output.good();
+}
+
+std::string Iso8601UtcNow() {
+    const auto now = std::chrono::system_clock::now();
+    const auto value = std::chrono::system_clock::to_time_t(now);
+    std::tm utc{};
+    gmtime_r(&value, &utc);
+    std::ostringstream output;
+    output << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+    return output.str();
+}
+
+std::string CpuName() {
+#ifdef __APPLE__
+    std::size_t size = 0;
+    if (sysctlbyname("machdep.cpu.brand_string", nullptr, &size, nullptr, 0) == 0 && size > 1) {
+        std::string value(size, '\0');
+        if (sysctlbyname("machdep.cpu.brand_string", value.data(), &size, nullptr, 0) == 0) {
+            if (!value.empty() && value.back() == '\0') value.pop_back();
+            return value;
+        }
+    }
+    if (sysctlbyname("hw.model", nullptr, &size, nullptr, 0) == 0 && size > 1) {
+        std::string value(size, '\0');
+        if (sysctlbyname("hw.model", value.data(), &size, nullptr, 0) == 0) {
+            if (!value.empty() && value.back() == '\0') value.pop_back();
+            return value;
+        }
+    }
+#endif
+    return "unknown";
+}
+
+std::string TableIIIJson(const ExperimentResults& results) {
+    std::ostringstream output;
+    output << std::setprecision(17)
+           << "{\n  \"deterministic_enclosures_tested\": "
+           << results.soundness_metrics.enclosures_tested
+           << ",\n  \"containment_failures\": " << results.soundness_metrics.containment_failures
+           << ",\n  \"containment_failure_rate\": "
+           << results.soundness_metrics.ContainmentFailureRate()
+           << ",\n  \"max_containment_ratio\": " << results.soundness_metrics.max_containment_ratio
+           << ",\n  \"containment_ratio_p50\": " << results.soundness_metrics.containment_ratio_p50
+           << ",\n  \"containment_ratio_p95\": " << results.soundness_metrics.containment_ratio_p95
+           << ",\n  \"containment_ratio_p99\": " << results.soundness_metrics.containment_ratio_p99
+           << ",\n  \"persisted_replay_decisions\": " << results.soundness_metrics.replayed_decisions
+           << ",\n  \"verifier_replay_agreements\": " << results.soundness_metrics.verifier_agreements
+           << ",\n  \"replay_disagreements\": " << results.soundness_metrics.replay_disagreements
+           << ",\n  \"replay_agreement_rate\": " << results.soundness_metrics.VerifierAgreementRate()
+           << ",\n  \"mutation_classes_total\": " << results.soundness_metrics.mutation_classes_tested
+           << ",\n  \"mutation_classes_rejected\": " << results.soundness_metrics.mutation_classes_rejected
+           << ",\n  \"mutation_cases_total\": " << results.soundness_metrics.mutation_cases_tested
+           << ",\n  \"mutation_cases_rejected\": " << results.soundness_metrics.mutation_cases_rejected
+           << ",\n  \"mutation_rejection_rate\": " << results.soundness_metrics.MutationRejectionRate();
+    const auto n10 = std::find_if(results.scalability_results.begin(),
+                                  results.scalability_results.end(),
+                                  [](const auto& value) { return value.uav_count == 10; });
+    if (n10 != results.scalability_results.end()) {
+        output << ",\n  \"N10_end_to_end_p95_latency_us\": " << n10->latency_p95_us
+               << ",\n  \"N10_median_certificate_wire_bytes\": "
+               << n10->certificate_size_median_bytes;
+    }
+    output << "\n}\n";
+    return output.str();
+}
+
+std::string ManifestJson(const ExperimentResults& results,
+                         const swarmkit::experiment::ScenarioConfig& config) {
+    struct utsname system{};
+    const bool uname_ok = uname(&system) == 0;
+    std::ostringstream output;
+    output << std::setprecision(17)
+           << "{\n  \"git_commit\": \"" << SWARMKIT_EXPERIMENT_GIT_COMMIT << "\",\n"
+           << "  \"git_dirty_state\": "
+           << (SWARMKIT_EXPERIMENT_GIT_DIRTY ? "true" : "false") << ",\n"
+           << "  \"experiment_schema_version\": \"2.0\",\n"
+           << "  \"acceptance_semantics_version\": \""
+           << swarmkit::core::kAcceptanceSemanticsVersion << "\",\n"
+           << "  \"certificate_schema_version\": \""
+           << swarmkit::core::kCertificateSchemaVersion << "\",\n"
+           << "  \"propagation_model_id\": \"linear_bounded_vmax\",\n"
+           << "  \"propagation_model_version\": \"1.0\",\n"
+           << "  \"compiler\": \"" << SWARMKIT_EXPERIMENT_COMPILER_ID << "\",\n"
+           << "  \"compiler_version\": \"" << SWARMKIT_EXPERIMENT_COMPILER_VERSION << "\",\n"
+           << "  \"build_type\": \"" << SWARMKIT_EXPERIMENT_BUILD_TYPE << "\",\n"
+           << "  \"os\": \"" << (uname_ok ? system.sysname : "unknown") << " "
+           << (uname_ok ? system.release : "unknown") << "\",\n"
+           << "  \"architecture\": \"" << (uname_ok ? system.machine : "unknown") << "\",\n"
+           << "  \"cpu\": \"" << CpuName() << "\",\n"
+           << "  \"primary_N\": " << config.agent_ids.size() << ",\n"
+           << "  \"scale_N_values\": [3, 5, 10],\n"
+           << "  \"replicate_count\": " << config.runs << ",\n"
+           << "  \"scenario_count\": " << config.fault_scenarios.size() << ",\n"
+           << "  \"scored_requests_per_scenario\": " << config.steps_per_scenario << ",\n"
+           << "  \"base_seed\": " << config.seed << ",\n"
+           << "  \"motion_seed_derivation\": \"HashSeed(base, replicate_id, motion)\",\n"
+           << "  \"fault_seed_derivation\": \"HashSeed(base, replicate_id, scenario_name)\",\n"
+           << "  \"bootstrap_seed\": " << results.bootstrap_seed << ",\n"
+           << "  \"bootstrap_iterations\": " << results.bootstrap_iterations << ",\n"
+           << "  \"Umax_m\": " << config.physical_error_tolerance_m << ",\n"
+           << "  \"max_age_ms\": " << config.max_age_ms << ",\n"
+           << "  \"max_clock_uncertainty_ms\": " << config.max_clock_unc_ms << ",\n"
+           << "  \"Vmax_horizontal_mps\": " << config.max_speed_mps << ",\n"
+           << "  \"Vmax_vertical_mps\": 3.0,\n"
+           << "  \"Vmax_3d_mps\": " << std::hypot(config.max_speed_mps, 3.0) << ",\n"
+           << "  \"high_speed_velocity_mps\": [8.5, 1.0, 0.0],\n"
+           << "  \"high_speed_configured_delay_ms\": 200,\n"
+           << "  \"restart_step\": 30,\n"
+           << "  \"obsolete_E1_injection_step\": 31,\n"
+           << "  \"E2_clock_reestablishment_step\": 33,\n"
+           << "  \"estimator_degradation_onset_step\": 20,\n"
+           << "  \"canonical_contract_hash\": \"" << results.canonical_contract_hash << "\",\n"
+           << "  \"campaign_timestamp_utc\": \"" << Iso8601UtcNow() << "\"\n}\n";
+    return output.str();
+}
+
+bool ScenarioActivationPasses(const ExperimentResults& results, std::string* detail) {
+    for (const auto scenario : {ScenarioFaultKind::kNetworkDelay,
+                                ScenarioFaultKind::kNetworkReorder,
+                                ScenarioFaultKind::kPacketLoss,
+                                ScenarioFaultKind::kClockOffsetDrift,
+                                ScenarioFaultKind::kEstimatorDegradation,
+                                ScenarioFaultKind::kHighSpeedMotion,
+                                ScenarioFaultKind::kAgentRestartDelayedPackets,
+                                ScenarioFaultKind::kFrameMismatch}) {
+        std::size_t delay = 0, reorder = 0, inversions = 0, loss = 0, clock = 0;
+        std::size_t estimator = 0, restart = 0, obsolete = 0, reestablished = 0, frame = 0;
+        for (const ReplicateRecord& record : results.replicate_records) {
+            if (record.method != static_cast<std::uint8_t>(EvaluationMethod::kProposedStateAcceptance) ||
+                record.scenario_id != static_cast<std::uint8_t>(scenario)) continue;
+            delay += record.realized_delay_frames;
+            reorder += record.realized_reorder_events;
+            inversions += record.reorder_inversions;
+            loss += record.realized_packet_losses;
+            clock += record.clock_offset_fault_events;
+            estimator += record.estimator_degradation_events;
+            restart += record.restart_events;
+            obsolete += record.obsolete_epoch_packets_injected;
+            reestablished += record.clock_reestablishments;
+            frame += record.frame_mismatch_events;
+        }
+        const bool active = scenario == ScenarioFaultKind::kNetworkDelay ? delay > 0 :
+            scenario == ScenarioFaultKind::kNetworkReorder ? reorder > 0 && inversions > 0 :
+            scenario == ScenarioFaultKind::kPacketLoss ? loss > 0 :
+            scenario == ScenarioFaultKind::kClockOffsetDrift ? clock > 0 :
+            scenario == ScenarioFaultKind::kEstimatorDegradation ? estimator > 0 :
+            scenario == ScenarioFaultKind::kHighSpeedMotion ? delay > 0 :
+            scenario == ScenarioFaultKind::kAgentRestartDelayedPackets
+                ? restart > 0 && obsolete > 0 && reestablished > 0 : frame > 0;
+        if (!active) {
+            if (detail != nullptr) {
+                *detail = "scenario did not realize required mechanism: " +
+                          swarmkit::experiment::ScenarioFaultKindToString(scenario);
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
 
 int main(int argc, char* argv[]) {
     swarmkit::experiment::ScenarioConfig config;
-    std::string json_output_path = "results/dissertation/table_ii_results.json";
-    std::string csv_output_path = "results/dissertation/table_ii_results.csv";
-    std::string table3_output_path = "results/dissertation/table_iii_results.json";
-    std::string scal_output_path = "results/dissertation/scalability_results.json";
-    std::string per_scenario_output_path = "results/dissertation/per_scenario_results.json";
-    std::string replicate_csv_path = "results/dissertation/replicate_results.csv";
-
+    fs::path output_dir = "results/dissertation";
     std::size_t uav_count = 3;
-    std::size_t runs = 50;
-    std::size_t steps_per_scenario = 100;
-    std::uint64_t seed_base = 42;
 
     for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
+        const std::string arg = argv[i];
         if (arg == "--uav-count" && i + 1 < argc) {
             uav_count = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if (arg == "--runs" && i + 1 < argc) {
-            runs = static_cast<std::size_t>(std::stoul(argv[++i]));
+            config.runs = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if ((arg == "--steps-per-scenario" || arg == "--repetitions") && i + 1 < argc) {
-            steps_per_scenario = static_cast<std::size_t>(std::stoul(argv[++i]));
+            config.steps_per_scenario = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if ((arg == "--seed-base" || arg == "--seed") && i + 1 < argc) {
-            seed_base = std::stoull(argv[++i]);
-        } else if (arg == "--output" && i + 1 < argc) {
-            json_output_path = argv[++i];
-        } else if (arg == "--csv-output" && i + 1 < argc) {
-            csv_output_path = argv[++i];
+            config.seed = std::stoull(argv[++i]);
+        } else if (arg == "--output-dir" && i + 1 < argc) {
+            output_dir = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Usage: swarmkit-dissertation-experiment [options]\n\n"
-                      << "Options:\n"
-                      << "  --runs <N>                 Monte Carlo runs per scenario (default: 50)\n"
-                      << "  --steps-per-scenario <N>   Evaluation steps per run (default: 100)\n"
-                      << "  --seed-base <S>            Base random seed (default: 42)\n"
-                      << "  --uav-count <N>            Number of UAVs in swarm (default: 3)\n"
-                      << "  --output <file>            Primary JSON output path\n"
-                      << "  --csv-output <file>        Table II CSV output path\n"
-                      << "  --help, -h                 Show help\n";
+            std::cout << "Usage: swarmkit-dissertation-experiment [--runs N] "
+                         "[--steps-per-scenario N] [--seed-base S] [--uav-count N] "
+                         "[--output-dir DIR]\n";
             return 0;
         }
     }
-
-    config.seed = seed_base;
-    config.runs = runs;
-    config.steps_per_scenario = steps_per_scenario;
     config.agent_ids.clear();
     for (std::size_t i = 1; i <= uav_count; ++i) {
         config.agent_ids.push_back("uav-" + std::to_string(i));
     }
 
-    std::cout << "=================================================================\n";
-    std::cout << " SwarmKit Defense-Grade Paired-Trace Dissertation Campaign\n";
-    std::cout << " Engine: SimBackend | UAVs: " << uav_count
-              << " | Runs: " << runs
-              << " | Steps/Scenario: " << steps_per_scenario
-              << " | Seed Base: " << seed_base << "\n";
-    std::cout << " Scenarios: " << config.fault_scenarios.size()
-              << " | Total Requests per Method: "
-              << (runs * steps_per_scenario * config.fault_scenarios.size()) << "\n";
-    std::cout << "=================================================================\n\n";
+    std::cout << "SwarmKit paired-trace campaign: N=" << uav_count
+              << ", replicates=" << config.runs
+              << ", scenarios=" << config.fault_scenarios.size()
+              << ", requests/scenario=" << config.steps_per_scenario
+              << ", seed=" << config.seed << "\n";
 
-    swarmkit::experiment::StateAcceptanceExperimentRunner runner(config);
-    auto results = runner.Run();
+    const auto results = swarmkit::experiment::StateAcceptanceExperimentRunner(config).Run();
+    std::cout << results.FormatTableII() << "\n" << results.FormatTableIII() << "\n"
+              << results.FormatScalabilityTable() << "\n" << results.FormatPerScenarioTable() << "\n";
 
-    std::cout << "### Paper Table II: Main Semantic Result (Common Ground-Truth Oracle U_max=3.0m)\n\n";
-    std::cout << results.FormatTableII() << "\n";
-
-    std::cout << "### Paper Table III: Soundness, Replay, and Overhead\n\n";
-    std::cout << results.FormatTableIII() << "\n";
-
-    std::cout << "### Scalability Benchmark Across Swarm Sizes (N in {3, 5, 10})\n\n";
-    std::cout << results.FormatScalabilityTable() << "\n";
-
-    std::cout << "### Per-Scenario Detailed Breakdown\n\n";
-    std::cout << results.FormatPerScenarioTable() << "\n";
-
-    // Ensure output directories exist
-    fs::create_directories("results/dissertation");
-
-    // Write JSON output
-    if (!json_output_path.empty()) {
-        std::ofstream ofs(json_output_path);
-        if (ofs.is_open()) {
-            ofs << results.ToJson();
-            std::cout << "Saved aggregate JSON results to " << json_output_path << "\n";
-        }
+    std::string activation_failure;
+    if (!ScenarioActivationPasses(results, &activation_failure)) {
+        std::cerr << "INVALID CAMPAIGN: " << activation_failure << "\n";
+        return 2;
+    }
+    if (results.soundness_metrics.replay_disagreements != 0) {
+        std::cerr << "INVALID CAMPAIGN: persisted replay disagreement count is "
+                  << results.soundness_metrics.replay_disagreements << "\n";
+        return 3;
+    }
+    if (results.soundness_metrics.mutation_cases_tested !=
+            results.soundness_metrics.mutation_cases_rejected ||
+        results.soundness_metrics.mutation_classes_tested !=
+            results.soundness_metrics.mutation_classes_rejected) {
+        std::cerr << "INVALID CAMPAIGN: at least one mutated/inconsistent certificate verified\n";
+        return 4;
     }
 
-    // Write CSV output
-    if (!csv_output_path.empty()) {
-        std::ofstream ofs(csv_output_path);
-        if (ofs.is_open()) {
-            ofs << results.ToCsvTableII();
-            std::cout << "Saved Table II CSV to " << csv_output_path << "\n";
+    fs::create_directories(output_dir);
+    const std::pair<const char*, std::string> artifacts[] = {
+        {"table_ii_results.json", results.ToJson()},
+        {"table_ii_results.csv", results.ToCsvTableII()},
+        {"table_iii_results.json", TableIIIJson(results)},
+        {"scalability_results.json", results.ToScalabilityJson()},
+        {"scalability_latency_samples.csv", results.ToScalabilitySamplesCsv()},
+        {"per_scenario_results.json", results.ToPerScenarioJson()},
+        {"replicate_results.csv", results.ToReplicateCsv()},
+        {"replicate_distribution_summary.json", results.ToReplicateDistributionJson()},
+        {"bootstrap_results.json", results.ToBootstrapJson()},
+        {"mutation_results.json", results.ToMutationJson()},
+        {"replay_results.json", results.ToReplayJson()},
+        {"experiment_manifest.json", ManifestJson(results, config)},
+    };
+    for (const auto& [name, content] : artifacts) {
+        const auto path = output_dir / name;
+        if (!WriteFile(path, content)) {
+            std::cerr << "failed to write " << path << "\n";
+            return 5;
         }
+        std::cout << "saved " << path << "\n";
     }
-
-    // Write Table III JSON output
-    if (!table3_output_path.empty()) {
-        std::ofstream ofs(table3_output_path);
-        if (ofs.is_open()) {
-            ofs << "{\n"
-                << "  \"enclosures_tested\": " << results.soundness_metrics.enclosures_tested << ",\n"
-                << "  \"containment_failures\": " << results.soundness_metrics.containment_failures << ",\n"
-                << "  \"containment_failure_rate\": " << results.soundness_metrics.ContainmentFailureRate() << ",\n"
-                << "  \"replayed_decisions\": " << results.soundness_metrics.replayed_decisions << ",\n"
-                << "  \"verifier_agreements\": " << results.soundness_metrics.verifier_agreements << ",\n"
-                << "  \"verifier_agreement_rate\": " << results.soundness_metrics.VerifierAgreementRate() << ",\n"
-                << "  \"mutation_classes_tested\": " << results.soundness_metrics.mutation_classes_tested << ",\n"
-                << "  \"mutation_classes_rejected\": " << results.soundness_metrics.mutation_classes_rejected << ",\n"
-                << "  \"mutation_cases_tested\": " << results.soundness_metrics.mutation_cases_tested << ",\n"
-                << "  \"mutation_cases_rejected\": " << results.soundness_metrics.mutation_cases_rejected << ",\n"
-                << "  \"mutation_rejection_rate\": " << results.soundness_metrics.MutationRejectionRate() << ",\n"
-                << "  \"latency_p50_us\": " << results.soundness_metrics.latency_p50_us << ",\n"
-                << "  \"latency_p95_us\": " << results.soundness_metrics.latency_p95_us << ",\n"
-                << "  \"latency_p99_us\": " << results.soundness_metrics.latency_p99_us << ",\n"
-                << "  \"median_certificate_size_bytes\": " << results.soundness_metrics.median_certificate_size_bytes << "\n"
-                << "}\n";
-            std::cout << "Saved Table III JSON to " << table3_output_path << "\n";
-        }
-    }
-
-    // Write Scalability JSON output
-    if (!scal_output_path.empty()) {
-        std::ofstream ofs(scal_output_path);
-        if (ofs.is_open()) {
-            ofs << "[\n";
-            for (std::size_t i = 0; i < results.scalability_results.size(); ++i) {
-                const auto& s = results.scalability_results[i];
-                ofs << "  {\n"
-                    << "    \"uav_count\": " << s.uav_count << ",\n"
-                    << "    \"latency_p50_us\": " << s.latency_p50_us << ",\n"
-                    << "    \"latency_p95_us\": " << s.latency_p95_us << ",\n"
-                    << "    \"latency_p99_us\": " << s.latency_p99_us << ",\n"
-                    << "    \"serialized_certificate_size_bytes\": " << s.serialized_certificate_size_bytes << "\n"
-                    << "  }" << (i + 1 < results.scalability_results.size() ? "," : "") << "\n";
-            }
-            ofs << "]\n";
-            std::cout << "Saved Scalability JSON to " << scal_output_path << "\n";
-        }
-    }
-
-    // Write Per-Scenario JSON output
-    if (!per_scenario_output_path.empty()) {
-        std::ofstream ofs(per_scenario_output_path);
-        if (ofs.is_open()) {
-            ofs << "[\n";
-            for (std::size_t i = 0; i < results.per_scenario_metrics.size(); ++i) {
-                const auto& sc = results.per_scenario_metrics[i];
-                const auto& b0 = sc.metrics_by_method.at(static_cast<uint8_t>(swarmkit::experiment::EvaluationMethod::kReceiveLatest));
-                const auto& b1 = sc.metrics_by_method.at(static_cast<uint8_t>(swarmkit::experiment::EvaluationMethod::kTimestampAlignedAge));
-                const auto& p = sc.metrics_by_method.at(static_cast<uint8_t>(swarmkit::experiment::EvaluationMethod::kProposedStateAcceptance));
-
-                ofs << "  {\n"
-                    << "    \"scenario\": \"" << swarmkit::experiment::ScenarioFaultKindToString(sc.fault_kind) << "\",\n"
-                    << "    \"requests\": " << sc.requests << ",\n"
-                    << "    \"b0_accepted\": " << b0.AcceptedCount() << ",\n"
-                    << "    \"b0_false_valid_rate\": " << b0.FalseValidRate() << ",\n"
-                    << "    \"b0_availability\": " << b0.Availability() << ",\n"
-                    << "    \"b1_accepted\": " << b1.AcceptedCount() << ",\n"
-                    << "    \"b1_false_valid_rate\": " << b1.FalseValidRate() << ",\n"
-                    << "    \"b1_availability\": " << b1.Availability() << ",\n"
-                    << "    \"proposed_accepted\": " << p.AcceptedCount() << ",\n"
-                    << "    \"proposed_false_valid_rate\": " << p.FalseValidRate() << ",\n"
-                    << "    \"proposed_availability\": " << p.Availability() << "\n"
-                    << "  }" << (i + 1 < results.per_scenario_metrics.size() ? "," : "") << "\n";
-            }
-            ofs << "]\n";
-            std::cout << "Saved Per-Scenario JSON to " << per_scenario_output_path << "\n";
-        }
-    }
-
-    // Write Replicate CSV output
-    if (!replicate_csv_path.empty()) {
-        std::ofstream ofs(replicate_csv_path);
-        if (ofs.is_open()) {
-            ofs << "replicate_id,motion_seed,fault_seed,scenario_id,method,requests,accepted,true_accepts,false_accepts,true_rejects,false_rejects,enclosures_tested,containment_failures\n";
-            for (const auto& rep : results.replicate_records) {
-                ofs << rep.replicate_id << ","
-                    << rep.motion_seed << ","
-                    << rep.fault_seed << ","
-                    << static_cast<int>(rep.scenario_id) << ","
-                    << static_cast<int>(rep.method) << ","
-                    << rep.requests << ","
-                    << rep.accepted << ","
-                    << rep.true_accepts << ","
-                    << rep.false_accepts << ","
-                    << rep.true_rejects << ","
-                    << rep.false_rejects << ","
-                    << rep.enclosures_tested << ","
-                    << rep.containment_failures << "\n";
-            }
-            std::cout << "Saved Replicate CSV to " << replicate_csv_path << "\n";
-        }
-    }
-
     return 0;
 }

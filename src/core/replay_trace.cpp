@@ -46,6 +46,15 @@ std::string UnescapeString(const std::string& s) {
 
 }  // namespace
 
+bool VerifySnapshotRequestContractBinding(
+    const SnapshotRequestEvent& event,
+    const StateQualityContract& contract) {
+    const std::string canonical_hash = ComputeContractHash(contract);
+    if (event.contract_hash != canonical_hash) return false;
+    return !event.certificate.has_value() ||
+           event.certificate->contract_hash == canonical_hash;
+}
+
 std::string ReplayTrace::ToJsonLines() const {
     std::ostringstream oss;
     oss.imbue(std::locale::classic());

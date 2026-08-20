@@ -131,9 +131,12 @@ struct ClockQualityState {
         return std::isfinite(offset_estimate_ms) &&
                std::isfinite(uncertainty_radius_ms) &&
                uncertainty_radius_ms >= 0.0 &&
+               std::isfinite(max_drift_rate_ppm) &&
+               max_drift_rate_ppm >= 0.0 &&
                synchronization != ClockSynchronization::kUnknown &&
                source_domain != ClockDomain::kUnknown &&
-               last_update_ms > 0;
+               last_update_ms > 0 &&
+               !clock_model_version.empty();
     }
 
     bool operator==(const ClockQualityState&) const = default;

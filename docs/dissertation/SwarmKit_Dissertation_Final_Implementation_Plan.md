@@ -1138,7 +1138,7 @@ $$
 
 For fixed deterministic inputs and correct implementations, the target is 100% agreement.
 
-## 24.3 Certificate tamper/inconsistency tests
+## 24.3 Certificate mutation/inconsistency tests
 
 Modify one bound item at a time:
 
@@ -1150,7 +1150,7 @@ Modify one bound item at a time:
 - frame/provenance predicate;
 - model version.
 
-The independent verifier should reject inconsistent/tampered certificates rather than silently reconstructing a different decision.
+The independent verifier should reject mutated/inconsistent certificates rather than silently reconstructing a different decision.
 
 This is **consistency verification**, not a cryptographic adversary proof unless a cryptographic threat model is added.
 
@@ -1172,7 +1172,7 @@ Optional dissertation-only supporting metrics can include CPU and memory, but th
 | Accepted deterministic enclosures tested | TBD |
 | Containment failures | TBD |
 | Runtime/verifier agreement | TBD% |
-| Tampered certificates rejected | TBD/TBD |
+| Mutated/inconsistent certificates rejected | TBD/TBD |
 | p95 snapshot + certificate latency | TBD ms |
 | Median certificate size | TBD bytes |
 
@@ -1516,7 +1516,7 @@ The dissertation can expand the paper into chapters:
 - binding rules;
 - independent verifier;
 - replay-equivalence theorem;
-- tamper/inconsistency tests;
+- mutation/inconsistency tests;
 - relationship to Certified Control and runtime assurance.
 
 ## Chapter E - Implementation
@@ -1895,7 +1895,7 @@ These references are not included to weaken the dissertation. They make the nove
 - [ ] Unsafe acceptance/request reported.
 - [ ] Deterministic containment failures reported.
 - [ ] Runtime/verifier agreement reported.
-- [ ] Certificate inconsistency/tamper tests reported.
+- [ ] Certificate mutation/inconsistency tests reported.
 - [ ] p95 latency and certificate size reported.
 
 ## Writing
@@ -2122,7 +2122,7 @@ A positive runtime decision is accompanied by a compact State-Acceptance Certifi
 K=(id,h_C,v_C,\teval,E,T,Q,M,V,h_K),
 \label{eq:cert}
 \end{equation}
-where $h_C$ and $v_C$ bind the exact contract, $E$ identifies the evidence items used, $T$ contains the source/reference time intervals used by the calculation, $Q$ contains uncertainty inputs and propagated bounds, $M$ identifies the propagation model and declared assumptions, $V$ contains validated Boolean predicates such as epoch/frame/provenance/health, and $h_K$ binds the serialized certificate content. A certificate is not claimed to be a cryptographic proof; signatures or trusted hardware can be added independently if tamper resistance is required.
+where $h_C$ and $v_C$ bind the exact contract, $E$ identifies the evidence items used, $T$ contains the source/reference time intervals used by the calculation, $Q$ contains uncertainty inputs and propagated bounds, $M$ identifies the propagation model and declared assumptions, $V$ contains validated Boolean predicates such as epoch/frame/provenance/health, and $h_K$ binds the serialized certificate content. A certificate is not claimed to be a cryptographic proof; signatures or trusted hardware can be added independently if adversarial alteration resistance is required.
 
 The certificate is useful only because it is \emph{replay-verifiable}. Given the recorded evidence, contract version, model version, and evaluation time, an independent verifier recomputes evidence selection, timing intervals, propagation, mandatory predicates, and the verdict:
 \begin{equation}
@@ -2174,7 +2174,7 @@ Only three methods are compared:
     \item \textbf{Timestamp-aligned + age:} values are associated by timestamp and rejected when older than configured age limits.
     \item \textbf{Proposed:} complete common-time State-Quality Contract acceptance plus certificate generation.
 \end{enumerate}
-The primary metrics are false-valid rate, snapshot availability, and unsafe acceptance per request. A false-valid event is an accepted state that violates the evaluation's ground-truth validity criteria. The second experiment family checks deterministic enclosure containment, runtime-versus-verifier agreement, certificate overhead, and tamper detection.
+The primary metrics are false-valid rate, snapshot availability, and unsafe acceptance per request. A false-valid event is an accepted state that violates the evaluation's ground-truth validity criteria. The second experiment family checks deterministic enclosure containment, runtime-versus-verifier agreement, certificate overhead, and semantic mutation rejection.
 
 \subsection{Main Semantic Result}
 Table~\ref{tab:mainresults} reports the central comparison. The proposed semantics reduces false-valid acceptance from \textbf{TBD}\% for timestamp-aligned + age to \textbf{TBD}\%, while retaining \textbf{TBD}\% availability. Unsafe acceptance per request decreases from \textbf{TBD}\% to \textbf{TBD}\%. The result demonstrates that the added semantics reduce invalid state exposure without making the interface vacuously unavailable.
@@ -2198,7 +2198,7 @@ Timestamp-aligned + age & \textbf{TBD}\% & \textbf{TBD}\% & \textbf{TBD}\% \\
 \end{table}
 
 \subsection{Soundness, Replay, and Overhead}
-Table~\ref{tab:verify} combines the implementation-conformance and certificate results. Across \textbf{TBD} accepted deterministic enclosures, ground truth lies outside the returned enclosure \textbf{TBD} times. The independent verifier agrees with the runtime on \textbf{TBD}\% of \textbf{TBD} replayed decisions. Deliberately modified certificates---including changed evidence identifiers, contract hash, propagated bound, or epoch predicate---are rejected in \textbf{TBD}/\textbf{TBD} tamper cases. The p95 snapshot-plus-certificate latency is \textbf{TBD} ms and the median serialized certificate is \textbf{TBD} bytes.
+Table~\ref{tab:verify} combines the implementation-conformance and certificate results. Across \textbf{TBD} accepted deterministic enclosures, ground truth lies outside the returned enclosure \textbf{TBD} times. The independent verifier agrees with the runtime on \textbf{TBD}\% of \textbf{TBD} replayed decisions. Deliberately modified certificates---including changed evidence identifiers, contract hash, propagated bound, or epoch predicate---are rejected in \textbf{TBD}/\textbf{TBD} mutated/inconsistent cases. The p95 snapshot-plus-certificate latency is \textbf{TBD} ms and the median serialized certificate is \textbf{TBD} bytes.
 
 \begin{table}[t]
 \centering
@@ -2214,7 +2214,7 @@ Table~\ref{tab:verify} combines the implementation-conformance and certificate r
 Accepted deterministic enclosures tested & \textbf{TBD} \\
 Containment failures & \textbf{TBD} \\
 Runtime/verifier agreement & \textbf{TBD}\% \\
-Tampered certificates rejected & \textbf{TBD}/\textbf{TBD} \\
+Mutated/inconsistent certificates rejected & \textbf{TBD}/\textbf{TBD} \\
 p95 snapshot + certificate latency & \textbf{TBD} ms \\
 Median certificate size & \textbf{TBD} bytes \\
 \bottomrule
@@ -2227,7 +2227,7 @@ The containment experiment validates implementation conformance to the determini
 \section{Discussion}
 The contribution deliberately does not claim that common-time propagation, quality metadata, contracts, session identifiers, or certificate checking are individually novel. Common-time propagation appears in multi-robot estimation \cite{cossette2024decentralized}; quality-aware middleware predates this work \cite{sheikh2007qoc}; and independently checked runtime evidence appears in certified-control and assurance architectures \cite{desai2019soter,jackson2021certifiedcontrol}. The novelty claim is the \emph{specific algorithm-facing semantic object}: an accepted multi-UAV physical-state view at a requested time, together with a certificate that allows another component to reproduce why that state was accepted.
 
-The certificate is not a substitute for cryptographic integrity. Its hash binds serialized content within the runtime semantics, but adversarial tamper resistance requires signatures, trusted hardware, or another security layer. Those mechanisms are compatible extensions rather than part of the central contribution.
+The certificate is not a substitute for cryptographic integrity. Its hash binds serialized content within the runtime semantics, but adversarial alteration resistance requires signatures, trusted hardware, or another security layer. Those mechanisms are compatible extensions rather than part of the central contribution.
 
 The method is also not a new estimator or a new swarm algorithm. It consumes upstream estimates and preserves their uncertainty semantics. Formation control, deterministic coverage, task allocation, learning-based policies, and other coordination algorithms can consume the same state interface without moving their policy logic into \SwarmKit{}. This maintains the architectural boundary between ``what the swarm should do'' and ``what physical state the algorithm may rely on.''
 

@@ -102,7 +102,7 @@ SwarmKit includes a common-time state acceptance runtime:
 - **Clock Quality Arithmetic**: Source timestamps are mapped into common-time generation intervals $[g^-, g^+]$.
 - **Uncertainty Propagation**: Position error bounds are propagated conservatively over elapsed time ($\varepsilon_p = e_p + V_{\max}\Delta^+$).
 - **State-Quality Contracts**: Snapshots are accepted only if all required predicates (freshness, clock error, estimator health, coordinate frames, session epochs, completeness rules) are satisfied without silent downgrade.
-- **Certificates & Independent Verifier**: Accepted snapshots generate tamper-evident SHA-256 certificates verifiable by an offline replay verifier.
+- **Certificates & Independent Verifier**: Accepted snapshots generate canonical SHA-256 content-bound certificates checked by an offline replay verifier.
 
 ## Goals And Reports
 

@@ -92,7 +92,7 @@ Implemented capabilities include:
 - deterministic, checksummed execution-evidence recording;
 - State Acceptance Engine with State-Quality Contracts;
 - State-Acceptance Certificate generation and serialization;
-- Independent replay verifier with full tamper detection;
+- Independent replay verifier with semantic consistency checks for specified mutated certificate fields;
 - CLI reference tool for smoke testing SDK workflows;
 - Paired-trace experiment CLI binary for empirical validation.
 

@@ -79,6 +79,8 @@ struct OutputValidityBreakdown {
     bool session_valid{false};
     bool health_valid{false};
     bool mission_valid{false};
+    bool provenance_valid{false};
+    bool gps_valid{false};
     bool overall_valid{false};
 };
 
@@ -89,6 +91,8 @@ struct MethodEvaluationOutcome {
     std::unordered_map<std::string, std::array<double, 3>> estimated_positions;
     /// Per-agent selected position evidence records.
     std::unordered_map<std::string, core::EvidenceRecord> selected_position_evidence;
+    /// Per-agent selected GPS-quality evidence when the contract requires it.
+    std::unordered_map<std::string, core::EvidenceRecord> selected_gps_evidence;
     /// Per-agent estimated position enclosures (radius in meters) when accepted.
     std::unordered_map<std::string, double> position_enclosures;
     /// Ground-truth validity: whether accepted state satisfied physical truth via common oracle.
@@ -163,16 +167,21 @@ struct SoundnessAndReplayMetrics {
     std::size_t containment_failures{};
     std::size_t replayed_decisions{};
     std::size_t verifier_agreements{};
+    std::size_t replay_disagreements{};
     std::size_t mutation_cases_tested{};
     std::size_t mutation_cases_rejected{};
-    std::size_t mutation_classes_tested{15};
-    std::size_t mutation_classes_rejected{15};
+    std::size_t mutation_classes_tested{};
+    std::size_t mutation_classes_rejected{};
     double latency_p50_us{0.0};
     double latency_p95_us{0.0};
     double latency_p99_us{0.0};
     std::size_t median_certificate_size_bytes{};
     std::size_t min_certificate_size_bytes{};
     std::size_t max_certificate_size_bytes{};
+    double max_containment_ratio{0.0};
+    double containment_ratio_p50{0.0};
+    double containment_ratio_p95{0.0};
+    double containment_ratio_p99{0.0};
 
     [[nodiscard]] double ContainmentFailureRate() const {
         if (enclosures_tested == 0) return 0.0;
@@ -191,6 +200,16 @@ struct SoundnessAndReplayMetrics {
     }
 };
 
+struct MutationClassResult {
+    std::string class_name;
+    std::size_t instances{};
+    std::size_t rejected{};
+
+    [[nodiscard]] std::size_t Accepted() const noexcept {
+        return instances - rejected;
+    }
+};
+
 /// Per-scenario breakdown metrics.
 struct ScenarioMetrics {
     ScenarioFaultKind fault_kind{ScenarioFaultKind::kNormal};
@@ -201,10 +220,22 @@ struct ScenarioMetrics {
 /// Scalability benchmark metrics for N UAVs.
 struct ScalabilityBenchmarkResult {
     std::size_t uav_count{};
+    std::size_t warmup_iterations{};
+    std::size_t timed_iterations{};
+    double latency_mean_us{0.0};
+    double latency_stddev_us{0.0};
+    double latency_min_us{0.0};
     double latency_p50_us{0.0};
+    double latency_p90_us{0.0};
     double latency_p95_us{0.0};
     double latency_p99_us{0.0};
-    std::size_t serialized_certificate_size_bytes{};
+    double latency_max_us{0.0};
+    std::size_t certificate_size_min_bytes{};
+    std::size_t certificate_size_median_bytes{};
+    std::size_t certificate_size_p95_bytes{};
+    std::size_t certificate_size_max_bytes{};
+    std::vector<double> latency_samples_us;
+    std::vector<std::size_t> certificate_size_samples_bytes;
 };
 
 /// Complete paired-trace experiment results.
@@ -212,15 +243,20 @@ struct ExperimentResults {
     std::size_t total_runs{50};
     std::size_t steps_per_scenario{100};
     std::uint64_t seed_base{42};
+    std::string canonical_contract_hash;
     std::vector<std::string> agent_ids;
     std::unordered_map<uint8_t, MethodMetrics> aggregate_method_metrics;
     std::vector<ScenarioMetrics> per_scenario_metrics;
     std::vector<ReplicateRecord> replicate_records;
     BootstrapAnalysisResult bootstrap_results;
+    std::size_t bootstrap_iterations{10000};
+    std::uint64_t bootstrap_seed{123456789ULL};
     SoundnessAndReplayMetrics soundness_metrics;
+    std::vector<MutationClassResult> mutation_results;
     std::vector<ScalabilityBenchmarkResult> scalability_results;
     std::vector<double> latencies_us;
     std::vector<std::size_t> certificate_sizes_bytes;
+    std::vector<double> containment_ratios;
 
     [[nodiscard]] std::string FormatTableII() const;
     [[nodiscard]] std::string FormatTableIII() const;
@@ -228,6 +264,14 @@ struct ExperimentResults {
     [[nodiscard]] std::string FormatPerScenarioTable() const;
     [[nodiscard]] std::string ToJson() const;
     [[nodiscard]] std::string ToCsvTableII() const;
+    [[nodiscard]] std::string ToBootstrapJson() const;
+    [[nodiscard]] std::string ToPerScenarioJson() const;
+    [[nodiscard]] std::string ToReplicateCsv() const;
+    [[nodiscard]] std::string ToReplicateDistributionJson() const;
+    [[nodiscard]] std::string ToReplayJson() const;
+    [[nodiscard]] std::string ToMutationJson() const;
+    [[nodiscard]] std::string ToScalabilityJson() const;
+    [[nodiscard]] std::string ToScalabilitySamplesCsv() const;
 };
 
 /// Configuration for paired-trace scenario generation.

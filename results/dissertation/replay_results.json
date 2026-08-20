@@ -1,0 +1,9 @@
+{
+  "persistence_format": "JSON-lines",
+  "contract_scope": "fixed canonical StateQualityContract supplied separately",
+  "reconstructed_state": ["evidence", "session", "clock", "membership", "request_t_star", "request_r_star", "certificate"],
+  "persisted_replay_decisions": 22981,
+  "replay_agreements": 22981,
+  "replay_disagreements": 0,
+  "replay_agreement_rate": 1
+}

@@ -5,11 +5,30 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <limits>
-#include <sstream>
+#include <optional>
+#include <string>
 
 namespace swarmkit::core {
+namespace {
+
+std::vector<std::string> Sorted(std::vector<std::string> values) {
+    std::sort(values.begin(), values.end());
+    return values;
+}
+
+bool HasDuplicates(const std::vector<std::string>& values) {
+    const auto sorted = Sorted(values);
+    return std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end();
+}
+
+struct ReconstructedSelection {
+    EvidenceRecord record;
+    GenerationTimeInterval interval;
+    ClockEvaluationEvidence clock;
+};
+
+}  // namespace
 
 VerificationResult StateAcceptanceVerifier::Verify(
     const StateAcceptanceCertificate& cert,
@@ -20,575 +39,528 @@ VerificationResult StateAcceptanceVerifier::Verify(
     const {
 
     std::vector<VerificationFailure> failures;
+    const auto add_failure = [&](VerificationFailureReason reason, std::string detail) {
+        failures.push_back({.reason = reason, .detail = std::move(detail)});
+    };
+    const auto nearly_equal = [](double lhs, double rhs) {
+        return std::isfinite(lhs) && std::isfinite(rhs) &&
+               std::abs(lhs - rhs) <= kUncertaintyTolerance;
+    };
 
-    const double evaluation_time_ms = request_ctx.evaluation_time_ms;
-    const std::int64_t evidence_freeze_ms = request_ctx.evidence_freeze_ms;
-
-    // Step 1: Certificate integrity check (h_K binding).
+    // A valid outer hash is only the first gate. Semantic reconstruction below
+    // is deliberately independent and still rejects hash-consistent mutations.
     if (!VerifyCertificateIntegrity(cert)) {
-        failures.push_back({
-            .reason = VerificationFailureReason::kCertificateHashMismatch,
-            .detail = "certificate hash h_K does not match recomputed SHA-256 digest",
-        });
+        add_failure(VerificationFailureReason::kCertificateHashMismatch,
+                    "certificate consistency hash does not match canonical content");
         return VerificationRejection{
             .certificate_id = cert.certificate_id,
             .failures = std::move(failures),
         };
     }
 
-    // Step 2: Contract binding check (h_C binding).
+    if (cert.certificate_schema_version != kCertificateSchemaVersion) {
+        add_failure(VerificationFailureReason::kCertificateSchemaMismatch,
+                    "unsupported certificate schema version '" +
+                        cert.certificate_schema_version + "'");
+    }
+    if (cert.acceptance_semantics_version != kAcceptanceSemanticsVersion) {
+        add_failure(VerificationFailureReason::kSemanticVersionMismatch,
+                    "unsupported acceptance semantics version '" +
+                        cert.acceptance_semantics_version + "'");
+    }
+    if (cert.certificate_id.empty() || cert.produced_at_ms <= 0) {
+        add_failure(VerificationFailureReason::kCertificateSchemaMismatch,
+                    "certificate identity or production timestamp is invalid");
+    }
+
+    const auto contract_validation = ValidateStateQualityContract(contract);
+    if (!contract_validation.IsOk()) {
+        add_failure(VerificationFailureReason::kPredicateMismatch,
+                    "provided StateQualityContract is invalid");
+    }
+
     const std::string expected_contract_hash = ComputeContractHash(contract);
-    if (cert.contract_hash != expected_contract_hash) {
-        failures.push_back({
-            .reason = VerificationFailureReason::kContractHashMismatch,
-            .detail = "certificate contract hash '" + cert.contract_hash +
-                      "' != computed '" + expected_contract_hash + "'",
-        });
-        return VerificationRejection{
-            .certificate_id = cert.certificate_id,
-            .failures = std::move(failures),
-        };
+    if (cert.contract_id != contract.contract_id) {
+        add_failure(VerificationFailureReason::kContractVersionMismatch,
+                    "certificate contract_id differs from the supplied contract");
     }
-
+    if (cert.contract_hash != expected_contract_hash) {
+        add_failure(VerificationFailureReason::kContractHashMismatch,
+                    "certificate contract hash differs from the canonical contract hash");
+    }
     if (cert.contract_content_version != contract.content_version ||
         cert.contract_schema_version != contract.schema_version) {
-        failures.push_back({
-            .reason = VerificationFailureReason::kContractVersionMismatch,
-            .detail = "contract version mismatch: cert=(" +
-                      std::to_string(cert.contract_schema_version) + "." +
-                      std::to_string(cert.contract_content_version) + ") != contract=(" +
-                      std::to_string(contract.schema_version) + "." +
-                      std::to_string(contract.content_version) + ")",
-        });
+        add_failure(VerificationFailureReason::kContractVersionMismatch,
+                    "certificate contract schema/content version differs from the supplied contract");
     }
 
-    if (cert.acceptance_semantics_version != "2.0") {
-        failures.push_back({
-            .reason = VerificationFailureReason::kSemanticVersionMismatch,
-            .detail = "unsupported acceptance semantics version: " +
-                      cert.acceptance_semantics_version,
-        });
+    if (!nearly_equal(cert.evaluation_time_ms, request_ctx.evaluation_time_ms)) {
+        add_failure(VerificationFailureReason::kEvaluationTimeMismatch,
+                    "certificate t* differs from the persisted request context");
+    }
+    if (cert.evidence_freeze_ms != request_ctx.evidence_freeze_ms) {
+        add_failure(VerificationFailureReason::kEvaluationTimeMismatch,
+                    "certificate r* differs from the persisted request context");
     }
 
-    // Verify r* binding.
-    if (cert.evidence_freeze_ms != evidence_freeze_ms) {
-        failures.push_back({
-            .reason = VerificationFailureReason::kEvaluationTimeMismatch,
-            .detail = "evidence_freeze_ms mismatch: cert=" +
-                      std::to_string(cert.evidence_freeze_ms) + " ctx=" +
-                      std::to_string(evidence_freeze_ms),
-        });
+    if (HasDuplicates(cert.participants.agent_ids) ||
+        Sorted(cert.participants.agent_ids) != Sorted(request_ctx.participants.agent_ids) ||
+        cert.participants.membership_revision !=
+            request_ctx.participants.membership_revision) {
+        add_failure(VerificationFailureReason::kMembershipMismatch,
+                    "certificate participant set or membership revision differs from the request");
+    }
+    for (const auto& required_agent : contract.required_agents) {
+        if (std::find(request_ctx.participants.agent_ids.begin(),
+                      request_ctx.participants.agent_ids.end(), required_agent) ==
+            request_ctx.participants.agent_ids.end()) {
+            add_failure(VerificationFailureReason::kMembershipMismatch,
+                        "required agent '" + required_agent +
+                            "' is absent from the resolved participant set");
+        }
     }
 
-    // Verify t* binding.
-    if (std::abs(cert.evaluation_time_ms - evaluation_time_ms) > kUncertaintyTolerance) {
-        failures.push_back({
-            .reason = VerificationFailureReason::kEvaluationTimeMismatch,
-            .detail = "evaluation_time_ms mismatch",
-        });
+    if (cert.propagation_model_id != contract.propagation_model_id ||
+        cert.propagation_model_version != contract.propagation_model_version ||
+        !nearly_equal(cert.max_horizontal_speed_mps,
+                      contract.max_horizontal_speed_mps) ||
+        !nearly_equal(cert.max_vertical_speed_mps,
+                      contract.max_vertical_speed_mps)) {
+        add_failure(VerificationFailureReason::kModelMismatch,
+                    "certificate propagation model/version or speed assumptions differ from the contract");
     }
-
-    // Step 3: Independent Decision & Evidence Reconstruction
-    // The verifier independently reconstructs every predicate
-    // without instantiating or invoking StateAcceptanceEngine.
 
     AcceptedSnapshot reconstructed;
     reconstructed.snapshot_id = "reconstructed-" + cert.certificate_id;
-    reconstructed.evaluation_time_ms = cert.evaluation_time_ms;
-    reconstructed.evidence_freeze_ms = cert.evidence_freeze_ms;
+    reconstructed.evaluation_time_ms = request_ctx.evaluation_time_ms;
+    reconstructed.evidence_freeze_ms = request_ctx.evidence_freeze_ms;
     reconstructed.contract_id = contract.contract_id;
     reconstructed.contract_version = contract.content_version;
     reconstructed.contract_hash = expected_contract_hash;
     reconstructed.model_id = contract.propagation_model_id;
     reconstructed.model_version = contract.propagation_model_version;
     reconstructed.participants = request_ctx.participants;
+    reconstructed.produced_at_ms = cert.produced_at_ms;
+
+    auto required_fields = contract.required_fields;
+    if (contract.min_gps_quality != GpsQuality::kUnknown &&
+        std::find(required_fields.begin(), required_fields.end(),
+                  EvidenceFieldId::kGpsQuality) == required_fields.end()) {
+        required_fields.push_back(EvidenceFieldId::kGpsQuality);
+    }
 
     std::size_t agents_accepted = 0;
+    std::size_t reconstructed_entry_count = 0;
+    double max_effective_rho = 0.0;
+    double max_elapsed = 0.0;
+    double max_position_uncertainty = 0.0;
+    double max_velocity_uncertainty = 0.0;
 
     for (const auto& agent_id : contract.required_agents) {
-        const auto cur_sess = evidence.CurrentSessionId(agent_id);
-        const std::string current_session_id = cur_sess.value_or("");
-
+        const auto current_session = evidence.CurrentSessionId(agent_id);
+        const std::string current_session_id = current_session.value_or("");
         bool agent_ok = true;
 
-        for (const auto field : contract.required_fields) {
-            auto candidates = evidence.All(agent_id, field);
-            if (candidates.empty()) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kMissingEvidence,
-                    .detail = "no evidence stored for agent " + agent_id + " field " +
-                              std::to_string(static_cast<int>(field)),
-                });
-                agent_ok = false;
-                break;
-            }
-
-            // Independent evidence selection with r* filter,
-            // context-invalid pre-filtering, and deterministic tie-breaking (max g⁻).
-            std::optional<EvidenceRecord> best_rec;
-            std::optional<GenerationTimeInterval> best_interval;
-            double best_clock_unc = 0.0;
-            double best_g_lower = -std::numeric_limits<double>::infinity();
+        for (const auto field : required_fields) {
+            const auto candidates = evidence.All(agent_id, field);
+            std::optional<ReconstructedSelection> best;
+            double best_g_minus = -std::numeric_limits<double>::infinity();
             std::uint64_t best_sequence = 0;
             std::string best_evidence_id;
 
-            for (const auto& rec : candidates) {
-                // P0.1: Evidence-freeze cutoff r*.
-                if (rec.receive_time_ms > evidence_freeze_ms) {
+            for (const auto& record : candidates) {
+                if (record.receive_time_ms > request_ctx.evidence_freeze_ms) continue;
+                if (contract.require_current_epoch &&
+                    record.identity.agent_session_id != current_session_id) {
                     continue;
                 }
-
-                // P0.6: Context-invalid filtering BEFORE ranking.
-                if (contract.require_current_epoch) {
-                    if (rec.identity.agent_session_id != current_session_id) {
-                        continue;
-                    }
-                }
-
-                // Frame eligibility before ranking.
                 if (field == EvidenceFieldId::kPosition &&
                     contract.required_position_frame != CoordinateFrame::kUnknown &&
-                    rec.identity.coordinate_frame != contract.required_position_frame) {
+                    record.identity.coordinate_frame != contract.required_position_frame) {
                     continue;
                 }
                 if (field == EvidenceFieldId::kVelocity &&
                     contract.required_velocity_frame != CoordinateFrame::kUnknown &&
-                    rec.identity.coordinate_frame != contract.required_velocity_frame) {
+                    record.identity.coordinate_frame != contract.required_velocity_frame) {
                     continue;
                 }
-
-                // Mission eligibility before ranking.
-                if (contract.require_current_mission) {
-                    if (rec.identity.mission_id != contract.required_mission_id ||
-                        rec.identity.mission_revision != contract.required_mission_revision) {
-                        continue;
-                    }
+                if (contract.require_current_mission &&
+                    (record.identity.mission_id != contract.required_mission_id ||
+                     record.identity.mission_revision !=
+                         contract.required_mission_revision)) {
+                    continue;
                 }
+                if (!record.source_time.timestamp_ms.has_value()) continue;
 
-                if (!rec.source_time.timestamp_ms.has_value()) continue;
-                const double s = static_cast<double>(*rec.source_time.timestamp_ms);
-                if (!std::isfinite(s)) continue;
+                const double source_time =
+                    static_cast<double>(*record.source_time.timestamp_ms);
+                if (!std::isfinite(source_time)) continue;
 
                 std::optional<GenerationTimeInterval> interval;
-                double clock_unc = 0.0;
-
-                auto clock_it = clock_states.find(agent_id);
+                ClockEvaluationEvidence clock;
+                const auto clock_it = clock_states.find(agent_id);
                 if (clock_it != clock_states.end() && clock_it->second.IsValid()) {
-                    const auto& clk = clock_it->second;
-
-                    // Clock incarnation check.
-                    if (!clk.agent_incarnation_id.empty() &&
-                        !rec.identity.agent_session_id.empty() &&
-                        clk.agent_incarnation_id != rec.identity.agent_session_id) {
+                    const auto& model = clock_it->second;
+                    if (!model.agent_incarnation_id.empty() &&
+                        !record.identity.agent_session_id.empty() &&
+                        model.agent_incarnation_id !=
+                            record.identity.agent_session_id) {
                         continue;
                     }
-
-                    if (contract.require_deterministic_bounds && !clk.deterministic_bound) {
+                    if (contract.require_deterministic_bounds &&
+                        (!model.deterministic_bound ||
+                         model.agent_incarnation_id.empty())) {
                         continue;
                     }
-
-                    // Reference domain estimated generation time g_hat = s - theta_hat
-                    const double g_hat = s - clk.offset_estimate_ms;
-                    clock_unc = clk.ComputeEffectiveUncertainty(g_hat);
+                    const double g_hat = source_time - model.offset_estimate_ms;
+                    const double effective_rho =
+                        model.ComputeEffectiveUncertainty(g_hat);
                     interval = GenerationTimeInterval{
-                        .lower_ms = g_hat - clock_unc,
-                        .upper_ms = g_hat + clock_unc,
+                        .lower_ms = g_hat - effective_rho,
+                        .upper_ms = g_hat + effective_rho,
                     };
-                } else if (!contract.require_deterministic_bounds && rec.source_time.clock_uncertainty_ms.has_value()) {
-                    // Non-deterministic legacy mode only
-                    const double rho = *rec.source_time.clock_uncertainty_ms;
+                    clock = {
+                        .theta_hat_ms = model.offset_estimate_ms,
+                        .base_rho_ms = model.uncertainty_radius_ms,
+                        .effective_rho_ms = effective_rho,
+                        .max_drift_rate_ppm = model.max_drift_rate_ppm,
+                        .model_last_update_reference_ms = model.last_update_ms,
+                        .model_version = model.clock_model_version,
+                        .agent_incarnation_id = model.agent_incarnation_id,
+                        .source_domain = model.source_domain,
+                        .synchronization = model.synchronization,
+                        .deterministic_bound = model.deterministic_bound,
+                    };
+                } else if (!contract.require_deterministic_bounds &&
+                           record.source_time.clock_uncertainty_ms.has_value()) {
+                    const double rho =
+                        *record.source_time.clock_uncertainty_ms;
                     if (!std::isfinite(rho) || rho < 0.0) continue;
-                    interval = ComputeGenerationIntervalFromSample(rec.source_time);
-                    clock_unc = rho;
+                    interval = ComputeGenerationIntervalFromSample(record.source_time);
+                    clock = {
+                        .theta_hat_ms = 0.0,
+                        .base_rho_ms = rho,
+                        .effective_rho_ms = rho,
+                        .max_drift_rate_ppm = 0.0,
+                        .model_last_update_reference_ms = 0,
+                        .model_version = "per-sample-clock-v1",
+                        .agent_incarnation_id =
+                            record.identity.agent_session_id,
+                        .source_domain = record.source_time.clock_domain,
+                        .synchronization = record.source_time.synchronization,
+                        .deterministic_bound = false,
+                    };
                 } else {
                     continue;
                 }
 
-                if (!interval.has_value()) continue;
-                if (!interval->IsCausal(evaluation_time_ms)) continue;
-
-                // Deterministic tie-breaking: max(g⁻), then sequence, then EvidenceId.
-                const double g_lower = interval->lower_ms;
-                const std::uint64_t seq = rec.identity.sequence;
-                const std::string eid =
-                    rec.identity.agent_id + ":" +
-                    std::to_string(static_cast<int>(rec.identity.field_id)) + ":" +
-                    rec.identity.agent_session_id + ":" +
-                    std::to_string(rec.identity.sequence);
-
-                bool is_better = false;
-                if (!best_rec.has_value()) {
-                    is_better = true;
-                } else if (g_lower > best_g_lower) {
-                    is_better = true;
-                } else if (g_lower == best_g_lower) {
-                    if (seq > best_sequence) {
-                        is_better = true;
-                    } else if (seq == best_sequence && eid > best_evidence_id) {
-                        is_better = true;
-                    }
+                if (!interval.has_value() ||
+                    !interval->IsCausal(request_ctx.evaluation_time_ms)) {
+                    continue;
                 }
 
+                const std::string evidence_id = ComputeCanonicalEvidenceId(record);
+                const bool is_better =
+                    !best.has_value() || interval->lower_ms > best_g_minus ||
+                    (interval->lower_ms == best_g_minus &&
+                     (record.identity.sequence > best_sequence ||
+                      (record.identity.sequence == best_sequence &&
+                       evidence_id > best_evidence_id)));
                 if (is_better) {
-                    best_g_lower = g_lower;
-                    best_sequence = seq;
-                    best_evidence_id = eid;
-                    best_rec = rec;
-                    best_interval = *interval;
-                    best_clock_unc = clock_unc;
+                    best = ReconstructedSelection{
+                        .record = record,
+                        .interval = *interval,
+                        .clock = clock,
+                    };
+                    best_g_minus = interval->lower_ms;
+                    best_sequence = record.identity.sequence;
+                    best_evidence_id = evidence_id;
                 }
             }
 
-            if (!best_rec.has_value()) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kMissingEvidence,
-                    .detail = "could not find causally valid evidence for agent " +
-                              agent_id + " at t*=" + std::to_string(evaluation_time_ms),
-                });
+            if (!best.has_value()) {
+                add_failure(VerificationFailureReason::kMissingEvidence,
+                            "no eligible evidence for agent '" + agent_id +
+                                "' field " +
+                                std::to_string(static_cast<int>(field)));
                 agent_ok = false;
-                break;
+                continue;
             }
 
-            // Find matching certified evidence entry in the certificate.
-            const auto cert_entry_it = std::find_if(
+            const auto matches_entry = [&](const CertificateEvidenceEntry& entry) {
+                return entry.agent_id == agent_id && entry.field == field;
+            };
+            const auto first_entry = std::find_if(
                 cert.evidence_entries.begin(), cert.evidence_entries.end(),
-                [&](const CertificateEvidenceEntry& e) {
-                    return e.agent_id == agent_id && e.field == field;
-                });
-
-            if (cert_entry_it == cert.evidence_entries.end()) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kMissingEvidence,
-                    .detail = "certified entry missing from certificate for agent " +
-                              agent_id + " field " + std::to_string(static_cast<int>(field)),
-                });
+                matches_entry);
+            if (first_entry == cert.evidence_entries.end() ||
+                std::count_if(cert.evidence_entries.begin(),
+                              cert.evidence_entries.end(), matches_entry) != 1) {
+                add_failure(VerificationFailureReason::kMissingEvidence,
+                            "certificate must contain exactly one entry for agent '" +
+                                agent_id + "' field " +
+                                std::to_string(static_cast<int>(field)));
                 agent_ok = false;
-                break;
+                continue;
             }
 
-            const auto& cert_entry = *cert_entry_it;
+            const auto& entry = *first_entry;
+            const auto& record = best->record;
+            const auto& clock = best->clock;
+            bool field_ok = true;
+            const auto mismatch = [&](VerificationFailureReason reason,
+                                      std::string detail) {
+                add_failure(reason, std::move(detail));
+                field_ok = false;
+            };
 
-            // Verify evidence identity: sequence, session, provenance, content hash (P1.1).
-            if (cert_entry.sequence != best_rec->identity.sequence) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kDecisionMismatch,
-                    .detail = "evidence sequence mismatch for agent " + agent_id +
-                              ": cert=" + std::to_string(cert_entry.sequence) +
-                              " rec=" + std::to_string(best_rec->identity.sequence),
-                });
-                agent_ok = false;
-                break;
+            if (entry.sequence != record.identity.sequence ||
+                entry.agent_session_id != record.identity.agent_session_id ||
+                entry.source_component != record.identity.source_component ||
+                entry.evidence_id != ComputeCanonicalEvidenceId(record) ||
+                entry.source_time_ms != record.source_time.timestamp_ms ||
+                entry.receive_time_ms != record.receive_time_ms) {
+                mismatch(VerificationFailureReason::kDecisionMismatch,
+                         "certificate evidence identity/timestamps differ for agent '" +
+                             agent_id + "'");
+            }
+            if (entry.evidence_hash != ComputeEvidenceHash(record)) {
+                mismatch(VerificationFailureReason::kEvidenceHashMismatch,
+                         "certificate evidence hash differs for agent '" + agent_id + "'");
+            }
+            if (entry.agent_incarnation_id != clock.agent_incarnation_id) {
+                mismatch(VerificationFailureReason::kSessionMismatch,
+                         "certificate clock incarnation differs for agent '" + agent_id + "'");
+            }
+            if (entry.coordinate_frame != record.identity.coordinate_frame) {
+                mismatch(VerificationFailureReason::kFrameMismatch,
+                         "certificate coordinate frame differs for agent '" + agent_id + "'");
+            }
+            if (entry.estimator_healthy != record.quality.estimator_healthy ||
+                entry.estimator_position_ok !=
+                    record.quality.estimator_position_ok ||
+                entry.estimator_velocity_ok !=
+                    record.quality.estimator_velocity_ok) {
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "certificate health operands differ for agent '" + agent_id + "'");
+            }
+            if (entry.mission_id != record.identity.mission_id ||
+                entry.mission_revision != record.identity.mission_revision) {
+                mismatch(VerificationFailureReason::kProvenanceMismatch,
+                         "certificate mission operands differ for agent '" + agent_id + "'");
             }
 
-            if (cert_entry.agent_session_id != best_rec->identity.agent_session_id) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kSessionMismatch,
-                    .detail = "evidence session mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
+            const UncertaintySemantics expected_semantics =
+                record.quality.uncertainty.has_value()
+                    ? record.quality.uncertainty->descriptor.semantics
+                    : UncertaintySemantics::kUnknown;
+            const double observation_uncertainty =
+                record.quality.uncertainty.has_value()
+                    ? static_cast<double>(record.quality.uncertainty->value)
+                    : 0.0;
+            if (entry.uncertainty_semantics != expected_semantics ||
+                !nearly_equal(entry.observation_uncertainty,
+                              observation_uncertainty)) {
+                mismatch(VerificationFailureReason::kPropagationMismatch,
+                         "certificate uncertainty operands differ for agent '" + agent_id + "'");
             }
 
-            if (cert_entry.source_component != best_rec->identity.source_component) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kProvenanceMismatch,
-                    .detail = "source component mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
+            std::optional<GpsQuality> expected_gps;
+            if (field == EvidenceFieldId::kGpsQuality &&
+                std::holds_alternative<GpsQuality>(record.value)) {
+                expected_gps = std::get<GpsQuality>(record.value);
+            }
+            if (entry.gps_quality != expected_gps) {
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "certificate GPS-quality operand differs for agent '" + agent_id + "'");
             }
 
-            if (cert_entry.source_time_ms != best_rec->source_time.timestamp_ms) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kClockMismatch,
-                    .detail = "source timestamp mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
+            if (!nearly_equal(entry.theta_hat_ms, clock.theta_hat_ms) ||
+                !nearly_equal(entry.base_rho_ms, clock.base_rho_ms) ||
+                !nearly_equal(entry.effective_rho_ms,
+                              clock.effective_rho_ms) ||
+                !nearly_equal(entry.max_drift_rate_ppm,
+                              clock.max_drift_rate_ppm) ||
+                entry.clock_model_last_update_reference_ms !=
+                    clock.model_last_update_reference_ms ||
+                entry.clock_model_version != clock.model_version ||
+                entry.clock_domain != clock.source_domain ||
+                entry.clock_synchronization != clock.synchronization ||
+                entry.clock_deterministic_bound != clock.deterministic_bound) {
+                mismatch(VerificationFailureReason::kClockMismatch,
+                         "certificate primitive clock-model operands differ for agent '" +
+                             agent_id + "'");
             }
 
-            if (cert_entry.coordinate_frame != best_rec->identity.coordinate_frame) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kFrameMismatch,
-                    .detail = "coordinate frame mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            const std::string computed_evidence_hash = ComputeEvidenceHash(*best_rec);
-            if (cert_entry.evidence_hash != computed_evidence_hash) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kEvidenceHashMismatch,
-                    .detail = "evidence hash mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            // Independent predicate evaluation — ALL contract predicates.
-
-            // Session/epoch check (P0.1).
-            if (contract.require_current_epoch &&
-                best_rec->identity.agent_session_id != current_session_id) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kSessionMismatch,
-                    .detail = "authoritative session mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            // Recompute derived values (g⁻, g⁺, Δ⁺, ε) — verifier MUST NOT trust
-            // certificate values for these.
             const double conservative_elapsed =
-                best_interval->ConservativeElapsed(evaluation_time_ms);
+                best->interval.ConservativeElapsed(request_ctx.evaluation_time_ms);
+            const double max_speed =
+                field == EvidenceFieldId::kPosition
+                    ? Compute3DSpeedBound(contract.max_horizontal_speed_mps,
+                                          contract.max_vertical_speed_mps)
+                    : 0.0;
+            const double propagated_uncertainty = ComputePropagatedUncertainty(
+                observation_uncertainty, max_speed, conservative_elapsed);
 
-            // Age predicate (A): Δ⁺ ≤ max_evidence_age.
+            if (!nearly_equal(entry.generation_interval.lower_ms,
+                              best->interval.lower_ms) ||
+                !nearly_equal(entry.generation_interval.upper_ms,
+                              best->interval.upper_ms) ||
+                !nearly_equal(entry.conservative_elapsed_ms,
+                              conservative_elapsed)) {
+                mismatch(VerificationFailureReason::kClockMismatch,
+                         "certificate g-/g+/Delta+ claims differ for agent '" + agent_id + "'");
+            }
+            if (!nearly_equal(entry.propagated_uncertainty,
+                              propagated_uncertainty)) {
+                mismatch(VerificationFailureReason::kPropagationMismatch,
+                         "certificate propagated uncertainty differs for agent '" + agent_id + "'");
+            }
+
             if (contract.max_evidence_age_ms.has_value() &&
                 conservative_elapsed > *contract.max_evidence_age_ms) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kPredicateMismatch,
-                    .detail = "age exceeded for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "conservative evidence age exceeds the contract for agent '" + agent_id + "'");
             }
-
-            // Clock uncertainty predicate (R): ρ ≤ max_clock_uncertainty.
             if (contract.max_clock_uncertainty_ms.has_value() &&
-                best_clock_unc > *contract.max_clock_uncertainty_ms) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kClockMismatch,
-                    .detail = "clock uncertainty exceeded for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
+                clock.effective_rho_ms > *contract.max_clock_uncertainty_ms) {
+                mismatch(VerificationFailureReason::kClockMismatch,
+                         "effective clock uncertainty exceeds the contract for agent '" + agent_id + "'");
             }
-
-            // Deterministic bounds check (P0.2).
-            double obs_unc = 0.0;
-            if (best_rec->quality.uncertainty.has_value()) {
-                obs_unc = static_cast<double>(best_rec->quality.uncertainty->value);
+            if (contract.require_deterministic_bounds &&
+                (field == EvidenceFieldId::kPosition ||
+                 field == EvidenceFieldId::kVelocity) &&
+                (!record.quality.uncertainty.has_value() ||
+                 expected_semantics !=
+                     UncertaintySemantics::kDeterministicHardBound ||
+                 !std::isfinite(observation_uncertainty) ||
+                 observation_uncertainty < 0.0 ||
+                 !clock.deterministic_bound)) {
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "deterministic bound semantics are not established for agent '" + agent_id + "'");
             }
-
-            if (contract.require_deterministic_bounds) {
-                if (!best_rec->quality.uncertainty.has_value() ||
-                    best_rec->quality.uncertainty->descriptor.semantics !=
-                        UncertaintySemantics::kDeterministicHardBound) {
-                    failures.push_back({
-                        .reason = VerificationFailureReason::kPredicateMismatch,
-                        .detail = "deterministic uncertainty semantics missing for agent " + agent_id,
-                    });
-                    agent_ok = false;
-                    break;
-                }
-
-                if (!std::isfinite(best_rec->quality.uncertainty->value) ||
-                    best_rec->quality.uncertainty->value < 0.0f) {
-                    failures.push_back({
-                        .reason = VerificationFailureReason::kPredicateMismatch,
-                        .detail = "invalid uncertainty bound for agent " + agent_id,
-                    });
-                    agent_ok = false;
-                    break;
-                }
-            }
-
-            // Propagated uncertainty: ε(t*) = e_p + V_3D_max · Δ⁺.
-            double max_speed = 0.0;
-            if (field == EvidenceFieldId::kPosition) {
-                max_speed = Compute3DSpeedBound(contract.max_horizontal_speed_mps, contract.max_vertical_speed_mps);
-            }
-
-            const double propagated_unc = ComputePropagatedUncertainty(
-                obs_unc, max_speed, conservative_elapsed);
-
-            // Position uncertainty predicate (U).
             if (field == EvidenceFieldId::kPosition &&
                 contract.max_position_uncertainty_m.has_value() &&
-                propagated_unc > *contract.max_position_uncertainty_m) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kPropagationMismatch,
-                    .detail = "propagated position uncertainty exceeded for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
+                propagated_uncertainty >
+                    *contract.max_position_uncertainty_m) {
+                mismatch(VerificationFailureReason::kPropagationMismatch,
+                         "position uncertainty exceeds the contract for agent '" + agent_id + "'");
             }
-
-            // Velocity uncertainty predicate (U).
             if (field == EvidenceFieldId::kVelocity &&
                 contract.max_velocity_uncertainty_mps.has_value() &&
-                propagated_unc > *contract.max_velocity_uncertainty_mps) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kPropagationMismatch,
-                    .detail = "propagated velocity uncertainty exceeded for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
+                propagated_uncertainty >
+                    *contract.max_velocity_uncertainty_mps) {
+                mismatch(VerificationFailureReason::kPropagationMismatch,
+                         "velocity uncertainty exceeds the contract for agent '" + agent_id + "'");
             }
-
-            // Estimator health predicates (H).
             if (contract.require_estimator_healthy &&
-                (field == EvidenceFieldId::kPosition || field == EvidenceFieldId::kVelocity)) {
-                if (!best_rec->quality.estimator_healthy) {
-                    failures.push_back({
-                        .reason = VerificationFailureReason::kPredicateMismatch,
-                        .detail = "estimator unhealthy for agent " + agent_id,
-                    });
-                    agent_ok = false;
-                    break;
-                }
+                (field == EvidenceFieldId::kPosition ||
+                 field == EvidenceFieldId::kVelocity) &&
+                !record.quality.estimator_healthy) {
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "selected evidence is estimator-unhealthy for agent '" + agent_id + "'");
+            }
+            if (contract.require_estimator_position_ok &&
+                field == EvidenceFieldId::kPosition &&
+                !record.quality.estimator_position_ok) {
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "selected position evidence is not estimator-position-ok for agent '" + agent_id + "'");
+            }
+            if (contract.require_estimator_velocity_ok &&
+                field == EvidenceFieldId::kVelocity &&
+                !record.quality.estimator_velocity_ok) {
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "selected velocity evidence is not estimator-velocity-ok for agent '" + agent_id + "'");
+            }
+            if (contract.min_gps_quality != GpsQuality::kUnknown &&
+                field == EvidenceFieldId::kGpsQuality &&
+                (!expected_gps.has_value() ||
+                 static_cast<std::uint8_t>(*expected_gps) <
+                     static_cast<std::uint8_t>(contract.min_gps_quality))) {
+                mismatch(VerificationFailureReason::kPredicateMismatch,
+                         "GPS-quality predicate is not established for agent '" + agent_id + "'");
+            }
+            if (contract.require_current_epoch &&
+                record.identity.agent_session_id != current_session_id) {
+                mismatch(VerificationFailureReason::kSessionMismatch,
+                         "selected evidence is not from the authoritative session for agent '" + agent_id + "'");
+            }
+            if (contract.require_current_mission &&
+                (record.identity.mission_id != contract.required_mission_id ||
+                 record.identity.mission_revision !=
+                     contract.required_mission_revision)) {
+                mismatch(VerificationFailureReason::kProvenanceMismatch,
+                         "selected evidence mission differs from the contract for agent '" + agent_id + "'");
             }
 
-            // Estimator position ok (H).
-            if (contract.require_estimator_position_ok && field == EvidenceFieldId::kPosition) {
-                if (!best_rec->quality.estimator_position_ok) {
-                    failures.push_back({
-                        .reason = VerificationFailureReason::kPredicateMismatch,
-                        .detail = "estimator position not ok for agent " + agent_id,
-                    });
-                    agent_ok = false;
-                    break;
-                }
-            }
-
-            // Estimator velocity ok (H).
-            if (contract.require_estimator_velocity_ok && field == EvidenceFieldId::kVelocity) {
-                if (!best_rec->quality.estimator_velocity_ok) {
-                    failures.push_back({
-                        .reason = VerificationFailureReason::kPredicateMismatch,
-                        .detail = "estimator velocity not ok for agent " + agent_id,
-                    });
-                    agent_ok = false;
-                    break;
-                }
-            }
-
-            // Frame predicate (P) — position.
-            if (field == EvidenceFieldId::kPosition &&
-                contract.required_position_frame != CoordinateFrame::kUnknown &&
-                best_rec->identity.coordinate_frame != contract.required_position_frame) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kFrameMismatch,
-                    .detail = "position frame mismatch for agent " + agent_id,
-                });
+            if (!field_ok) {
                 agent_ok = false;
-                break;
+                continue;
             }
 
-            // Frame predicate (P) — velocity.
-            if (field == EvidenceFieldId::kVelocity &&
-                contract.required_velocity_frame != CoordinateFrame::kUnknown &&
-                best_rec->identity.coordinate_frame != contract.required_velocity_frame) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kFrameMismatch,
-                    .detail = "velocity frame mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            // Mission predicate (M).
-            if (contract.require_current_mission) {
-                if (best_rec->identity.mission_id != contract.required_mission_id ||
-                    best_rec->identity.mission_revision != contract.required_mission_revision) {
-                    failures.push_back({
-                        .reason = VerificationFailureReason::kProvenanceMismatch,
-                        .detail = "mission mismatch for agent " + agent_id,
-                    });
-                    agent_ok = false;
-                    break;
-                }
-            }
-
-            // Cross-check recomputed values against certificate entries (tolerance).
-            if (std::abs(cert_entry.clock_uncertainty_ms - best_clock_unc) > kUncertaintyTolerance) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kClockMismatch,
-                    .detail = "clock uncertainty mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            if (std::abs(cert_entry.observation_uncertainty - obs_unc) > kUncertaintyTolerance) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kPropagationMismatch,
-                    .detail = "observation uncertainty mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            if (std::abs(cert_entry.generation_interval.lower_ms - best_interval->lower_ms) > kUncertaintyTolerance ||
-                std::abs(cert_entry.generation_interval.upper_ms - best_interval->upper_ms) > kUncertaintyTolerance) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kClockMismatch,
-                    .detail = "generation interval mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            if (std::abs(cert_entry.propagated_uncertainty - propagated_unc) > kUncertaintyTolerance) {
-                failures.push_back({
-                    .reason = VerificationFailureReason::kPropagationMismatch,
-                    .detail = "propagated uncertainty calculation mismatch for agent " + agent_id,
-                });
-                agent_ok = false;
-                break;
-            }
-
-            reconstructed.agent_states[agent_id][static_cast<std::uint8_t>(field)] = {
-                .evidence = *best_rec,
-                .generation_interval = *best_interval,
+            reconstructed.agent_states[agent_id]
+                                      [static_cast<std::uint8_t>(field)] = {
+                .evidence = record,
+                .generation_interval = best->interval,
                 .conservative_elapsed_ms = conservative_elapsed,
-                .observation_uncertainty = obs_unc,
-                .propagated_uncertainty = propagated_unc,
-                .clock_uncertainty_ms = best_clock_unc,
+                .observation_uncertainty = observation_uncertainty,
+                .propagated_uncertainty = propagated_uncertainty,
+                .clock_evaluation = clock,
             };
+            ++reconstructed_entry_count;
+            max_effective_rho =
+                std::max(max_effective_rho, clock.effective_rho_ms);
+            max_elapsed = std::max(max_elapsed, conservative_elapsed);
+            if (field == EvidenceFieldId::kPosition) {
+                max_position_uncertainty = std::max(
+                    max_position_uncertainty, propagated_uncertainty);
+            } else if (field == EvidenceFieldId::kVelocity) {
+                max_velocity_uncertainty = std::max(
+                    max_velocity_uncertainty, propagated_uncertainty);
+            }
         }
 
         if (agent_ok) {
             reconstructed.accepted_agents.push_back(agent_id);
             ++agents_accepted;
         } else {
+            reconstructed_entry_count -= reconstructed.agent_states[agent_id].size();
             reconstructed.agent_states.erase(agent_id);
         }
     }
 
-    // Step 4: Completeness Rule Verification.
     bool completeness_ok = false;
     switch (contract.completeness) {
         case CompletenessRule::kAllRequired:
-            completeness_ok = (agents_accepted == contract.required_agents.size());
+            completeness_ok = agents_accepted == contract.required_agents.size();
             break;
         case CompletenessRule::kMinimumCount:
-            completeness_ok = (agents_accepted >= contract.min_required_agents);
+            completeness_ok = agents_accepted >= contract.min_required_agents;
             break;
     }
-
     if (!completeness_ok) {
-        failures.push_back({
-            .reason = VerificationFailureReason::kCompletenessMismatch,
-            .detail = "reconstructed decision failed completeness rule: accepted " +
-                      std::to_string(agents_accepted) + "/" +
-                      std::to_string(contract.required_agents.size()),
-        });
+        add_failure(VerificationFailureReason::kCompletenessMismatch,
+                    "independently reconstructed decision fails the completeness rule");
     }
 
-    // Step 5: Verify accepted agent set matches certificate.
-    auto cert_agents = cert.accepted_agents;
-    auto recon_agents = reconstructed.accepted_agents;
-    std::sort(cert_agents.begin(), cert_agents.end());
-    std::sort(recon_agents.begin(), recon_agents.end());
+    if (HasDuplicates(cert.accepted_agents) ||
+        Sorted(cert.accepted_agents) != Sorted(reconstructed.accepted_agents)) {
+        add_failure(VerificationFailureReason::kDecisionMismatch,
+                    "certificate accepted-agent set differs from the reconstructed decision");
+    }
+    if (cert.evidence_entries.size() != reconstructed_entry_count) {
+        add_failure(VerificationFailureReason::kDecisionMismatch,
+                    "certificate contains a missing or extra evidence entry");
+    }
 
-    if (cert_agents != recon_agents) {
-        failures.push_back({
-            .reason = VerificationFailureReason::kDecisionMismatch,
-            .detail = "accepted agent set differs from certificate",
-        });
+    if (!nearly_equal(cert.max_clock_uncertainty_ms, max_effective_rho) ||
+        !nearly_equal(cert.max_conservative_elapsed_ms, max_elapsed) ||
+        !nearly_equal(cert.max_propagated_position_uncertainty_m,
+                      max_position_uncertainty) ||
+        !nearly_equal(cert.max_propagated_velocity_uncertainty_mps,
+                      max_velocity_uncertainty)) {
+        add_failure(VerificationFailureReason::kPropagationMismatch,
+                    "certificate timing/uncertainty summary maxima differ from reconstruction");
     }
 
     if (!failures.empty()) {
@@ -600,7 +572,7 @@ VerificationResult StateAcceptanceVerifier::Verify(
 
     return VerifiedAcceptance{
         .certificate_id = cert.certificate_id,
-        .reconstructed_snapshot = reconstructed,
+        .reconstructed_snapshot = std::move(reconstructed),
     };
 }
 

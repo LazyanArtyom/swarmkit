@@ -251,6 +251,14 @@ class FaultInjectingBackend final : public agent::IDroneBackend {
                     }
 
                     core::TelemetryFrame frame = input;
+                    // SimBackend emits raw backend frames without the Agent's
+                    // TelemetryManager sequence normalization.  Preserve a
+                    // backend sequence when present; otherwise assign the
+                    // injector's deterministic per-UAV source-frame index so
+                    // reorder diagnostics and evidence identity remain exact.
+                    if (frame.telemetry_sequence == 0) {
+                        frame.telemetry_sequence = stream.source_frame_index;
+                    }
                     const bool loss =
                         RandomDecision(state.get(), state->config.telemetry_loss_probability);
                     if (auto output =

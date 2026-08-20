@@ -78,6 +78,24 @@ struct PredicateFailure {
     std::string detail;
 };
 
+/// Primitive clock-model operands used to map one selected source timestamp
+/// into the runtime reference domain.  These values are captured at selection
+/// time so certificates never reconstruct or invent the clock model later.
+struct ClockEvaluationEvidence {
+    double theta_hat_ms{};
+    double base_rho_ms{};
+    double effective_rho_ms{};
+    double max_drift_rate_ppm{};
+    std::int64_t model_last_update_reference_ms{};
+    std::string model_version;
+    std::string agent_incarnation_id;
+    ClockDomain source_domain{ClockDomain::kUnknown};
+    ClockSynchronization synchronization{ClockSynchronization::kUnknown};
+    bool deterministic_bound{false};
+
+    bool operator==(const ClockEvaluationEvidence&) const = default;
+};
+
 /// Accepted evidence state for one agent and one field.
 struct AcceptedFieldState {
     /// The evidence record that was accepted.
@@ -95,8 +113,8 @@ struct AcceptedFieldState {
     /// Propagated uncertainty ε(t*) = e_p + V_max · Δ⁺ (§9 Eq.10).
     double propagated_uncertainty{};
 
-    /// Clock uncertainty ρ used for this evidence item.
-    double clock_uncertainty_ms{};
+    /// Exact clock-model operands used for this evidence item.
+    ClockEvaluationEvidence clock_evaluation;
 };
 
 /// Complete accepted multi-UAV snapshot at a common evaluation time.
@@ -194,7 +212,7 @@ class StateAcceptanceEngine {
     struct EvidenceSelection {
         EvidenceRecord record;
         GenerationTimeInterval generation_interval;
-        double clock_uncertainty_ms{};
+        ClockEvaluationEvidence clock_evaluation;
     };
 
     [[nodiscard]] std::optional<EvidenceSelection> SelectCausalEvidence(

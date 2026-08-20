@@ -3,10 +3,13 @@
 
 #include "swarmkit/core/state_acceptance_engine.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
 #include <sstream>
+
+#include "swarmkit/core/state_acceptance_certificate.h"
 
 namespace swarmkit::core {
 
@@ -98,8 +101,7 @@ StateAcceptanceEngine::SelectCausalEvidence(
 
         // Compute generation-time interval [g⁻, g⁺] with incarnation-scoped clock.
         std::optional<GenerationTimeInterval> interval;
-        double clock_unc = 0.0;
-        double theta_hat = 0.0;
+        ClockEvaluationEvidence clock_evaluation;
 
         auto clock_it = clock_states.find(agent_id);
         if (clock_it != clock_states.end() && clock_it->second.IsValid()) {
@@ -118,14 +120,30 @@ StateAcceptanceEngine::SelectCausalEvidence(
                 clock_failure_detail = "clock state has non-deterministic bound for agent " + agent_id;
                 continue;
             }
+            if (contract.require_deterministic_bounds && clk.agent_incarnation_id.empty()) {
+                had_clock_quality_failure = true;
+                clock_failure_detail = "clock state has no incarnation binding for agent " + agent_id;
+                continue;
+            }
 
             // Reference domain estimated generation time g_hat = s - theta_hat
-            theta_hat = clk.offset_estimate_ms;
-            const double g_hat = s - theta_hat;
-            clock_unc = clk.ComputeEffectiveUncertainty(g_hat);
+            const double g_hat = s - clk.offset_estimate_ms;
+            const double effective_rho = clk.ComputeEffectiveUncertainty(g_hat);
+            clock_evaluation = {
+                .theta_hat_ms = clk.offset_estimate_ms,
+                .base_rho_ms = clk.uncertainty_radius_ms,
+                .effective_rho_ms = effective_rho,
+                .max_drift_rate_ppm = clk.max_drift_rate_ppm,
+                .model_last_update_reference_ms = clk.last_update_ms,
+                .model_version = clk.clock_model_version,
+                .agent_incarnation_id = clk.agent_incarnation_id,
+                .source_domain = clk.source_domain,
+                .synchronization = clk.synchronization,
+                .deterministic_bound = clk.deterministic_bound,
+            };
             interval = GenerationTimeInterval{
-                .lower_ms = g_hat - clock_unc,
-                .upper_ms = g_hat + clock_unc,
+                .lower_ms = g_hat - effective_rho,
+                .upper_ms = g_hat + effective_rho,
             };
         } else if (!contract.require_deterministic_bounds && record.source_time.clock_uncertainty_ms.has_value()) {
             // Non-deterministic legacy mode only
@@ -136,8 +154,18 @@ StateAcceptanceEngine::SelectCausalEvidence(
                 continue;
             }
             interval = ComputeGenerationIntervalFromSample(record.source_time);
-            clock_unc = rho;
-            theta_hat = 0.0;  // Per-sample: no offset estimate.
+            clock_evaluation = {
+                .theta_hat_ms = 0.0,
+                .base_rho_ms = rho,
+                .effective_rho_ms = rho,
+                .max_drift_rate_ppm = 0.0,
+                .model_last_update_reference_ms = 0,
+                .model_version = "per-sample-clock-v1",
+                .agent_incarnation_id = record.identity.agent_session_id,
+                .source_domain = record.source_time.clock_domain,
+                .synchronization = record.source_time.synchronization,
+                .deterministic_bound = false,
+            };
         } else {
             // Missing valid deterministic clock quality state -> ineligible
             had_clock_quality_failure = true;
@@ -158,12 +186,7 @@ StateAcceptanceEngine::SelectCausalEvidence(
         // 3. If still tied, lexicographically greater canonical EvidenceId.
         const double g_lower = interval->lower_ms;
         const std::uint64_t seq = record.identity.sequence;
-        // Canonical EvidenceId: agent_id:field:session:sequence
-        const std::string eid =
-            record.identity.agent_id + ":" +
-            std::to_string(static_cast<int>(record.identity.field_id)) + ":" +
-            record.identity.agent_session_id + ":" +
-            std::to_string(record.identity.sequence);
+        const std::string eid = ComputeCanonicalEvidenceId(record);
 
         bool is_better = false;
         if (!best_selection.has_value()) {
@@ -185,7 +208,7 @@ StateAcceptanceEngine::SelectCausalEvidence(
             best_selection = EvidenceSelection{
                 .record = record,
                 .generation_interval = *interval,
-                .clock_uncertainty_ms = clock_unc,
+                .clock_evaluation = clock_evaluation,
             };
         }
     }
@@ -246,19 +269,21 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
 
     // Clock uncertainty check (R): ρ_eff ≤ max_clock_uncertainty.
     if (contract.max_clock_uncertainty_ms.has_value()) {
-        if (selection.clock_uncertainty_ms > *contract.max_clock_uncertainty_ms) {
+        if (selection.clock_evaluation.effective_rho_ms > *contract.max_clock_uncertainty_ms) {
             return PredicateFailure{
                 .reason = RejectionReason::kClockUncertaintyExceeded,
                 .agent_id = agent_id,
                 .field = field,
-                .detail = "ρ=" + std::to_string(selection.clock_uncertainty_ms) +
+                .detail = "ρ_eff=" + std::to_string(selection.clock_evaluation.effective_rho_ms) +
                           "ms > max=" + std::to_string(*contract.max_clock_uncertainty_ms) + "ms",
             };
         }
     }
 
     // Deterministic bound semantics check (§10, P0.2).
-    if (contract.require_deterministic_bounds) {
+    if (contract.require_deterministic_bounds &&
+        (field == EvidenceFieldId::kPosition ||
+         field == EvidenceFieldId::kVelocity)) {
         if (!record.quality.uncertainty.has_value()) {
             return PredicateFailure{
                 .reason = RejectionReason::kMissingUncertainty,
@@ -350,16 +375,22 @@ StateAcceptanceEngine::EvaluateFieldPredicates(
 
     // GPS Quality predicate (H).
     if (contract.min_gps_quality != GpsQuality::kUnknown && field == EvidenceFieldId::kGpsQuality) {
-        if (std::holds_alternative<GpsQuality>(record.value)) {
-            const auto q = std::get<GpsQuality>(record.value);
-            if (static_cast<std::uint8_t>(q) < static_cast<std::uint8_t>(contract.min_gps_quality)) {
-                return PredicateFailure{
-                    .reason = RejectionReason::kGpsQualityInsufficient,
-                    .agent_id = agent_id,
-                    .field = field,
-                    .detail = "GPS quality below required threshold",
-                };
-            }
+        if (!std::holds_alternative<GpsQuality>(record.value)) {
+            return PredicateFailure{
+                .reason = RejectionReason::kGpsQualityInsufficient,
+                .agent_id = agent_id,
+                .field = field,
+                .detail = "GPS-quality evidence has the wrong value variant",
+            };
+        }
+        const auto q = std::get<GpsQuality>(record.value);
+        if (static_cast<std::uint8_t>(q) < static_cast<std::uint8_t>(contract.min_gps_quality)) {
+            return PredicateFailure{
+                .reason = RejectionReason::kGpsQualityInsufficient,
+                .agent_id = agent_id,
+                .field = field,
+                .detail = "GPS quality below required threshold",
+            };
         }
     }
 
@@ -467,6 +498,12 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
     std::vector<PredicateFailure> all_agent_failures;
 
     const auto& required = contract.required_agents;
+    auto required_fields = contract.required_fields;
+    if (contract.min_gps_quality != GpsQuality::kUnknown &&
+        std::find(required_fields.begin(), required_fields.end(),
+                  EvidenceFieldId::kGpsQuality) == required_fields.end()) {
+        required_fields.push_back(EvidenceFieldId::kGpsQuality);
+    }
 
     for (const auto& agent_id : required) {
         // Determine authoritative current session for epoch check (P0.1).
@@ -476,7 +513,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
         bool agent_ok = true;
         std::vector<PredicateFailure> agent_failures;
 
-        for (const auto field : contract.required_fields) {
+        for (const auto field : required_fields) {
             // Select causal evidence with r* filter and deterministic tie-breaking.
             auto selection = SelectCausalEvidence(
                 contract, evidence, agent_id, field, request_ctx,
@@ -537,7 +574,7 @@ AcceptanceResult StateAcceptanceEngine::RequestSnapshot(
                 .conservative_elapsed_ms = conservative_elapsed,
                 .observation_uncertainty = observation_unc,
                 .propagated_uncertainty = propagated_unc,
-                .clock_uncertainty_ms = selection->clock_uncertainty_ms,
+                .clock_evaluation = selection->clock_evaluation,
             };
         }
 

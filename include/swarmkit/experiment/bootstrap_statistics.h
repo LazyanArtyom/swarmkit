@@ -17,6 +17,7 @@ namespace swarmkit::experiment {
 /// Per-replicate, per-scenario, per-method measurement record (§28, P2.1).
 struct ReplicateRecord {
     std::size_t replicate_id{};
+    std::uint64_t base_seed{};
     std::uint64_t motion_seed{};
     std::uint64_t fault_seed{};
     std::uint8_t scenario_id{};
@@ -30,6 +31,25 @@ struct ReplicateRecord {
     std::size_t false_rejects{};
     std::size_t enclosures_tested{};
     std::size_t containment_failures{};
+
+    // Realized fault and restart diagnostics.  These are copied onto all
+    // three method rows for the same paired replicate/scenario trace.
+    std::size_t realized_delay_frames{};
+    std::size_t realized_packet_losses{};
+    std::size_t realized_reorder_events{};
+    std::size_t reorder_inversions{};
+    std::size_t restart_events{};
+    std::size_t obsolete_epoch_packets_injected{};
+    std::size_t obsolete_epoch_packets_selected{};
+    std::size_t estimator_degradation_events{};
+    std::size_t frame_mismatch_events{};
+    std::size_t clock_invalidations{};
+    std::size_t clock_reestablishments{};
+    std::size_t clock_offset_fault_events{};
+    double max_effective_rho_ms{};
+    double max_truth_speed_mps{};
+    double max_delayed_age_ms{};
+    double max_propagated_motion_m{};
 
     [[nodiscard]] double FalseValidRate() const {
         return accepted > 0 ? static_cast<double>(false_accepts) / static_cast<double>(accepted) : 0.0;

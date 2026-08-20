@@ -95,6 +95,85 @@ TEST_CASE("ReplayTrace JSON-lines serialization roundtrip", "[replay]") {
     REQUIRE(loaded->events.size() == 4);
 }
 
+TEST_CASE("test_replay_roundtrip_every_event_field", "[replay][roundtrip]") {
+    auto record = MakeSampleRecord("uav-1", 41, 1000, 1020);
+    record.identity.estimator_id = "estimator-A";
+    record.identity.mission_id = "mission-A";
+    record.identity.mission_revision = 9;
+    record.identity.uncertainty_kind = UncertaintySemantics::kDeterministicHardBound;
+    record.quality.estimator_velocity_ok = true;
+    record.quality.uncertainty = UncertaintyEstimate{
+        .value = 0.25F,
+        .descriptor = {
+            .semantics = UncertaintySemantics::kDeterministicHardBound,
+            .confidence_level = 0.99,
+            .calibration_profile_id = "profile-A",
+            .calibration_version = "cal-v2",
+            .source = "sim-calibration",
+            .measurement_generation = 12,
+        },
+    };
+    const ClockQualityState clock{
+        .offset_estimate_ms = 3.25,
+        .uncertainty_radius_ms = 1.75,
+        .max_drift_rate_ppm = 22.0,
+        .source_domain = ClockDomain::kUnixEpoch,
+        .synchronization = ClockSynchronization::kEstimated,
+        .last_update_ms = 900,
+        .deterministic_bound = true,
+        .agent_incarnation_id = "sess-uav-1",
+        .clock_model_version = "clock-model-v7",
+    };
+    StateQualityContract contract{
+        .contract_id = "roundtrip-contract",
+        .required_fields = {EvidenceFieldId::kPosition},
+        .max_evidence_age_ms = 500.0,
+        .max_clock_uncertainty_ms = 10.0,
+        .max_position_uncertainty_m = 20.0,
+        .required_position_frame = CoordinateFrame::kWgs84,
+        .required_agents = {"uav-1"},
+        .require_deterministic_bounds = true,
+    };
+    EvidenceStore store;
+    store.SetCurrentSession("uav-1", "sess-uav-1");
+    store.Insert("uav-1", record);
+    const SnapshotRequestContext request{
+        .evaluation_time_ms = 1100.5,
+        .evidence_freeze_ms = 1101,
+        .participants = {.agent_ids = {"uav-1"}, .membership_revision = 23},
+    };
+    const std::unordered_map<std::string, ClockQualityState> clocks{{"uav-1", clock}};
+    const auto decision = StateAcceptanceEngine{}.RequestSnapshot(contract, request, store, clocks);
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(decision));
+    const auto certificate = BuildCertificate(
+        std::get<AcceptedSnapshot>(decision), contract, request);
+
+    ReplayTrace original{
+        .trace_id = "complete-roundtrip",
+        .version = "2.0",
+        .events = {
+            MembershipChangeEvent{.timestamp_ms = 890, .participants = request.participants},
+            SessionTransitionEvent{.timestamp_ms = 891, .agent_id = "uav-1",
+                                   .new_session_id = "sess-uav-1"},
+            ClockModelUpdateEvent{.timestamp_ms = 900, .agent_id = "uav-1",
+                                  .clock_state = clock},
+            EvidenceReceivedEvent{.receive_time_ms = 1020, .agent_id = "uav-1",
+                                  .record = record},
+            SnapshotRequestEvent{.request_id = "request-complete",
+                                 .evaluation_time_ms = request.evaluation_time_ms,
+                                 .evidence_freeze_ms = request.evidence_freeze_ms,
+                                 .contract_hash = ComputeContractHash(contract),
+                                 .participants = request.participants,
+                                 .certificate = certificate},
+        },
+    };
+    const auto loaded = ReplayTrace::FromJsonLines(original.ToJsonLines());
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->trace_id == original.trace_id);
+    REQUIRE(loaded->version == original.version);
+    REQUIRE(loaded->events == original.events);
+}
+
 TEST_CASE("ReplayTrace file persist, reload, and independent verification (P0.9)", "[replay]") {
     const std::string trace_path = (std::filesystem::temp_directory_path() / "test_replay_trace.jsonl").string();
 
@@ -268,4 +347,168 @@ TEST_CASE("Critical r* evidence freeze frontier exclusion test", "[replay][front
     StateAcceptanceVerifier verifier;
     auto ver_res = verifier.Verify(cert, store, contract, req_ctx, clock_states);
     REQUIRE(std::holds_alternative<VerifiedAcceptance>(ver_res));
+}
+
+TEST_CASE("test_persisted_replay_post_rstar_pre_tstar_evidence_is_excluded",
+          "[replay][frontier][persisted]") {
+    const std::string trace_path =
+        (std::filesystem::temp_directory_path() /
+         "test_persisted_rstar_frontier.jsonl")
+            .string();
+    StateQualityContract contract{
+        .contract_id = "sqc-persisted-rstar",
+        .schema_version = 1,
+        .content_version = 1,
+        .required_fields = {EvidenceFieldId::kPosition},
+        .max_evidence_age_ms = 500.0,
+        .max_clock_uncertainty_ms = 10.0,
+        .max_position_uncertainty_m = 100.0,
+        .require_estimator_position_ok = true,
+        .required_position_frame = CoordinateFrame::kWgs84,
+        .require_current_epoch = true,
+        .required_agents = {"uav-1"},
+        .completeness = CompletenessRule::kAllRequired,
+        .require_deterministic_bounds = true,
+        .max_horizontal_speed_mps = 10.0F,
+    };
+
+    {
+        EvidenceStore live_store;
+        live_store.SetCurrentSession("uav-1", "sess-uav-1");
+        auto evidence_a = MakeSampleRecord("uav-1", 1, 900, 1050);
+        auto evidence_b = MakeSampleRecord("uav-1", 2, 950, 1200);
+        live_store.Insert("uav-1", evidence_a);
+        live_store.Insert("uav-1", evidence_b);
+
+        std::unordered_map<std::string, ClockQualityState> live_clocks;
+        live_clocks["uav-1"] = ClockQualityState{
+            .offset_estimate_ms = 0.0,
+            .uncertainty_radius_ms = 1.0,
+            .max_drift_rate_ppm = 20.0,
+            .source_domain = ClockDomain::kUnixEpoch,
+            .synchronization = ClockSynchronization::kSynchronized,
+            .last_update_ms = 800,
+            .deterministic_bound = true,
+            .agent_incarnation_id = "sess-uav-1",
+            .clock_model_version = "clock-v1",
+        };
+        SnapshotRequestContext live_request{
+            .evaluation_time_ms = 1000.0,
+            .evidence_freeze_ms = 1100,
+            .participants = {
+                .agent_ids = {"uav-1"},
+                .membership_revision = 17,
+            },
+        };
+        const auto result = StateAcceptanceEngine{}.RequestSnapshot(
+            contract, live_request, live_store, live_clocks);
+        REQUIRE(std::holds_alternative<AcceptedSnapshot>(result));
+        const auto& live_snapshot = std::get<AcceptedSnapshot>(result);
+        REQUIRE(live_snapshot.agent_states.at("uav-1")
+                    .at(static_cast<std::uint8_t>(EvidenceFieldId::kPosition))
+                    .evidence.identity.sequence == 1);
+        const auto live_certificate =
+            BuildCertificate(live_snapshot, contract, live_request);
+
+        ReplayTrace trace;
+        trace.trace_id = "persisted-rstar-frontier";
+        trace.events.push_back(MembershipChangeEvent{
+            .timestamp_ms = 800,
+            .participants = live_request.participants,
+        });
+        trace.events.push_back(SessionTransitionEvent{
+            .timestamp_ms = 800,
+            .agent_id = "uav-1",
+            .new_session_id = "sess-uav-1",
+        });
+        trace.events.push_back(ClockModelUpdateEvent{
+            .timestamp_ms = 800,
+            .agent_id = "uav-1",
+            .clock_state = live_clocks.at("uav-1"),
+        });
+        trace.events.push_back(EvidenceReceivedEvent{
+            .receive_time_ms = evidence_a.receive_time_ms,
+            .agent_id = "uav-1",
+            .record = evidence_a,
+        });
+        trace.events.push_back(EvidenceReceivedEvent{
+            .receive_time_ms = evidence_b.receive_time_ms,
+            .agent_id = "uav-1",
+            .record = evidence_b,
+        });
+        trace.events.push_back(SnapshotRequestEvent{
+            .request_id = "request-rstar",
+            .evaluation_time_ms = live_request.evaluation_time_ms,
+            .evidence_freeze_ms = live_request.evidence_freeze_ms,
+            .contract_hash = ComputeContractHash(contract),
+            .participants = live_request.participants,
+            .certificate = live_certificate,
+        });
+        REQUIRE(trace.SaveToFile(trace_path));
+    }  // Destroy the live store, sessions, clocks, request, snapshot, and certificate.
+
+    const auto loaded = ReplayTrace::LoadFromFile(trace_path);
+    REQUIRE(loaded.has_value());
+    EvidenceStore replay_store;
+    std::unordered_map<std::string, ClockQualityState> replay_clocks;
+    std::optional<ParticipantSnapshot> replay_membership;
+    std::optional<SnapshotRequestEvent> replay_request;
+    for (const auto& event : loaded->events) {
+        std::visit([&](const auto& item) {
+            using T = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<T, MembershipChangeEvent>) {
+                replay_membership = item.participants;
+            } else if constexpr (std::is_same_v<T, SessionTransitionEvent>) {
+                replay_store.SetCurrentSession(item.agent_id, item.new_session_id);
+            } else if constexpr (std::is_same_v<T, ClockModelUpdateEvent>) {
+                replay_clocks[item.agent_id] = item.clock_state;
+            } else if constexpr (std::is_same_v<T, EvidenceReceivedEvent>) {
+                replay_store.Insert(item.agent_id, item.record);
+            } else if constexpr (std::is_same_v<T, SnapshotRequestEvent>) {
+                replay_request = item;
+            }
+        }, event);
+    }
+
+    REQUIRE(replay_membership.has_value());
+    REQUIRE(replay_request.has_value());
+    REQUIRE(replay_request->certificate.has_value());
+    REQUIRE(VerifySnapshotRequestContractBinding(*replay_request, contract));
+    REQUIRE(replay_request->participants == *replay_membership);
+    REQUIRE(replay_request->certificate->evidence_entries.at(0).sequence == 1);
+
+    const SnapshotRequestContext reconstructed_context{
+        .evaluation_time_ms = replay_request->evaluation_time_ms,
+        .evidence_freeze_ms = replay_request->evidence_freeze_ms,
+        .participants = replay_request->participants,
+    };
+    const auto verified = StateAcceptanceVerifier{}.Verify(
+        *replay_request->certificate, replay_store, contract,
+        reconstructed_context, replay_clocks);
+    REQUIRE(std::holds_alternative<VerifiedAcceptance>(verified));
+    REQUIRE(std::get<VerifiedAcceptance>(verified)
+                .reconstructed_snapshot.agent_states.at("uav-1")
+                .at(static_cast<std::uint8_t>(EvidenceFieldId::kPosition))
+                .evidence.identity.sequence == 1);
+    std::filesystem::remove(trace_path);
+}
+
+TEST_CASE("test_replay_contract_hash_is_canonical_hash", "[replay][contract]") {
+    StateQualityContract contract{
+        .contract_id = "fixed-contract",
+        .required_fields = {EvidenceFieldId::kPosition},
+        .max_position_uncertainty_m = 3.0,
+        .required_agents = {"uav-1"},
+    };
+    SnapshotRequestEvent event{
+        .request_id = "request-1",
+        .evaluation_time_ms = 1000.0,
+        .evidence_freeze_ms = 1000,
+        .contract_hash = ComputeContractHash(contract),
+        .participants = {.agent_ids = {"uav-1"}, .membership_revision = 1},
+    };
+    REQUIRE(VerifySnapshotRequestContractBinding(event, contract));
+    auto changed_contract = contract;
+    changed_contract.max_position_uncertainty_m = 3.001;
+    REQUIRE_FALSE(VerifySnapshotRequestContractBinding(event, changed_contract));
 }

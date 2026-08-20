@@ -1,79 +1,77 @@
-# SwarmKit Dissertation Empirical Evaluation & Experimental Program
+# SwarmKit dissertation empirical evaluation
 
-This document presents the complete empirical evaluation program, formal guarantees, baseline comparisons, and reproducibility package for the SwarmKit State Acceptance runtime architecture.
+This page is a compact entry point to the final, frozen state-acceptance campaign. Detailed
+methodology is in `dissertation/final_experiment_protocol.md`; generated values are in
+`results/dissertation/` and summarized in `dissertation/final_results_summary.md`.
 
----
+## Study design
 
-## 1. Executive Summary & Residual Novelty (Table I)
+- Deterministic `SimBackend`, 3 UAVs.
+- 50 independent replicate clusters.
+- 9 scenarios and 100 scored requests per replicate/scenario.
+- 45,000 paired requests per method.
+- Fixed base seed 42.
+- 10,000-draw replicate-cluster bootstrap with analysis seed 123456789.
+- Common accepted-output oracle with 3D `Umax = 3.0 m`.
 
-SwarmKit resolves the fundamental interface ambiguity in distributed multi-UAV software architectures: **telemetry reception is not physical arrival, and raw timestamps are not causal truth**.
+## Final Table II
 
-### Table I: Residual Novelty Comparison
+| Method | Requests | Accepted | FV [95% CI] | Availability [95% CI] | UAR [95% CI] |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| Receive-latest (`B0`) | 45,000 | 44,514 | 20.591% [20.570%, 20.616%] | 98.920% [98.871%, 98.967%] | 20.369% [20.349%, 20.391%] |
+| Timestamp-aligned + age (`B1`) | 45,000 | 39,125 | 23.387% [23.349%, 23.426%] | 86.944% [86.798%, 87.084%] | 20.333% [20.333%, 20.333%] |
+| Proposed (`P`) | 45,000 | 22,981 | 0.000% [0.000%, 0.000%] | 51.069% [50.891%, 51.236%] | 0.000% [0.000%, 0.000%] |
 
-| Work / Category | Quality & Freshness Metadata | Common-Time State | Physical-State Uncertainty | Session & Provenance Acceptance | Application State Contract | Independent Replay of Acceptance |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| ROS 2 / MAVLink / MAVSDK | Yes | Adjacent | Adjacent | Adjacent | No | No |
-| QoC / AoI / WiSwarm | Yes | No/Adjacent | Adjacent | No | Adjacent | No |
-| Decentralized Multi-Robot Estimation | Yes | Yes | Yes | No | No | No |
-| Runtime Assurance / Certified Control | Adjacent | No | Application-specific | Adjacent | Safety-specific | Yes/Adjacent |
-| Recent Multi-Robot / Embodied Frameworks | Adjacent | Adjacent | Yes/Adjacent | Adjacent | Adjacent | No |
-| **SwarmKit Proposed Runtime** | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+The paired `P-B1` FV difference was -23.387 percentage points, with 95% cluster-bootstrap CI
+[-23.426, -23.349] percentage points. No p-value was computed.
 
----
+No false-valid events were observed for `P` in this finite campaign.
 
-## 2. Main Semantic Result: Paired-Trace Matrix Evaluation (Table II)
+## Final Table III
 
-All methods evaluate identical paired traces across 9 fault and operational conditions (normal flight, network delay, packet reordering, packet loss, clock offset & drift, estimator degradation, high-speed vehicle motion, agent crash/restart with delayed old packets, and coordinate frame mismatch).
+| Property | Generated result |
+| :--- | ---: |
+| Deterministic position enclosures evaluated | 68,943 |
+| Observed containment failures | 0 (0.000%) |
+| Persisted replay agreements | 22,981 / 22,981 |
+| Replay disagreements | 0 |
+| Mutation classes rejected | 44 / 44 |
+| Mutated/inconsistent certificate cases rejected | 1,011,164 / 1,011,164 |
+| N=10 end-to-end Release p95 latency | 426.000 µs |
+| N=10 median serialized certificate | 7,744 bytes |
 
-### Table II: Main Semantic Result
+No containment failures were observed among the evaluated enclosures under the configured
+deterministic assumptions. Finite experimental conformance does not prove universal zero failure
+probability.
 
-| Method | False-Valid Rate | Snapshot Availability | Unsafe Acceptance / Request |
-|---|---:|---:|---:|
-| Receive-latest | 36.9% | 100.0% | 36.9% |
-| Timestamp-aligned + age | 29.0% | 88.8% | 25.8% |
-| **Proposed state acceptance** | **11.9%** | **70.7%** | **8.4%** |
+## Release scalability result
 
-#### Key Empirical Observations:
-1. **False-Valid Rate Reduction**: Proposed state acceptance reduces the false-valid rate by **67.7%** compared to receive-latest and **59.0%** compared to timestamp-aligned + age.
-2. **Deterministic Enclosure Soundness**: When assumptions hold, accepted physical enclosures achieve **0.0%** containment failure.
-3. **Availability & Safety Tradeoff**: Unsafe acceptance per request drops from 36.9% to **8.4%** while preserving 70.7% operational availability under adversarial fault conditions.
+The timed operation is exactly
+`RequestSnapshot + BuildCertificate + SerializeCertificate`, with 100 warmups and 1,000 saved
+timed samples for each N.
 
----
+| N | p50 (µs) | p95 (µs) | p99 (µs) | Median certificate bytes |
+| ---: | ---: | ---: | ---: | ---: |
+| 3 | 138.916 | 140.625 | 145.209 | 2,563 |
+| 5 | 220.833 | 225.458 | 233.125 | 4,040 |
+| 10 | 402.625 | 426.000 | 431.667 | 7,744 |
 
-## 3. Soundness, Replay, and Practical Overhead (Table III)
+Latency increased approximately linearly across the tested N=3–10 range on the Apple M3 Pro
+macOS ARM64 host. Target embedded or real-time suitability requires target-hardware benchmarking.
 
-### Table III: Soundness, Replay, and Overhead
+## Reproduction
 
-| Property | Result |
-|---|---:|
-| Accepted deterministic enclosures tested | 1908 |
-| Containment failures | 0 |
-| Runtime / Verifier replay agreement | 100.0% |
-| Tampered certificates rejected | 636 / 636 (100.0%) |
-| p95 snapshot + certificate latency | 0.02 ms |
-| Median serialized certificate size | 344 bytes |
-
-#### Findings:
-- **Deterministic Soundness (Formal Result I)**: 1,908 / 1,908 accepted deterministic position enclosures contained true physical ground truth (0 containment failures).
-- **Independent Replay Equivalence (Formal Result II)**: The standalone `StateAcceptanceVerifier` reconstructed identical decisions from the evidence store for 100% of replayed queries.
-- **Tamper Detection**: All single-field certificate mutations (evaluation time, contract hash, sequence numbers, uncertainty bounds, session IDs) were detected and rejected.
-- **Low Overhead**: Snapshot evaluation and certificate generation take **0.02 ms** (p95), enabling real-time execution (>1 kHz) with a minimal payload overhead of **344 bytes** per snapshot.
-
----
-
-## 4. Reproducing the Experiments
-
-### Build and Run All Semantic & Soundness Unit Tests
 ```bash
-cmake --build --preset mac-debug
-ctest --preset mac-debug --output-on-failure
+cmake --build --preset mac-release
+ctest --preset mac-release --output-on-failure
+./build/mac-release/apps/swarmkit-dissertation-experiment \
+  --runs 50 \
+  --steps-per-scenario 100 \
+  --seed-base 42 \
+  --uav-count 3 \
+  --output-dir results/dissertation
 ```
 
-### Run the Paired-Trace Experiment CLI
-```bash
-./build/mac-debug/apps/swarmkit-dissertation-experiment \
-    --uav-count 3 \
-    --repetitions 100 \
-    --seed 42 \
-    --output benchmarks/results/dissertation_results.json
-```
+Persisted replay reconstructs evidence, session, clock, membership, request-frontier state, and
+certificates from disk and verifies them against the separately supplied fixed canonical
+`StateQualityContract`.

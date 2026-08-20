@@ -83,6 +83,79 @@ std::uint64_t HashSeed(std::uint64_t base, std::size_t rep, const std::string& l
     return h;
 }
 
+const std::vector<std::string>& MutationClassNames() {
+    static const std::vector<std::string> names{
+        "outer_consistency_hash", "evaluation_time_t_star", "evidence_freeze_r_star",
+        "contract_hash", "contract_schema_version", "contract_content_version",
+        "certificate_schema_version", "acceptance_semantics_version", "participant_set",
+        "membership_revision", "accepted_agent_set", "evidence_sequence", "evidence_hash",
+        "agent_session", "source_component", "source_time", "receive_time", "coordinate_frame",
+        "uncertainty_semantics", "observation_uncertainty", "health_predicate",
+        "mission_revision", "gps_quality", "theta_hat", "base_rho", "effective_rho",
+        "max_drift_rate", "clock_model_update_time", "clock_model_version",
+        "clock_incarnation", "clock_domain", "clock_synchronization",
+        "clock_deterministic_bound", "g_minus", "g_plus", "delta_plus",
+        "propagated_uncertainty", "propagation_model_id", "propagation_model_version",
+        "max_horizontal_speed", "max_vertical_speed", "summary_max_clock",
+        "summary_max_elapsed", "summary_max_position_uncertainty",
+    };
+    return names;
+}
+
+void ApplyCertificateMutation(std::size_t index, core::StateAcceptanceCertificate* cert) {
+    if (cert == nullptr || cert->evidence_entries.empty()) return;
+    auto& entry = cert->evidence_entries.front();
+    switch (index) {
+        case 0: cert->certificate_hash.assign(64, '0'); return;
+        case 1: cert->evaluation_time_ms += 1.0; break;
+        case 2: cert->evidence_freeze_ms += 1; break;
+        case 3: cert->contract_hash.assign(64, '1'); break;
+        case 4: ++cert->contract_schema_version; break;
+        case 5: ++cert->contract_content_version; break;
+        case 6: cert->certificate_schema_version = "CERT_V999"; break;
+        case 7: cert->acceptance_semantics_version = "999.0"; break;
+        case 8: cert->participants.agent_ids.push_back("uav-inconsistent"); break;
+        case 9: ++cert->participants.membership_revision; break;
+        case 10: cert->accepted_agents.push_back("uav-inconsistent"); break;
+        case 11: ++entry.sequence; break;
+        case 12: entry.evidence_hash.assign(64, '2'); break;
+        case 13: entry.agent_session_id += "-inconsistent"; break;
+        case 14: entry.source_component += "-inconsistent"; break;
+        case 15: entry.source_time_ms = entry.source_time_ms.value_or(0) + 1; break;
+        case 16: ++entry.receive_time_ms; break;
+        case 17: entry.coordinate_frame = entry.coordinate_frame == core::CoordinateFrame::kLocalNed
+                     ? core::CoordinateFrame::kWgs84 : core::CoordinateFrame::kLocalNed; break;
+        case 18: entry.uncertainty_semantics = core::UncertaintySemantics::kUnknown; break;
+        case 19: entry.observation_uncertainty += 0.25; break;
+        case 20: entry.estimator_healthy = !entry.estimator_healthy; break;
+        case 21: ++entry.mission_revision; break;
+        case 22: entry.gps_quality = core::GpsQuality::kRtkFixed; break;
+        case 23: entry.theta_hat_ms += 0.5; break;
+        case 24: entry.base_rho_ms += 0.5; break;
+        case 25: entry.effective_rho_ms += 0.5; break;
+        case 26: entry.max_drift_rate_ppm += 1.0; break;
+        case 27: ++entry.clock_model_last_update_reference_ms; break;
+        case 28: entry.clock_model_version += "-inconsistent"; break;
+        case 29: entry.agent_incarnation_id += "-inconsistent"; break;
+        case 30: entry.clock_domain = core::ClockDomain::kUnknown; break;
+        case 31: entry.clock_synchronization = core::ClockSynchronization::kUnknown; break;
+        case 32: entry.clock_deterministic_bound = !entry.clock_deterministic_bound; break;
+        case 33: entry.generation_interval.lower_ms -= 0.5; break;
+        case 34: entry.generation_interval.upper_ms += 0.5; break;
+        case 35: entry.conservative_elapsed_ms += 0.5; break;
+        case 36: entry.propagated_uncertainty += 0.25; break;
+        case 37: cert->propagation_model_id += "-inconsistent"; break;
+        case 38: cert->propagation_model_version += "-inconsistent"; break;
+        case 39: cert->max_horizontal_speed_mps += 0.5F; break;
+        case 40: cert->max_vertical_speed_mps += 0.5F; break;
+        case 41: cert->max_clock_uncertainty_ms += 0.5; break;
+        case 42: cert->max_conservative_elapsed_ms += 0.5; break;
+        case 43: cert->max_propagated_position_uncertainty_m += 0.5; break;
+        default: return;
+    }
+    cert->certificate_hash = core::ComputeCertificateHash(*cert);
+}
+
 }  // namespace
 
 std::string ScenarioFaultKindToString(ScenarioFaultKind kind) {
@@ -93,7 +166,7 @@ std::string ScenarioFaultKindToString(ScenarioFaultKind kind) {
         case ScenarioFaultKind::kPacketLoss: return "packet_loss";
         case ScenarioFaultKind::kClockOffsetDrift: return "clock_offset_drift";
         case ScenarioFaultKind::kEstimatorDegradation: return "estimator_degradation";
-        case ScenarioFaultKind::kHighSpeedMotion: return "high_speed_motion";
+        case ScenarioFaultKind::kHighSpeedMotion: return "high_speed_delayed_motion";
         case ScenarioFaultKind::kAgentRestartDelayedPackets: return "agent_restart_delayed_packets";
         case ScenarioFaultKind::kFrameMismatch: return "frame_mismatch";
     }
@@ -127,6 +200,8 @@ OutputValidityBreakdown BaselineEvaluator::EvaluateAcceptedOutputValidity(
     br.session_valid = true;
     br.health_valid = true;
     br.mission_valid = true;
+    br.provenance_valid = true;
+    br.gps_valid = true;
 
     if (!outcome.accepted) {
         br.overall_valid = false;
@@ -176,9 +251,11 @@ OutputValidityBreakdown BaselineEvaluator::EvaluateAcceptedOutputValidity(
             }
         }
 
-        // Health check: Selected evidence health and ground truth health
+        // Health is a predicate over the selected evidence.  Simulator truth is
+        // used independently for the position-error oracle at t*; current truth
+        // health is not an undeclared StateQualityContract predicate.
         if (contract.require_estimator_healthy) {
-            if (!rec.quality.estimator_healthy || !true_state.healthy) {
+            if (!rec.quality.estimator_healthy) {
                 br.health_valid = false;
             }
         }
@@ -200,10 +277,28 @@ OutputValidityBreakdown BaselineEvaluator::EvaluateAcceptedOutputValidity(
                 br.mission_valid = false;
             }
         }
+
+        if (rec.identity.agent_id != agent_id ||
+            rec.identity.field_id != core::EvidenceFieldId::kPosition ||
+            rec.identity.source_component.empty()) {
+            br.provenance_valid = false;
+        }
+
+        if (contract.min_gps_quality != core::GpsQuality::kUnknown) {
+            const auto gps_it = outcome.selected_gps_evidence.find(agent_id);
+            if (gps_it == outcome.selected_gps_evidence.end() ||
+                !std::holds_alternative<core::GpsQuality>(gps_it->second.value) ||
+                static_cast<std::uint8_t>(
+                    std::get<core::GpsQuality>(gps_it->second.value)) <
+                    static_cast<std::uint8_t>(contract.min_gps_quality)) {
+                br.gps_valid = false;
+            }
+        }
     }
 
     br.overall_valid = br.complete && br.spatial_valid && br.frame_valid &&
-                       br.session_valid && br.health_valid && br.mission_valid;
+                       br.session_valid && br.health_valid && br.mission_valid &&
+                       br.provenance_valid && br.gps_valid;
     return br;
 }
 
@@ -367,6 +462,11 @@ MethodEvaluationOutcome BaselineEvaluator::EvaluateProposed(
                         outcome.position_enclosures[agent_id] = pos_it->second.propagated_uncertainty;
                     }
                 }
+                const auto gps_it = it->second.find(
+                    static_cast<std::uint8_t>(core::EvidenceFieldId::kGpsQuality));
+                if (gps_it != it->second.end()) {
+                    outcome.selected_gps_evidence[agent_id] = gps_it->second.evidence;
+                }
             }
         }
 
@@ -424,6 +524,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
     contract.max_vertical_speed_mps = 3.0F;
     contract.propagation_model_id = "linear_bounded_vmax";
     contract.propagation_model_version = "1.0";
+    results.canonical_contract_hash = core::ComputeContractHash(contract);
 
     core::StateAcceptanceEngine engine;
     core::StateAcceptanceVerifier verifier;
@@ -433,6 +534,10 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                         EvaluationMethod::kProposedStateAcceptance}) {
         results.aggregate_method_metrics[static_cast<uint8_t>(method)] = MethodMetrics{.method = method};
     }
+    for (const auto& name : MutationClassNames()) {
+        results.mutation_results.push_back(MutationClassResult{.class_name = name});
+    }
+    results.soundness_metrics.mutation_classes_tested = results.mutation_results.size();
 
     const std::filesystem::path replay_dir = std::filesystem::temp_directory_path() / "swarmkit_replays";
     std::filesystem::create_directories(replay_dir);
@@ -494,6 +599,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                 continue;
             }
             auto fault_backend = std::move(fault_inst_or->backend);
+            auto fault_control = std::move(fault_inst_or->control);
 
             // 3. Arm, Takeoff, and Command Horizontal Motion for all UAVs
             for (std::size_t i = 0; i < config_.agent_ids.size(); ++i) {
@@ -589,6 +695,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
             // Per-run replicate measurements
             ReplicateRecord rep_b0{
                 .replicate_id = run_idx,
+                .base_seed = config_.seed,
                 .motion_seed = motion_seed,
                 .fault_seed = fault_seed,
                 .scenario_id = static_cast<std::uint8_t>(fault_kind),
@@ -596,6 +703,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
             };
             ReplicateRecord rep_b1{
                 .replicate_id = run_idx,
+                .base_seed = config_.seed,
                 .motion_seed = motion_seed,
                 .fault_seed = fault_seed,
                 .scenario_id = static_cast<std::uint8_t>(fault_kind),
@@ -603,11 +711,26 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
             };
             ReplicateRecord rep_p{
                 .replicate_id = run_idx,
+                .base_seed = config_.seed,
                 .motion_seed = motion_seed,
                 .fault_seed = fault_seed,
                 .scenario_id = static_cast<std::uint8_t>(fault_kind),
                 .method = static_cast<std::uint8_t>(EvaluationMethod::kProposedStateAcceptance),
             };
+
+            std::unordered_map<std::string, std::uint64_t> last_delivered_sequence;
+            std::size_t reorder_inversions = 0;
+            std::size_t estimator_degradation_events = 0;
+            std::size_t frame_mismatch_events = 0;
+            std::size_t restart_events = 0;
+            std::size_t obsolete_epoch_packets_injected = 0;
+            std::size_t clock_invalidations = 0;
+            std::size_t clock_reestablishments = 0;
+            std::size_t clock_offset_fault_events = 0;
+            double max_effective_rho_ms = 0.0;
+            double max_truth_speed_mps = 0.0;
+            double max_delayed_age_ms = 0.0;
+            double max_propagated_motion_m = 0.0;
 
             for (std::size_t step = 0; step < config_.steps_per_scenario; ++step) {
                 physical_time_ms += config_.step_dt_ms;
@@ -624,6 +747,12 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
 
                 // Ingest delivered telemetry frames converted to metric LocalNED
                 for (auto& frame : current_delivered) {
+                    const auto prior_sequence = last_delivered_sequence.find(frame.drone_id);
+                    if (prior_sequence != last_delivered_sequence.end() &&
+                        frame.telemetry_sequence < prior_sequence->second) {
+                        ++reorder_inversions;
+                    }
+                    last_delivered_sequence[frame.drone_id] = frame.telemetry_sequence;
                     const double dlat_rad = (frame.lat_deg - sim_config.home_lat_deg) * kDegToRad;
                     const double dlon_rad = (frame.lon_deg - sim_config.home_lon_deg) * kDegToRad;
                     const double north_m = dlat_rad * kEarthRadiusM;
@@ -641,12 +770,14 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                     if (fault_kind == ScenarioFaultKind::kFrameMismatch &&
                         frame.drone_id == config_.agent_ids[0]) {
                         frame.position_frame = core::CoordinateFrame::kWgs84;
+                        ++frame_mismatch_events;
                     }
 
                     if (fault_kind == ScenarioFaultKind::kEstimatorDegradation && step >= 20) {
                         frame.estimator_state = core::EstimatorState::kDegraded;
                         frame.estimator_position_ok = false;
                         frame.estimator_velocity_ok = false;
+                        ++estimator_degradation_events;
                     }
 
                     // For restart scenario: capture genuine E1 frame at step 29
@@ -689,6 +820,8 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
 
                         // Invalidate old clock model for active agent
                         clock_states.erase(restarted_agent);
+                        ++restart_events;
+                        ++clock_invalidations;
                     }
 
                     // Deliver authentic old E1 frame at step 31
@@ -696,6 +829,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                         auto delayed_frame = *saved_old_session_frame;
                         delayed_frame.agent_receive_unix_time_ms = static_cast<std::int64_t>(physical_time_ms);
                         store.InsertFrame(delayed_frame);
+                        ++obsolete_epoch_packets_injected;
 
                         for (const auto& rec : core::DecomposeToEvidence(delayed_frame)) {
                             run_trace.events.push_back(core::EvidenceReceivedEvent{
@@ -720,6 +854,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                             .clock_model_version = "clock-v2",
                         };
                         clock_states[restarted_agent] = new_clk;
+                        ++clock_reestablishments;
 
                         run_trace.events.push_back(core::ClockModelUpdateEvent{
                             .timestamp_ms = static_cast<std::int64_t>(physical_time_ms),
@@ -735,6 +870,11 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                         const double drift_offset = 15.0 + 0.08 * static_cast<double>(step);
                         clock_states[id].offset_estimate_ms = drift_offset;
                         clock_states[id].uncertainty_radius_ms = 15.0;  // exceeds contract 10ms
+                        ++clock_offset_fault_events;
+                        max_effective_rho_ms = std::max(
+                            max_effective_rho_ms,
+                            clock_states[id].ComputeEffectiveUncertainty(
+                                physical_time_ms - drift_offset));
 
                         run_trace.events.push_back(core::ClockModelUpdateEvent{
                             .timestamp_ms = static_cast<std::int64_t>(physical_time_ms),
@@ -746,8 +886,6 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
 
                 // 5. Read Ground-Truth State strictly from SimBackendControl::Truth()
                 std::unordered_map<std::string, GroundTruthState> ground_truth;
-                bool physical_truth_healthy = true;
-
                 for (const auto& agent_id : config_.agent_ids) {
                     auto truth_frame = sim_control->Truth(agent_id);
                     if (truth_frame.has_value()) {
@@ -757,9 +895,11 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                         }
                         ground_truth[agent_id] = ConvertSimTruth(
                             agent_id, *truth_frame, active_sessions[agent_id], healthy);
-                    }
-                    if (!ground_truth[agent_id].healthy) {
-                        physical_truth_healthy = false;
+                        const auto& velocity = ground_truth[agent_id].velocity;
+                        max_truth_speed_mps = std::max(max_truth_speed_mps, std::sqrt(
+                            static_cast<double>(velocity[0]) * velocity[0] +
+                            static_cast<double>(velocity[1]) * velocity[1] +
+                            static_cast<double>(velocity[2]) * velocity[2]));
                     }
                 }
 
@@ -790,7 +930,12 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                 results.latencies_us.push_back(outcome_p.latency_us);
 
                 // Record confusion matrix outcomes fairly using common oracle
-                const bool ground_truth_valid_at_reference = physical_truth_healthy;
+                // Rejection availability is referenced to the existence of a complete
+                // physical truth state, not an undeclared current-estimator-health
+                // predicate. Accepted-output validity is evaluated only by the common
+                // selected-evidence oracle above.
+                const bool ground_truth_valid_at_reference =
+                    ground_truth.size() == contract.required_agents.size();
 
                 auto record_outcome = [&](EvaluationMethod method,
                                          const MethodEvaluationOutcome& outcome,
@@ -830,11 +975,32 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                 record_outcome(EvaluationMethod::kTimestampAlignedAge, outcome_b1, rep_b1);
                 record_outcome(EvaluationMethod::kProposedStateAcceptance, outcome_p, rep_p);
 
+                if (fault_kind == ScenarioFaultKind::kAgentRestartDelayedPackets && step >= 30) {
+                    const auto selected_obsolete = [&](const MethodEvaluationOutcome& outcome) {
+                        const auto it = outcome.selected_position_evidence.find(config_.agent_ids[0]);
+                        return it != outcome.selected_position_evidence.end() &&
+                               it->second.identity.agent_session_id != active_sessions[config_.agent_ids[0]];
+                    };
+                    if (selected_obsolete(outcome_b0)) ++rep_b0.obsolete_epoch_packets_selected;
+                    if (selected_obsolete(outcome_b1)) ++rep_b1.obsolete_epoch_packets_selected;
+                    if (selected_obsolete(outcome_p)) ++rep_p.obsolete_epoch_packets_selected;
+                }
+
                 // Enclosure Containment Soundness
                 if (outcome_p.accepted && outcome_p.certificate.has_value()) {
                     const auto& cert = *outcome_p.certificate;
                     const std::string serialized_cert = core::SerializeCertificate(cert);
                     results.certificate_sizes_bytes.push_back(serialized_cert.size());
+                    for (const auto& entry : cert.evidence_entries) {
+                        max_effective_rho_ms = std::max(max_effective_rho_ms, entry.effective_rho_ms);
+                        max_delayed_age_ms = std::max(max_delayed_age_ms, entry.conservative_elapsed_ms);
+                        if (entry.field == core::EvidenceFieldId::kPosition) {
+                            max_propagated_motion_m = std::max(
+                                max_propagated_motion_m,
+                                std::max(0.0, entry.propagated_uncertainty -
+                                                  entry.observation_uncertainty));
+                        }
+                    }
 
                     for (const auto& [agent_id, enclosure_radius] : outcome_p.position_enclosures) {
                         const auto truth_it = ground_truth.find(agent_id);
@@ -843,6 +1009,9 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                             ++results.soundness_metrics.enclosures_tested;
                             ++rep_p.enclosures_tested;
                             const double err = DistanceMeters(est_it->second, truth_it->second.position);
+                            if (enclosure_radius > 0.0) {
+                                results.containment_ratios.push_back(err / enclosure_radius);
+                            }
                             if (err > enclosure_radius) {
                                 ++results.soundness_metrics.containment_failures;
                                 ++rep_p.containment_failures;
@@ -855,7 +1024,7 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                         .request_id = "req-rep-" + std::to_string(run_idx) + "-step-" + std::to_string(step),
                         .evaluation_time_ms = t_star,
                         .evidence_freeze_ms = r_star,
-                        .contract_hash = contract.contract_id,
+                        .contract_hash = core::ComputeContractHash(contract),
                         .participants = request_ctx.participants,
                         .certificate = cert,
                     });
@@ -863,9 +1032,6 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
             }
 
             sc_metrics.requests += config_.steps_per_scenario;
-            results.replicate_records.push_back(rep_b0);
-            results.replicate_records.push_back(rep_b1);
-            results.replicate_records.push_back(rep_p);
 
             // 7. Persisted Offline Replay Verification (§18-27)
             const std::string trace_file_path = (replay_dir / (run_trace.trace_id + ".jsonl")).string();
@@ -897,85 +1063,38 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                                         .participants = e.participants,
                                     };
 
-                                    auto ver_res = verifier.Verify(
-                                        *e.certificate, replayed_store, contract, replayed_ctx, replayed_clocks);
+                                    const bool contract_bound =
+                                        core::VerifySnapshotRequestContractBinding(e, contract);
+                                    const auto ver_res = contract_bound
+                                        ? verifier.Verify(*e.certificate, replayed_store, contract,
+                                                          replayed_ctx, replayed_clocks)
+                                        : core::VerificationResult{core::VerificationRejection{
+                                              .certificate_id = e.certificate->certificate_id,
+                                              .failures = {{
+                                                  .reason = core::VerificationFailureReason::kContractHashMismatch,
+                                                  .detail = "persisted request contract hash mismatch",
+                                              }},
+                                          }};
                                     if (std::holds_alternative<core::VerifiedAcceptance>(ver_res)) {
                                         ++results.soundness_metrics.verifier_agreements;
                                     }
 
-                                    // Complete 15-Class Mutation Matrix Testing
+                                    // Rehashed semantic mutation matrix plus one outer-hash case.
                                     const auto base_cert = *e.certificate;
-                                    for (int mutation_class = 1; mutation_class <= 15; ++mutation_class) {
+                                    for (std::size_t mutation_class = 0;
+                                         mutation_class < results.mutation_results.size();
+                                         ++mutation_class) {
                                         auto mutated = base_cert;
                                         ++results.soundness_metrics.mutation_cases_tested;
-
-                                        switch (mutation_class) {
-                                            case 1:
-                                                mutated.certificate_hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-                                                break;
-                                            case 2:
-                                                mutated.evaluation_time_ms += 100.0;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 3:
-                                                mutated.contract_hash = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 4:
-                                                mutated.contract_content_version += 1;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 5:
-                                                mutated.acceptance_semantics_version = "3.0";
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 6:
-                                                mutated.evidence_entries[0].sequence += 100;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 7:
-                                                mutated.evidence_entries[0].evidence_hash = "badhashbadhashbadhashbadhashbadhashbadhashbadhashbadhashbadhash";
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 8:
-                                                mutated.evidence_entries[0].agent_session_id = "tampered-session";
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 9:
-                                                mutated.evidence_entries[0].propagated_uncertainty = 0.01;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 10:
-                                                mutated.evidence_entries[0].clock_uncertainty_ms = 0.01;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 11:
-                                                mutated.accepted_agents.push_back("extra-agent");
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 12:
-                                                mutated.evidence_entries[0].source_time_ms =
-                                                    mutated.evidence_entries[0].source_time_ms.value_or(0) + 1000;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 13:
-                                                mutated.evidence_entries[0].source_component = "fake-sensor";
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 14:
-                                                mutated.evidence_entries[0].coordinate_frame = core::CoordinateFrame::kWgs84;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                            case 15:
-                                                mutated.evidence_entries[0].observation_uncertainty = 0.001;
-                                                mutated.certificate_hash = core::ComputeCertificateHash(mutated);
-                                                break;
-                                        }
+                                        auto& mutation_result = results.mutation_results[mutation_class];
+                                        ++mutation_result.instances;
+                                        ApplyCertificateMutation(mutation_class, &mutated);
 
                                         auto mut_res = verifier.Verify(
                                             mutated, replayed_store, contract, replayed_ctx, replayed_clocks);
                                         if (std::holds_alternative<core::VerificationRejection>(mut_res)) {
                                             ++results.soundness_metrics.mutation_cases_rejected;
+                                            ++mutation_result.rejected;
                                         }
                                     }
                                 }
@@ -985,6 +1104,37 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
                 }
                 std::filesystem::remove(trace_file_path);
             }
+
+            const auto decisions = fault_control->Decisions();
+            std::size_t realized_delay_frames = 0;
+            std::size_t realized_packet_losses = 0;
+            std::size_t realized_reorder_events = 0;
+            for (const auto& decision : decisions) {
+                if (!decision.applied) continue;
+                if (decision.kind == "telemetry-delay") ++realized_delay_frames;
+                if (decision.kind == "telemetry-loss") ++realized_packet_losses;
+                if (decision.kind == "telemetry-reorder") ++realized_reorder_events;
+            }
+            for (auto* rep : {&rep_b0, &rep_b1, &rep_p}) {
+                rep->realized_delay_frames = realized_delay_frames;
+                rep->realized_packet_losses = realized_packet_losses;
+                rep->realized_reorder_events = realized_reorder_events;
+                rep->reorder_inversions = reorder_inversions;
+                rep->restart_events = restart_events;
+                rep->obsolete_epoch_packets_injected = obsolete_epoch_packets_injected;
+                rep->estimator_degradation_events = estimator_degradation_events;
+                rep->frame_mismatch_events = frame_mismatch_events;
+                rep->clock_invalidations = clock_invalidations;
+                rep->clock_reestablishments = clock_reestablishments;
+                rep->clock_offset_fault_events = clock_offset_fault_events;
+                rep->max_effective_rho_ms = max_effective_rho_ms;
+                rep->max_truth_speed_mps = max_truth_speed_mps;
+                rep->max_delayed_age_ms = max_delayed_age_ms;
+                rep->max_propagated_motion_m = max_propagated_motion_m;
+            }
+            results.replicate_records.push_back(rep_b0);
+            results.replicate_records.push_back(rep_b1);
+            results.replicate_records.push_back(rep_p);
         }
 
         results.per_scenario_metrics.push_back(sc_metrics);
@@ -992,6 +1142,16 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
 
     // Compute Cluster Bootstrap CIs across replicate IDs (B = 10,000)
     results.bootstrap_results = ComputeClusterBootstrap(results.replicate_records, config_.runs);
+
+    results.soundness_metrics.replay_disagreements =
+        results.soundness_metrics.replayed_decisions -
+        results.soundness_metrics.verifier_agreements;
+    results.soundness_metrics.mutation_classes_rejected =
+        static_cast<std::size_t>(std::count_if(
+            results.mutation_results.begin(), results.mutation_results.end(),
+            [](const MutationClassResult& result) {
+                return result.instances > 0 && result.instances == result.rejected;
+            }));
 
     // Compute Latency Percentiles & Certificate Sizes
     if (!results.latencies_us.empty()) {
@@ -1008,6 +1168,15 @@ ExperimentResults StateAcceptanceExperimentRunner::Run() {
         results.soundness_metrics.median_certificate_size_bytes = sorted_sizes[sorted_sizes.size() / 2];
         results.soundness_metrics.min_certificate_size_bytes = sorted_sizes.front();
         results.soundness_metrics.max_certificate_size_bytes = sorted_sizes.back();
+    }
+
+    if (!results.containment_ratios.empty()) {
+        auto ratios = results.containment_ratios;
+        std::sort(ratios.begin(), ratios.end());
+        results.soundness_metrics.max_containment_ratio = ratios.back();
+        results.soundness_metrics.containment_ratio_p50 = ratios[ratios.size() * 50 / 100];
+        results.soundness_metrics.containment_ratio_p95 = ratios[ratios.size() * 95 / 100];
+        results.soundness_metrics.containment_ratio_p99 = ratios[ratios.size() * 99 / 100];
     }
 
     results.scalability_results = RunScalabilityBenchmark();
@@ -1134,8 +1303,11 @@ std::vector<ScalabilityBenchmarkResult> StateAcceptanceExperimentRunner::RunScal
             store.Insert(id, vel_rec);
         }
 
-        // Warmup iterations
-        for (int w = 0; w < 50; ++w) {
+        constexpr std::size_t kWarmupIterations = 100;
+        constexpr std::size_t kTimedIterations = 1000;
+
+        // Warm up the exact end-to-end operation reported below.
+        for (std::size_t w = 0; w < kWarmupIterations; ++w) {
             auto res = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
             if (std::holds_alternative<core::AcceptedSnapshot>(res)) {
                 auto cert = core::BuildCertificate(std::get<core::AcceptedSnapshot>(res), contract, req_ctx);
@@ -1145,29 +1317,60 @@ std::vector<ScalabilityBenchmarkResult> StateAcceptanceExperimentRunner::RunScal
 
         // Measured iterations
         std::vector<double> latencies;
-        latencies.reserve(500);
-        std::size_t cert_size = 0;
+        std::vector<std::size_t> certificate_sizes;
+        latencies.reserve(kTimedIterations);
+        certificate_sizes.reserve(kTimedIterations);
 
-        for (int iter = 0; iter < 500; ++iter) {
+        for (std::size_t iter = 0; iter < kTimedIterations; ++iter) {
             const auto t0 = std::chrono::steady_clock::now();
             auto res = engine.RequestSnapshot(contract, req_ctx, store, clock_states);
             if (std::holds_alternative<core::AcceptedSnapshot>(res)) {
                 auto cert = core::BuildCertificate(std::get<core::AcceptedSnapshot>(res), contract, req_ctx);
                 std::string ser = core::SerializeCertificate(cert);
-                cert_size = ser.size();
+                certificate_sizes.push_back(ser.size());
             }
             const auto t1 = std::chrono::steady_clock::now();
             latencies.push_back(std::chrono::duration<double, std::micro>(t1 - t0).count());
         }
 
+        const auto raw_latencies = latencies;
+        const auto raw_certificate_sizes = certificate_sizes;
         std::sort(latencies.begin(), latencies.end());
+        std::sort(certificate_sizes.begin(), certificate_sizes.end());
+        const auto percentile_index = [](std::size_t count, double fraction) {
+            return static_cast<std::size_t>(
+                std::floor(fraction * static_cast<double>(count - 1)));
+        };
+        const double mean = std::accumulate(latencies.begin(), latencies.end(), 0.0) /
+                            static_cast<double>(latencies.size());
+        double squared_sum = 0.0;
+        for (const double sample : latencies) {
+            const double residual = sample - mean;
+            squared_sum += residual * residual;
+        }
+        const double stddev = std::sqrt(
+            squared_sum / static_cast<double>(latencies.size() - 1));
 
         ScalabilityBenchmarkResult bench;
         bench.uav_count = n;
-        bench.latency_p50_us = latencies[latencies.size() * 50 / 100];
-        bench.latency_p95_us = latencies[latencies.size() * 95 / 100];
-        bench.latency_p99_us = latencies[latencies.size() * 99 / 100];
-        bench.serialized_certificate_size_bytes = cert_size;
+        bench.warmup_iterations = kWarmupIterations;
+        bench.timed_iterations = latencies.size();
+        bench.latency_mean_us = mean;
+        bench.latency_stddev_us = stddev;
+        bench.latency_min_us = latencies.front();
+        bench.latency_p50_us = latencies[percentile_index(latencies.size(), 0.50)];
+        bench.latency_p90_us = latencies[percentile_index(latencies.size(), 0.90)];
+        bench.latency_p95_us = latencies[percentile_index(latencies.size(), 0.95)];
+        bench.latency_p99_us = latencies[percentile_index(latencies.size(), 0.99)];
+        bench.latency_max_us = latencies.back();
+        bench.certificate_size_min_bytes = certificate_sizes.front();
+        bench.certificate_size_median_bytes =
+            certificate_sizes[percentile_index(certificate_sizes.size(), 0.50)];
+        bench.certificate_size_p95_bytes =
+            certificate_sizes[percentile_index(certificate_sizes.size(), 0.95)];
+        bench.certificate_size_max_bytes = certificate_sizes.back();
+        bench.latency_samples_us = raw_latencies;
+        bench.certificate_size_samples_bytes = raw_certificate_sizes;
 
         scalability_results.push_back(bench);
     }
@@ -1181,9 +1384,9 @@ std::vector<ScalabilityBenchmarkResult> StateAcceptanceExperimentRunner::RunScal
 
 std::string ExperimentResults::FormatTableII() const {
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(1);
+    oss << std::fixed << std::setprecision(3);
     oss << "### Paper Table II: Main Semantic Result\n\n";
-    oss << "| Evaluation Method | Requests | Accepted | False Valid (FV) | Availability | Unsafe per Req (UAR) |\n";
+    oss << "| Evaluation Method | Requests | Accepted | False Valid (FV) [95% CI] | Availability [95% CI] | Unsafe per Req (UAR) [95% CI] |\n";
     oss << "| :--- | :--- | :--- | :--- | :--- | :--- |\n";
 
     for (auto method : {EvaluationMethod::kReceiveLatest,
@@ -1192,14 +1395,37 @@ std::string ExperimentResults::FormatTableII() const {
         const auto it = aggregate_method_metrics.find(static_cast<uint8_t>(method));
         if (it != aggregate_method_metrics.end()) {
             const auto& m = it->second;
+            const ConfidenceInterval* fv = nullptr;
+            const ConfidenceInterval* availability = nullptr;
+            const ConfidenceInterval* uar = nullptr;
+            if (method == EvaluationMethod::kReceiveLatest) {
+                fv = &bootstrap_results.b0_fv;
+                availability = &bootstrap_results.b0_availability;
+                uar = &bootstrap_results.b0_uar;
+            } else if (method == EvaluationMethod::kTimestampAlignedAge) {
+                fv = &bootstrap_results.b1_fv;
+                availability = &bootstrap_results.b1_availability;
+                uar = &bootstrap_results.b1_uar;
+            } else {
+                fv = &bootstrap_results.proposed_fv;
+                availability = &bootstrap_results.proposed_availability;
+                uar = &bootstrap_results.proposed_uar;
+            }
             oss << "| " << std::left << std::setw(28) << EvaluationMethodToString(method)
                 << "| " << std::setw(9) << m.total_requests
                 << "| " << std::setw(9) << m.AcceptedCount()
-                << "| " << std::setw(5) << (m.FalseValidRate() * 100.0) << " % "
-                << "| " << std::setw(5) << (m.Availability() * 100.0) << " % "
-                << "| " << std::setw(5) << (m.UnsafeAcceptancePerRequest() * 100.0) << " % |\n";
+                << "| " << fv->point_estimate * 100.0 << "% ["
+                << fv->lower_95 * 100.0 << "%, " << fv->upper_95 * 100.0 << "%] "
+                << "| " << availability->point_estimate * 100.0 << "% ["
+                << availability->lower_95 * 100.0 << "%, " << availability->upper_95 * 100.0 << "%] "
+                << "| " << uar->point_estimate * 100.0 << "% ["
+                << uar->lower_95 * 100.0 << "%, " << uar->upper_95 * 100.0 << "%] |\n";
         }
     }
+    const auto& delta = bootstrap_results.delta_fv_proposed_vs_b1;
+    oss << "\nPaired ΔFV (P − B1): " << delta.point_estimate * 100.0
+        << " percentage points [95% cluster-bootstrap CI "
+        << delta.lower_95 * 100.0 << ", " << delta.upper_95 * 100.0 << "].\n";
     return oss.str();
 }
 
@@ -1216,16 +1442,18 @@ std::string ExperimentResults::FormatTableIII() const {
     oss << "| Persisted Offline Replay Decisions | " << soundness_metrics.replayed_decisions << " |\n";
     oss << "| Verifier Replay Agreement | " << soundness_metrics.verifier_agreements
         << " (" << std::setprecision(1) << (soundness_metrics.VerifierAgreementRate() * 100.0) << "%) |\n";
-    oss << "| Mutation Classes Tested | " << soundness_metrics.mutation_classes_tested << " |\n";
     oss << "| Mutation Classes Rejected | " << soundness_metrics.mutation_classes_rejected
-        << " (100.0%) |\n";
+        << "/" << soundness_metrics.mutation_classes_tested << " |\n";
     oss << "| Mutation Cases Tested | " << soundness_metrics.mutation_cases_tested << " |\n";
     oss << "| Mutation Cases Rejected | " << soundness_metrics.mutation_cases_rejected
         << " (" << std::setprecision(1) << (soundness_metrics.MutationRejectionRate() * 100.0) << "%) |\n";
-    oss << "| Snapshot Decision Latency (p50) | " << soundness_metrics.latency_p50_us << " µs |\n";
-    oss << "| Snapshot Decision Latency (p95) | " << soundness_metrics.latency_p95_us << " µs |\n";
-    oss << "| Snapshot Decision Latency (p99) | " << soundness_metrics.latency_p99_us << " µs |\n";
-    oss << "| Serialized Certificate Size (median) | " << soundness_metrics.median_certificate_size_bytes << " bytes |\n";
+    const auto n10 = std::find_if(scalability_results.begin(), scalability_results.end(),
+                                  [](const auto& item) { return item.uav_count == 10; });
+    if (n10 != scalability_results.end()) {
+        oss << "| N=10 end-to-end latency p95 | " << n10->latency_p95_us << " µs |\n";
+        oss << "| N=10 median serialized certificate size | "
+            << n10->certificate_size_median_bytes << " bytes |\n";
+    }
 
     return oss.str();
 }
@@ -1234,15 +1462,16 @@ std::string ExperimentResults::FormatScalabilityTable() const {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(1);
     oss << "### Scalability Benchmark Across Swarm Sizes (N in {3, 5, 10})\n\n";
-    oss << "| Swarm Size (N) | Latency p50 (µs) | Latency p95 (µs) | Latency p99 (µs) | Cert Size (bytes) |\n";
-    oss << "| :--- | :--- | :--- | :--- | :--- |\n";
+    oss << "| Swarm Size (N) | Count | Latency p50 (µs) | Latency p95 (µs) | Latency p99 (µs) | Median Cert Size (bytes) |\n";
+    oss << "| :--- | :--- | :--- | :--- | :--- | :--- |\n";
 
     for (const auto& res : scalability_results) {
         oss << "| " << std::right << std::setw(10) << res.uav_count << " UAVs "
+            << "| " << std::setw(8) << res.timed_iterations
             << "| " << std::setw(16) << res.latency_p50_us
             << "| " << std::setw(16) << res.latency_p95_us
             << "| " << std::setw(16) << res.latency_p99_us
-            << "| " << std::setw(17) << res.serialized_certificate_size_bytes
+            << "| " << std::setw(17) << res.certificate_size_median_bytes
             << " |\n";
     }
     return oss.str();
@@ -1274,19 +1503,30 @@ std::string ExperimentResults::FormatPerScenarioTable() const {
 
 std::string ExperimentResults::ToCsvTableII() const {
     std::ostringstream oss;
-    oss << "method,total_requests,accepted_count,false_valid_rate,availability,unsafe_acceptance_per_request\n";
+    oss << "method,requests,accepted,false_accepts,FV,FV_CI_low,FV_CI_high,availability,availability_CI_low,availability_CI_high,UAR,UAR_CI_low,UAR_CI_high\n";
     for (auto method : {EvaluationMethod::kReceiveLatest,
                         EvaluationMethod::kTimestampAlignedAge,
                         EvaluationMethod::kProposedStateAcceptance}) {
         const auto it = aggregate_method_metrics.find(static_cast<uint8_t>(method));
         if (it != aggregate_method_metrics.end()) {
             const auto& m = it->second;
+            const ConfidenceInterval* fv = method == EvaluationMethod::kReceiveLatest
+                ? &bootstrap_results.b0_fv : method == EvaluationMethod::kTimestampAlignedAge
+                ? &bootstrap_results.b1_fv : &bootstrap_results.proposed_fv;
+            const ConfidenceInterval* availability = method == EvaluationMethod::kReceiveLatest
+                ? &bootstrap_results.b0_availability : method == EvaluationMethod::kTimestampAlignedAge
+                ? &bootstrap_results.b1_availability : &bootstrap_results.proposed_availability;
+            const ConfidenceInterval* uar = method == EvaluationMethod::kReceiveLatest
+                ? &bootstrap_results.b0_uar : method == EvaluationMethod::kTimestampAlignedAge
+                ? &bootstrap_results.b1_uar : &bootstrap_results.proposed_uar;
             oss << "\"" << EvaluationMethodToString(method) << "\","
                 << m.total_requests << ","
                 << m.AcceptedCount() << ","
-                << m.FalseValidRate() << ","
-                << m.Availability() << ","
-                << m.UnsafeAcceptancePerRequest() << "\n";
+                << m.false_accepts << ","
+                << fv->point_estimate << "," << fv->lower_95 << "," << fv->upper_95 << ","
+                << availability->point_estimate << "," << availability->lower_95 << ","
+                << availability->upper_95 << "," << uar->point_estimate << ","
+                << uar->lower_95 << "," << uar->upper_95 << "\n";
         }
     }
     return oss.str();
@@ -1294,77 +1534,285 @@ std::string ExperimentResults::ToCsvTableII() const {
 
 std::string ExperimentResults::ToJson() const {
     std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
     oss << "{\n";
-    oss << "  \"total_runs\": " << total_runs << ",\n";
+    oss << "  \"experiment_schema_version\": \"2.0\",\n";
+    oss << "  \"bootstrap_iterations\": " << bootstrap_iterations << ",\n";
+    oss << "  \"bootstrap_seed\": " << bootstrap_seed << ",\n";
+    oss << "  \"replicate_count\": " << total_runs << ",\n";
     oss << "  \"steps_per_scenario\": " << steps_per_scenario << ",\n";
     oss << "  \"seed_base\": " << seed_base << ",\n";
     oss << "  \"agent_count\": " << agent_ids.size() << ",\n";
-    oss << "  \"aggregate_metrics\": [\n";
-
-    bool first = true;
-    for (auto method : {EvaluationMethod::kReceiveLatest,
-                        EvaluationMethod::kTimestampAlignedAge,
-                        EvaluationMethod::kProposedStateAcceptance}) {
-        const auto it = aggregate_method_metrics.find(static_cast<uint8_t>(method));
-        if (it != aggregate_method_metrics.end()) {
-            if (!first) oss << ",\n";
-            first = false;
-            const auto& m = it->second;
-            oss << "    {\n";
-            oss << "      \"method\": \"" << EvaluationMethodToString(method) << "\",\n";
-            oss << "      \"total_requests\": " << m.total_requests << ",\n";
-            oss << "      \"accepted_count\": " << m.AcceptedCount() << ",\n";
-            oss << "      \"true_accepts\": " << m.true_accepts << ",\n";
-            oss << "      \"false_accepts\": " << m.false_accepts << ",\n";
-            oss << "      \"true_rejects\": " << m.true_rejects << ",\n";
-            oss << "      \"false_rejects\": " << m.false_rejects << ",\n";
-            oss << "      \"false_valid_rate\": " << m.FalseValidRate() << ",\n";
-            oss << "      \"availability\": " << m.Availability() << ",\n";
-            oss << "      \"unsafe_acceptance_per_request\": " << m.UnsafeAcceptancePerRequest() << ",\n";
-            oss << "      \"containment_failures\": " << m.containment_failures << ",\n";
-            oss << "      \"containment_failure_rate\": " << m.ContainmentFailureRate() << ",\n";
-            oss << "      \"deterministic_enclosures_tested\": " << m.deterministic_enclosures_tested << "\n";
-            oss << "    }";
-        }
-    }
-    oss << "\n  ],\n";
-
-    oss << "  \"bootstrap_ci\": {\n";
-    oss << "    \"proposed_fv\": {\"point\": " << bootstrap_results.proposed_fv.point_estimate
-        << ", \"lower_95\": " << bootstrap_results.proposed_fv.lower_95
-        << ", \"upper_95\": " << bootstrap_results.proposed_fv.upper_95 << "},\n";
-    oss << "    \"b1_fv\": {\"point\": " << bootstrap_results.b1_fv.point_estimate
-        << ", \"lower_95\": " << bootstrap_results.b1_fv.lower_95
-        << ", \"upper_95\": " << bootstrap_results.b1_fv.upper_95 << "},\n";
-    oss << "    \"delta_fv_proposed_vs_b1\": {\"point\": " << bootstrap_results.delta_fv_proposed_vs_b1.point_estimate
-        << ", \"lower_95\": " << bootstrap_results.delta_fv_proposed_vs_b1.lower_95
-        << ", \"upper_95\": " << bootstrap_results.delta_fv_proposed_vs_b1.upper_95 << "},\n";
-    oss << "    \"proposed_availability\": {\"point\": " << bootstrap_results.proposed_availability.point_estimate
-        << ", \"lower_95\": " << bootstrap_results.proposed_availability.lower_95
-        << ", \"upper_95\": " << bootstrap_results.proposed_availability.upper_95 << "}\n";
+    oss << "  \"methods\": {\n";
+    const auto emit_method = [&](std::string_view key, EvaluationMethod method,
+                                 const ConfidenceInterval& fv,
+                                 const ConfidenceInterval& availability,
+                                 const ConfidenceInterval& uar, bool trailing) {
+        const auto& m = aggregate_method_metrics.at(static_cast<std::uint8_t>(method));
+        oss << "    \"" << key << "\": {\"requests\": " << m.total_requests
+            << ", \"accepted\": " << m.AcceptedCount()
+            << ", \"false_accepts\": " << m.false_accepts
+            << ", \"FV\": " << fv.point_estimate
+            << ", \"FV_CI_low\": " << fv.lower_95
+            << ", \"FV_CI_high\": " << fv.upper_95
+            << ", \"availability\": " << availability.point_estimate
+            << ", \"availability_CI_low\": " << availability.lower_95
+            << ", \"availability_CI_high\": " << availability.upper_95
+            << ", \"UAR\": " << uar.point_estimate
+            << ", \"UAR_CI_low\": " << uar.lower_95
+            << ", \"UAR_CI_high\": " << uar.upper_95 << "}"
+            << (trailing ? "," : "") << "\n";
+    };
+    emit_method("B0", EvaluationMethod::kReceiveLatest, bootstrap_results.b0_fv,
+                bootstrap_results.b0_availability, bootstrap_results.b0_uar, true);
+    emit_method("B1", EvaluationMethod::kTimestampAlignedAge, bootstrap_results.b1_fv,
+                bootstrap_results.b1_availability, bootstrap_results.b1_uar, true);
+    emit_method("P", EvaluationMethod::kProposedStateAcceptance, bootstrap_results.proposed_fv,
+                bootstrap_results.proposed_availability, bootstrap_results.proposed_uar, false);
+    const auto& delta = bootstrap_results.delta_fv_proposed_vs_b1;
+    const double b1_fv = bootstrap_results.b1_fv.point_estimate;
+    const double relative_reduction = b1_fv > 0.0
+        ? (b1_fv - bootstrap_results.proposed_fv.point_estimate) / b1_fv : 0.0;
     oss << "  },\n";
-
-    oss << "  \"soundness_and_replay\": {\n";
-    oss << "    \"enclosures_tested\": " << soundness_metrics.enclosures_tested << ",\n";
-    oss << "    \"containment_failures\": " << soundness_metrics.containment_failures << ",\n";
-    oss << "    \"containment_failure_rate\": " << (soundness_metrics.enclosures_tested > 0 ? static_cast<double>(soundness_metrics.containment_failures) / static_cast<double>(soundness_metrics.enclosures_tested) : 0.0) << ",\n";
-    oss << "    \"replayed_decisions\": " << soundness_metrics.replayed_decisions << ",\n";
-    oss << "    \"verifier_agreements\": " << soundness_metrics.verifier_agreements << ",\n";
-    oss << "    \"verifier_agreement_rate\": " << soundness_metrics.VerifierAgreementRate() << ",\n";
-    oss << "    \"mutation_classes_tested\": " << soundness_metrics.mutation_classes_tested << ",\n";
-    oss << "    \"mutation_classes_rejected\": " << soundness_metrics.mutation_classes_rejected << ",\n";
-    oss << "    \"mutation_cases_tested\": " << soundness_metrics.mutation_cases_tested << ",\n";
-    oss << "    \"mutation_cases_rejected\": " << soundness_metrics.mutation_cases_rejected << ",\n";
-    oss << "    \"mutation_rejection_rate\": " << soundness_metrics.MutationRejectionRate() << ",\n";
-    oss << "    \"latency_p50_us\": " << soundness_metrics.latency_p50_us << ",\n";
-    oss << "    \"latency_p95_us\": " << soundness_metrics.latency_p95_us << ",\n";
-    oss << "    \"latency_p99_us\": " << soundness_metrics.latency_p99_us << ",\n";
-    oss << "    \"median_certificate_size_bytes\": " << soundness_metrics.median_certificate_size_bytes << ",\n";
-    oss << "    \"min_certificate_size_bytes\": " << soundness_metrics.min_certificate_size_bytes << ",\n";
-    oss << "    \"max_certificate_size_bytes\": " << soundness_metrics.max_certificate_size_bytes << "\n";
-    oss << "  }\n";
+    oss << "  \"paired_P_minus_B1\": {\"delta_FV\": " << delta.point_estimate
+        << ", \"CI_low\": " << delta.lower_95 << ", \"CI_high\": "
+        << delta.upper_95 << ", \"descriptive_relative_reduction\": "
+        << relative_reduction << "}\n";
     oss << "}\n";
 
+    return oss.str();
+}
+
+std::string ExperimentResults::ToBootstrapJson() const {
+    return ToJson();
+}
+
+std::string ExperimentResults::ToPerScenarioJson() const {
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
+    oss << "{\n  \"scenarios\": [\n";
+    for (std::size_t i = 0; i < per_scenario_metrics.size(); ++i) {
+        const auto& scenario = per_scenario_metrics[i];
+        oss << "    {\"scenario\": \"" << ScenarioFaultKindToString(scenario.fault_kind)
+            << "\", \"methods\": {";
+        std::size_t method_index = 0;
+        for (const auto method : {EvaluationMethod::kReceiveLatest,
+                                  EvaluationMethod::kTimestampAlignedAge,
+                                  EvaluationMethod::kProposedStateAcceptance}) {
+            const auto& metrics = scenario.metrics_by_method.at(static_cast<std::uint8_t>(method));
+            const char* key = method == EvaluationMethod::kReceiveLatest ? "B0" :
+                              method == EvaluationMethod::kTimestampAlignedAge ? "B1" : "P";
+            if (method_index++ > 0) oss << ", ";
+            oss << "\"" << key << "\": {\"requests\": " << metrics.total_requests
+                << ", \"accepted\": " << metrics.AcceptedCount()
+                << ", \"false_accepts\": " << metrics.false_accepts
+                << ", \"FV\": " << metrics.FalseValidRate()
+                << ", \"availability\": " << metrics.Availability()
+                << ", \"UAR\": " << metrics.UnsafeAcceptancePerRequest() << "}";
+        }
+        oss << "}}" << (i + 1 < per_scenario_metrics.size() ? "," : "") << "\n";
+    }
+    oss << "  ]\n}\n";
+    return oss.str();
+}
+
+std::string ExperimentResults::ToReplicateCsv() const {
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
+    oss << "replicate_id,scenario,method,base_seed,motion_seed,fault_seed,requests,accepted,true_accepts,false_accepts,FV,availability,UAR,enclosures_tested,containment_failures,realized_delay_frames,realized_packet_losses,realized_reorder_events,reorder_inversions,restart_events,obsolete_epoch_packets_injected,obsolete_epoch_packets_selected,estimator_degradation_events,frame_mismatch_events,clock_invalidations,clock_reestablishments,clock_offset_fault_events,max_effective_rho_ms,max_truth_speed_mps,max_delayed_age_ms,max_propagated_motion_m\n";
+    for (const auto& rep : replicate_records) {
+        oss << rep.replicate_id << ","
+            << ScenarioFaultKindToString(static_cast<ScenarioFaultKind>(rep.scenario_id)) << ","
+            << (rep.method == 0 ? "B0" : rep.method == 1 ? "B1" : "P") << ","
+            << rep.base_seed << "," << rep.motion_seed << "," << rep.fault_seed << ","
+            << rep.requests << "," << rep.accepted << "," << rep.true_accepts << ","
+            << rep.false_accepts << "," << rep.FalseValidRate() << ","
+            << rep.Availability() << "," << rep.UnsafeAcceptanceRate() << ","
+            << rep.enclosures_tested << "," << rep.containment_failures << ","
+            << rep.realized_delay_frames << "," << rep.realized_packet_losses << ","
+            << rep.realized_reorder_events << "," << rep.reorder_inversions << ","
+            << rep.restart_events << "," << rep.obsolete_epoch_packets_injected << ","
+            << rep.obsolete_epoch_packets_selected << "," << rep.estimator_degradation_events << ","
+            << rep.frame_mismatch_events << "," << rep.clock_invalidations << ","
+            << rep.clock_reestablishments << "," << rep.clock_offset_fault_events << ","
+            << rep.max_effective_rho_ms << "," << rep.max_truth_speed_mps << ","
+            << rep.max_delayed_age_ms << "," << rep.max_propagated_motion_m << "\n";
+    }
+    return oss.str();
+}
+
+std::string ExperimentResults::ToReplicateDistributionJson() const {
+    struct Totals {
+        std::size_t requests{};
+        std::size_t accepted{};
+        std::size_t false_accepts{};
+    };
+    struct Summary {
+        double mean{};
+        double median{};
+        double stddev{};
+        double minimum{};
+        double maximum{};
+        double q1{};
+        double q3{};
+    };
+    std::array<std::unordered_map<std::size_t, Totals>, 3> totals;
+    for (const auto& record : replicate_records) {
+        auto& total = totals.at(record.method)[record.replicate_id];
+        total.requests += record.requests;
+        total.accepted += record.accepted;
+        total.false_accepts += record.false_accepts;
+    }
+    const auto summarize = [](std::vector<double> values) {
+        Summary summary;
+        if (values.empty()) return summary;
+        std::sort(values.begin(), values.end());
+        const auto quantile = [&](double fraction) {
+            return values[static_cast<std::size_t>(std::floor(
+                fraction * static_cast<double>(values.size() - 1)))];
+        };
+        summary.mean = std::accumulate(values.begin(), values.end(), 0.0) /
+                       static_cast<double>(values.size());
+        summary.median = quantile(0.50);
+        summary.minimum = values.front();
+        summary.maximum = values.back();
+        summary.q1 = quantile(0.25);
+        summary.q3 = quantile(0.75);
+        if (values.size() > 1) {
+            double sum = 0.0;
+            for (const auto value : values) {
+                const auto residual = value - summary.mean;
+                sum += residual * residual;
+            }
+            summary.stddev = std::sqrt(sum / static_cast<double>(values.size() - 1));
+        }
+        return summary;
+    };
+    const auto values_for = [&](std::size_t method, std::string_view metric) {
+        std::vector<double> values;
+        for (std::size_t replicate = 0; replicate < total_runs; ++replicate) {
+            const auto it = totals[method].find(replicate);
+            if (it == totals[method].end()) continue;
+            const auto& value = it->second;
+            if (metric == "FV") {
+                values.push_back(value.accepted > 0
+                    ? static_cast<double>(value.false_accepts) / static_cast<double>(value.accepted) : 0.0);
+            } else if (metric == "availability") {
+                values.push_back(value.requests > 0
+                    ? static_cast<double>(value.accepted) / static_cast<double>(value.requests) : 0.0);
+            } else {
+                values.push_back(value.requests > 0
+                    ? static_cast<double>(value.false_accepts) / static_cast<double>(value.requests) : 0.0);
+            }
+        }
+        return values;
+    };
+    const auto emit_summary = [](std::ostringstream& out, const Summary& summary) {
+        out << "{\"mean\": " << summary.mean << ", \"median\": " << summary.median
+            << ", \"stddev\": " << summary.stddev << ", \"min\": " << summary.minimum
+            << ", \"max\": " << summary.maximum << ", \"Q1\": " << summary.q1
+            << ", \"Q3\": " << summary.q3 << "}";
+    };
+
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10);
+    oss << "{\n  \"replicate_count\": " << total_runs << ",\n  \"methods\": {\n";
+    for (std::size_t method = 0; method < 3; ++method) {
+        const char* key = method == 0 ? "B0" : method == 1 ? "B1" : "P";
+        oss << "    \"" << key << "\": {\"FV\": ";
+        emit_summary(oss, summarize(values_for(method, "FV")));
+        oss << ", \"availability\": ";
+        emit_summary(oss, summarize(values_for(method, "availability")));
+        oss << ", \"UAR\": ";
+        emit_summary(oss, summarize(values_for(method, "UAR")));
+        oss << "}" << (method < 2 ? "," : "") << "\n";
+    }
+    std::vector<double> paired_delta;
+    const auto p_values = values_for(2, "FV");
+    const auto b1_values = values_for(1, "FV");
+    for (std::size_t i = 0; i < std::min(p_values.size(), b1_values.size()); ++i) {
+        paired_delta.push_back(p_values[i] - b1_values[i]);
+    }
+    oss << "  },\n  \"paired_P_minus_B1_delta_FV\": ";
+    emit_summary(oss, summarize(std::move(paired_delta)));
+    oss << "\n}\n";
+    return oss.str();
+}
+
+std::string ExperimentResults::ToReplayJson() const {
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << "{\n  \"persistence_format\": \"JSON-lines\",\n"
+        << "  \"contract_scope\": \"fixed canonical StateQualityContract supplied separately\",\n"
+        << "  \"reconstructed_state\": [\"evidence\", \"session\", \"clock\", \"membership\", \"request_t_star\", \"request_r_star\", \"certificate\"],\n"
+        << "  \"persisted_replay_decisions\": " << soundness_metrics.replayed_decisions << ",\n"
+        << "  \"replay_agreements\": " << soundness_metrics.verifier_agreements << ",\n"
+        << "  \"replay_disagreements\": " << soundness_metrics.replay_disagreements << ",\n"
+        << "  \"replay_agreement_rate\": " << soundness_metrics.VerifierAgreementRate() << "\n}\n";
+    return oss.str();
+}
+
+std::string ExperimentResults::ToMutationJson() const {
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << "{\n  \"mutation_classes_total\": " << soundness_metrics.mutation_classes_tested << ",\n"
+        << "  \"mutation_classes_rejected\": " << soundness_metrics.mutation_classes_rejected << ",\n"
+        << "  \"mutation_cases_total\": " << soundness_metrics.mutation_cases_tested << ",\n"
+        << "  \"mutation_cases_rejected\": " << soundness_metrics.mutation_cases_rejected << ",\n"
+        << "  \"mutation_rejection_rate\": " << soundness_metrics.MutationRejectionRate() << ",\n"
+        << "  \"classes\": [\n";
+    for (std::size_t i = 0; i < mutation_results.size(); ++i) {
+        const auto& item = mutation_results[i];
+        oss << "    {\"class_name\": \"" << item.class_name << "\", \"instances\": "
+            << item.instances << ", \"rejected\": " << item.rejected
+            << ", \"accepted\": " << item.Accepted() << "}"
+            << (i + 1 < mutation_results.size() ? "," : "") << "\n";
+    }
+    oss << "  ]\n}\n";
+    return oss.str();
+}
+
+std::string ExperimentResults::ToScalabilityJson() const {
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << "{\n  \"operation\": \"RequestSnapshot + BuildCertificate + SerializeCertificate\",\n"
+        << "  \"clock\": \"std::chrono::steady_clock\",\n  \"build_type\": \"Release\",\n"
+        << "  \"results\": [\n";
+    for (std::size_t i = 0; i < scalability_results.size(); ++i) {
+        const auto& result = scalability_results[i];
+        oss << "    {\"N\": " << result.uav_count
+            << ", \"warmup_iterations\": " << result.warmup_iterations
+            << ", \"count\": " << result.timed_iterations
+            << ", \"mean_us\": " << result.latency_mean_us
+            << ", \"stddev_us\": " << result.latency_stddev_us
+            << ", \"min_us\": " << result.latency_min_us
+            << ", \"p50_us\": " << result.latency_p50_us
+            << ", \"p90_us\": " << result.latency_p90_us
+            << ", \"p95_us\": " << result.latency_p95_us
+            << ", \"p99_us\": " << result.latency_p99_us
+            << ", \"max_us\": " << result.latency_max_us
+            << ", \"certificate_size_min_bytes\": " << result.certificate_size_min_bytes
+            << ", \"certificate_size_median_bytes\": " << result.certificate_size_median_bytes
+            << ", \"certificate_size_p95_bytes\": " << result.certificate_size_p95_bytes
+            << ", \"certificate_size_max_bytes\": " << result.certificate_size_max_bytes << "}"
+            << (i + 1 < scalability_results.size() ? "," : "") << "\n";
+    }
+    oss << "  ]\n}\n";
+    return oss.str();
+}
+
+std::string ExperimentResults::ToScalabilitySamplesCsv() const {
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << "N,iteration,latency_us,serialized_certificate_bytes\n";
+    for (const auto& result : scalability_results) {
+        const auto count = std::min(result.latency_samples_us.size(),
+                                    result.certificate_size_samples_bytes.size());
+        for (std::size_t i = 0; i < count; ++i) {
+            oss << result.uav_count << "," << i << "," << result.latency_samples_us[i]
+                << "," << result.certificate_size_samples_bytes[i] << "\n";
+        }
+    }
     return oss.str();
 }
 

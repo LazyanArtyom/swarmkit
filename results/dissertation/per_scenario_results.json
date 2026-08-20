@@ -1,119 +1,13 @@
-[
-  {
-    "scenario": "normal",
-    "requests": 5000,
-    "b0_accepted": 5000,
-    "b0_false_valid_rate": 0,
-    "b0_availability": 1,
-    "b1_accepted": 5000,
-    "b1_false_valid_rate": 0,
-    "b1_availability": 1,
-    "proposed_accepted": 4950,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0.99
-  },
-  {
-    "scenario": "network_delay",
-    "requests": 5000,
-    "b0_accepted": 4750,
-    "b0_false_valid_rate": 0,
-    "b0_availability": 0.95,
-    "b1_accepted": 0,
-    "b1_false_valid_rate": 0,
-    "b1_availability": 0,
-    "proposed_accepted": 0,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0
-  },
-  {
-    "scenario": "network_reorder",
-    "requests": 5000,
-    "b0_accepted": 4955,
-    "b0_false_valid_rate": 0,
-    "b0_availability": 0.991,
-    "b1_accepted": 4955,
-    "b1_false_valid_rate": 0,
-    "b1_availability": 0.991,
-    "proposed_accepted": 4950,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0.99
-  },
-  {
-    "scenario": "packet_loss",
-    "requests": 5000,
-    "b0_accepted": 4909,
-    "b0_false_valid_rate": 0.00325932,
-    "b0_availability": 0.9818,
-    "b1_accepted": 4320,
-    "b1_false_valid_rate": 0,
-    "b1_availability": 0.864,
-    "proposed_accepted": 2431,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0.4862
-  },
-  {
-    "scenario": "clock_offset_drift",
-    "requests": 5000,
-    "b0_accepted": 5000,
-    "b0_false_valid_rate": 0,
-    "b0_availability": 1,
-    "b1_accepted": 4950,
-    "b1_false_valid_rate": 0,
-    "b1_availability": 0.99,
-    "proposed_accepted": 0,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0
-  },
-  {
-    "scenario": "estimator_degradation",
-    "requests": 5000,
-    "b0_accepted": 5000,
-    "b0_false_valid_rate": 0.8,
-    "b0_availability": 1,
-    "b1_accepted": 5000,
-    "b1_false_valid_rate": 0.8,
-    "b1_availability": 1,
-    "proposed_accepted": 1000,
-    "proposed_false_valid_rate": 0.05,
-    "proposed_availability": 0.2
-  },
-  {
-    "scenario": "high_speed_motion",
-    "requests": 5000,
-    "b0_accepted": 4900,
-    "b0_false_valid_rate": 0,
-    "b0_availability": 0.98,
-    "b1_accepted": 4900,
-    "b1_false_valid_rate": 0,
-    "b1_availability": 0.98,
-    "proposed_accepted": 4900,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0.98
-  },
-  {
-    "scenario": "agent_restart_delayed_packets",
-    "requests": 5000,
-    "b0_accepted": 5000,
-    "b0_false_valid_rate": 0.03,
-    "b0_availability": 1,
-    "b1_accepted": 5000,
-    "b1_false_valid_rate": 0.03,
-    "b1_availability": 1,
-    "proposed_accepted": 4750,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0.95
-  },
-  {
-    "scenario": "frame_mismatch",
-    "requests": 5000,
-    "b0_accepted": 5000,
-    "b0_false_valid_rate": 1,
-    "b0_availability": 1,
-    "b1_accepted": 5000,
-    "b1_false_valid_rate": 1,
-    "b1_availability": 1,
-    "proposed_accepted": 0,
-    "proposed_false_valid_rate": 0,
-    "proposed_availability": 0
-  }
-]
+{
+  "scenarios": [
+    {"scenario": "normal", "methods": {"B0": {"requests": 5000, "accepted": 5000, "false_accepts": 0, "FV": 0, "availability": 1, "UAR": 0}, "B1": {"requests": 5000, "accepted": 5000, "false_accepts": 0, "FV": 0, "availability": 1, "UAR": 0}, "P": {"requests": 5000, "accepted": 4950, "false_accepts": 0, "FV": 0, "availability": 0.98999999999999999, "UAR": 0}}},
+    {"scenario": "network_delay", "methods": {"B0": {"requests": 5000, "accepted": 4750, "false_accepts": 0, "FV": 0, "availability": 0.94999999999999996, "UAR": 0}, "B1": {"requests": 5000, "accepted": 0, "false_accepts": 0, "FV": 0, "availability": 0, "UAR": 0}, "P": {"requests": 5000, "accepted": 0, "false_accepts": 0, "FV": 0, "availability": 0, "UAR": 0}}},
+    {"scenario": "network_reorder", "methods": {"B0": {"requests": 5000, "accepted": 4955, "false_accepts": 0, "FV": 0, "availability": 0.99099999999999999, "UAR": 0}, "B1": {"requests": 5000, "accepted": 4955, "false_accepts": 0, "FV": 0, "availability": 0.99099999999999999, "UAR": 0}, "P": {"requests": 5000, "accepted": 4950, "false_accepts": 0, "FV": 0, "availability": 0.98999999999999999, "UAR": 0}}},
+    {"scenario": "packet_loss", "methods": {"B0": {"requests": 5000, "accepted": 4909, "false_accepts": 16, "FV": 0.003259319617029945, "availability": 0.98180000000000001, "UAR": 0.0032000000000000002}, "B1": {"requests": 5000, "accepted": 4320, "false_accepts": 0, "FV": 0, "availability": 0.86399999999999999, "UAR": 0}, "P": {"requests": 5000, "accepted": 2431, "false_accepts": 0, "FV": 0, "availability": 0.48620000000000002, "UAR": 0}}},
+    {"scenario": "clock_offset_drift", "methods": {"B0": {"requests": 5000, "accepted": 5000, "false_accepts": 0, "FV": 0, "availability": 1, "UAR": 0}, "B1": {"requests": 5000, "accepted": 4950, "false_accepts": 0, "FV": 0, "availability": 0.98999999999999999, "UAR": 0}, "P": {"requests": 5000, "accepted": 0, "false_accepts": 0, "FV": 0, "availability": 0, "UAR": 0}}},
+    {"scenario": "estimator_degradation", "methods": {"B0": {"requests": 5000, "accepted": 5000, "false_accepts": 4000, "FV": 0.80000000000000004, "availability": 1, "UAR": 0.80000000000000004}, "B1": {"requests": 5000, "accepted": 5000, "false_accepts": 4000, "FV": 0.80000000000000004, "availability": 1, "UAR": 0.80000000000000004}, "P": {"requests": 5000, "accepted": 1000, "false_accepts": 0, "FV": 0, "availability": 0.20000000000000001, "UAR": 0}}},
+    {"scenario": "high_speed_delayed_motion", "methods": {"B0": {"requests": 5000, "accepted": 4900, "false_accepts": 0, "FV": 0, "availability": 0.97999999999999998, "UAR": 0}, "B1": {"requests": 5000, "accepted": 4900, "false_accepts": 0, "FV": 0, "availability": 0.97999999999999998, "UAR": 0}, "P": {"requests": 5000, "accepted": 4900, "false_accepts": 0, "FV": 0, "availability": 0.97999999999999998, "UAR": 0}}},
+    {"scenario": "agent_restart_delayed_packets", "methods": {"B0": {"requests": 5000, "accepted": 5000, "false_accepts": 150, "FV": 0.029999999999999999, "availability": 1, "UAR": 0.029999999999999999}, "B1": {"requests": 5000, "accepted": 5000, "false_accepts": 150, "FV": 0.029999999999999999, "availability": 1, "UAR": 0.029999999999999999}, "P": {"requests": 5000, "accepted": 4750, "false_accepts": 0, "FV": 0, "availability": 0.94999999999999996, "UAR": 0}}},
+    {"scenario": "frame_mismatch", "methods": {"B0": {"requests": 5000, "accepted": 5000, "false_accepts": 5000, "FV": 1, "availability": 1, "UAR": 1}, "B1": {"requests": 5000, "accepted": 5000, "false_accepts": 5000, "FV": 1, "availability": 1, "UAR": 1}, "P": {"requests": 5000, "accepted": 0, "false_accepts": 0, "FV": 0, "availability": 0, "UAR": 0}}}
+  ]
+}

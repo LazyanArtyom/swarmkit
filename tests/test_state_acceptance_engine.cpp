@@ -5,9 +5,12 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "swarmkit/core/state_acceptance_engine.h"
+#include "swarmkit/core/state_acceptance_certificate.h"
 
 using namespace swarmkit::core;
 using Catch::Matchers::WithinAbs;
@@ -119,6 +122,30 @@ SnapshotRequestContext MakeReqCtx(double t_star, std::int64_t r_star = 0, std::v
         .participants = {
             .agent_ids = std::move(agents),
             .membership_revision = 1,
+        },
+    };
+}
+
+EvidenceRecord MakeGpsRecord(EvidenceValue value, std::uint64_t sequence = 1) {
+    return EvidenceRecord{
+        .value = std::move(value),
+        .source_time = {
+            .timestamp_ms = 1000,
+            .clock_domain = ClockDomain::kUnixEpoch,
+            .synchronization = ClockSynchronization::kSynchronized,
+        },
+        .receive_time_ms = 1020,
+        .quality = {
+            .estimator_healthy = true,
+            .estimator_position_ok = true,
+            .estimator_velocity_ok = true,
+        },
+        .identity = {
+            .agent_id = "uav-1",
+            .agent_session_id = "sess-1",
+            .field_id = EvidenceFieldId::kGpsQuality,
+            .sequence = sequence,
+            .source_component = "gps",
         },
     };
 }
@@ -313,7 +340,7 @@ TEST_CASE("StateAcceptanceEngine clock drift expands effective rho (P0.4)", "[ac
 
     auto pos_it = snap.agent_states.at("uav-1").at(static_cast<std::uint8_t>(EvidenceFieldId::kPosition));
     // Effective rho = 2.0 + 100 * 1e-6 * (1000 - 900) = 2.0 + 0.01 = 2.01 ms
-    REQUIRE_THAT(pos_it.clock_uncertainty_ms, WithinAbs(2.01, 1e-6));
+    REQUIRE_THAT(pos_it.clock_evaluation.effective_rho_ms, WithinAbs(2.01, 1e-6));
 }
 
 TEST_CASE("StateAcceptanceEngine rejection on evidence age exceeded", "[acceptance_engine]") {
@@ -552,4 +579,151 @@ TEST_CASE("StateAcceptanceEngine statelessness and deterministic repeatability (
     REQUIRE(snap1.snapshot_id == snap2.snapshot_id);
     REQUIRE(snap1.contract_hash == snap2.contract_hash);
     REQUIRE(snap1.evaluation_time_ms == snap2.evaluation_time_ms);
+}
+
+TEST_CASE("test_engine_min_gps_quality_rejects_below_threshold", "[acceptance_engine][gps]") {
+    StateAcceptanceEngine engine;
+    EvidenceStore store;
+    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
+    store.Insert("uav-1", MakeGpsRecord(GpsQuality::kFix2D));
+
+    auto contract = CreateStandardContract();
+    contract.min_gps_quality = GpsQuality::kFix3D;
+    const auto result = engine.RequestSnapshot(
+        contract, MakeReqCtx(1100.0, 1100), store,
+        CreateStandardClockStates());
+    REQUIRE(std::holds_alternative<StructuredRejection>(result));
+    const auto& rejection = std::get<StructuredRejection>(result);
+    REQUIRE(std::any_of(rejection.failures.begin(), rejection.failures.end(), [](const auto& failure) {
+        return failure.reason == RejectionReason::kGpsQualityInsufficient;
+    }));
+}
+
+TEST_CASE("test_engine_min_gps_quality_accepts_at_threshold", "[acceptance_engine][gps]") {
+    StateAcceptanceEngine engine;
+    EvidenceStore store;
+    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
+    store.Insert("uav-1", MakeGpsRecord(GpsQuality::kFix3D));
+
+    auto contract = CreateStandardContract();
+    contract.min_gps_quality = GpsQuality::kFix3D;
+    const auto result = engine.RequestSnapshot(
+        contract, MakeReqCtx(1100.0, 1100), store,
+        CreateStandardClockStates());
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(result));
+    REQUIRE(std::get<AcceptedSnapshot>(result)
+                .agent_states.at("uav-1")
+                .contains(static_cast<std::uint8_t>(EvidenceFieldId::kGpsQuality)));
+}
+
+TEST_CASE("test_gps_wrong_variant_rejects", "[acceptance_engine][gps]") {
+    StateAcceptanceEngine engine;
+    EvidenceStore store;
+    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
+    store.Insert("uav-1", MakeGpsRecord(true));
+
+    auto contract = CreateStandardContract();
+    contract.min_gps_quality = GpsQuality::kFix3D;
+    const auto result = engine.RequestSnapshot(
+        contract, MakeReqCtx(1100.0, 1100), store,
+        CreateStandardClockStates());
+    REQUIRE(std::holds_alternative<StructuredRejection>(result));
+    const auto& rejection = std::get<StructuredRejection>(result);
+    REQUIRE(std::any_of(rejection.failures.begin(), rejection.failures.end(), [](const auto& failure) {
+        return failure.reason == RejectionReason::kGpsQualityInsufficient;
+    }));
+}
+
+TEST_CASE("test_deterministic_missing_clock_model_rejects", "[acceptance_engine][clock]") {
+    EvidenceStore store;
+    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
+    const auto result = StateAcceptanceEngine{}.RequestSnapshot(
+        CreateStandardContract(), MakeReqCtx(1100.0, 1100), store, {});
+    REQUIRE(std::holds_alternative<StructuredRejection>(result));
+    const auto& rejection = std::get<StructuredRejection>(result);
+    REQUIRE(std::any_of(rejection.failures.begin(), rejection.failures.end(), [](const auto& failure) {
+        return failure.reason == RejectionReason::kMissingClockQuality;
+    }));
+}
+
+TEST_CASE("test_per_sample_uncertainty_does_not_assume_theta_zero",
+          "[acceptance_engine][clock]") {
+    EvidenceStore store;
+    auto frame = CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020);
+    frame.provenance.position.source_time.clock_uncertainty_ms = 0.1;
+    frame.provenance.velocity.source_time.clock_uncertainty_ms = 0.1;
+    store.InsertFrame(frame);
+    auto contract = CreateStandardContract();
+    contract.require_deterministic_bounds = true;
+    const auto result = StateAcceptanceEngine{}.RequestSnapshot(
+        contract, MakeReqCtx(1100.0, 1100), store, {});
+    REQUIRE(std::holds_alternative<StructuredRejection>(result));
+}
+
+TEST_CASE("test_restart_requires_new_incarnation_clock", "[acceptance_engine][clock][restart]") {
+    EvidenceStore store;
+    store.InsertFrame(CreateTestFrame("uav-1", "E2", 2, 1000, 1020));
+    store.SetCurrentSession("uav-1", "E2");
+    auto old_clock = CreateStandardClockStates({"uav-1"}, "E1");
+    REQUIRE(std::holds_alternative<StructuredRejection>(StateAcceptanceEngine{}.RequestSnapshot(
+        CreateStandardContract(), MakeReqCtx(1100.0, 1100), store, old_clock)));
+
+    auto new_clock = CreateStandardClockStates({"uav-1"}, "E2");
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(StateAcceptanceEngine{}.RequestSnapshot(
+        CreateStandardContract(), MakeReqCtx(1100.0, 1100), store, new_clock)));
+}
+
+TEST_CASE("test_equal_gminus_equal_sequence_evidence_id_tiebreak_and_insertion_order",
+          "[acceptance_engine][selector]") {
+    auto frame_a = CreateTestFrame("uav-1", "sess-1", 7, 1000, 1020);
+    auto frame_b = frame_a;
+    frame_a.lat_deg = 1.0;
+    frame_b.lat_deg = 2.0;
+    auto records_a = DecomposeToEvidence(frame_a);
+    auto records_b = DecomposeToEvidence(frame_b);
+    const auto position = [](const auto& records) {
+        return *std::find_if(records.begin(), records.end(), [](const auto& record) {
+            return record.identity.field_id == EvidenceFieldId::kPosition;
+        });
+    };
+    const auto rec_a = position(records_a);
+    const auto rec_b = position(records_b);
+    REQUIRE(ComputeCanonicalEvidenceId(rec_a) != ComputeCanonicalEvidenceId(rec_b));
+    const auto expected = std::max(ComputeCanonicalEvidenceId(rec_a),
+                                   ComputeCanonicalEvidenceId(rec_b));
+
+    auto contract = CreateStandardContract();
+    contract.required_fields = {EvidenceFieldId::kPosition};
+    contract.require_estimator_velocity_ok = false;
+    contract.max_velocity_uncertainty_mps.reset();
+    const auto clocks = CreateStandardClockStates();
+    const auto context = MakeReqCtx(1100.0, 1100);
+    for (const bool reverse : {false, true}) {
+        EvidenceStore store;
+        store.SetCurrentSession("uav-1", "sess-1");
+        store.Insert("uav-1", reverse ? rec_b : rec_a);
+        store.Insert("uav-1", reverse ? rec_a : rec_b);
+        const auto result = StateAcceptanceEngine{}.RequestSnapshot(contract, context, store, clocks);
+        REQUIRE(std::holds_alternative<AcceptedSnapshot>(result));
+        const auto& selected = std::get<AcceptedSnapshot>(result).agent_states.at("uav-1")
+            .at(static_cast<std::uint8_t>(EvidenceFieldId::kPosition)).evidence;
+        REQUIRE(ComputeCanonicalEvidenceId(selected) == expected);
+    }
+}
+
+TEST_CASE("test_3d_speed_bound", "[acceptance_engine][propagation]") {
+    EvidenceStore store;
+    store.InsertFrame(CreateTestFrame("uav-1", "sess-1", 1, 1000, 1020));
+    auto contract = CreateStandardContract();
+    contract.required_fields = {EvidenceFieldId::kPosition};
+    contract.require_estimator_velocity_ok = false;
+    contract.max_velocity_uncertainty_mps.reset();
+    contract.max_horizontal_speed_mps = 4.0F;
+    contract.max_vertical_speed_mps = 3.0F;
+    const auto result = StateAcceptanceEngine{}.RequestSnapshot(
+        contract, MakeReqCtx(1100.0, 1100), store, CreateStandardClockStates());
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(result));
+    const auto& selected = std::get<AcceptedSnapshot>(result).agent_states.at("uav-1")
+        .at(static_cast<std::uint8_t>(EvidenceFieldId::kPosition));
+    REQUIRE_THAT(selected.propagated_uncertainty, WithinAbs(0.2 + 5.0 * 0.102, 1e-6));
 }

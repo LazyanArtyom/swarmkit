@@ -67,6 +67,12 @@ struct SnapshotRequestEvent {
     bool operator==(const SnapshotRequestEvent&) const = default;
 };
 
+/// Verify that a persisted request event and its optional certificate bind the
+/// same canonical fixed contract supplied to offline replay.
+[[nodiscard]] bool VerifySnapshotRequestContractBinding(
+    const SnapshotRequestEvent& event,
+    const StateQualityContract& contract);
+
 /// Discriminated union of all replay trace events.
 using ReplayEvent = std::variant<
     EvidenceReceivedEvent,

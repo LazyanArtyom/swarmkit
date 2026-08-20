@@ -111,6 +111,14 @@ std::string ComputeEvidenceHash(const EvidenceRecord& record) {
     return internal::Sha256Hex(oss.str());
 }
 
+std::string ComputeCanonicalEvidenceId(const EvidenceRecord& record) {
+    return record.identity.agent_id + ":" +
+           std::to_string(static_cast<int>(record.identity.field_id)) + ":" +
+           record.identity.agent_session_id + ":" +
+           std::to_string(record.identity.sequence) + ":" +
+           ComputeEvidenceHash(record);
+}
+
 std::string ComputeCertificateHash(const StateAcceptanceCertificate& cert) {
     std::ostringstream oss;
     oss.imbue(std::locale::classic());
@@ -145,14 +153,24 @@ std::string ComputeCertificateHash(const StateAcceptanceCertificate& cert) {
             << ":" << entry.conservative_elapsed_ms
             << ":" << entry.theta_hat_ms
             << ":" << entry.effective_rho_ms
-            << ":" << entry.clock_uncertainty_ms
+            << ":" << entry.base_rho_ms
+            << ":" << entry.max_drift_rate_ppm
+            << ":" << entry.clock_model_last_update_reference_ms
             << ":" << entry.clock_model_version
+            << ":" << (entry.clock_deterministic_bound ? "1" : "0")
             << ":" << entry.observation_uncertainty
             << ":" << entry.propagated_uncertainty
             << ":" << static_cast<int>(entry.coordinate_frame)
             << ":" << static_cast<int>(entry.uncertainty_semantics)
             << ":" << static_cast<int>(entry.clock_domain)
             << ":" << static_cast<int>(entry.clock_synchronization)
+            << ":";
+        if (entry.gps_quality.has_value()) {
+            oss << static_cast<int>(*entry.gps_quality);
+        } else {
+            oss << "absent";
+        }
+        oss
             << ":" << (entry.estimator_healthy ? "1" : "0")
             << ":" << (entry.estimator_position_ok ? "1" : "0")
             << ":" << (entry.estimator_velocity_ok ? "1" : "0")
@@ -209,7 +227,7 @@ StateAcceptanceCertificate BuildCertificate(
 
     StateAcceptanceCertificate cert;
     cert.certificate_id = "cert-" + snapshot.snapshot_id;
-    cert.certificate_schema_version = "CERT_V3";
+    cert.certificate_schema_version = kCertificateSchemaVersion;
     cert.contract_id = snapshot.contract_id;
     cert.contract_schema_version = contract.schema_version;
     cert.contract_content_version = snapshot.contract_version;
@@ -251,31 +269,26 @@ StateAcceptanceCertificate BuildCertificate(
             entry.source_component = field_state.evidence.identity.source_component;
 
             // Canonical evidence ID.
-            entry.evidence_id =
-                field_state.evidence.identity.agent_id + ":" +
-                std::to_string(static_cast<int>(field_state.evidence.identity.field_id)) + ":" +
-                field_state.evidence.identity.agent_session_id + ":" +
-                std::to_string(field_state.evidence.identity.sequence);
+            entry.evidence_id = ComputeCanonicalEvidenceId(field_state.evidence);
 
-            entry.agent_incarnation_id = field_state.evidence.identity.agent_session_id;
+            entry.agent_incarnation_id =
+                field_state.clock_evaluation.agent_incarnation_id;
             entry.source_time_ms = field_state.evidence.source_time.timestamp_ms;
             entry.receive_time_ms = field_state.evidence.receive_time_ms;
             entry.generation_interval = field_state.generation_interval;
             entry.conservative_elapsed_ms = field_state.conservative_elapsed_ms;
 
-            // Bind clock operands: θ̂ is derived from generation interval.
-            // θ̂ = s - midpoint(g⁻, g⁺) = s - (g⁻+g⁺)/2 ... but more precisely:
-            // We stored clock_uncertainty_ms as the effective ρ used.
-            // Reconstruct θ̂ from s, g⁻, ρ: g⁻ = s - θ̂ - ρ => θ̂ = s - g⁻ - ρ
-            if (field_state.evidence.source_time.timestamp_ms.has_value()) {
-                const double s = static_cast<double>(
-                    *field_state.evidence.source_time.timestamp_ms);
-                entry.theta_hat_ms = s - field_state.generation_interval.lower_ms -
-                                     field_state.clock_uncertainty_ms;
-            }
-            entry.effective_rho_ms = field_state.clock_uncertainty_ms;
-            entry.clock_uncertainty_ms = field_state.clock_uncertainty_ms;
-            entry.clock_model_version = "clock-v1";  // Default.
+            // Bind the exact primitive clock model captured when this evidence
+            // was selected.  Certificate construction must not reverse-engineer
+            // a model from derived intervals.
+            entry.theta_hat_ms = field_state.clock_evaluation.theta_hat_ms;
+            entry.effective_rho_ms = field_state.clock_evaluation.effective_rho_ms;
+            entry.base_rho_ms = field_state.clock_evaluation.base_rho_ms;
+            entry.max_drift_rate_ppm = field_state.clock_evaluation.max_drift_rate_ppm;
+            entry.clock_model_last_update_reference_ms =
+                field_state.clock_evaluation.model_last_update_reference_ms;
+            entry.clock_model_version = field_state.clock_evaluation.model_version;
+            entry.clock_deterministic_bound = field_state.clock_evaluation.deterministic_bound;
 
             entry.observation_uncertainty = field_state.observation_uncertainty;
             entry.propagated_uncertainty = field_state.propagated_uncertainty;
@@ -285,8 +298,12 @@ StateAcceptanceCertificate BuildCertificate(
                 entry.uncertainty_semantics =
                     field_state.evidence.quality.uncertainty->descriptor.semantics;
             }
-            entry.clock_domain = field_state.evidence.source_time.clock_domain;
-            entry.clock_synchronization = field_state.evidence.source_time.synchronization;
+            entry.clock_domain = field_state.clock_evaluation.source_domain;
+            entry.clock_synchronization = field_state.clock_evaluation.synchronization;
+            if (field == EvidenceFieldId::kGpsQuality &&
+                std::holds_alternative<GpsQuality>(field_state.evidence.value)) {
+                entry.gps_quality = std::get<GpsQuality>(field_state.evidence.value);
+            }
 
             entry.estimator_healthy = field_state.evidence.quality.estimator_healthy;
             entry.estimator_position_ok = field_state.evidence.quality.estimator_position_ok;
@@ -297,7 +314,8 @@ StateAcceptanceCertificate BuildCertificate(
 
             entry.evidence_hash = ComputeEvidenceHash(field_state.evidence);
 
-            max_clock_unc = std::max(max_clock_unc, field_state.clock_uncertainty_ms);
+            max_clock_unc = std::max(
+                max_clock_unc, field_state.clock_evaluation.effective_rho_ms);
             max_elapsed = std::max(max_elapsed, field_state.conservative_elapsed_ms);
 
             if (field == EvidenceFieldId::kPosition) {
@@ -342,7 +360,7 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
     oss.imbue(std::locale::classic());
     oss << std::setprecision(std::numeric_limits<double>::max_digits10);
 
-    oss << "CERT_V3\n";
+    oss << kCertificateSchemaVersion << "\n";
     oss << cert.certificate_id << "\n";
     oss << cert.certificate_schema_version << "\n";
     oss << cert.contract_id << "\n";
@@ -391,14 +409,18 @@ std::string SerializeCertificate(const StateAcceptanceCertificate& cert) {
         oss << e.conservative_elapsed_ms << "\n";
         oss << e.theta_hat_ms << "\n";
         oss << e.effective_rho_ms << "\n";
-        oss << e.clock_uncertainty_ms << "\n";
+        oss << e.base_rho_ms << "\n";
+        oss << e.max_drift_rate_ppm << "\n";
+        oss << e.clock_model_last_update_reference_ms << "\n";
         oss << (e.clock_model_version.empty() ? "-" : e.clock_model_version) << "\n";
+        oss << (e.clock_deterministic_bound ? 1 : 0) << "\n";
         oss << e.observation_uncertainty << "\n";
         oss << e.propagated_uncertainty << "\n";
         oss << static_cast<int>(e.coordinate_frame) << "\n";
         oss << static_cast<int>(e.uncertainty_semantics) << "\n";
         oss << static_cast<int>(e.clock_domain) << "\n";
         oss << static_cast<int>(e.clock_synchronization) << "\n";
+        oss << (e.gps_quality.has_value() ? static_cast<int>(*e.gps_quality) : -1) << "\n";
         oss << (e.estimator_healthy ? 1 : 0) << "\n";
         oss << (e.estimator_position_ok ? 1 : 0) << "\n";
         oss << (e.estimator_velocity_ok ? 1 : 0) << "\n";
@@ -417,12 +439,12 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
     std::string header;
     if (!(iss >> header)) return std::nullopt;
 
-    if (header != "CERT_V1" && header != "CERT_V2" && header != "CERT_V3") return std::nullopt;
+    if (header != kCertificateSchemaVersion) return std::nullopt;
 
     StateAcceptanceCertificate cert;
 
-    if (header == "CERT_V3") {
-        cert.certificate_schema_version = "CERT_V3";
+    if (header == kCertificateSchemaVersion) {
+        cert.certificate_schema_version = kCertificateSchemaVersion;
         if (!(iss >> cert.certificate_id
                   >> cert.certificate_schema_version
                   >> cert.contract_id
@@ -464,7 +486,8 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
             std::int64_t src_time = -1;
             std::string sess, src_comp, eid, incarnation, clk_model_ver;
             int frame_int = 0, unc_sem_int = 0, clk_dom_int = 0, clk_sync_int = 0;
-            int est_h = 0, est_pos = 0, est_vel = 0;
+            int gps_quality_int = -1;
+            int clock_deterministic = 0, est_h = 0, est_pos = 0, est_vel = 0;
             std::string mission_id_str;
             std::uint64_t mission_rev = 0;
 
@@ -473,11 +496,14 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
                       >> e.receive_time_ms
                       >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
                       >> e.conservative_elapsed_ms
-                      >> e.theta_hat_ms >> e.effective_rho_ms >> e.clock_uncertainty_ms
-                      >> clk_model_ver
+                      >> e.theta_hat_ms >> e.effective_rho_ms >> e.base_rho_ms
+                      >> e.max_drift_rate_ppm
+                      >> e.clock_model_last_update_reference_ms
+                      >> clk_model_ver >> clock_deterministic
                       >> e.observation_uncertainty >> e.propagated_uncertainty
                       >> frame_int >> unc_sem_int >> clk_dom_int >> clk_sync_int
-                      >> est_h >> est_pos >> est_vel >> mission_id_str >> mission_rev
+                      >> gps_quality_int >> est_h >> est_pos >> est_vel
+                      >> mission_id_str >> mission_rev
                       >> e.evidence_hash)) {
                 return std::nullopt;
             }
@@ -491,90 +517,19 @@ std::optional<StateAcceptanceCertificate> DeserializeCertificate(std::string_vie
                 e.source_time_ms = src_time;
             }
             e.clock_model_version = (clk_model_ver == "-") ? "" : clk_model_ver;
+            e.clock_deterministic_bound = (clock_deterministic != 0);
             e.coordinate_frame = static_cast<CoordinateFrame>(frame_int);
             e.uncertainty_semantics = static_cast<UncertaintySemantics>(unc_sem_int);
             e.clock_domain = static_cast<ClockDomain>(clk_dom_int);
             e.clock_synchronization = static_cast<ClockSynchronization>(clk_sync_int);
+            if (gps_quality_int >= 0) {
+                e.gps_quality = static_cast<GpsQuality>(gps_quality_int);
+            }
             e.estimator_healthy = (est_h != 0);
             e.estimator_position_ok = (est_pos != 0);
             e.estimator_velocity_ok = (est_vel != 0);
             e.mission_id = (mission_id_str == "-") ? "" : mission_id_str;
             e.mission_revision = mission_rev;
-        }
-    } else {
-        // Legacy CERT_V1/V2 deserialization.
-        if (!(iss >> cert.certificate_id >> cert.contract_id
-                  >> cert.contract_schema_version >> cert.contract_content_version
-                  >> cert.contract_hash >> cert.evaluation_time_ms
-                  >> cert.max_clock_uncertainty_ms >> cert.max_conservative_elapsed_ms
-                  >> cert.max_propagated_position_uncertainty_m
-                  >> cert.max_propagated_velocity_uncertainty_mps
-                  >> cert.propagation_model_id >> cert.propagation_model_version
-                  >> cert.max_horizontal_speed_mps >> cert.max_vertical_speed_mps
-                  >> cert.acceptance_semantics_version >> cert.produced_at_ms
-                  >> cert.certificate_hash)) {
-            return std::nullopt;
-        }
-
-        std::size_t num_agents = 0;
-        if (!(iss >> num_agents)) return std::nullopt;
-        cert.accepted_agents.resize(num_agents);
-        for (std::size_t i = 0; i < num_agents; ++i) {
-            if (!(iss >> cert.accepted_agents[i])) return std::nullopt;
-        }
-
-        std::size_t num_entries = 0;
-        if (!(iss >> num_entries)) return std::nullopt;
-        cert.evidence_entries.resize(num_entries);
-        for (std::size_t i = 0; i < num_entries; ++i) {
-            auto& e = cert.evidence_entries[i];
-            int field_int = 0;
-            std::int64_t src_time = -1;
-            std::string sess, src_comp;
-
-            if (header == "CERT_V2") {
-                int frame_int = 0, unc_sem_int = 0, clk_dom_int = 0, clk_sync_int = 0;
-                int est_h = 0, est_pos = 0, est_vel = 0;
-                std::string mission_id_str;
-                std::uint64_t mission_rev = 0;
-
-                if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
-                          >> src_comp >> src_time
-                          >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
-                          >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
-                          >> e.observation_uncertainty >> e.propagated_uncertainty
-                          >> frame_int >> unc_sem_int >> clk_dom_int >> clk_sync_int
-                          >> est_h >> est_pos >> est_vel >> mission_id_str >> mission_rev
-                          >> e.evidence_hash)) {
-                    return std::nullopt;
-                }
-
-                e.coordinate_frame = static_cast<CoordinateFrame>(frame_int);
-                e.uncertainty_semantics = static_cast<UncertaintySemantics>(unc_sem_int);
-                e.clock_domain = static_cast<ClockDomain>(clk_dom_int);
-                e.clock_synchronization = static_cast<ClockSynchronization>(clk_sync_int);
-                e.estimator_healthy = (est_h != 0);
-                e.estimator_position_ok = (est_pos != 0);
-                e.estimator_velocity_ok = (est_vel != 0);
-                e.mission_id = (mission_id_str == "-") ? "" : mission_id_str;
-                e.mission_revision = mission_rev;
-            } else {
-                if (!(iss >> e.agent_id >> field_int >> e.sequence >> sess
-                          >> src_comp >> src_time
-                          >> e.generation_interval.lower_ms >> e.generation_interval.upper_ms
-                          >> e.conservative_elapsed_ms >> e.clock_uncertainty_ms
-                          >> e.observation_uncertainty >> e.propagated_uncertainty
-                          >> e.evidence_hash)) {
-                    return std::nullopt;
-                }
-            }
-
-            e.field = static_cast<EvidenceFieldId>(field_int);
-            e.agent_session_id = (sess == "-") ? "" : sess;
-            e.source_component = (src_comp == "-") ? "" : src_comp;
-            if (src_time >= 0) {
-                e.source_time_ms = src_time;
-            }
         }
     }
 

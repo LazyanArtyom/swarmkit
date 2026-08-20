@@ -38,7 +38,7 @@ The state acceptance plane provides deterministic common-time guarantees:
 - deterministic uncertainty propagation bounding position error across elapsed time;
 - state-quality contracts with explicit predicates (freshness, clock error, health, coordinate frames, session epochs);
 - no-silent-downgrade evaluation producing structured rejections or accepted snapshots;
-- tamper-evident cryptographic state-acceptance certificates;
+- content-bound state-acceptance certificates with canonical SHA-256 consistency hashes;
 - standalone independent verifier for offline audit and replay verification.
 
 ### 3. Message Plane

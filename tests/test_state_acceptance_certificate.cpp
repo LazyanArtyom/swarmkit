@@ -51,7 +51,17 @@ AcceptedSnapshot CreateMockSnapshot() {
         .conservative_elapsed_ms = 102.0,
         .observation_uncertainty = 0.2,
         .propagated_uncertainty = 1.22,
-        .clock_uncertainty_ms = 2.0,
+        .clock_evaluation = {
+            .theta_hat_ms = 0.0,
+            .base_rho_ms = 2.0,
+            .effective_rho_ms = 2.0,
+            .model_last_update_reference_ms = 800,
+            .model_version = "clock-v1",
+            .agent_incarnation_id = "sess-1",
+            .source_domain = ClockDomain::kUnixEpoch,
+            .synchronization = ClockSynchronization::kSynchronized,
+            .deterministic_bound = true,
+        },
     };
 
     // uav-2 position
@@ -73,7 +83,17 @@ AcceptedSnapshot CreateMockSnapshot() {
         .conservative_elapsed_ms = 93.0,
         .observation_uncertainty = 0.3,
         .propagated_uncertainty = 1.23,
-        .clock_uncertainty_ms = 3.0,
+        .clock_evaluation = {
+            .theta_hat_ms = 0.0,
+            .base_rho_ms = 3.0,
+            .effective_rho_ms = 3.0,
+            .model_last_update_reference_ms = 800,
+            .model_version = "clock-v2",
+            .agent_incarnation_id = "sess-2",
+            .source_domain = ClockDomain::kUnixEpoch,
+            .synchronization = ClockSynchronization::kSynchronized,
+            .deterministic_bound = true,
+        },
     };
 
     return snap;
@@ -141,6 +161,16 @@ TEST_CASE("StateAcceptanceCertificate construction and hash integrity", "[certif
     SECTION("Integrity verification succeeds on untampered certificate") {
         REQUIRE(VerifyCertificateIntegrity(cert));
     }
+}
+
+TEST_CASE("test_certificate_binds_actual_clock_model_version", "[certificate][clock]") {
+    const auto cert = BuildCertificate(
+        CreateMockSnapshot(), CreateMockContract(), CreateMockReqCtx());
+    REQUIRE(cert.evidence_entries.size() == 2);
+    REQUIRE(cert.evidence_entries[0].clock_model_version == "clock-v1");
+    REQUIRE(cert.evidence_entries[0].agent_incarnation_id == "sess-1");
+    REQUIRE(cert.evidence_entries[1].clock_model_version == "clock-v2");
+    REQUIRE(cert.evidence_entries[1].agent_incarnation_id == "sess-2");
 }
 
 TEST_CASE("StateAcceptanceCertificate tamper detection", "[certificate]") {

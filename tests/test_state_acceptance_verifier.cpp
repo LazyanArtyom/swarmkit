@@ -4,6 +4,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
+
 #include "swarmkit/core/state_acceptance_certificate.h"
 #include "swarmkit/core/state_acceptance_engine.h"
 #include "swarmkit/core/state_acceptance_verifier.h"
@@ -223,7 +225,7 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
 
     SECTION("10. Tampered clock bound rho") {
         auto tampered = cert;
-        tampered.evidence_entries[0].clock_uncertainty_ms = 0.001;
+        tampered.evidence_entries[0].base_rho_ms = 0.001;
         tampered.certificate_hash = ComputeCertificateHash(tampered);
         auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
@@ -268,6 +270,136 @@ TEST_CASE("StateAcceptanceVerifier rejection on certificate tampering (Expanded 
         tampered.certificate_hash = ComputeCertificateHash(tampered);
         auto res = verifier.Verify(tampered, store, contract, req_ctx, clock_states);
         REQUIRE(std::holds_alternative<VerificationRejection>(res));
+    }
+
+    const auto require_semantic_rejection = [&](StateAcceptanceCertificate mutated) {
+        mutated.certificate_hash = ComputeCertificateHash(mutated);
+        const auto result = verifier.Verify(mutated, store, contract, req_ctx, clock_states);
+        REQUIRE(std::holds_alternative<VerificationRejection>(result));
+    };
+
+    SECTION("16. Rehashed r-star mutation") {
+        auto mutated = cert; ++mutated.evidence_freeze_ms; require_semantic_rejection(mutated);
+    }
+    SECTION("17. Rehashed participant-set mutation") {
+        auto mutated = cert; mutated.participants.agent_ids.push_back("uav-3");
+        require_semantic_rejection(mutated);
+    }
+    SECTION("18. Rehashed membership-revision mutation") {
+        auto mutated = cert; ++mutated.participants.membership_revision;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("19. Rehashed theta-hat mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].theta_hat_ms += 0.5;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("20. Rehashed effective-rho mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].effective_rho_ms += 0.5;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("21. Rehashed drift-rate mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].max_drift_rate_ppm += 1.0;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("22. Rehashed clock-update-time mutation") {
+        auto mutated = cert; ++mutated.evidence_entries[0].clock_model_last_update_reference_ms;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("23. Rehashed clock-model-version mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].clock_model_version = "clock-v999";
+        require_semantic_rejection(mutated);
+    }
+    SECTION("24. Rehashed clock-incarnation mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].agent_incarnation_id = "wrong-incarnation";
+        require_semantic_rejection(mutated);
+    }
+    SECTION("25. Rehashed g-minus mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].generation_interval.lower_ms -= 0.5;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("26. Rehashed g-plus mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].generation_interval.upper_ms += 0.5;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("27. Rehashed Delta-plus mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].conservative_elapsed_ms += 0.5;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("28. Rehashed propagation-model-id mutation") {
+        auto mutated = cert; mutated.propagation_model_id = "wrong-model";
+        require_semantic_rejection(mutated);
+    }
+    SECTION("29. Rehashed propagation-model-version mutation") {
+        auto mutated = cert; mutated.propagation_model_version = "999";
+        require_semantic_rejection(mutated);
+    }
+    SECTION("30. Rehashed horizontal-speed mutation") {
+        auto mutated = cert; mutated.max_horizontal_speed_mps += 0.5F;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("31. Rehashed vertical-speed mutation") {
+        auto mutated = cert; mutated.max_vertical_speed_mps += 0.5F;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("32. Rehashed certificate-schema mutation") {
+        auto mutated = cert; mutated.certificate_schema_version = "CERT_V999";
+        require_semantic_rejection(mutated);
+    }
+    SECTION("33. Rehashed health-predicate mutation") {
+        auto mutated = cert; mutated.evidence_entries[0].estimator_position_ok = false;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("34. Rehashed mission-revision mutation") {
+        auto mutated = cert; ++mutated.evidence_entries[0].mission_revision;
+        require_semantic_rejection(mutated);
+    }
+    SECTION("35. Rehashed GPS-claim mutation on non-GPS evidence") {
+        auto mutated = cert; mutated.evidence_entries[0].gps_quality = GpsQuality::kRtkFixed;
+        require_semantic_rejection(mutated);
+    }
+}
+
+TEST_CASE("test_verifier_gps_predicate", "[verifier][gps]") {
+    auto frame = CreateTestFrame("uav-1", "sess-1", 10, 1000);
+    frame.validity.gps = true;
+    frame.gps_quality = GpsQuality::kRtkFixed;
+    frame.provenance.vehicle_state.source_time = frame.provenance.position.source_time;
+    frame.provenance.vehicle_state.source = "gps-receiver";
+    EvidenceStore store;
+    store.InsertFrame(frame);
+    auto contract = CreateTestContract();
+    contract.required_agents = {"uav-1"};
+    contract.min_gps_quality = GpsQuality::kRtkFloat;
+    auto clocks = CreateStandardClockStates();
+    clocks.erase("uav-2");
+    auto context = CreateTestReqCtx();
+    context.participants.agent_ids = {"uav-1"};
+    const auto decision = StateAcceptanceEngine{}.RequestSnapshot(contract, context, store, clocks);
+    REQUIRE(std::holds_alternative<AcceptedSnapshot>(decision));
+    const auto certificate = BuildCertificate(std::get<AcceptedSnapshot>(decision), contract, context);
+    REQUIRE(std::holds_alternative<VerifiedAcceptance>(
+        StateAcceptanceVerifier{}.Verify(certificate, store, contract, context, clocks)));
+
+    SECTION("rehashed GPS claim is rejected independently") {
+        auto mutated = certificate;
+        const auto gps_entry = std::find_if(mutated.evidence_entries.begin(),
+            mutated.evidence_entries.end(), [](const auto& entry) {
+                return entry.field == EvidenceFieldId::kGpsQuality;
+            });
+        REQUIRE(gps_entry != mutated.evidence_entries.end());
+        gps_entry->gps_quality = GpsQuality::kNoFix;
+        mutated.certificate_hash = ComputeCertificateHash(mutated);
+        REQUIRE(std::holds_alternative<VerificationRejection>(
+            StateAcceptanceVerifier{}.Verify(mutated, store, contract, context, clocks)));
+    }
+
+    SECTION("below-minimum GPS evidence cannot produce a certificate") {
+        auto below = frame;
+        below.gps_quality = GpsQuality::kFix3D;
+        EvidenceStore below_store;
+        below_store.InsertFrame(below);
+        REQUIRE(std::holds_alternative<StructuredRejection>(
+            StateAcceptanceEngine{}.RequestSnapshot(contract, context, below_store, clocks)));
     }
 }
 

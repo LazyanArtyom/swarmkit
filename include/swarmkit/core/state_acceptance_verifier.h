@@ -20,8 +20,10 @@ namespace swarmkit::core {
 
 /// Reason why the verifier rejected a certificate.
 enum class VerificationFailureReason : std::uint8_t {
-    /// h_K does not match recomputed hash (tampered certificate).
+    /// h_K does not match the recomputed consistency hash.
     kCertificateHashMismatch,
+    /// Certificate schema version is unsupported.
+    kCertificateSchemaMismatch,
     /// h_C in certificate does not match the provided contract.
     kContractHashMismatch,
     /// Contract version mismatch between certificate and provided contract.
@@ -36,6 +38,10 @@ enum class VerificationFailureReason : std::uint8_t {
     kSessionMismatch,
     /// Common evaluation time mismatch.
     kEvaluationTimeMismatch,
+    /// Resolved participant set or membership revision mismatch.
+    kMembershipMismatch,
+    /// Propagation model, version, or declared speed assumption mismatch.
+    kModelMismatch,
     /// Clock uncertainty / interval reconstruction mismatch.
     kClockMismatch,
     /// Propagated uncertainty mismatch.

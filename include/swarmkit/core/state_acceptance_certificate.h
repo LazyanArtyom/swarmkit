@@ -7,7 +7,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -16,6 +18,9 @@
 #include "swarmkit/core/state_acceptance_engine.h"
 
 namespace swarmkit::core {
+
+inline constexpr char kCertificateSchemaVersion[] = "CERT_V3";
+inline constexpr char kAcceptanceSemanticsVersion[] = "2.0";
 
 /// Per-field evidence summary in a certificate (§14 item E).
 struct CertificateEvidenceEntry {
@@ -49,11 +54,20 @@ struct CertificateEvidenceEntry {
     /// Effective clock uncertainty ρ_eff used (including drift budget).
     double effective_rho_ms{};
 
-    /// Base clock uncertainty ρ_sync.
-    double clock_uncertainty_ms{};
+    /// Base synchronization uncertainty ρ_sync.
+    double base_rho_ms{};
+
+    /// Maximum drift-rate bound used to expand ρ_sync (ppm).
+    double max_drift_rate_ppm{};
+
+    /// Reference-domain time at which the clock model was last updated.
+    std::int64_t clock_model_last_update_reference_ms{};
 
     /// Clock model version identifier.
     std::string clock_model_version;
+
+    /// Whether the selected clock model carries deterministic-bound semantics.
+    bool clock_deterministic_bound{false};
 
     /// Observation-time uncertainty e.
     double observation_uncertainty{};
@@ -72,6 +86,9 @@ struct CertificateEvidenceEntry {
 
     /// Clock synchronization state.
     ClockSynchronization clock_synchronization{ClockSynchronization::kUnknown};
+
+    /// GPS quality carried by GPS evidence. Absent for non-GPS fields.
+    std::optional<GpsQuality> gps_quality;
 
     /// Estimator health flags.
     bool estimator_healthy{false};
@@ -100,7 +117,7 @@ struct StateAcceptanceCertificate {
     std::string certificate_id;
 
     // -- Schema version for deterministic replay --
-    std::string certificate_schema_version{"CERT_V3"};
+    std::string certificate_schema_version{kCertificateSchemaVersion};
 
     // -- h_C: Contract binding --
     std::string contract_id;
@@ -138,7 +155,7 @@ struct StateAcceptanceCertificate {
     ParticipantSnapshot participants;
 
     // -- Acceptance semantics version --
-    std::string acceptance_semantics_version{"2.0"};
+    std::string acceptance_semantics_version{kAcceptanceSemanticsVersion};
 
     // -- Production timestamp (runtime reference clock) --
     std::int64_t produced_at_ms{};
@@ -164,6 +181,11 @@ struct StateAcceptanceCertificate {
 
 /// Compute the canonical SHA-256 hash of an individual EvidenceRecord (P1.1).
 [[nodiscard]] std::string ComputeEvidenceHash(
+    const EvidenceRecord& record);
+
+/// Canonical total-order identifier used as the final selector tie-break.
+/// A content-hash suffix makes reused sequence identities deterministic.
+[[nodiscard]] std::string ComputeCanonicalEvidenceId(
     const EvidenceRecord& record);
 
 /// Compute the canonical hash h_K for a certificate.

@@ -7,6 +7,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <algorithm>
 #include <chrono>
 
 #include "swarmkit/agent/sim_backend.h"
@@ -17,6 +18,145 @@ using namespace swarmkit;
 using namespace swarmkit::experiment;
 using Catch::Approx;
 using Catch::Matchers::WithinAbs;
+
+namespace {
+
+core::EvidenceRecord OraclePositionRecord() {
+    return core::EvidenceRecord{
+        .value = std::array<double, 3>{1.0, 2.0, 3.0},
+        .source_time = {.timestamp_ms = 900},
+        .receive_time_ms = 950,
+        .quality = {
+            .estimator_healthy = true,
+            .estimator_position_ok = true,
+            .estimator_velocity_ok = true,
+        },
+        .identity = {
+            .agent_id = "uav-1",
+            .agent_session_id = "session-current",
+            .field_id = core::EvidenceFieldId::kPosition,
+            .sequence = 1,
+            .coordinate_frame = core::CoordinateFrame::kLocalNed,
+            .source_component = "sim-position",
+            .mission_id = "mission-1",
+            .mission_revision = 7,
+        },
+    };
+}
+
+core::StateQualityContract OracleContract() {
+    return core::StateQualityContract{
+        .contract_id = "oracle-contract",
+        .required_fields = {core::EvidenceFieldId::kPosition},
+        .require_estimator_position_ok = true,
+        .require_estimator_velocity_ok = true,
+        .require_estimator_healthy = true,
+        .required_position_frame = core::CoordinateFrame::kLocalNed,
+        .require_current_epoch = true,
+        .require_current_mission = true,
+        .required_mission_id = "mission-1",
+        .required_mission_revision = 7,
+        .required_agents = {"uav-1"},
+    };
+}
+
+MethodEvaluationOutcome OracleOutcome() {
+    MethodEvaluationOutcome outcome;
+    outcome.accepted = true;
+    outcome.selected_position_evidence["uav-1"] = OraclePositionRecord();
+    outcome.estimated_positions["uav-1"] = {1.0, 2.0, 3.0};
+    return outcome;
+}
+
+std::unordered_map<std::string, GroundTruthState> OracleTruth(bool healthy) {
+    return {{"uav-1",
+             GroundTruthState{
+                 .drone_id = "uav-1",
+                 .physical_time_ms = 1000.0,
+                 .position = {1.0, 2.0, 3.0},
+                 .position_frame = core::CoordinateFrame::kLocalNed,
+                 .healthy = healthy,
+                 .session_id = "session-current",
+             }}};
+}
+
+}  // namespace
+
+TEST_CASE("test_common_oracle_current_truth_health_does_not_invent_new_predicate",
+          "[experiment][oracle]") {
+    const auto result = BaselineEvaluator::EvaluateAcceptedOutputValidity(
+        OracleOutcome(), OracleTruth(false), {{"uav-1", "session-current"}},
+        OracleContract(), 3.0);
+    REQUIRE(result.overall_valid);
+    REQUIRE(result.health_valid);
+}
+
+TEST_CASE("Common accepted-output oracle evaluates every formal contract predicate",
+          "[experiment][oracle]") {
+    const auto evaluate = [](const MethodEvaluationOutcome& outcome,
+                             const core::StateQualityContract& contract) {
+        return BaselineEvaluator::EvaluateAcceptedOutputValidity(
+            outcome, OracleTruth(true), {{"uav-1", "session-current"}},
+            contract, 3.0);
+    };
+
+    SECTION("correct position frame session selected health mission and provenance is valid") {
+        REQUIRE(evaluate(OracleOutcome(), OracleContract()).overall_valid);
+    }
+    SECTION("position error over Umax is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence["uav-1"].value =
+            std::array<double, 3>{10.0, 2.0, 3.0};
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).spatial_valid);
+    }
+    SECTION("wrong frame is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence["uav-1"].identity.coordinate_frame =
+            core::CoordinateFrame::kWgs84;
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).frame_valid);
+    }
+    SECTION("old session is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence["uav-1"].identity.agent_session_id =
+            "session-old";
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).session_valid);
+    }
+    SECTION("selected unhealthy evidence is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence["uav-1"].quality.estimator_healthy = false;
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).health_valid);
+    }
+    SECTION("selected position-not-ok evidence is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence["uav-1"].quality.estimator_position_ok = false;
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).health_valid);
+    }
+    SECTION("selected velocity-not-ok evidence is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence["uav-1"].quality.estimator_velocity_ok = false;
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).health_valid);
+    }
+    SECTION("wrong mission id or revision is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence["uav-1"].identity.mission_revision = 8;
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).mission_valid);
+    }
+    SECTION("GPS below threshold is invalid") {
+        auto outcome = OracleOutcome();
+        auto contract = OracleContract();
+        contract.min_gps_quality = core::GpsQuality::kFix3D;
+        auto gps = OraclePositionRecord();
+        gps.identity.field_id = core::EvidenceFieldId::kGpsQuality;
+        gps.value = core::GpsQuality::kFix2D;
+        outcome.selected_gps_evidence["uav-1"] = gps;
+        REQUIRE_FALSE(evaluate(outcome, contract).gps_valid);
+    }
+    SECTION("missing required agent is invalid") {
+        auto outcome = OracleOutcome();
+        outcome.selected_position_evidence.clear();
+        REQUIRE_FALSE(evaluate(outcome, OracleContract()).complete);
+    }
+}
 
 TEST_CASE("SimBackend UAVs actually move during experiment", "[experiment][motion]") {
     agent::SimBackendConfig sim_config{
@@ -156,9 +296,11 @@ TEST_CASE("StateAcceptanceExperimentRunner paired-trace matrix evaluation", "[ex
         REQUIRE_THAT(results.soundness_metrics.VerifierAgreementRate(), WithinAbs(1.0, 1e-9));
     }
 
-    SECTION("Tampered certificate rejection rate is 100% across 15 mutation classes") {
+    SECTION("Mutated inconsistent certificate rejection is complete") {
         REQUIRE(results.soundness_metrics.mutation_cases_tested > 0);
         REQUIRE(results.soundness_metrics.mutation_cases_rejected == results.soundness_metrics.mutation_cases_tested);
+        REQUIRE(results.soundness_metrics.mutation_classes_tested == 44);
+        REQUIRE(results.soundness_metrics.mutation_classes_rejected == 44);
     }
 
     SECTION("Result formatting is valid and populated") {
@@ -175,6 +317,38 @@ TEST_CASE("StateAcceptanceExperimentRunner paired-trace matrix evaluation", "[ex
 
         const std::string json = results.ToJson();
         REQUIRE_FALSE(json.empty());
-        REQUIRE(json.find("soundness_and_replay") != std::string::npos);
+        REQUIRE(json.find("\"methods\"") != std::string::npos);
+        REQUIRE(json.find("paired_P_minus_B1") != std::string::npos);
     }
+
+    SECTION("test_all_bootstrap_intervals_are_exported") {
+        const auto json = results.ToJson();
+        for (const auto* key : {"FV_CI_low", "FV_CI_high", "availability_CI_low",
+                                "availability_CI_high", "UAR_CI_low", "UAR_CI_high",
+                                "bootstrap_iterations", "bootstrap_seed", "replicate_count"}) {
+            REQUIRE(json.find(key) != std::string::npos);
+        }
+    }
+
+    SECTION("test_replicate_results_export") {
+        const auto csv = results.ToReplicateCsv();
+        REQUIRE(csv.find("replicate_id,scenario,method,base_seed") == 0);
+        REQUIRE(csv.find("reorder_inversions") != std::string::npos);
+        REQUIRE(csv.find("clock_reestablishments") != std::string::npos);
+        REQUIRE(static_cast<std::size_t>(std::count(csv.begin(), csv.end(), '\n')) ==
+                results.replicate_records.size() + 1);
+    }
+
+    SECTION("test_scalability_raw_samples_export") {
+        const auto csv = results.ToScalabilitySamplesCsv();
+        REQUIRE(csv.find("N,iteration,latency_us,serialized_certificate_bytes") == 0);
+        REQUIRE(static_cast<std::size_t>(std::count(csv.begin(), csv.end(), '\n')) == 3001);
+    }
+}
+
+TEST_CASE("test_containment_failure_rate_is_calculated", "[experiment][export]") {
+    SoundnessAndReplayMetrics metrics;
+    metrics.enclosures_tested = 8;
+    metrics.containment_failures = 2;
+    REQUIRE_THAT(metrics.ContainmentFailureRate(), WithinAbs(0.25, 1e-12));
 }
