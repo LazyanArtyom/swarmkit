@@ -9,7 +9,7 @@
 namespace swarmkit::agent::mavlink {
 
 core::BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBackendConfig& config) {
-    return {
+    core::BackendCapabilities capabilities{
         .backend_name = "mavlink",
         .protocol = "mavlink2",
         .vehicle_class = config.autopilot_profile == MavlinkAutopilotProfile::kArdupilotPlane
@@ -18,7 +18,7 @@ core::BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBack
         .supports_payload_control = false,
         .supports_velocity_control = true,
         .supports_flight_termination = config.allow_flight_termination,
-        .supports_backend_commands = true,
+        .supports_backend_commands = false,
         .autopilot_type = std::string(ToString(config.autopilot_profile)),
         .supported_modes = SupportedModes(config.autopilot_profile),
         .supported_commands =
@@ -26,6 +26,7 @@ core::BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBack
                 "arm",
                 "force-arm",
                 "disarm",
+                "force-disarm",
                 "takeoff",
                 "land",
                 "return-home",
@@ -33,16 +34,16 @@ core::BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBack
                 "set-mode",
                 "set-speed",
                 "goto",
+                "pause",
+                "resume",
                 "set-yaw",
                 "velocity",
                 "set-home",
-                "backend-command",
             },
         // Peripheral presence cannot be inferred from generic MAVLink routing.
-        // Payload encoders remain available as experimental commands, but are
-        // not advertised until a vehicle-specific capability source exists.
+        // Add payload support only with vehicle-specific capability discovery.
         .supported_payloads = {},
-        .backend_command_names = {"mavlink.command-long"},
+        .backend_command_names = {},
         .evidence =
             {
                 .source_timestamp = core::CapabilitySupport::kSupported,
@@ -61,6 +62,10 @@ core::BackendCapabilities MavlinkCommandExecutor::Capabilities(const MavlinkBack
                 .failsafe_state = core::CapabilitySupport::kSupported,
             },
     };
+    if (config.allow_flight_termination) {
+        capabilities.supported_commands.emplace_back("flight-terminate");
+    }
+    return capabilities;
 }
 
 core::Result MavlinkCommandExecutor::ResolveCustomMode(const MavlinkBackendConfig& config,

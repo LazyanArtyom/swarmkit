@@ -15,7 +15,6 @@ add_executable(swarmkit_tests
     test_state_acceptance_certificate.cpp
     test_state_acceptance_verifier.cpp
     test_replay_trace.cpp
-    test_paired_trace_experiment.cpp
     test_client_integration.cpp
     test_command_preconditions.cpp
     test_config.cpp
@@ -23,7 +22,6 @@ add_executable(swarmkit_tests
     test_report_hub.cpp
     test_sim_backend.cpp
     test_mavlink_common.cpp
-    test_phase3_experiment.cpp
     test_swarm_client.cpp
     test_telemetry_manager.cpp
     test_telemetry_sink.cpp
@@ -41,7 +39,9 @@ target_include_directories(swarmkit_tests SYSTEM PRIVATE
 )
 
 target_link_libraries(swarmkit_tests PRIVATE
-    swarmkit_experiment
+    swarmkit_agent
+    swarmkit_evidence
+    swarmkit_client
     Catch2::Catch2WithMain
 )
 

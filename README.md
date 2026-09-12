@@ -19,6 +19,10 @@ estimator state, accuracy fields, and command/goal linkage for monitoring and
 Production hardening is tracked in the
 [Phase 0 production-readiness milestone](docs/source/production_readiness.md). A green software
 test matrix is not an airworthiness certification.
+Use the staged [real-drone validation procedure](docs/source/hardware_validation.md) before any
+swarm flight attempt.
+The first single-drone bring-up may use the supplied insecure loopback lab configs through SSH;
+multi-drone and normal field operation require the mTLS examples.
 
 ---
 
@@ -81,10 +85,10 @@ client/agent communication. Empty security config resolves to `insecure`, while
 the repo test configs explicitly use development-only mTLS certificates under
 `testdata/certs/`.
 
-For local SITL experiments you can skip certificates:
+For local SITL development you can skip certificates:
 
 ```bash
-./build/mac-debug/apps/swarmkit-agent --insecure --id agent-1 --bind 0.0.0.0:50061
+./build/mac-debug/apps/swarmkit-agent --insecure --id agent-1 --bind 127.0.0.1:50061
 ./build/mac-debug/apps/swarmkit-cli --insecure 127.0.0.1:50061 ping
 ```
 
@@ -99,7 +103,8 @@ For local SITL experiments you can skip certificates:
     --log-level info
 ```
 
-Default bind address: `0.0.0.0:50061`.
+Default bind address: `127.0.0.1:50061`. External listeners must be configured explicitly and
+should use TLS or mTLS.
 
 ### MAVLink SITL backend
 
@@ -318,7 +323,6 @@ SDK layout:
 │   ├── agent/                 # IDroneBackend, CommandArbiter, server, SimBackend
 │   ├── client/                # Client, SwarmClient, subscriptions, command results
 │   ├── evidence/              # Strict execution-log reader and ordered replay
-│   ├── experiment/            # Scripted/fault backends, manual runtime, normalized replay
 │   ├── commands/              # flight/nav/swarm/payload command categories
 │   └── commands.h             # aggregate Command, CommandContext, CommandEnvelope
 ├── lib/
@@ -326,7 +330,6 @@ SDK layout:
 │   ├── libswarmkit_agent.a
 │   ├── libswarmkit_client.a
 │   ├── libswarmkit_evidence.a
-│   ├── libswarmkit_experiment.a
 │   ├── libswarmkit_proto.a
 │   └── cmake/SwarmKit/
 │       ├── SwarmKitConfig.cmake

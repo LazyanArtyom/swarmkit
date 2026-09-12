@@ -29,12 +29,6 @@ namespace {
     return iter == request.options.end() ? default_value : iter->second;
 }
 
-[[nodiscard]] bool BoolOption(const BackendFactoryRequest& request, const std::string& key,
-                              bool default_value) {
-    const std::string value = OptionValue(request, key, default_value ? "true" : "false");
-    return value == "1" || value == "true" || value == "yes" || value == "on";
-}
-
 [[nodiscard]] std::expected<double, core::Result> StrictDoubleOption(
     const BackendFactoryRequest& request, const std::string& key, double default_value) {
     const auto iter = request.options.find(key);
@@ -49,7 +43,7 @@ namespace {
         }
         return value;
     } catch (const std::exception&) {
-        return std::unexpected(core::Result::Rejected("invalid sim backend option '" + key + "'"));
+        return std::unexpected(core::Result::Rejected("invalid backend option '" + key + "'"));
     }
 }
 
@@ -67,7 +61,7 @@ namespace {
         }
         return value;
     } catch (const std::exception&) {
-        return std::unexpected(core::Result::Rejected("invalid sim backend option '" + key + "'"));
+        return std::unexpected(core::Result::Rejected("invalid backend option '" + key + "'"));
     }
 }
 
@@ -85,29 +79,62 @@ namespace {
         iter->second == "off") {
         return false;
     }
-    return std::unexpected(core::Result::Rejected("invalid sim backend option '" + key + "'"));
+    return std::unexpected(core::Result::Rejected("invalid backend option '" + key + "'"));
 }
 
-[[nodiscard]] int IntOption(const BackendFactoryRequest& request, const std::string& key,
-                            int default_value) {
-    try {
-        return std::stoi(OptionValue(request, key, std::to_string(default_value)));
-    } catch (const std::exception&) {
-        return default_value;
+[[nodiscard]] std::expected<int, core::Result> StrictIntOption(const BackendFactoryRequest& request,
+                                                               const std::string& key,
+                                                               int default_value) {
+    const auto parsed = StrictInt64Option(request, key, default_value);
+    if (!parsed.has_value()) {
+        return std::unexpected(parsed.error());
     }
+    if (*parsed < std::numeric_limits<int>::min() || *parsed > std::numeric_limits<int>::max()) {
+        return std::unexpected(
+            core::Result::Rejected("backend option '" + key + "' is outside the integer range"));
+    }
+    return static_cast<int>(*parsed);
 }
 
-[[nodiscard]] std::uint8_t ByteOption(const BackendFactoryRequest& request, const std::string& key,
-                                      std::uint8_t default_value) {
-    const int value = IntOption(request, key, static_cast<int>(default_value));
-    if (value <= 0 || value > 255) {
-        return default_value;
+[[nodiscard]] std::expected<std::uint8_t, core::Result> StrictByteOption(
+    const BackendFactoryRequest& request, const std::string& key, std::uint8_t default_value) {
+    const auto parsed = StrictIntOption(request, key, static_cast<int>(default_value));
+    if (!parsed.has_value()) {
+        return std::unexpected(parsed.error());
     }
-    return static_cast<std::uint8_t>(value);
+    if (*parsed <= 0 || *parsed > 255) {
+        return std::unexpected(
+            core::Result::Rejected("backend option '" + key + "' must be in the range 1..255"));
+    }
+    return static_cast<std::uint8_t>(*parsed);
 }
 
 [[nodiscard]] std::expected<DroneBackendPtr, core::Result> CreateMavlinkBackend(
     const BackendFactoryRequest& request) {
+    constexpr std::array<std::string_view, 14> kAllowedOptions{
+        "drone_id",
+        "bind_addr",
+        "autopilot_profile",
+        "target_system",
+        "target_component",
+        "source_system",
+        "source_component",
+        "telemetry_rate_hz",
+        "peer_discovery_timeout_ms",
+        "command_ack_timeout_ms",
+        "set_guided_before_arm",
+        "set_guided_before_takeoff",
+        "guided_mode",
+        "allow_flight_termination",
+    };
+    for (const auto& [key, value] : request.options) {
+        static_cast<void>(value);
+        if (!std::ranges::contains(kAllowedOptions, key)) {
+            return std::unexpected(
+                core::Result::Rejected("unknown mavlink backend option '" + key + "'"));
+        }
+    }
+
     MavlinkBackendConfig config;
     config.drone_id = OptionValue(request, "drone_id", config.drone_id);
     config.bind_addr = OptionValue(request, "bind_addr", config.bind_addr);
@@ -120,22 +147,67 @@ namespace {
         }
         config.autopilot_profile = *parsed;
     }
-    config.target_system = ByteOption(request, "target_system", config.target_system);
-    config.target_component = ByteOption(request, "target_component", config.target_component);
-    config.source_system = ByteOption(request, "source_system", config.source_system);
-    config.source_component = ByteOption(request, "source_component", config.source_component);
-    config.telemetry_rate_hz = IntOption(request, "telemetry_rate_hz", config.telemetry_rate_hz);
-    config.peer_discovery_timeout_ms =
-        IntOption(request, "peer_discovery_timeout_ms", config.peer_discovery_timeout_ms);
-    config.command_ack_timeout_ms =
-        IntOption(request, "command_ack_timeout_ms", config.command_ack_timeout_ms);
-    config.set_guided_before_arm =
-        BoolOption(request, "set_guided_before_arm", config.set_guided_before_arm);
-    config.set_guided_before_takeoff =
-        BoolOption(request, "set_guided_before_takeoff", config.set_guided_before_takeoff);
-    config.guided_mode = IntOption(request, "guided_mode", config.guided_mode);
-    config.allow_flight_termination =
-        BoolOption(request, "allow_flight_termination", config.allow_flight_termination);
+    const auto target_system = StrictByteOption(request, "target_system", config.target_system);
+    const auto target_component =
+        StrictByteOption(request, "target_component", config.target_component);
+    const auto source_system = StrictByteOption(request, "source_system", config.source_system);
+    const auto source_component =
+        StrictByteOption(request, "source_component", config.source_component);
+    const auto telemetry_rate =
+        StrictIntOption(request, "telemetry_rate_hz", config.telemetry_rate_hz);
+    const auto discovery_timeout =
+        StrictIntOption(request, "peer_discovery_timeout_ms", config.peer_discovery_timeout_ms);
+    const auto ack_timeout =
+        StrictIntOption(request, "command_ack_timeout_ms", config.command_ack_timeout_ms);
+    const auto guided_before_arm =
+        StrictBoolOption(request, "set_guided_before_arm", config.set_guided_before_arm);
+    const auto guided_before_takeoff =
+        StrictBoolOption(request, "set_guided_before_takeoff", config.set_guided_before_takeoff);
+    const auto guided_mode = StrictIntOption(request, "guided_mode", config.guided_mode);
+    const auto allow_termination =
+        StrictBoolOption(request, "allow_flight_termination", config.allow_flight_termination);
+    const auto assign_or_error = [](const auto& value,
+                                    auto* output) -> std::optional<core::Result> {
+        if (!value.has_value()) {
+            return value.error();
+        }
+        *output = *value;
+        return std::nullopt;
+    };
+    if (const auto error = assign_or_error(target_system, &config.target_system)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(target_component, &config.target_component)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(source_system, &config.source_system)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(source_component, &config.source_component)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(telemetry_rate, &config.telemetry_rate_hz)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(discovery_timeout, &config.peer_discovery_timeout_ms)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(ack_timeout, &config.command_ack_timeout_ms)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(guided_before_arm, &config.set_guided_before_arm)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error =
+            assign_or_error(guided_before_takeoff, &config.set_guided_before_takeoff)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(guided_mode, &config.guided_mode)) {
+        return std::unexpected(*error);
+    }
+    if (const auto error = assign_or_error(allow_termination, &config.allow_flight_termination)) {
+        return std::unexpected(*error);
+    }
 
     if (const core::Result result = config.Validate(); !result.IsOk()) {
         return std::unexpected(result);

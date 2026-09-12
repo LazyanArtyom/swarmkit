@@ -10,7 +10,7 @@ The agent loader accepts either a root-level map or an `agent:` section.
 ```yaml
 agent:
   agent_id: "agent-1"
-  bind_addr: "0.0.0.0:50061"
+  bind_addr: "127.0.0.1:50061"
   backend: "sim"
   default_authority_ttl_ms: 5000
   default_telemetry_rate_hz: 5
@@ -23,7 +23,6 @@ agent:
     file_path: "/tmp/run-001.swkevidence"
     run_id: "run-001"
     scenario_id: "nominal-sitl"
-    random_seed: 104729
     max_segment_bytes: 268435456
     max_segments: 1
     loss_policy: "invalidate_run"
@@ -58,9 +57,9 @@ agent:
 ```
 
 `reports` is an in-memory notification/replay stream. Durable correctness evidence is written only
-by `execution_recorder`; the old report-only JSONL path does not exist. `invalidate_run` is the
-scientific fail-closed policy. `rotate_oldest` must be selected explicitly for operational logging
-where bounded evidence loss is acceptable.
+by `execution_recorder`; the old report-only JSONL path does not exist. `invalidate_run` stops with
+an explicitly invalid recording when retention is exhausted. `rotate_oldest` must be selected
+explicitly for bounded operational logging where loss of the oldest evidence is acceptable.
 
 The built-in simulator accepts strict options through `agent.backend_options`.
 Unknown keys and invalid values fail backend creation:

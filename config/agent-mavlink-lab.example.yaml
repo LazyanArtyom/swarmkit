@@ -1,0 +1,63 @@
+agent:
+  agent_id: "CHANGE-ME-agent-1"
+  # Insecure gRPC is restricted to loopback. Use the CLI locally or an SSH tunnel.
+  bind_addr: "127.0.0.1:50061"
+  backend: "mavlink"
+  default_authority_ttl_ms: 5000
+  default_telemetry_rate_hz: 10
+  min_telemetry_rate_hz: 2
+
+  vehicle_profile:
+    profile_id: "CHANGE-ME-lab-vehicle-profile"
+    cruise_speed_mps: 1.0
+    climb_speed_mps: 0.5
+    descent_speed_mps: 0.5
+    max_altitude_m: 5.0
+    min_battery_percent: 30.0
+    battery_reserve_percent: 20.0
+    tracking_tolerance_m: 2.0
+    goal_margin_ms: 20000
+    takeoff_timeout_margin_ms: 30000
+    land_timeout_margin_ms: 60000
+    max_goal_timeout_ms: 120000
+    min_gps_fix_type: 3
+    min_satellites_visible: 8
+    max_gps_hdop: 2.0
+
+  mavlink:
+    drone_id: "CHANGE-ME-drone-1"
+    bind_addr: "127.0.0.1:14601"
+    autopilot_profile: "ardupilot-copter"
+    target_system: 1
+    target_component: 1
+    source_system: 245
+    source_component: 191
+    telemetry_rate_hz: 10
+    peer_discovery_timeout_ms: 5000
+    command_ack_timeout_ms: 3000
+    set_guided_before_arm: false
+    set_guided_before_takeoff: true
+    guided_mode: 4
+    allow_flight_termination: false
+
+  safety:
+    allow_unsafe_bench_commands: false
+
+  execution_recorder:
+    file_path: "/tmp/swarmkit-hardware-lab.evidence"
+    run_id: "CHANGE-ME-hardware-lab-run"
+    scenario_id: "propellers-off-bring-up"
+    max_segment_bytes: 268435456
+    max_segments: 1
+    loss_policy: "invalidate_run"
+    flush_each_record: true
+    fsync_each_record: false
+    overwrite_existing: false
+    calibration_profile_id: "CHANGE-ME-calibration-profile"
+    calibration_version: "CHANGE-ME-calibration-version"
+
+  data:
+    artifact_dir: "/tmp/swarmkit-hardware-lab-artifacts"
+
+  security:
+    transport_security: "insecure"

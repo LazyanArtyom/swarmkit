@@ -289,7 +289,7 @@ bool ExecutionRecorder::EnsureCapacityLocked(std::size_t record_bytes) {
         return true;
     }
     if (options_.config.loss_policy == EvidenceLossPolicy::kInvalidateRun) {
-        InvalidateLocked("execution evidence retention exhausted; scientific run invalidated");
+        InvalidateLocked("execution evidence retention exhausted; recording invalidated");
         return false;
     }
     return RotateLocked();

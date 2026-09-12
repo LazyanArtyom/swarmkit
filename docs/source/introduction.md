@@ -10,7 +10,7 @@ surfaces:
   embedding the same client and agent building blocks into C++ applications.
 
 The project is intended for ground-control software, robotics integration
-tools, and companion-computer experiments that need a typed command model,
+tools, and companion-computer deployments that need a typed command model,
 structured telemetry, command authority arbitration, and a consistent gRPC
 transport boundary.
 

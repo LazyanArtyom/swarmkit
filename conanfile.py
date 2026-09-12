@@ -19,17 +19,30 @@ class SwarmkitConan(ConanFile):
         "VERSION",
         "LICENSE.md",
         "cmake/*",
-        "include/*",
+        "config/*",
+        "include/swarmkit/agent/*",
+        "include/swarmkit/client/*",
+        "include/swarmkit/commands/*",
+        "include/swarmkit/commands.h",
+        "include/swarmkit/core/*",
+        "include/swarmkit/evidence/*",
         "proto/*",
-        "src/*",
-        "apps/*",
+        "src/agent/*",
+        "src/client/*",
+        "src/core/*",
+        "src/evidence/*",
+        "apps/CMakeLists.txt",
+        "apps/agent/*",
+        "apps/cli/*",
+        "apps/common/*",
+        "apps/evidence_inspect.cpp",
         "examples/*",
         "third_party/*",
     )
 
     settings = "os", "arch", "compiler", "build_type"
     options = {"shared": [True, False], "with_tools": [True, False], "with_tests": [True, False]}
-    default_options = {"shared": False, "with_tools": True, "with_tests": True}
+    default_options = {"shared": False, "with_tools": True, "with_tests": False}
 
     requires = (
         "fmt/12.1.0",
@@ -57,7 +70,6 @@ class SwarmkitConan(ConanFile):
             variables={
                 "SWARMKIT_BUILD_TOOLS": "ON" if self.options.with_tools else "OFF",
                 "SWARMKIT_BUILD_TESTS": "ON" if self.options.with_tests else "OFF",
-                "BUILD_TESTING": "ON" if self.options.with_tests else "OFF",
             }
         )
         cmake.build()
@@ -92,7 +104,3 @@ class SwarmkitConan(ConanFile):
         components["agent"].libs = ["swarmkit_agent"]
         components["agent"].requires = ["core", "proto", "yaml-cpp::yaml-cpp"]
         components["agent"].set_property("cmake_target_name", "swarmkit::agent")
-
-        components["experiment"].libs = ["swarmkit_experiment"]
-        components["experiment"].requires = ["agent", "evidence", "client"]
-        components["experiment"].set_property("cmake_target_name", "swarmkit::experiment")

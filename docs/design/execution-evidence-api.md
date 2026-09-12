@@ -196,7 +196,7 @@ hash, and calibration reference.
 
 Every record uses deterministic protobuf serialization and is framed by a little-endian payload
 length plus SHA-256 checksum. A clean session-completion event distinguishes orderly closure from
-truncation. Storage is bounded. `invalidate_run` is the scientific policy: exhaustion or an I/O
+truncation. Storage is bounded. `invalidate_run` is the fail-closed policy: exhaustion or an I/O
 failure invalidates readiness and blocks further commands. `rotate_oldest` is an explicit
 operational data-loss policy. Report-only JSONL persistence does not exist.
 

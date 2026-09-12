@@ -170,8 +170,6 @@ void PrintUsage() {
            "  swarmkit-cli command --drone uav-1 arm\n"
            "  swarmkit-cli command --drone uav-1 takeoff --alt 30 --verify --timeout-ms 60000\n"
            "  swarmkit-cli command --drone uav-1 goto --lat 40.18 --lon 44.51 --alt 50\n"
-           "  swarmkit-cli command --drone uav-1 backend-command --namespace mavlink "
-           "--name command-long --param command=511 --param param1=33\n"
            "  swarmkit-cli goal --drone uav-1 set --goal-id node-42 --lat 40.18 --lon 44.51 "
            "--alt 50 --label route=node-42\n"
            "  swarmkit-cli message publish --topic rotor.event --payload '{\"event\":\"ok\"}'\n"

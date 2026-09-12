@@ -14,8 +14,7 @@
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "SWARMKIT_BUILD_TOOLS": "ON",
-        "SWARMKIT_BUILD_TESTS": "ON",
-        "BUILD_TESTING": "ON"
+        "SWARMKIT_BUILD_TESTS": "ON"
       }
     },
     {
@@ -92,8 +91,7 @@
       "inherits": "linux-release",
       "cacheVariables": {
         "SWARMKIT_BUILD_TOOLS": "OFF",
-        "SWARMKIT_BUILD_TESTS": "OFF",
-        "BUILD_TESTING": "OFF"
+        "SWARMKIT_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -101,8 +99,7 @@
       "inherits": "mac-release",
       "cacheVariables": {
         "SWARMKIT_BUILD_TOOLS": "OFF",
-        "SWARMKIT_BUILD_TESTS": "OFF",
-        "BUILD_TESTING": "OFF"
+        "SWARMKIT_BUILD_TESTS": "OFF"
       }
     }
   ],

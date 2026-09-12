@@ -105,6 +105,7 @@ class IDroneBackend {
     /// @p callback is invoked from the backend's internal thread for every
     /// frame produced.  Calling StartTelemetry() when a stream is already
     /// running returns Rejected without disturbing the existing stream.
+    /// @param drone_id Logical vehicle identifier served by this backend.
     /// @param rate_hertz Must be greater than zero.
     /// @param callback Must not be empty.
     [[nodiscard]] virtual swarmkit::core::Result StartTelemetry(const std::string& drone_id,

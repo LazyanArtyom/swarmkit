@@ -1,0 +1,20 @@
+client:
+  address: "CHANGE-ME-drone-address:50061"
+  client_id: "swarmkit-operator"
+  deadline_ms: 5000
+  priority: "operator"
+  retry:
+    max_attempts: 3
+    initial_backoff_ms: 200
+    max_backoff_ms: 2000
+  stream_reconnect:
+    enabled: true
+    initial_backoff_ms: 500
+    max_backoff_ms: 5000
+    max_attempts: 0
+  security:
+    transport_security: "mtls"
+    root_ca_cert_path: "/etc/swarmkit/certs/ca.pem"
+    cert_chain_path: "/etc/swarmkit/certs/operator.pem"
+    private_key_path: "/etc/swarmkit/certs/operator.key"
+    server_authority_override: "CHANGE-ME-agent-certificate-name"

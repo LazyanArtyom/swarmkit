@@ -32,8 +32,8 @@ enum class MavlinkAutopilotProfile : std::uint8_t {
 
 /// Runtime configuration for the direct MAVLink UDP backend.
 struct MavlinkBackendConfig {
-    std::string drone_id{"drone-1"};         ///< SwarmKit drone id exposed to clients.
-    std::string bind_addr{"0.0.0.0:14601"};  ///< UDP listen address in host:port form.
+    std::string drone_id{"drone-1"};           ///< SwarmKit drone id exposed to clients.
+    std::string bind_addr{"127.0.0.1:14601"};  ///< UDP listen address in host:port form.
     MavlinkAutopilotProfile autopilot_profile{MavlinkAutopilotProfile::kArdupilotCopter};
     std::uint8_t target_system{1};         ///< MAVLink target system id.
     std::uint8_t target_component{1};      ///< MAVLink target component id.
@@ -54,7 +54,8 @@ struct MavlinkBackendConfig {
 
 /// Create a backend that talks MAVLink UDP directly to SITL/autopilot traffic.
 /// @param config MAVLink UDP, target, source, timeout, and safety settings.
-/// @return Owning backend pointer.
-[[nodiscard]] DroneBackendPtr MakeMavlinkBackend(MavlinkBackendConfig config);
+/// @return Owning backend pointer, or a validation error for an invalid configuration.
+[[nodiscard]] std::expected<DroneBackendPtr, core::Result> MakeMavlinkBackend(
+    MavlinkBackendConfig config);
 
 }  // namespace swarmkit::agent

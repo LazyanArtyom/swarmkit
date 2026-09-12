@@ -2,10 +2,9 @@
 
 Status: Phase 0 release candidate, audited 2026-08-16; hosted CI gates remain pending.
 
-This checklist tracks the production-hardening gate from the generic runtime task. It is
-deliberately separate from the dissertation runtime phases: common-time snapshots, state
-contracts, contract-aware scheduling, and semantic traces do not begin until this gate is
-accepted. SwarmOps is out of scope for this repository pass.
+This checklist tracks the production-hardening gate for the SDK and Agent runtime.
+Vehicle-specific validation and higher-level swarm coordination remain separate from this
+software release gate.
 
 Status meanings:
 

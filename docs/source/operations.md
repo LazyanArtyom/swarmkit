@@ -19,8 +19,8 @@ Before a release is installed:
 5. Give each Agent a stable unique `agent_id`, each vehicle a stable `drone_id`, and each process a
    unique gRPC and MAVLink bind address.
 6. Put artifacts, rotating operational logs, and execution evidence on monitored persistent
-   storage. Select the recorder loss policy deliberately; scientific runs should use
-   `invalidate_run`.
+   storage. Select the recorder loss policy deliberately; use `invalidate_run` when evidence loss
+   must fail closed.
 
 Deploy immutable SDK and tools archives into a versioned directory and switch a service-manager
 symlink only after staging checks pass. Keep the previous version and configuration available for
@@ -89,7 +89,7 @@ needed for diagnosis.
    under the deployment's safety procedure.
 4. Preserve the evidence file, Agent log, configuration snapshot, and software versions before
    moving or rotating the run directory.
-5. Validate evidence with `swarmkit-evidence-inspect` before declaring a scientific run usable.
+5. Validate evidence with `swarmkit-evidence-inspect` before accepting the operational record.
 
 `StopTelemetry()` drains in-flight backend callbacks before returning. A process kill bypasses that
 contract and can leave the last operational log or evidence record incomplete.
@@ -104,8 +104,8 @@ For command ambiguity, use the exact correlation id and execution handle to insp
 goal state, backend protocol responses, and recorded telemetry. An ACK proves protocol acceptance,
 not physical arrival. Do not infer success from the absence of an error or from a reconnect.
 
-For recorder loss, corruption, or an `invalidate_run` event, mark the scientific run invalid. Do not
-fill gaps from console logs or silently continue the same run id.
+For recorder loss, corruption, or an `invalidate_run` event, mark the operational record invalid.
+Do not fill gaps from console logs or silently continue the same run id.
 
 ## Upgrade and rollback
 

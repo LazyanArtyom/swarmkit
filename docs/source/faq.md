@@ -19,8 +19,8 @@ limit command access to known client certificates.
 
 ## What Is The Default Agent Address?
 
-The agent defaults to `0.0.0.0:50061`. The client defaults to
-`127.0.0.1:50061`.
+The agent and client default to `127.0.0.1:50061`. Configure an external Agent
+listener explicitly and protect it with TLS or mTLS.
 
 ## How Do I Know Whether A Telemetry Field Is Real?
 

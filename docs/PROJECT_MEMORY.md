@@ -14,7 +14,6 @@ Last updated: 2026-08-18
 - The agent has an `IDroneBackend` boundary. Current backends include simulation and MAVLink.
 - `swarmkit-cli` is a reference/smoke-test client tool.
 - `swarmkit-evidence-inspect` inspects execution logs.
-- `swarmkit-dissertation-experiment` runs paired-trace empirical benchmarks and outputs dissertation tables.
 - The SDK includes support for:
   - commands, telemetry, reports, authority, active goals, swarm fanout, messages, artifacts, health, stats, and capabilities;
   - evidence store decomposition, clock-quality interval arithmetic, state-quality contracts, state acceptance certificates, and independent verification.

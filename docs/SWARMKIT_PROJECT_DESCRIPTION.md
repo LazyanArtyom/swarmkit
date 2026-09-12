@@ -111,7 +111,6 @@ The client SDK is the primary integration surface for application developers. It
 - message and artifact workflows.
 
 `swarmkit-evidence-inspect` inspects binary execution logs.
-`swarmkit-dissertation-experiment` runs paired-trace empirical benchmarks across fault scenarios and outputs performance tables.
 
 ## Backend Abstraction
 

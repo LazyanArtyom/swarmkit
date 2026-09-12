@@ -18,7 +18,8 @@ FILE_PATTERNS          = *.h \
 RECURSIVE              = YES
 EXCLUDE                = ../third_party \
                          ../build \
-                         ../dist
+                         ../dist \
+                         ../include/swarmkit/experiment
 EXCLUDE_PATTERNS       = */.DS_Store \
                          *.in
 

@@ -106,7 +106,7 @@ struct CertificateEvidenceEntry {
 };
 
 /// State-Acceptance Certificate K = (id, h_C, v_C, t*, E, T, Q, M, V, h_K)
-/// from §14 of the dissertation.
+/// from the state-acceptance model.
 ///
 /// A compact, tamper-evident artifact that records exactly which evidence
 /// was used, under which contract, at which time, with which propagation

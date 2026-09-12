@@ -98,7 +98,11 @@ std::optional<std::pair<std::string, std::uint16_t>> SplitHostPort(const std::st
     const std::string host = value.substr(0, colon);
     const std::string port_text = value.substr(colon + 1);
     try {
-        const int port = std::stoi(port_text);
+        std::size_t consumed = 0;
+        const int port = std::stoi(port_text, &consumed);
+        if (consumed != port_text.size()) {
+            return std::nullopt;
+        }
         if (port <= 0 || port > kMaxUdpPort) {
             return std::nullopt;
         }

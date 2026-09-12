@@ -167,8 +167,8 @@ struct DataPlaneConfig {
 /// AgentConfig -- startup parameters for the gRPC agent server.
 /// ---------------------------------------------------------------------------
 struct AgentConfig {
-    std::string agent_id{"agent-1"};         ///< Unique identifier for this agent.
-    std::string bind_addr{"0.0.0.0:50061"};  ///< gRPC listen address.
+    std::string agent_id{"agent-1"};           ///< Unique identifier for this agent.
+    std::string bind_addr{"127.0.0.1:50061"};  ///< gRPC listen address.
     int default_authority_ttl_ms{kDefaultAuthorityTtlMs};
     int default_telemetry_rate_hz{kDefaultTelemetryRateHz};
     int min_telemetry_rate_hz{kMinimumTelemetryRateHz};

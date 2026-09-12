@@ -177,7 +177,9 @@ TEST_CASE("Simulator and MAVLink backends satisfy the same lifecycle contract",
         REQUIRE(bind_address.has_value());
         MavlinkBackendConfig config;
         config.bind_addr = *bind_address;
-        VerifyBackendLifecycleContract(MakeMavlinkBackend(config), "MAVLink", config.drone_id);
+        auto backend = MakeMavlinkBackend(config);
+        REQUIRE(backend.has_value());
+        VerifyBackendLifecycleContract(std::move(*backend), "MAVLink", config.drone_id);
     }
 }
 
@@ -198,8 +200,9 @@ TEST_CASE("Simulator and MAVLink stop waits for in-flight callbacks",
         REQUIRE(bind_address.has_value());
         MavlinkBackendConfig config;
         config.bind_addr = *bind_address;
-        DroneBackendPtr backend = MakeMavlinkBackend(config);
-        VerifyCallbackQuiescenceContract(backend.get(), "MAVLink", config.drone_id, [&] {
+        auto backend = MakeMavlinkBackend(config);
+        REQUIRE(backend.has_value());
+        VerifyCallbackQuiescenceContract(backend->get(), "MAVLink", config.drone_id, [&] {
             static_cast<void>(SendMavlinkGlobalPosition(*bind_address));
         });
     }

@@ -16,6 +16,7 @@ streaming telemetry, and coordinating small drone swarms.
    architecture
    production_readiness
    operations
+   hardware_validation
    configuration
    troubleshooting
    faq

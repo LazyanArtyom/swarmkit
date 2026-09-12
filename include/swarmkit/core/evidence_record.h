@@ -18,7 +18,7 @@ namespace swarmkit::core {
 
 /// Identifies which independently-updated measurement field an evidence record
 /// belongs to.  Maps directly to the field set F in a State-Quality Contract
-/// (§5 / §11 of the dissertation).
+/// used by common-time state evaluation.
 enum class EvidenceFieldId : std::uint8_t {
     kPosition,
     kVelocity,
@@ -77,7 +77,7 @@ struct EvidenceQuality {
     bool operator==(const EvidenceQuality&) const = default;
 };
 
-/// One evidence record Z_{i,f,k} as defined in §5 of the dissertation:
+/// One typed evidence record for an agent, field, and sequence:
 ///
 ///   Z = (x̂, s, r, q, γ)
 ///

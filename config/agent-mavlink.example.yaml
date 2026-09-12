@@ -1,0 +1,68 @@
+agent:
+  agent_id: "CHANGE-ME-agent-1"
+  bind_addr: "0.0.0.0:50061"
+  backend: "mavlink"
+  default_authority_ttl_ms: 5000
+  default_telemetry_rate_hz: 10
+  min_telemetry_rate_hz: 2
+
+  vehicle_profile:
+    profile_id: "CHANGE-ME-vehicle-profile"
+    cruise_speed_mps: 2.0
+    climb_speed_mps: 0.75
+    descent_speed_mps: 0.5
+    max_altitude_m: 10.0
+    min_battery_percent: 30.0
+    battery_reserve_percent: 20.0
+    tracking_tolerance_m: 2.0
+    goal_margin_ms: 20000
+    takeoff_timeout_margin_ms: 30000
+    land_timeout_margin_ms: 60000
+    max_goal_timeout_ms: 180000
+    min_gps_fix_type: 3
+    min_satellites_visible: 8
+    max_gps_hdop: 2.0
+
+  mavlink:
+    drone_id: "CHANGE-ME-drone-1"
+    # Prefer a loopback endpoint supplied by MAVLink Router on the companion computer.
+    bind_addr: "127.0.0.1:14601"
+    autopilot_profile: "ardupilot-copter"
+    target_system: 1
+    target_component: 1
+    source_system: 245
+    source_component: 191
+    telemetry_rate_hz: 10
+    peer_discovery_timeout_ms: 5000
+    command_ack_timeout_ms: 3000
+    set_guided_before_arm: false
+    set_guided_before_takeoff: true
+    guided_mode: 4
+    allow_flight_termination: false
+
+  safety:
+    allow_unsafe_bench_commands: false
+
+  execution_recorder:
+    file_path: "/var/lib/swarmkit/evidence/flight.evidence"
+    run_id: "CHANGE-ME-deployment-run"
+    scenario_id: "hardware-validation"
+    max_segment_bytes: 268435456
+    max_segments: 8
+    loss_policy: "rotate_oldest"
+    flush_each_record: true
+    fsync_each_record: false
+    overwrite_existing: false
+    calibration_profile_id: "CHANGE-ME-calibration-profile"
+    calibration_version: "CHANGE-ME-calibration-version"
+
+  data:
+    artifact_dir: "/var/lib/swarmkit/artifacts"
+
+  security:
+    transport_security: "mtls"
+    root_ca_cert_path: "/etc/swarmkit/certs/ca.pem"
+    cert_chain_path: "/etc/swarmkit/certs/agent.pem"
+    private_key_path: "/etc/swarmkit/certs/agent.key"
+    allowed_client_ids:
+      - "swarmkit-operator"

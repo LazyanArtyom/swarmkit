@@ -47,17 +47,13 @@ Vehicle backend
 `include/swarmkit/evidence`
 : Execution-event recorder, binary format encoding, and deterministic replay reader.
 
-`include/swarmkit/experiment`
-: Paired-trace state acceptance experiment runner, baseline evaluators,
-  scripted backend, manual runtime, and deterministic fault injection.
-
 `src/agent`
 : Agent server implementation, telemetry lifecycle management, report hub,
   readiness checks, runtime counters, and backend implementations.
 
 `apps/`
-: Command-line executables (`swarmkit-agent`, `swarmkit-cli`, `swarmkit-evidence-inspect`,
-  and `swarmkit-dissertation-experiment`).
+: Command-line executables (`swarmkit-agent`, `swarmkit-cli`, and
+  `swarmkit-evidence-inspect`).
 
 `proto`
 : gRPC service definitions and generated protocol code.

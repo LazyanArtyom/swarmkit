@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -17,13 +16,11 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
-#include <exception>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -64,37 +61,6 @@ struct ArmStateObservation {
     bool observed_desired_after_start{false};
     bool current_desired{false};
 };
-
-[[nodiscard]] std::optional<float> FloatParam(
-    const std::unordered_map<std::string, std::string>& params, const std::string& name) {
-    const auto iter = params.find(name);
-    if (iter == params.end()) {
-        return std::nullopt;
-    }
-    try {
-        return std::stof(iter->second);
-    } catch (const std::exception&) {
-        return std::nullopt;
-    }
-}
-
-[[nodiscard]] std::optional<std::uint16_t> CommandParam(
-    const std::unordered_map<std::string, std::string>& params) {
-    const auto iter = params.find("command");
-    if (iter == params.end()) {
-        return std::nullopt;
-    }
-    try {
-        const int command = std::stoi(iter->second);
-        if (command > 0 &&
-            std::cmp_less_equal(command, std::numeric_limits<std::uint16_t>::max())) {
-            return static_cast<std::uint16_t>(command);
-        }
-    } catch (const std::exception&) {
-        return std::nullopt;
-    }
-    return std::nullopt;
-}
 
 class MavlinkBackend final : public IDroneBackend {
    public:
@@ -155,8 +121,14 @@ class MavlinkBackend final : public IDroneBackend {
                            result = ExecuteFlightCommand(flight, envelope.context);
                        },
                        [&](const NavCmd& nav) { result = ExecuteNavCommand(nav); },
-                       [&](const PayloadCmd& payload) { result = ExecutePayloadCommand(payload); },
-                       [&](const BackendCmd& backend) { result = ExecuteBackendCommand(backend); },
+                       [&](const PayloadCmd&) {
+                           result = core::Result::Rejected(
+                               "payload commands are not supported by the MAVLink backend");
+                       },
+                       [&](const BackendCmd&) {
+                           result = core::Result::Rejected(
+                               "raw backend commands are disabled by the MAVLink backend");
+                       },
                    },
                    envelope.command);
         finalize(std::move(result));
@@ -726,100 +698,6 @@ class MavlinkBackend final : public IDroneBackend {
         return SendUnverifiedMavlinkMessage(message);
     }
 
-    [[nodiscard]] core::Result ExecutePayloadCommand(const PayloadCmd& payload) {
-        core::Result result = core::Result::Rejected("payload command not handled");
-        std::visit(
-            core::Overloaded{
-                [&](const CmdPhoto& photo) {
-                    result = SendCommandLong(MAV_CMD_IMAGE_START_CAPTURE,
-                                             static_cast<float>(photo.camera_id), 0.0F, 1.0F);
-                },
-                [&](const CmdPhotoIntervalStart& photo) {
-                    result = SendCommandLong(MAV_CMD_IMAGE_START_CAPTURE,
-                                             static_cast<float>(photo.camera_id), photo.interval_s,
-                                             static_cast<float>(photo.count));
-                },
-                [&](const CmdPhotoIntervalStop& photo) {
-                    result = SendCommandLong(MAV_CMD_IMAGE_STOP_CAPTURE,
-                                             static_cast<float>(photo.camera_id));
-                },
-                [&](const CmdVideoStart& video) {
-                    result = SendCommandLong(MAV_CMD_VIDEO_START_CAPTURE,
-                                             static_cast<float>(video.stream_id), 0.0F,
-                                             static_cast<float>(video.camera_id));
-                },
-                [&](const CmdVideoStop& video) {
-                    result = SendCommandLong(MAV_CMD_VIDEO_STOP_CAPTURE,
-                                             static_cast<float>(video.stream_id),
-                                             static_cast<float>(video.camera_id));
-                },
-                [&](const CmdGimbalPoint& gimbal) {
-                    result = SendCommandLong(MAV_CMD_DO_MOUNT_CONTROL, gimbal.pitch_deg,
-                                             gimbal.roll_deg, gimbal.yaw_deg, 0.0F, 0.0F, 0.0F,
-                                             static_cast<float>(MAV_MOUNT_MODE_MAVLINK_TARGETING));
-                },
-                [&](const CmdRoiLocation& roi) {
-                    result = SendCommandLong(
-                        MAV_CMD_DO_SET_ROI_LOCATION, static_cast<float>(roi.gimbal_id), 0.0F, 0.0F,
-                        0.0F, static_cast<float>(roi.lat_deg), static_cast<float>(roi.lon_deg),
-                        static_cast<float>(roi.alt_m));
-                },
-                [&](const CmdRoiClear& roi) {
-                    result =
-                        SendCommandLong(MAV_CMD_DO_SET_ROI_NONE, static_cast<float>(roi.gimbal_id));
-                },
-                [&](const CmdServo& servo) {
-                    result = SendCommandLong(MAV_CMD_DO_SET_SERVO, static_cast<float>(servo.servo),
-                                             static_cast<float>(servo.pwm));
-                },
-                [&](const CmdRelay& relay) {
-                    result = SendCommandLong(MAV_CMD_DO_SET_RELAY, static_cast<float>(relay.relay),
-                                             relay.enabled ? 1.0F : 0.0F);
-                },
-                [&](const CmdGripper& gripper) {
-                    result =
-                        SendCommandLong(MAV_CMD_DO_GRIPPER, static_cast<float>(gripper.gripper),
-                                        gripper.release ? static_cast<float>(GRIPPER_ACTION_RELEASE)
-                                                        : static_cast<float>(GRIPPER_ACTION_GRAB));
-                },
-            },
-            payload);
-        return result;
-    }
-
-    [[nodiscard]] core::Result ExecuteBackendCommand(const BackendCmd& backend) {
-        core::Result result = core::Result::Rejected("backend command not handled");
-        std::visit(core::Overloaded{[&](const CmdBackendCommand& command) {
-                       if (command.backend_namespace != "mavlink") {
-                           result = core::Result::Rejected(
-                               "MAVLink backend command namespace must be "
-                               "'mavlink'");
-                           return;
-                       }
-                       if (command.name != "command-long") {
-                           result = core::Result::Rejected("unsupported MAVLink backend command '" +
-                                                           command.name + "'");
-                           return;
-                       }
-                       const auto mav_command = CommandParam(command.params);
-                       if (!mav_command.has_value()) {
-                           result = core::Result::Rejected(
-                               "mavlink command-long requires numeric param 'command'");
-                           return;
-                       }
-                       result = SendCommandLong(
-                           *mav_command, FloatParam(command.params, "param1").value_or(0.0F),
-                           FloatParam(command.params, "param2").value_or(0.0F),
-                           FloatParam(command.params, "param3").value_or(0.0F),
-                           FloatParam(command.params, "param4").value_or(0.0F),
-                           FloatParam(command.params, "param5").value_or(0.0F),
-                           FloatParam(command.params, "param6").value_or(0.0F),
-                           FloatParam(command.params, "param7").value_or(0.0F));
-                   }},
-                   backend);
-        return result;
-    }
-
     [[nodiscard]] core::Result SendMavlinkMessage(const mavlink_message_t& message) {
         std::array<std::uint8_t, MAVLINK_MAX_PACKET_LEN> send_buffer{};
         const std::uint16_t length = mavlink_msg_to_send_buffer(send_buffer.data(), &message);
@@ -1112,9 +990,9 @@ core::Result MavlinkBackendConfig::Validate() const {
     return core::Result::Success();
 }
 
-DroneBackendPtr MakeMavlinkBackend(MavlinkBackendConfig config) {
+std::expected<DroneBackendPtr, core::Result> MakeMavlinkBackend(MavlinkBackendConfig config) {
     if (const core::Result result = config.Validate(); !result.IsOk()) {
-        core::Logger::WarnFmt("MakeMavlinkBackend: invalid config: {}", result.message);
+        return std::unexpected(result);
     }
     return std::make_unique<MavlinkBackend>(std::move(config));
 }

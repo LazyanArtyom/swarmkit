@@ -9,6 +9,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -25,23 +26,23 @@
 namespace swarmkit::apps::agent::internal {
 namespace {
 
-constexpr std::string_view kDefaultBindAddr = "0.0.0.0:50061";
+constexpr std::string_view kDefaultBindAddr = "127.0.0.1:50061";
 constexpr std::string_view kDefaultAgentId = "agent-1";
 constexpr std::string_view kDefaultLogLevel = "info";
 constexpr std::string_view kDefaultBackend = "sim";
 constexpr int kMaxMavlinkId = 255;
 
-[[nodiscard]] std::optional<YAML::Node> LoadRootYaml(int argc, char** argv) {
+[[nodiscard]] std::expected<std::optional<YAML::Node>, std::string> LoadRootYaml(int argc,
+                                                                                 char** argv) {
     const std::string kConfigPath = common::GetOptionValue(argc, argv, "--config");
     if (kConfigPath.empty()) {
-        return std::nullopt;
+        return std::optional<YAML::Node>{};
     }
     try {
-        return YAML::LoadFile(kConfigPath);
+        return std::optional<YAML::Node>{YAML::LoadFile(kConfigPath)};
     } catch (const YAML::Exception& ex) {
-        swarmkit::core::Logger::WarnFmt("Failed to parse backend config '{}': {}", kConfigPath,
-                                        ex.what());
-        return std::nullopt;
+        return std::unexpected("failed to parse backend config '" + kConfigPath +
+                               "': " + ex.what());
     }
 }
 
@@ -53,38 +54,55 @@ constexpr int kMaxMavlinkId = 255;
 }
 
 template <typename T>
-void ReadOptionalYamlScalar(const YAML::Node& node, const char* key, T* out) {
-    if (out == nullptr || !node || !node.IsMap() || !node[key]) {
-        return;
+[[nodiscard]] std::expected<void, std::string> ReadOptionalYamlScalar(const YAML::Node& node,
+                                                                      const char* key, T* out) {
+    if (out == nullptr) {
+        return std::unexpected("internal error while reading YAML scalar '" + std::string(key) +
+                               "'");
+    }
+    if (!node || !node.IsMap() || !node[key]) {
+        return {};
     }
     try {
         *out = node[key].as<T>();
     } catch (const YAML::Exception& ex) {
-        swarmkit::core::Logger::WarnFmt("Ignoring invalid YAML scalar '{}': {}", key, ex.what());
+        return std::unexpected("invalid YAML scalar '" + std::string(key) + "': " + ex.what());
     }
+    return {};
 }
 
-void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::uint8_t* out) {
-    int value{};
-    ReadOptionalYamlScalar(node, key, &value);
-    if (value > 0 && value <= kMaxMavlinkId && out != nullptr) {
-        *out = static_cast<std::uint8_t>(value);
+[[nodiscard]] std::expected<void, std::string> ReadOptionalByteYamlScalar(const YAML::Node& node,
+                                                                          const char* key,
+                                                                          std::uint8_t* out) {
+    if (!node || !node.IsMap() || !node[key]) {
+        return {};
     }
+    int value{};
+    if (const auto parsed = ReadOptionalYamlScalar(node, key, &value); !parsed.has_value()) {
+        return parsed;
+    }
+    if (value <= 0 || value > kMaxMavlinkId || out == nullptr) {
+        return std::unexpected("MAVLink YAML scalar '" + std::string(key) +
+                               "' must be in the range 1..255");
+    }
+    *out = static_cast<std::uint8_t>(value);
+    return {};
 }
 
 [[nodiscard]] std::optional<std::uint8_t> ParseByteOption(const std::string& value,
                                                           std::string_view option_name) {
     try {
-        const int mavlink_id = std::stoi(value);
-        if (mavlink_id > 0 && mavlink_id <= kMaxMavlinkId) {
+        std::size_t consumed{};
+        const int mavlink_id = std::stoi(value, &consumed);
+        if (consumed == value.size() && mavlink_id > 0 && mavlink_id <= kMaxMavlinkId) {
             return static_cast<std::uint8_t>(mavlink_id);
         }
     } catch (const std::exception& exc) {
-        swarmkit::core::Logger::WarnFmt("Ignoring invalid {} value '{}': {}", option_name, value,
-                                        exc.what());
+        swarmkit::core::Logger::ErrorFmt("Invalid {} value '{}': {}", option_name, value,
+                                         exc.what());
         return std::nullopt;
     }
-    swarmkit::core::Logger::WarnFmt("Ignoring invalid {} value '{}'", option_name, value);
+    swarmkit::core::Logger::ErrorFmt("Invalid {} value '{}'", option_name, value);
     return std::nullopt;
 }
 
@@ -100,7 +118,7 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
     if (lowered == "false" || lowered == "0" || lowered == "no" || lowered == "off") {
         return false;
     }
-    swarmkit::core::Logger::WarnFmt("Ignoring invalid {} value '{}'", option_name, value);
+    swarmkit::core::Logger::ErrorFmt("Invalid {} value '{}'", option_name, value);
     return std::nullopt;
 }
 
@@ -133,6 +151,8 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
         if (const auto mavlink_id = ParseByteOption(kValue, "--mavlink-target-system");
             mavlink_id.has_value()) {
             mavlink->target_system = *mavlink_id;
+        } else {
+            return std::unexpected(EXIT_FAILURE);
         }
     }
     if (const std::string kValue = common::GetOptionValue(argc, argv, "--mavlink-target-component");
@@ -140,6 +160,8 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
         if (const auto mavlink_id = ParseByteOption(kValue, "--mavlink-target-component");
             mavlink_id.has_value()) {
             mavlink->target_component = *mavlink_id;
+        } else {
+            return std::unexpected(EXIT_FAILURE);
         }
     }
     if (const std::string kValue =
@@ -148,6 +170,8 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
         if (const auto parsed = ParseBoolOption(kValue, "--mavlink-set-guided-before-arm");
             parsed.has_value()) {
             mavlink->set_guided_before_arm = *parsed;
+        } else {
+            return std::unexpected(EXIT_FAILURE);
         }
     }
     if (const std::string kValue =
@@ -156,6 +180,8 @@ void ReadOptionalByteYamlScalar(const YAML::Node& node, const char* key, std::ui
         if (const auto parsed = ParseBoolOption(kValue, "--mavlink-set-guided-before-takeoff");
             parsed.has_value()) {
             mavlink->set_guided_before_takeoff = *parsed;
+        } else {
+            return std::unexpected(EXIT_FAILURE);
         }
     }
     return {};
@@ -190,18 +216,141 @@ void PopulateMavlinkFactoryOptions(const swarmkit::agent::MavlinkBackendConfig& 
               mavlink.allow_flight_termination ? "true" : "false");
 }
 
-void ReadBackendOptionsYaml(const YAML::Node& node,
-                            std::unordered_map<std::string, std::string>* options) {
-    if (options == nullptr || !node || !node.IsMap()) {
-        return;
+[[nodiscard]] std::expected<void, std::string> ReadBackendOptionsYaml(
+    const YAML::Node& node, std::unordered_map<std::string, std::string>* options) {
+    if (!node) {
+        return {};
+    }
+    if (options == nullptr || !node.IsMap()) {
+        return std::unexpected("agent.backend_options must be a map of scalar values");
     }
     for (const auto& entry : node) {
         try {
             (*options)[entry.first.as<std::string>()] = entry.second.as<std::string>();
         } catch (const YAML::Exception& ex) {
-            swarmkit::core::Logger::WarnFmt("Ignoring invalid backend option: {}", ex.what());
+            return std::unexpected("invalid agent.backend_options entry: " +
+                                   std::string(ex.what()));
         }
     }
+    return {};
+}
+
+[[nodiscard]] std::expected<void, std::string> ReadMavlinkYaml(
+    const YAML::Node& node, swarmkit::agent::MavlinkBackendConfig* config) {
+    if (!node) {
+        return {};
+    }
+    if (!node.IsMap() || config == nullptr) {
+        return std::unexpected("agent.mavlink must be a map");
+    }
+
+    constexpr std::array<std::string_view, 14> kAllowedKeys{
+        "drone_id",
+        "bind_addr",
+        "autopilot_profile",
+        "target_system",
+        "target_component",
+        "source_system",
+        "source_component",
+        "telemetry_rate_hz",
+        "peer_discovery_timeout_ms",
+        "command_ack_timeout_ms",
+        "set_guided_before_arm",
+        "set_guided_before_takeoff",
+        "guided_mode",
+        "allow_flight_termination",
+    };
+    for (const auto& entry : node) {
+        if (!entry.first.IsScalar()) {
+            return std::unexpected("agent.mavlink keys must be scalar strings");
+        }
+        const std::string key = entry.first.as<std::string>();
+        if (!std::ranges::contains(kAllowedKeys, key)) {
+            return std::unexpected("unknown agent.mavlink option '" + key + "'");
+        }
+    }
+
+    const auto read = [&](const auto& result) -> std::expected<void, std::string> {
+        if (!result.has_value()) {
+            return std::unexpected(result.error());
+        }
+        return {};
+    };
+    if (auto result = read(ReadOptionalYamlScalar(node, "drone_id", &config->drone_id)); !result) {
+        return result;
+    }
+    if (auto result = read(ReadOptionalYamlScalar(node, "bind_addr", &config->bind_addr));
+        !result) {
+        return result;
+    }
+    if (std::string autopilot_profile; node["autopilot_profile"]) {
+        if (auto result =
+                read(ReadOptionalYamlScalar(node, "autopilot_profile", &autopilot_profile));
+            !result) {
+            return result;
+        }
+        const auto parsed = swarmkit::agent::ParseMavlinkAutopilotProfile(autopilot_profile);
+        if (!parsed.has_value()) {
+            return std::unexpected("invalid agent.mavlink.autopilot_profile: " +
+                                   parsed.error().message);
+        }
+        config->autopilot_profile = *parsed;
+    }
+    if (auto result =
+            read(ReadOptionalByteYamlScalar(node, "target_system", &config->target_system));
+        !result) {
+        return result;
+    }
+    if (auto result =
+            read(ReadOptionalByteYamlScalar(node, "target_component", &config->target_component));
+        !result) {
+        return result;
+    }
+    if (auto result =
+            read(ReadOptionalByteYamlScalar(node, "source_system", &config->source_system));
+        !result) {
+        return result;
+    }
+    if (auto result =
+            read(ReadOptionalByteYamlScalar(node, "source_component", &config->source_component));
+        !result) {
+        return result;
+    }
+    if (auto result =
+            read(ReadOptionalYamlScalar(node, "telemetry_rate_hz", &config->telemetry_rate_hz));
+        !result) {
+        return result;
+    }
+    if (auto result = read(ReadOptionalYamlScalar(node, "peer_discovery_timeout_ms",
+                                                  &config->peer_discovery_timeout_ms));
+        !result) {
+        return result;
+    }
+    if (auto result = read(ReadOptionalYamlScalar(node, "command_ack_timeout_ms",
+                                                  &config->command_ack_timeout_ms));
+        !result) {
+        return result;
+    }
+    if (auto result = read(
+            ReadOptionalYamlScalar(node, "set_guided_before_arm", &config->set_guided_before_arm));
+        !result) {
+        return result;
+    }
+    if (auto result = read(ReadOptionalYamlScalar(node, "set_guided_before_takeoff",
+                                                  &config->set_guided_before_takeoff));
+        !result) {
+        return result;
+    }
+    if (auto result = read(ReadOptionalYamlScalar(node, "guided_mode", &config->guided_mode));
+        !result) {
+        return result;
+    }
+    if (auto result = read(ReadOptionalYamlScalar(node, "allow_flight_termination",
+                                                  &config->allow_flight_termination));
+        !result) {
+        return result;
+    }
+    return {};
 }
 
 }  // namespace
@@ -348,46 +497,30 @@ void ReadBackendOptionsYaml(const YAML::Node& node,
     BackendSelection selection;
     selection.request.backend_name = std::string(kDefaultBackend);
 
-    if (const auto root = LoadRootYaml(argc, argv); root.has_value()) {
-        const YAML::Node agent = SelectAgentSection(*root);
-        ReadOptionalYamlScalar(agent, "backend", &selection.request.backend_name);
-        ReadBackendOptionsYaml(agent["backend_options"], &selection.request.options);
+    const auto root = LoadRootYaml(argc, argv);
+    if (!root.has_value()) {
+        std::cerr << "Invalid backend configuration: " << root.error() << "\n";
+        return std::unexpected(EXIT_FAILURE);
+    }
+    if (root->has_value()) {
+        const YAML::Node agent = SelectAgentSection(**root);
+        if (const auto backend =
+                ReadOptionalYamlScalar(agent, "backend", &selection.request.backend_name);
+            !backend.has_value()) {
+            std::cerr << "Invalid backend configuration: " << backend.error() << "\n";
+            return std::unexpected(EXIT_FAILURE);
+        }
+        if (const auto options =
+                ReadBackendOptionsYaml(agent["backend_options"], &selection.request.options);
+            !options.has_value()) {
+            std::cerr << "Invalid backend configuration: " << options.error() << "\n";
+            return std::unexpected(EXIT_FAILURE);
+        }
 
-        const YAML::Node mavlink = agent["mavlink"] ? agent["mavlink"] : (*root)["mavlink"];
-        if (mavlink) {
-            ReadOptionalYamlScalar(mavlink, "drone_id", &selection.mavlink.drone_id);
-            ReadOptionalYamlScalar(mavlink, "bind_addr", &selection.mavlink.bind_addr);
-            if (std::string autopilot_profile; mavlink["autopilot_profile"]) {
-                ReadOptionalYamlScalar(mavlink, "autopilot_profile", &autopilot_profile);
-                if (const auto parsed =
-                        swarmkit::agent::ParseMavlinkAutopilotProfile(autopilot_profile);
-                    parsed.has_value()) {
-                    selection.mavlink.autopilot_profile = *parsed;
-                } else {
-                    std::cerr << "Invalid mavlink.autopilot_profile: " << parsed.error().message
-                              << "\n";
-                    return std::unexpected(EXIT_FAILURE);
-                }
-            }
-            ReadOptionalByteYamlScalar(mavlink, "target_system", &selection.mavlink.target_system);
-            ReadOptionalByteYamlScalar(mavlink, "target_component",
-                                       &selection.mavlink.target_component);
-            ReadOptionalByteYamlScalar(mavlink, "source_system", &selection.mavlink.source_system);
-            ReadOptionalByteYamlScalar(mavlink, "source_component",
-                                       &selection.mavlink.source_component);
-            ReadOptionalYamlScalar(mavlink, "telemetry_rate_hz",
-                                   &selection.mavlink.telemetry_rate_hz);
-            ReadOptionalYamlScalar(mavlink, "peer_discovery_timeout_ms",
-                                   &selection.mavlink.peer_discovery_timeout_ms);
-            ReadOptionalYamlScalar(mavlink, "command_ack_timeout_ms",
-                                   &selection.mavlink.command_ack_timeout_ms);
-            ReadOptionalYamlScalar(mavlink, "set_guided_before_arm",
-                                   &selection.mavlink.set_guided_before_arm);
-            ReadOptionalYamlScalar(mavlink, "set_guided_before_takeoff",
-                                   &selection.mavlink.set_guided_before_takeoff);
-            ReadOptionalYamlScalar(mavlink, "guided_mode", &selection.mavlink.guided_mode);
-            ReadOptionalYamlScalar(mavlink, "allow_flight_termination",
-                                   &selection.mavlink.allow_flight_termination);
+        const YAML::Node mavlink = agent["mavlink"] ? agent["mavlink"] : (**root)["mavlink"];
+        if (const auto parsed = ReadMavlinkYaml(mavlink, &selection.mavlink); !parsed.has_value()) {
+            std::cerr << "Invalid MAVLink backend configuration: " << parsed.error() << "\n";
+            return std::unexpected(EXIT_FAILURE);
         }
     }
 
