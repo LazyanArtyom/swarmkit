@@ -82,7 +82,39 @@ def main() -> int:
     completed = subprocess.run(command, cwd=ROOT, env=env, text=True,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                check=False)
-    (OUTPUT / "execution.log").write_text(completed.stdout)
+    (OUTPUT / "execution.log").write_text(completed.stdout.rstrip() + "\n")
+    configuration = {
+        "backend": "SimBackend",
+        "clock_mode": "manual",
+        "integration_step_ms": 20,
+        "vehicle_initial_battery_percent": 95,
+        "vehicle_max_horizontal_speed_mps": 10,
+        "takeoff_altitude_m": 10,
+        "agent_sim_recovery_enabled": True,
+        "sensor_client_id": "test-client",
+        "sensor_calibration_id": "synthetic-camera-v3",
+        "edge_length_m": 20,
+        "edge_obligation": "survey_and_arrival",
+        "corridor_half_width_m": 4,
+        "arrival_radius_m": 2,
+        "arrival_max_speed_mps": 0.5,
+        "declared_maximum_speed_mps": 10,
+        "recovery_overlap_m": 2,
+        "max_recovery_attempts": 1,
+        "sustained_deviation_samples": 1000,
+        "recovery_cooldown_ms": 1000,
+        "edge_timeout_ms": 60000,
+        "commanded_speed_mps": 2,
+        "simulation_tick_ms": 100,
+        "maximum_ticks": 550,
+        "synthetic_camera_half_length_m": 2,
+        "synthetic_camera_period_ticks": 5,
+        "initial_camera_outage_east_m": [8, 12],
+        "truth_raster_cell_m": 0.25,
+        "truth_raster_cells": 80,
+        "failure_injection": "motor failure after first accepted recovery dispatch",
+    }
+    (OUTPUT / "configuration.json").write_text(json.dumps(configuration, indent=2) + "\n")
     cases = []
     traces = []
     for name in ("agent_camera_gap", "agent_motor_failure"):
@@ -109,7 +141,7 @@ def main() -> int:
         })
     table = OUTPUT / "tables" / "observed_attempts.csv"
     with table.open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=cases[0].keys())
+        writer = csv.DictWriter(stream, fieldnames=cases[0].keys(), lineterminator="\n")
         writer.writeheader()
         writer.writerows(cases)
     (OUTPUT / "figures" / "survey_vs_physical_distance.svg").write_text(plot(traces))
