@@ -32,7 +32,9 @@ real vehicle recovery needs a qualified geofence and mode feasibility check.
 
 The reproducible geometric experiment and its limitations are in
 [VECR results](results/vecr/reports/CORE_RESULTS_V2_100_SEEDS.md) and
-[method notes](docs/vecr/METHOD_AND_CORRECTNESS.md). This is not an ArduPilot
+[method notes](docs/vecr/METHOD_AND_CORRECTNESS.md). A separate
+[v3 agent-backed pilot](results/vecr/agent_pilot_v3/README.md) records two
+SimBackend attempts and independent simulator truth. This is not an ArduPilot
 SITL or real camera validation. Prior state-acceptance research was archived
 under [docs/vecr/archive](docs/vecr/archive) and removed from the active SDK.
 
