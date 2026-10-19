@@ -526,6 +526,37 @@ GoalResult SwarmClient::SetActiveGoal(const ActiveGoalRequest& request) const {
     return client->SetActiveGoal(request);
 }
 
+EdgeResult SwarmClient::ExecuteEdge(const EdgeOperationRequest& request) const {
+    std::shared_ptr<Client> client;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        const auto it = impl_->clients.find(request.edge.drone_id);
+        if (it != impl_->clients.end()) client = it->second;
+    }
+    if (client) return client->ExecuteEdge(request);
+    EdgeResult result;
+    result.message = "drone not registered: " + request.edge.drone_id;
+    result.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kNotFound,
+                                  result.message);
+    return result;
+}
+
+EdgeResult SwarmClient::GetEdgeStatus(const std::string& drone_id,
+                                      const std::string& attempt_id) const {
+    std::shared_ptr<Client> client;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        const auto it = impl_->clients.find(drone_id);
+        if (it != impl_->clients.end()) client = it->second;
+    }
+    if (client) return client->GetEdgeStatus(drone_id, attempt_id);
+    EdgeResult result;
+    result.message = "drone not registered: " + drone_id;
+    result.error = MakeLocalError(core::ErrorDomain::kSwarm, core::ErrorCode::kNotFound,
+                                  result.message);
+    return result;
+}
+
 std::unordered_map<std::string, GoalResult> SwarmClient::SetActiveGoals(
     const std::unordered_map<std::string, ActiveGoalRequest>& requests,
     const SwarmFanoutOptions& fanout_options) const {

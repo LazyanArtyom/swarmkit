@@ -25,6 +25,7 @@
 #include "swarmkit/core/result.h"
 #include "swarmkit/core/security.h"
 #include "swarmkit/core/telemetry.h"
+#include "swarmkit/edge/vecr.h"
 
 namespace swarmkit::client {
 
@@ -347,6 +348,7 @@ enum class AgentReportType : std::uint8_t {
     kAuthorityLocked,
     kAuthorityRejected,
     kAuthorityReleased,
+    kEdgeReport,
 };
 
 struct GoalReport {
@@ -379,6 +381,33 @@ struct AgentReport {
     /// Mutually exclusive binding: none, generic command context, or exact physical attempt.
     ReportExecutionBinding execution_binding;
     std::optional<GoalReport> goal;
+    struct EdgeReport {
+        std::string mission_id;
+        std::uint64_t mission_revision{};
+        std::string edge_id;
+        std::string attempt_id;
+        std::string drone_id;
+        edge::Status status;
+        std::optional<edge::GeoPoint> pending_reentry_wgs84;
+        core::ExecutionHandle execution_handle;
+    };
+    std::optional<EdgeReport> edge;
+};
+
+struct EdgeOperationRequest {
+    edge::EdgeRequest edge;
+    edge::GeoPoint wgs84_origin;
+    double altitude_m{};
+    float commanded_speed_mps{};
+    std::optional<core::ExecutionContext> execution_context;
+};
+
+struct EdgeResult {
+    bool ok{};
+    std::string message;
+    core::SwarmError error;
+    std::optional<AgentReport::EdgeReport> status;
+    std::optional<core::BackendCommandOutcome> backend_outcome;
 };
 
 struct GoalResult {
@@ -876,6 +905,13 @@ class Client {
     /// @param drone_id Target drone identifier.
     /// @return ActiveGoalResult with no snapshot when no goal is active.
     [[nodiscard]] ActiveGoalResult GetActiveGoal(const std::string& drone_id) const;
+
+    [[nodiscard]] EdgeResult ExecuteEdge(const EdgeOperationRequest& request) const;
+    [[nodiscard]] EdgeResult GetEdgeStatus(const std::string& drone_id,
+                                           const std::string& attempt_id) const;
+    [[nodiscard]] EdgeResult SubmitEdgeCapture(const std::string& drone_id,
+                                               const edge::CaptureEvidence& capture) const;
+    [[nodiscard]] EdgeResult CancelEdge(const core::ExecutionHandle& expected) const;
 
     /// @brief Publish a small app-defined data-plane message.
     /// @param message Message topic, target, labels, TTL, and payload.

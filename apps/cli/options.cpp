@@ -19,7 +19,7 @@ namespace swarmkit::apps::cli::internal {
 [[nodiscard]] bool IsSubcommand(std::string_view value) {
     return value == "ping" || value == "health" || value == "stats" || value == "capabilities" ||
            value == "preflight" || value == "telemetry" || value == "command" ||
-           value == "sequence" || value == "goal" || value == "reports" || value == "lock" ||
+           value == "sequence" || value == "goal" || value == "edge" || value == "reports" || value == "lock" ||
            value == "unlock" || value == "watch-authority" || value == "message" ||
            value == "artifact" || value == "swarm";
 }
@@ -46,7 +46,10 @@ namespace swarmkit::apps::cli::internal {
            value == "--payload" || value == "--content-type" || value == "--artifact-id" ||
            value == "--chunk-bytes" || value == "--transfer-id" || value == "--page-size" ||
            value == "--page-token" || value == "--namespace" || value == "--name" ||
-           value == "--param" || value == "--transport-security";
+           value == "--param" || value == "--transport-security" ||
+           value == "--mission-id" || value == "--edge-id" || value == "--attempt-id" ||
+           value == "--from-lat" || value == "--from-lon" || value == "--to-lat" ||
+           value == "--to-lon" || value == "--corridor-m" || value == "--obligation";
 }
 
 [[nodiscard]] bool IsFlag(std::string_view value) {

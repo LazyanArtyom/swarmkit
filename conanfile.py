@@ -26,6 +26,7 @@ class SwarmkitConan(ConanFile):
         "include/swarmkit/commands.h",
         "include/swarmkit/core/*",
         "include/swarmkit/evidence/*",
+        "include/swarmkit/edge/*",
         "proto/*",
         "src/agent/*",
         "src/client/*",
@@ -36,6 +37,7 @@ class SwarmkitConan(ConanFile):
         "apps/cli/*",
         "apps/common/*",
         "apps/evidence_inspect.cpp",
+        "apps/vecr_experiment.cpp",
         "examples/*",
         "third_party/*",
     )

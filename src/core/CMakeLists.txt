@@ -6,12 +6,7 @@
 
 add_library(swarmkit_core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/logger.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/evidence_store.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/state_quality_contract.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/state_acceptance_engine.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/state_acceptance_certificate.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/state_acceptance_verifier.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/replay_trace.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/vecr.cpp
 )
 
 target_include_directories(swarmkit_core PUBLIC

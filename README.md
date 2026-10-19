@@ -1,6 +1,6 @@
 # SwarmKit
 
-Multi-agent UAV swarm control and telemetry platform.
+UAV control, telemetry, data transport, and onboard verified edge surveying SDK.
 
 - **Agent** (`swarmkit-agent`) — gRPC daemon that runs on a Raspberry Pi alongside the vehicle. Accepts commands, streams telemetry, and routes to a pluggable backend.
 - **CLI** (`swarmkit-cli`) — developer tool to ping the agent, subscribe to live telemetry, and send commands.
@@ -15,6 +15,37 @@ Telemetry is exposed as a typed vehicle-state model with explicit validity
 flags, source timestamps, coordinate-frame metadata, home origin, GPS quality,
 estimator state, accuracy fields, and command/goal linkage for monitoring and
 3D swarm applications.
+
+## Verified Edge Coverage and Recovery
+
+`ExecuteEdge` gives an external graph planner an agent-local edge operation.
+Its report distinguishes backend command acceptance, arrival at B, bounded
+route traversal, verified strip survey, missing survey intervals, and terminal
+fulfillment. A camera adapter must submit calibrated, quality-qualified
+full-strip capture intervals; arrival or a camera command ACK cannot create
+survey evidence. The agent uses the existing arbiter, backend, telemetry lease,
+report stream and session/attempt identity. Automatic re-entry is currently
+enabled only for the simulator backend with `agent.vecr.sim_recovery_enabled`;
+real vehicle recovery needs a qualified geofence and mode feasibility check.
+
+The reproducible geometric experiment and its limitations are in
+[VECR results](results/vecr/reports/CORE_RESULTS_V2_100_SEEDS.md) and
+[method notes](docs/vecr/METHOD_AND_CORRECTNESS.md). This is not an ArduPilot
+SITL or real camera validation. Prior state-acceptance research was archived
+under [docs/vecr/archive](docs/vecr/archive) and removed from the active SDK.
+
+Example (already armed and in a safe guided simulation state):
+
+```bash
+./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge execute \
+  --drone drone-1 --mission-id demo --revision 1 --edge-id A-B --attempt-id try-1 \
+  --from-lat 40.0000 --from-lon 44.0000 --to-lat 40.0000 --to-lon 44.0010 \
+  --alt 10 --speed 2 --obligation survey
+./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge status \
+  --drone drone-1 --attempt-id try-1
+./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge watch \
+  --drone drone-1 --attempt-id try-1
+```
 
 Production hardening is tracked in the
 [Phase 0 production-readiness milestone](docs/source/production_readiness.md). A green software

@@ -178,6 +178,12 @@ struct AgentConfig {
     DataPlaneConfig data{};
     VehicleProfile vehicle_profile{};
     SafetyPolicy safety{};
+    // Empty disables survey capture submission. Configure only for a trusted
+    // local sensor adapter with an independently qualified footprint model.
+    std::string vecr_sensor_client_id;
+    // Simulator-only recovery path. Real backends require a separate
+    // geofence/flight-mode feasibility integration before enabling recovery.
+    bool vecr_sim_recovery_enabled{false};
     AgentSecurityConfig security{};
 
     /// @brief Validate address, telemetry, authority, profile, data, reports, and security.

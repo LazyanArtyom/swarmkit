@@ -71,7 +71,6 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
         COMPONENT sdk
         FILES_MATCHING
         PATTERN "*.h"
-        PATTERN "swarmkit/experiment" EXCLUDE
         PATTERN "*.in" EXCLUDE
         PATTERN ".DS_Store" EXCLUDE)
 

@@ -16,6 +16,7 @@ swarmkit-agent process
   - CommandArbiter
   - TelemetryManager
   - ReportHub
+  - EdgeExecutionRuntime and VECR supervisor
   - data message and artifact services
         |
         | swarmkit::agent::IDroneBackend
@@ -29,9 +30,11 @@ Vehicle backend
 ## Main Modules
 
 `include/swarmkit/core`
-: Common result/error types, telemetry model, clock quality, evidence records,
-  evidence store, state-quality contracts, state acceptance engine,
-  state-acceptance certificates, independent verifier, and the global logger facade.
+: Common result/error types, telemetry model, VECR interval/geometry core,
+  and the global logger facade.
+
+`include/swarmkit/edge`
+: Algorithm-neutral edge request, capture evidence, status and supervisor API.
 
 `include/swarmkit/commands*.h`
 : Public command model. Commands are protocol-neutral C++ variants.

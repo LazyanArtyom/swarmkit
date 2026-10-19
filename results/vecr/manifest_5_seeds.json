@@ -1,0 +1,39 @@
+{
+  "protocol": "core-strip-v1",
+  "status": "modeled geometric simulation; partial scenario matrix",
+  "git_commit": "1424bd1f5d4347ab4c819f49727c0e9324695406",
+  "git_dirty": true,
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "python": "3.14.5",
+  "binary_sha256": "296324ca735aea6da1142e302d99ae8573acc05578ee300fcfbb6bbb182edeeb",
+  "source_sha256": "ab4611a5368decc5a9c13c07e9d3a5f85cfd27a21fa609120e75cc3852da1f06",
+  "raw_sha256": "8f2fd4dde37e627448954b988bd5cb6812b76f555f0f872483caaa920fb9c16d",
+  "seed_range": [
+    1,
+    5
+  ],
+  "scenarios": [
+    "S00",
+    "S01",
+    "S03",
+    "S04",
+    "S05",
+    "S06",
+    "S07",
+    "S11"
+  ],
+  "methods": [
+    "B0",
+    "B1",
+    "B2",
+    "P"
+  ],
+  "route_length_m": 100,
+  "truth_cell_m": 0.25,
+  "camera_half_length_m": 2,
+  "required_strip_half_width_m": 4,
+  "maximum_missing_m": 0,
+  "excluded_trials": 0,
+  "sitl_independent_truth_status": "UNAVAILABLE"
+}

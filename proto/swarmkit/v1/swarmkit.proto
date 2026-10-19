@@ -38,6 +38,13 @@ service AgentService {
     /// Read the currently active supervised goal for one drone.
     rpc GetActiveGoal(GetActiveGoalRequest) returns (GetActiveGoalReply);
 
+    /// Agent-local verified edge operation. Arrival, traversal and survey are
+    /// distinct predicates; capture evidence is supplied by a trusted adapter.
+    rpc ExecuteEdge(ExecuteEdgeRequest) returns (ExecuteEdgeReply);
+    rpc GetEdgeStatus(GetEdgeStatusRequest) returns (GetEdgeStatusReply);
+    rpc SubmitEdgeCapture(SubmitEdgeCaptureRequest) returns (SubmitEdgeCaptureReply);
+    rpc CancelEdge(CancelEdgeRequest) returns (CancelEdgeReply);
+
     /// Subscribe to typed agent reports: goal state, command state, health, and
     /// authority events. Reports are intentionally policy-neutral so user
     /// controllers can decide their own correction behavior.
@@ -598,6 +605,7 @@ enum AgentReportType {
     AUTHORITY_LOCKED = 30;
     AUTHORITY_REJECTED = 31;
     AUTHORITY_RELEASED = 32;
+    EDGE_REPORT = 40;
 }
 
 message GoalReport {
@@ -629,6 +637,121 @@ message AgentReport {
         ExecutionHandle execution_handle = 11;
     }
     GoalReport goal = 10;
+    EdgeReport edge = 12;
+}
+
+enum EdgeObligation {
+    EDGE_OBLIGATION_UNSPECIFIED = 0;
+    EDGE_ARRIVAL = 1;
+    EDGE_TRAVERSAL = 2;
+    EDGE_SURVEY = 3;
+}
+
+enum EdgePhase {
+    EDGE_PHASE_UNSPECIFIED = 0;
+    EDGE_MOVING = 1;
+    EDGE_RECOVERING = 2;
+    EDGE_FULFILLED = 3;
+    EDGE_INTERRUPTED = 4;
+    EDGE_UNKNOWN = 5;
+}
+
+enum EdgeEvidenceQuality {
+    EDGE_EVIDENCE_UNKNOWN = 0;
+    EDGE_EVIDENCE_ESTIMATED = 1;
+    EDGE_EVIDENCE_BOUNDED = 2;
+}
+
+message EdgeInterval {
+    double begin_m = 1;
+    double end_m = 2;
+}
+
+message EdgeOperation {
+    string mission_id = 1;
+    uint64 mission_revision = 2;
+    string edge_id = 3;
+    string attempt_id = 4;
+    string drone_id = 5;
+    repeated GeoPoint route = 6; // WGS84; first point fixes the local metric origin.
+    EdgeObligation obligation = 7;
+    double corridor_half_width_m = 8;
+    double arrival_radius_m = 9;
+    double arrival_max_speed_mps = 10;
+    double maximum_missing_m = 11;
+    double maximum_speed_mps = 12; // Physical hard bound only, not command speed.
+    double recovery_overlap_m = 13;
+    uint32 max_recovery_attempts = 14;
+    uint32 sustained_deviation_samples = 15;
+    int64 recovery_cooldown_ms = 16;
+    int64 timeout_ms = 17;
+    float commanded_speed_mps = 18;
+}
+
+message EdgeReport {
+    string mission_id = 1;
+    uint64 mission_revision = 2;
+    string edge_id = 3;
+    string attempt_id = 4;
+    string drone_id = 5;
+    EdgePhase phase = 6;
+    bool at_b_verified = 7;
+    bool traversal_verified = 8;
+    bool survey_verified = 9;
+    double survey_covered_m = 10;
+    double survey_prefix_m = 11;
+    repeated EdgeInterval survey_missing = 12;
+    repeated EdgeInterval traversal_missing = 13;
+    uint32 recovery_attempts = 14;
+    string reason = 15;
+    GeoPoint pending_reentry = 16;
+    ExecutionHandle execution_handle = 18;
+    EdgeEvidenceQuality traversal_quality = 19;
+}
+
+message ExecuteEdgeRequest {
+    CommandContext ctx = 1;
+    EdgeOperation edge = 2;
+}
+message ExecuteEdgeReply {
+    bool ok = 1;
+    string message = 2;
+    ErrorCode error_code = 3;
+    EdgeReport status = 4;
+    BackendCommandOutcome backend_outcome = 5;
+}
+message GetEdgeStatusRequest {
+    string drone_id = 1;
+    string attempt_id = 2;
+}
+message GetEdgeStatusReply {
+    bool found = 1;
+    EdgeReport status = 2;
+}
+message SubmitEdgeCaptureRequest {
+    string drone_id = 1;
+    string attempt_id = 2;
+    string capture_id = 3;
+    string calibration_id = 4;
+    int64 agent_monotonic_ms = 5;
+    EdgeInterval guaranteed_full_strip_interval = 6;
+    bool capture_succeeded = 7;
+    bool full_strip_quality_established = 8;
+    string sensor_client_id = 9;
+}
+message SubmitEdgeCaptureReply {
+    bool accepted = 1;
+    string message = 2;
+    EdgeReport status = 3;
+}
+message CancelEdgeRequest {
+    CommandContext ctx = 1;
+    ExecutionHandle expected_execution_handle = 2;
+}
+message CancelEdgeReply {
+    bool cancelled = 1;
+    string message = 2;
+    EdgeReport status = 3;
 }
 
 message SetActiveGoalRequest {

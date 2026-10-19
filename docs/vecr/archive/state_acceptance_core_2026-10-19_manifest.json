@@ -1,0 +1,29 @@
+{
+  "source_commit": "1424bd1f5d4347ab4c819f49727c0e9324695406",
+  "purpose": "superseded state-acceptance-only public core; no current agent/client dependency",
+  "files": {
+    "src/core/evidence_store.cpp": "9522e1a5d0a12ceaa2434a2e0796e2f3dbc2cda95b6903770587e5022f855135",
+    "src/core/state_quality_contract.cpp": "9162fcb46b3fb04aeab33c760a570c4868aced1d40272c0ca2141235d8fac42e",
+    "src/core/state_acceptance_engine.cpp": "bcf0ffa15b5b96e7e89c9861fc0afc5c6f6484814704cb7a221f4cadee7bdda8",
+    "src/core/state_acceptance_certificate.cpp": "605dee47f0156dbd1e46458ba2b42ea30121662e1851a5b6d90ce679469a6651",
+    "src/core/state_acceptance_verifier.cpp": "1fd197f2f3905c01c82b5f2bf5cea0c3731cd8944de16e2aad3d2fb2f72ecd6c",
+    "src/core/replay_trace.cpp": "2bb3acc36cba4e7ea9353db8a27f6b4ac7c7ceae96f0c662a9963c0b65688a6f",
+    "include/swarmkit/core/clock_quality.h": "c2ab966f0bbbf0e00917e09e7ad04e81dc7397fae53fe0d9cb1bd15342766370",
+    "include/swarmkit/core/evidence_record.h": "1e1069394128a6be745531abfb327c664a24f6eb8a833a3ddb4cac83bc353475",
+    "include/swarmkit/core/evidence_store.h": "c9f8a583b5bacdbcd7ffec7d61392bf652d0c7346ed04b261e10292e016d025a",
+    "include/swarmkit/core/state_quality_contract.h": "6b65f360e7803fb6994299ecc091904c5bcfbd8a92df0603316841d16295c090",
+    "include/swarmkit/core/state_acceptance_engine.h": "c76be9dbbb1ccc827a09305b7cb6d8ed94e92c45aa1ce542d367b9a497c3d12c",
+    "include/swarmkit/core/state_acceptance_certificate.h": "af872cf0f4b658fe76e49af98909ddf2413647d9bdfa2fc0a44e0e7e2f66be90",
+    "include/swarmkit/core/state_acceptance_verifier.h": "629be001d1938e2407bc078d52fa281d322c9b29f5daf4ec616f107711809d4e",
+    "include/swarmkit/core/replay_trace.h": "07e8973d4292999cbfea817530c9379350eeb43e9172cfd013fa30df83ef8d34",
+    "tests/test_clock_quality.cpp": "640da9d02cc3e8d754b8af527ae4c6730e1a9d0c517e47dcdb68fb4d6e3912c4",
+    "tests/test_evidence_store.cpp": "e7597fe94f717906bc162eb6db810d55b5fe392eb0306fb0d529da65b43f63a7",
+    "tests/test_state_quality_contract.cpp": "e9fe72ba8cf59aa1639a3f4e18d49e73386c2604a173a858cbef86c57e1ac5b8",
+    "tests/test_state_acceptance_engine.cpp": "d1a8b12cfef836a3b43e42ea62055d0caf2a2c472616cd47334643b81814ecb6",
+    "tests/test_state_acceptance_certificate.cpp": "e1e59ee62c4d04234017e04e1b97249c73de274bfad80dac1a93104ac76dffc4",
+    "tests/test_state_acceptance_verifier.cpp": "cbda2d5efdebf006787ac19b7eb2b706caa6c5d1aadb4952ccea3afa9f101d85",
+    "tests/test_replay_trace.cpp": "a393c3e33bb66463bced8a50e512e367aa2c7267c33cf8b9b08acc9c0bedd24f"
+  },
+  "archive_sha256": "a949230659ec5fcfd78443530adf2b46d304ae7771e6dc8096e6b4b7ff1bd109",
+  "file_count": 21
+}

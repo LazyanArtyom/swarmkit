@@ -8,13 +8,6 @@ add_executable(swarmkit_tests
     test_arbiter.cpp
     test_basic.cpp
     test_backend_contract.cpp
-    test_clock_quality.cpp
-    test_evidence_store.cpp
-    test_state_quality_contract.cpp
-    test_state_acceptance_engine.cpp
-    test_state_acceptance_certificate.cpp
-    test_state_acceptance_verifier.cpp
-    test_replay_trace.cpp
     test_client_integration.cpp
     test_command_preconditions.cpp
     test_config.cpp
@@ -25,6 +18,7 @@ add_executable(swarmkit_tests
     test_swarm_client.cpp
     test_telemetry_manager.cpp
     test_telemetry_sink.cpp
+    test_vecr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../apps/cli/telemetry_sink.cpp
 )
 

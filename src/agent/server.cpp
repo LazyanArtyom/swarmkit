@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "active_goal_supervisor.h"
+#include "edge_execution_runtime.h"
 #include "command_preconditions.h"
 #include "config_yaml.h"
 #include "env_utils.h"
@@ -1253,7 +1254,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
                      static_cast<std::size_t>(config_.telemetry_retention.max_frames_per_drone),
                      providers_, agent_session_id_),
           reports_(MakeReportHubOptions(config_.reports, providers_, agent_session_id_)),
-          goals_(&telemetry_, &reports_, &config_, providers_) {
+          goals_(&telemetry_, &reports_, &config_, providers_),
+          edges_(&telemetry_, &reports_, backend_.get(), &arbiter_, &config_, providers_) {
         telemetry_.SetExecutionSnapshotProvider(
             [this](const std::string& drone_id) { return goals_.GetExecutionHandle(drone_id); });
         telemetry_.SetNormalizedFrameObserver([this](const core::TelemetryFrame& frame) {
@@ -1282,6 +1284,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             proto.set_affected_client_id(event.affected_client_id);
             proto.set_correlation_id(event.correlation_id);
             recorder_.RecordAuthority(proto);
+            if (event.kind == AuthorityEvent::Kind::kPreempted)
+                edges_.Preempt(event.drone_id, event.affected_client_id);
         });
         if (recorder_.Enabled() && !recorder_.Valid()) {
             ready_.store(false, std::memory_order_relaxed);
@@ -1297,6 +1301,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
     ~AgentServiceImpl() override {
         // Detach cross-component callbacks before reverse-order member destruction. Producers
         // shut down before the recorder, so every accepted event is finalized first.
+        edges_.Shutdown();
         goals_.Shutdown();
         arbiter_.Shutdown();
         arbiter_.SetEventObserver({});
@@ -1763,6 +1768,12 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         // producing overlapping pending-attempt bindings. Telemetry can still normalize while
         // the backend call is in progress and will observe the bound attempt below.
         std::lock_guard<std::mutex> goal_dispatch_lock(goal_dispatch_mutex_);
+        if (edges_.Active(goal.drone_id())) {
+            reply->set_ok(false);
+            reply->set_message("verified edge attempt is active for this drone");
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION);
+            return grpc::Status::OK;
+        }
         const core::Result arbiter_result = arbiter_.CheckAndGrant(
             context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
         if (!arbiter_result.IsOk()) {
@@ -1872,6 +1883,117 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         reply->set_computed_timeout_ms(computed_timeout_ms);
         core::internal::PopulateExecutionHandle(execution_handle,
                                                 reply->mutable_execution_handle());
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ExecuteEdge(grpc::ServerContext* ctx,
+                             const swarmkit::v1::ExecuteEdgeRequest* req,
+                             swarmkit::v1::ExecuteEdgeReply* reply) override {
+        if (req == nullptr || reply == nullptr || !req->has_ctx() || !req->has_edge())
+            return {grpc::StatusCode::INVALID_ARGUMENT, "edge and command context required"};
+        CommandContext context = ToCoreContext(req->ctx());
+        context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "edge");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, &context.client_id);
+            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        if (context.drone_id.empty()) context.drone_id = req->edge().drone_id();
+        if (const core::Result validation = ValidateCommandContext(context);
+            !validation.IsOk())
+            return {grpc::StatusCode::INVALID_ARGUMENT, validation.message};
+        if (context.drone_id != req->edge().drone_id())
+            return {grpc::StatusCode::INVALID_ARGUMENT, "edge drone identity mismatch"};
+        if (context.execution_context &&
+            (context.execution_context->mission_id != req->edge().mission_id() ||
+             context.execution_context->mission_revision != req->edge().mission_revision()))
+            return {grpc::StatusCode::INVALID_ARGUMENT, "edge mission context mismatch"};
+        std::lock_guard<std::mutex> dispatch_lock(goal_dispatch_mutex_);
+        const auto active_goal = goals_.GetGoal(context.drone_id);
+        if (active_goal && (active_goal->status == swarmkit::v1::GOAL_ACTIVE ||
+                            active_goal->status == swarmkit::v1::GOAL_DEVIATING)) {
+            reply->set_message("waypoint goal is active for this drone");
+            reply->set_error_code(swarmkit::v1::ERROR_CODE_FAILED_PRECONDITION);
+            return grpc::Status::OK;
+        }
+        core::ExecutionHandle handle{
+            .agent_session_id = agent_session_id_,
+            .drone_id = context.drone_id,
+            .goal_id = req->edge().edge_id(),
+            .goal_revision = req->edge().mission_revision(),
+            .physical_attempt_id = req->edge().attempt_id(),
+            .physical_attempt_revision =
+                next_physical_attempt_revision_.fetch_add(1, std::memory_order_relaxed),
+            .client_id = context.client_id,
+            .correlation_id = context.correlation_id,
+            .context = context.execution_context,
+        };
+        core::BackendCommandOutcome dispatch;
+        const core::Result result = edges_.Start(req->edge(), handle, context,
+                                                 reply->mutable_status(), &dispatch);
+        reply->set_ok(result.IsOk());
+        reply->set_message(result.message);
+        reply->set_error_code(ToProtoErrorCode(result.error.code));
+        if (dispatch.dispatch_state != core::BackendDispatchState::kUnknown)
+            PopulateBackendOutcome(dispatch, reply->mutable_backend_outcome());
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetEdgeStatus(grpc::ServerContext* ctx,
+                               const swarmkit::v1::GetEdgeStatusRequest* req,
+                               swarmkit::v1::GetEdgeStatusReply* reply) override {
+        if (req == nullptr || reply == nullptr || req->drone_id().empty() ||
+            req->attempt_id().empty())
+            return {grpc::StatusCode::INVALID_ARGUMENT, "drone and attempt required"};
+        std::string client_id;
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, &client_id);
+            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        const auto snapshot = edges_.Get(req->drone_id(), req->attempt_id());
+        reply->set_found(snapshot.has_value());
+        if (snapshot) *reply->mutable_status() = *snapshot;
+        return grpc::Status::OK;
+    }
+
+    grpc::Status SubmitEdgeCapture(grpc::ServerContext* ctx,
+                                   const swarmkit::v1::SubmitEdgeCaptureRequest* req,
+                                   swarmkit::v1::SubmitEdgeCaptureReply* reply) override {
+        if (req == nullptr || reply == nullptr)
+            return {grpc::StatusCode::INVALID_ARGUMENT, "capture required"};
+        std::string client_id = req->sensor_client_id();
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, &client_id);
+            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        if (config_.vecr_sensor_client_id.empty() ||
+            client_id != config_.vecr_sensor_client_id)
+            return {grpc::StatusCode::PERMISSION_DENIED, "untrusted sensor adapter"};
+        const core::Result result = edges_.SubmitCapture(*req, reply->mutable_status());
+        reply->set_accepted(result.IsOk());
+        reply->set_message(result.message);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status CancelEdge(grpc::ServerContext* ctx,
+                            const swarmkit::v1::CancelEdgeRequest* req,
+                            swarmkit::v1::CancelEdgeReply* reply) override {
+        if (req == nullptr || reply == nullptr || !req->has_ctx() ||
+            !req->has_expected_execution_handle())
+            return {grpc::StatusCode::INVALID_ARGUMENT, "context and edge handle required"};
+        CommandContext context = ToCoreContext(req->ctx());
+        context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "cancel-edge");
+        if (const core::Result auth = AuthorizePeer(ctx, config_.security, &context.client_id);
+            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        if (const core::Result validation = ValidateCommandContext(context);
+            !validation.IsOk())
+            return {grpc::StatusCode::INVALID_ARGUMENT, validation.message};
+        const core::ExecutionHandle expected =
+            core::internal::ToCoreExecutionHandle(req->expected_execution_handle());
+        if (!expected.IsComplete() || expected.drone_id != context.drone_id)
+            return {grpc::StatusCode::INVALID_ARGUMENT, "edge handle identity mismatch"};
+        const core::Result grant = arbiter_.CheckAndGrant(
+            context, std::chrono::milliseconds{config_.default_authority_ttl_ms});
+        if (!grant.IsOk()) {
+            reply->set_message(grant.message);
+            return grpc::Status::OK;
+        }
+        const core::Result result = edges_.Cancel(expected, reply->mutable_status());
+        reply->set_cancelled(result.IsOk());
+        reply->set_message(result.message);
         return grpc::Status::OK;
     }
 
@@ -2368,6 +2490,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
     internal::TelemetryManager telemetry_;
     internal::ReportHub reports_;
     internal::ActiveGoalSupervisor goals_;
+    internal::EdgeExecutionRuntime edges_;
     std::mutex goal_dispatch_mutex_;
     std::atomic<std::uint64_t> next_physical_attempt_revision_{1};
     std::atomic<bool> ready_{true};

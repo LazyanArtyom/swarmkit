@@ -1,0 +1,46 @@
+{
+  "protocol": "core-strip-v2",
+  "status": "modeled geometric simulation; partial scenario matrix",
+  "git_commit": "1424bd1f5d4347ab4c819f49727c0e9324695406",
+  "git_dirty": true,
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "python": "3.14.5",
+  "binary_sha256": "f978634544d517225e56adf176f51818f9a653c221d1d6f0d8fe0d23cc212fc4",
+  "source_sha256": "d7477878d814d788879802f91e5825a790d287880817c3afecc45f82ac2e3425",
+  "generator_sha256": "e86ccb7028e6bdb437c1ae1db32655ba3f6ca06810adfe444376c35cc2a95a9d",
+  "raw_sha256": "70a9d87c584e96a053c740bde7a100c9a80b1c5af3471df63d759944bfe60096",
+  "methods_table_sha256": "fd36d92e6c76ffb658fac818dc7353cef89d80a186e3227bcede253173d47f82",
+  "scenarios_table_sha256": "3ceecde79b034948d9f0b30d7243abbb10e642c1a020b641f61bc2f77d2c2f83",
+  "report_sha256": "7558d80671e7da93a30f8b7fb266b86be9a7d984ebd707b919717f3d73ede77f",
+  "build_profile": "Release",
+  "seed_range": [
+    1,
+    5
+  ],
+  "scenarios": [
+    "S00",
+    "S01",
+    "S03",
+    "S04",
+    "S05",
+    "S06",
+    "S07",
+    "S11"
+  ],
+  "methods": [
+    "B0",
+    "B1",
+    "B2",
+    "P"
+  ],
+  "route_length_m": 100,
+  "truth_cell_m": 0.25,
+  "camera_half_length_m": 2,
+  "required_strip_half_width_m": 4,
+  "maximum_missing_m": 0,
+  "excluded_trials": 0,
+  "sitl_independent_truth_status": "UNAVAILABLE",
+  "live_camera_status": "NOT_EXECUTED",
+  "arm_device_benchmark_status": "NOT_EXECUTED"
+}

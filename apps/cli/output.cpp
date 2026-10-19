@@ -86,10 +86,24 @@ std::string_view ReportTypeName(swarmkit::client::AgentReportType type) {
             return "authority_rejected";
         case AgentReportType::kAuthorityReleased:
             return "authority_released";
+        case AgentReportType::kEdgeReport:
+            return "edge_report";
         case AgentReportType::kUnspecified:
             return "unspecified";
     }
     return "unspecified";
+}
+
+std::string_view EdgePhaseName(swarmkit::edge::Phase phase) {
+    using swarmkit::edge::Phase;
+    switch (phase) {
+        case Phase::kMoving: return "moving";
+        case Phase::kRecovering: return "recovering";
+        case Phase::kFulfilled: return "fulfilled";
+        case Phase::kInterrupted: return "interrupted";
+        case Phase::kUnknown: return "unknown";
+    }
+    return "unknown";
 }
 
 std::string_view SeverityName(swarmkit::client::ReportSeverity severity) {
@@ -117,6 +131,15 @@ void PrintReportText(const swarmkit::client::AgentReport& report, std::ostream& 
             << " dist=" << goal.distance_to_goal_m << "m dev=" << goal.deviation_m
             << "m alt_err=" << goal.altitude_error_m << "m";
     }
+    if (report.edge) {
+        const auto& edge = *report.edge;
+        out << " edge=" << edge.edge_id << " attempt=" << edge.attempt_id
+            << " phase=" << EdgePhaseName(edge.status.phase)
+            << " at_b=" << edge.status.at_b_verified
+            << " survey=" << edge.status.survey_verified
+            << " covered_m=" << edge.status.survey_covered_m
+            << " missing_intervals=" << edge.status.survey_missing.size();
+    }
     if (!report.message.empty()) {
         out << " msg=" << report.message;
     }
@@ -140,6 +163,26 @@ void PrintReportJsonl(const swarmkit::client::AgentReport& report, std::ostream&
             << ",\"deviation_radius_m\":" << goal.deviation_radius_m
             << ",\"elapsed_ms\":" << goal.elapsed_ms << ",\"timeout_ms\":" << goal.timeout_ms
             << R"(,"message":")" << JsonEscape(goal.message) << "\"}";
+    }
+    if (report.edge) {
+        const auto& edge = *report.edge;
+        out << R"(,"edge":{"mission_id":")" << JsonEscape(edge.mission_id)
+            << R"(","mission_revision":)" << edge.mission_revision
+            << R"(,"edge_id":")" << JsonEscape(edge.edge_id)
+            << R"(","attempt_id":")" << JsonEscape(edge.attempt_id)
+            << R"(","phase":")" << EdgePhaseName(edge.status.phase)
+            << R"(","at_b_verified":)" << (edge.status.at_b_verified ? "true" : "false")
+            << R"(,"traversal_verified":)" << (edge.status.traversal_verified ? "true" : "false")
+            << R"(,"survey_verified":)" << (edge.status.survey_verified ? "true" : "false")
+            << R"(,"survey_covered_m":)" << edge.status.survey_covered_m
+            << R"(,"survey_prefix_m":)" << edge.status.survey_prefix_m
+            << R"(,"survey_missing_m":[)";
+        for (std::size_t i = 0; i < edge.status.survey_missing.size(); ++i) {
+            if (i > 0) out << ',';
+            out << '[' << edge.status.survey_missing[i].begin_m << ','
+                << edge.status.survey_missing[i].end_m << ']';
+        }
+        out << "]}";
     }
     out << "}\n";
 }

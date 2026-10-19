@@ -1,6 +1,6 @@
 # SwarmKit Development Contract
 
-SwarmKit is a greenfield, pre-release SDK and State Acceptance runtime.
+SwarmKit is a greenfield, pre-release UAV SDK and onboard Verified Edge Coverage and Recovery runtime.
 
 ## API evolution
 
@@ -15,11 +15,12 @@ SwarmKit is a greenfield, pre-release SDK and State Acceptance runtime.
 
 ## Architecture boundary
 
-SwarmKit owns physical command execution, exact goal/attempt identity, telemetry normalization,
-evidence store decomposition, clock-quality interval arithmetic, state-quality contract evaluation,
-state-acceptance certificates, timing and uncertainty provenance, health, capabilities, logging,
-replay, and test infrastructure. High-level swarm coordination algorithms, mission planning, and
-distributed application state belong to external application layers.
+SwarmKit owns physical command execution, exact edge/attempt identity, telemetry normalization,
+qualified sensor observations, verified edge-obligation accounting, bounded local recovery,
+timing and uncertainty provenance, health, capabilities, logging, transport, and test infrastructure.
+High-level swarm coordination algorithms, mission planning, and distributed application state
+belong to external application layers.
 
-`Command ACK` is not physical arrival. `GOAL_REACHED` is not physical state acceptance. Backend-reported
-accuracy is not a deterministic hard bound unless its declared semantics explicitly say so.
+`Command ACK` is not physical arrival. `GOAL_REACHED` is not edge fulfillment. Camera command
+acknowledgement is not verified survey coverage. Backend-reported accuracy is not a deterministic
+hard bound unless its declared semantics explicitly say so.

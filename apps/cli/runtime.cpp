@@ -14,6 +14,7 @@
 #include "data_runtime.h"
 #include "runtime_authority.h"
 #include "runtime_command.h"
+#include "runtime_edge.h"
 #include "runtime_goal.h"
 #include "runtime_health.h"
 #include "runtime_reports.h"
@@ -66,6 +67,7 @@ using swarmkit::client::ClientConfig;
         return RunGoal(client, common::GetOptionValue(argc, argv, "--drone", kDefaultDroneId), argc,
                        argv);
     }
+    if (invocation.command == "edge") return RunEdge(client, argc, argv);
     if (invocation.command == "reports") {
         return RunReports(client, common::GetOptionValue(argc, argv, "--drone", "all"), argc, argv);
     }

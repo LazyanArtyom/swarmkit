@@ -1746,6 +1746,230 @@ TEST_CASE("Client can cancel active goal and receive cancellation report",
     reports_stream->Stop();
 }
 
+TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gaps",
+          "[client][integration][vecr]") {
+    const auto certificates = testsupport::MakeDevMtlsPaths();
+    agent::AgentConfig config;
+    config.agent_id = "test-agent";
+    config.bind_addr = "127.0.0.1:0";
+    config.security.root_ca_cert_path = certificates.root_ca_cert_path;
+    config.security.cert_chain_path = certificates.server_cert_chain_path;
+    config.security.private_key_path = certificates.server_private_key_path;
+    config.vecr_sensor_client_id = "test-client";
+    testsupport::AgentServerHarness harness(config);
+    agent::BackendHealth health;
+    health.ready = true;
+    health.message = "ready";
+    health.last_heartbeat_unix_ms = 1;
+    health.last_telemetry_unix_ms = 1;
+    health.armed = true;
+    health.landed = false;
+    health.failsafe = false;
+    health.gps_ok = true;
+    health.ekf_ok = true;
+    harness.Backend().SetHealth(health);
+    core::BackendCapabilities capabilities;
+    capabilities.backend_name = "recording";
+    capabilities.supported_commands = {"goto"};
+    harness.Backend().SetCapabilities(capabilities);
+    Client client = MakeClient(harness.Address());
+
+    EdgeOperationRequest request;
+    request.edge.mission_id = "mission-1";
+    request.edge.mission_revision = 1;
+    request.edge.edge_id = "A-B";
+    request.edge.attempt_id = "attempt-1";
+    request.edge.drone_id = "drone-1";
+    request.edge.route.points = {{0, 0}, {100, 0}};
+    request.edge.obligation = edge::Obligation::kSurvey;
+    request.edge.corridor_half_width_m = 4;
+    request.edge.arrival_radius_m = 2;
+    request.edge.arrival_max_speed_mps = 0.5;
+    request.edge.maximum_speed_mps = 5;
+    request.edge.sustained_deviation_samples = 3;
+    request.edge.timeout_ms = 10000;
+    request.wgs84_origin = {40.0, 44.0};
+    request.altitude_m = 10;
+    request.commanded_speed_mps = 2;
+    const EdgeResult started = client.ExecuteEdge(request);
+    REQUIRE(started.ok);
+    REQUIRE(started.status);
+    CHECK(started.status->attempt_id == "attempt-1");
+    CHECK_FALSE(started.status->status.at_b_verified);
+    REQUIRE(testsupport::WaitUntil([&] {
+        return harness.Backend().HasTelemetryStream("drone-1");
+    }, kWaitTimeout));
+
+    core::TelemetryFrame frame;
+    frame.drone_id = "drone-1";
+    frame.lat_deg = 40.0;
+    frame.lon_deg = 44.0;
+    frame.position_frame = core::CoordinateFrame::kWgs84;
+    frame.velocity_frame = core::CoordinateFrame::kLocalNed;
+    frame.estimator_state = core::EstimatorState::kHealthy;
+    frame.armed = true;
+    frame.failsafe = false;
+    frame.validity.position = true;
+    frame.validity.estimator = true;
+    frame.validity.velocity = true;
+    frame.validity.armed = true;
+    frame.validity.failsafe = true;
+    harness.Backend().EmitTelemetry("drone-1", frame);
+    REQUIRE(testsupport::WaitUntil([&] {
+        const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
+        return status.status && status.status->status.phase == edge::Phase::kMoving &&
+               status.status->status.traversal_quality == edge::EvidenceQuality::kEstimated;
+    }, kWaitTimeout));
+
+    auto capture = [&](std::string id, double begin, double end) {
+        edge::CaptureEvidence evidence;
+        evidence.attempt_id = "attempt-1";
+        evidence.capture_id = std::move(id);
+        evidence.calibration_id = "qualified-sim-camera";
+        evidence.monotonic_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        evidence.guaranteed_full_strip_interval = {begin, end};
+        evidence.capture_succeeded = true;
+        evidence.full_strip_quality_established = true;
+        return client.SubmitEdgeCapture("drone-1", evidence);
+    };
+    REQUIRE(capture("first", 0, 40).ok);
+    REQUIRE(capture("last", 70, 100).ok);
+    const edge::GeoPoint endpoint = edge::LocalToWgs84(40, 44, {100, 0});
+    frame.lat_deg = endpoint.lat_deg;
+    frame.lon_deg = endpoint.lon_deg;
+    frame.vx_mps = 0;
+    frame.vy_mps = 0;
+    REQUIRE(testsupport::WaitUntil([&] {
+        harness.Backend().EmitTelemetry("drone-1", frame);
+        const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
+        return status.status && status.status->status.at_b_verified;
+    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    const EdgeResult partial = client.GetEdgeStatus("drone-1", "attempt-1");
+    REQUIRE(partial.status);
+    CHECK_FALSE(partial.status->status.survey_verified);
+    CHECK(partial.status->status.phase != edge::Phase::kFulfilled);
+    REQUIRE(partial.status->status.survey_missing.size() == 1);
+    CHECK(partial.status->status.survey_missing.front().begin_m == 40);
+    CHECK(partial.status->status.survey_missing.front().end_m == 70);
+    const EdgeResult completed = capture("middle", 40, 70);
+    REQUIRE(completed.ok);
+    REQUIRE(completed.status);
+    CHECK(completed.status->status.phase == edge::Phase::kFulfilled);
+    CHECK(completed.status->status.survey_verified);
+    CHECK_FALSE(client.GetEdgeStatus("drone-1", "old-attempt").ok);
+}
+
+TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
+          "[client][integration][vecr]") {
+    const auto certificates = testsupport::MakeDevMtlsPaths();
+    agent::AgentConfig config;
+    config.agent_id = "test-agent";
+    config.bind_addr = "127.0.0.1:0";
+    config.security.root_ca_cert_path = certificates.root_ca_cert_path;
+    config.security.cert_chain_path = certificates.server_cert_chain_path;
+    config.security.private_key_path = certificates.server_private_key_path;
+    config.vecr_sensor_client_id = "test-client";
+    config.vecr_sim_recovery_enabled = true;
+    testsupport::AgentServerHarness harness(config);
+    agent::BackendHealth health;
+    health.ready = true;
+    health.message = "ready";
+    health.last_heartbeat_unix_ms = 1;
+    health.last_telemetry_unix_ms = 1;
+    health.armed = true;
+    health.landed = false;
+    health.failsafe = false;
+    health.gps_ok = true;
+    health.ekf_ok = true;
+    harness.Backend().SetHealth(health);
+    core::BackendCapabilities capabilities;
+    capabilities.backend_name = "sim";
+    capabilities.supported_commands = {"goto"};
+    harness.Backend().SetCapabilities(capabilities);
+    Client client = MakeClient(harness.Address());
+
+    EdgeOperationRequest request;
+    request.edge.mission_id = "mission";
+    request.edge.mission_revision = 1;
+    request.edge.edge_id = "A-B";
+    request.edge.attempt_id = "recovery-attempt";
+    request.edge.drone_id = "drone-1";
+    request.edge.route.points = {{0, 0}, {100, 0}};
+    request.edge.obligation = edge::Obligation::kSurvey;
+    request.edge.corridor_half_width_m = 4;
+    request.edge.arrival_radius_m = 2;
+    request.edge.arrival_max_speed_mps = 0.5;
+    request.edge.maximum_speed_mps = 5;
+    request.edge.recovery_overlap_m = 2;
+    request.edge.max_recovery_attempts = 1;
+    request.edge.sustained_deviation_samples = 3;
+    request.edge.recovery_cooldown_ms = 1000;
+    request.edge.timeout_ms = 10000;
+    request.wgs84_origin = {40, 44};
+    request.altitude_m = 10;
+    request.commanded_speed_mps = 2;
+    REQUIRE(client.ExecuteEdge(request).ok);
+    REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
+    core::TelemetryFrame frame;
+    frame.drone_id = "drone-1";
+    frame.lat_deg = 40;
+    frame.lon_deg = 44;
+    frame.position_frame = core::CoordinateFrame::kWgs84;
+    frame.velocity_frame = core::CoordinateFrame::kLocalNed;
+    frame.estimator_state = core::EstimatorState::kHealthy;
+    frame.armed = true;
+    frame.validity.position = true;
+    frame.validity.estimator = true;
+    frame.validity.velocity = true;
+    frame.validity.armed = true;
+    frame.validity.failsafe = true;
+    harness.Backend().EmitTelemetry("drone-1", frame);
+    REQUIRE(testsupport::WaitUntil([&] {
+        const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
+        return status.status && status.status->status.traversal_quality ==
+                                    edge::EvidenceQuality::kEstimated;
+    }, kWaitTimeout));
+    auto capture = [&](const char* id, double begin, double end) {
+        edge::CaptureEvidence evidence;
+        evidence.attempt_id = "recovery-attempt";
+        evidence.capture_id = id;
+        evidence.calibration_id = "sim-calibration";
+        evidence.monotonic_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        evidence.guaranteed_full_strip_interval = {begin, end};
+        evidence.capture_succeeded = true;
+        evidence.full_strip_quality_established = true;
+        return client.SubmitEdgeCapture("drone-1", evidence);
+    };
+    REQUIRE(capture("left", 0, 40).ok);
+    REQUIRE(capture("right", 70, 100).ok);
+    const auto endpoint = edge::LocalToWgs84(40, 44, {100, 0});
+    frame.lat_deg = endpoint.lat_deg;
+    frame.lon_deg = endpoint.lon_deg;
+    REQUIRE(testsupport::WaitUntil([&] {
+        harness.Backend().EmitTelemetry("drone-1", frame);
+        return harness.Backend().ExecuteCallCount() >= 2;
+    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    const auto reentry = edge::LocalToWgs84(40, 44, {38, 0});
+    frame.lat_deg = reentry.lat_deg;
+    frame.lon_deg = reentry.lon_deg;
+    REQUIRE(testsupport::WaitUntil([&] {
+        harness.Backend().EmitTelemetry("drone-1", frame);
+        return harness.Backend().ExecuteCallCount() >= 3;
+    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(capture("gap", 40, 70).ok);
+    frame.lat_deg = endpoint.lat_deg;
+    frame.lon_deg = endpoint.lon_deg;
+    REQUIRE(testsupport::WaitUntil([&] {
+        harness.Backend().EmitTelemetry("drone-1", frame);
+        const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
+        return status.status && status.status->status.phase == edge::Phase::kFulfilled;
+    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    CHECK(harness.Backend().ExecuteCallCount() == 3);
+}
+
 TEST_CASE("Goal retries receive distinct physical attempts and guarded cancellation",
           "[client][integration][goal][identity]") {
     auto next_id = std::make_shared<std::atomic<std::uint64_t>>(1);

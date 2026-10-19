@@ -307,6 +307,12 @@ core::Result AgentConfig::Validate() const {
     if (const core::Result data_result = data.Validate(); !data_result.IsOk()) {
         return data_result;
     }
+    if (!vecr_sensor_client_id.empty() &&
+        security.EffectiveTransportSecurity() != core::TransportSecurityMode::kMutualTls &&
+        !safety.allow_unsafe_bench_commands) {
+        return core::Result::Rejected(
+            "VECR sensor adapter requires mTLS or explicit unsafe bench mode");
+    }
     return security.Validate();
 }
 
@@ -482,6 +488,22 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
             config.safety.allow_unsafe_bench_commands =
                 allow_unsafe_bench_commands->value_or(false);
         }
+    }
+
+    if (const YAML::Node vecr = root["vecr"]; vecr) {
+        if (!vecr.IsMap()) {
+            return std::unexpected(core::Result::Rejected("agent.vecr must be a map"));
+        }
+        const auto sensor_client =
+            core::yaml::ReadOptionalScalar<std::string>(vecr, "sensor_client_id");
+        if (!sensor_client.has_value()) return std::unexpected(sensor_client.error());
+        if (sensor_client->has_value())
+            config.vecr_sensor_client_id = sensor_client->value_or(std::string{});
+        const auto sim_recovery =
+            core::yaml::ReadOptionalScalar<bool>(vecr, "sim_recovery_enabled");
+        if (!sim_recovery.has_value()) return std::unexpected(sim_recovery.error());
+        if (sim_recovery->has_value())
+            config.vecr_sim_recovery_enabled = sim_recovery->value_or(false);
     }
 
     if (const YAML::Node reports = root["reports"]; reports) {

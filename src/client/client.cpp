@@ -1616,6 +1616,8 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
             return AgentReportType::kAuthorityRejected;
         case ProtoType::AUTHORITY_RELEASED:
             return AgentReportType::kAuthorityReleased;
+        case ProtoType::EDGE_REPORT:
+            return AgentReportType::kEdgeReport;
         case ProtoType::AGENT_REPORT_TYPE_UNSPECIFIED:
         default:
             return AgentReportType::kUnspecified;
@@ -1669,6 +1671,43 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     return report;
 }
 
+[[nodiscard]] AgentReport::EdgeReport ToEdgeReport(const swarmkit::v1::EdgeReport& source) {
+    AgentReport::EdgeReport report;
+    report.mission_id = source.mission_id();
+    report.mission_revision = source.mission_revision();
+    report.edge_id = source.edge_id();
+    report.attempt_id = source.attempt_id();
+    report.drone_id = source.drone_id();
+    report.status.phase = source.phase() == swarmkit::v1::EDGE_MOVING ? edge::Phase::kMoving :
+                          source.phase() == swarmkit::v1::EDGE_RECOVERING ? edge::Phase::kRecovering :
+                          source.phase() == swarmkit::v1::EDGE_FULFILLED ? edge::Phase::kFulfilled :
+                          source.phase() == swarmkit::v1::EDGE_INTERRUPTED ? edge::Phase::kInterrupted :
+                          edge::Phase::kUnknown;
+    report.status.at_b_verified = source.at_b_verified();
+    report.status.traversal_verified = source.traversal_verified();
+    report.status.survey_verified = source.survey_verified();
+    report.status.traversal_quality =
+        source.traversal_quality() == swarmkit::v1::EDGE_EVIDENCE_BOUNDED
+            ? edge::EvidenceQuality::kBounded
+            : source.traversal_quality() == swarmkit::v1::EDGE_EVIDENCE_ESTIMATED
+                  ? edge::EvidenceQuality::kEstimated : edge::EvidenceQuality::kUnknown;
+    report.status.survey_covered_m = source.survey_covered_m();
+    report.status.survey_prefix_m = source.survey_prefix_m();
+    for (const auto& missing : source.survey_missing())
+        report.status.survey_missing.push_back({missing.begin_m(), missing.end_m()});
+    for (const auto& missing : source.traversal_missing())
+        report.status.traversal_missing.push_back({missing.begin_m(), missing.end_m()});
+    report.status.recovery_attempts = source.recovery_attempts();
+    report.status.reason = source.reason();
+    if (source.has_pending_reentry()) {
+        report.pending_reentry_wgs84 = edge::GeoPoint{
+            source.pending_reentry().lat_deg(), source.pending_reentry().lon_deg()};
+    }
+    if (source.has_execution_handle())
+        report.execution_handle = core::internal::ToCoreExecutionHandle(source.execution_handle());
+    return report;
+}
+
 [[nodiscard]] AgentReport ToAgentReport(const swarmkit::v1::AgentReport& proto_report) {
     AgentReport report;
     report.drone_id = proto_report.drone_id();
@@ -1695,6 +1734,7 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     if (proto_report.has_goal()) {
         report.goal = ToGoalReport(proto_report.goal());
     }
+    if (proto_report.has_edge()) report.edge = ToEdgeReport(proto_report.edge());
     return report;
 }
 
@@ -2844,6 +2884,156 @@ GoalResult Client::SetActiveGoal(const ActiveGoalRequest& request) const {
     if (rep.has_backend_outcome()) {
         out.backend_outcome = ToCoreBackendOutcome(rep.backend_outcome());
     }
+    return out;
+}
+
+EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
+    EdgeResult out;
+    const std::string correlation = MakeCorrelationId("edge");
+    swarmkit::v1::ExecuteEdgeRequest req;
+    auto* context = req.mutable_ctx();
+    context->set_drone_id(request.edge.drone_id);
+    context->set_client_id(impl_->config.client_id);
+    context->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+    context->set_correlation_id(correlation);
+    if (request.execution_context)
+        core::internal::PopulateExecutionContext(*request.execution_context,
+                                                 context->mutable_execution_context());
+    auto* operation = req.mutable_edge();
+    operation->set_mission_id(request.edge.mission_id);
+    operation->set_mission_revision(request.edge.mission_revision);
+    operation->set_edge_id(request.edge.edge_id);
+    operation->set_attempt_id(request.edge.attempt_id);
+    operation->set_drone_id(request.edge.drone_id);
+    for (const auto& point : request.edge.route.points) {
+        const edge::GeoPoint geo = edge::LocalToWgs84(
+            request.wgs84_origin.lat_deg, request.wgs84_origin.lon_deg, point);
+        auto* route_point = operation->add_route();
+        route_point->set_lat_deg(geo.lat_deg);
+        route_point->set_lon_deg(geo.lon_deg);
+        route_point->set_alt_m(request.altitude_m);
+    }
+    operation->set_obligation(request.edge.obligation == edge::Obligation::kArrival
+                                  ? swarmkit::v1::EDGE_ARRIVAL
+                                  : request.edge.obligation == edge::Obligation::kTraversal
+                                        ? swarmkit::v1::EDGE_TRAVERSAL : swarmkit::v1::EDGE_SURVEY);
+    operation->set_corridor_half_width_m(request.edge.corridor_half_width_m);
+    operation->set_arrival_radius_m(request.edge.arrival_radius_m);
+    operation->set_arrival_max_speed_mps(request.edge.arrival_max_speed_mps);
+    operation->set_maximum_missing_m(request.edge.maximum_missing_m);
+    operation->set_maximum_speed_mps(request.edge.maximum_speed_mps);
+    operation->set_recovery_overlap_m(request.edge.recovery_overlap_m);
+    operation->set_max_recovery_attempts(request.edge.max_recovery_attempts);
+    operation->set_sustained_deviation_samples(request.edge.sustained_deviation_samples);
+    operation->set_recovery_cooldown_ms(request.edge.recovery_cooldown_ms);
+    operation->set_timeout_ms(request.edge.timeout_ms);
+    operation->set_commanded_speed_mps(request.commanded_speed_mps);
+    swarmkit::v1::ExecuteEdgeReply rep;
+    int attempts = 0;
+    const grpc::Status transport = InvokeUnaryWithRetry(
+        impl_->config, correlation, &attempts,
+        [this, &req, &rep](grpc::ClientContext* ctx) {
+            return impl_->stub->ExecuteEdge(ctx, req, &rep);
+        });
+    if (!transport.ok()) {
+        PopulateTransportError(&out.error, transport, correlation, attempts);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.ok();
+    out.message = rep.message();
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.message(),
+                       correlation, attempts);
+    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
+    if (rep.has_backend_outcome()) out.backend_outcome = ToCoreBackendOutcome(rep.backend_outcome());
+    return out;
+}
+
+EdgeResult Client::GetEdgeStatus(const std::string& drone_id,
+                                 const std::string& attempt_id) const {
+    EdgeResult out;
+    const std::string correlation = MakeCorrelationId("edge-status");
+    swarmkit::v1::GetEdgeStatusRequest req;
+    req.set_drone_id(drone_id);
+    req.set_attempt_id(attempt_id);
+    swarmkit::v1::GetEdgeStatusReply rep;
+    int attempts = 0;
+    const grpc::Status transport = InvokeUnaryWithRetry(
+        impl_->config, correlation, &attempts,
+        [this, &req, &rep](grpc::ClientContext* ctx) {
+            return impl_->stub->GetEdgeStatus(ctx, req, &rep);
+        });
+    if (!transport.ok()) {
+        PopulateTransportError(&out.error, transport, correlation, attempts);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.found();
+    out.message = out.ok ? "edge status found" : "edge attempt not found";
+    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
+    return out;
+}
+
+EdgeResult Client::SubmitEdgeCapture(const std::string& drone_id,
+                                     const edge::CaptureEvidence& capture) const {
+    EdgeResult out;
+    const std::string correlation = MakeCorrelationId("edge-capture");
+    swarmkit::v1::SubmitEdgeCaptureRequest req;
+    req.set_drone_id(drone_id);
+    req.set_attempt_id(capture.attempt_id);
+    req.set_capture_id(capture.capture_id);
+    req.set_calibration_id(capture.calibration_id);
+    req.set_agent_monotonic_ms(capture.monotonic_ms);
+    req.mutable_guaranteed_full_strip_interval()->set_begin_m(
+        capture.guaranteed_full_strip_interval.begin_m);
+    req.mutable_guaranteed_full_strip_interval()->set_end_m(
+        capture.guaranteed_full_strip_interval.end_m);
+    req.set_capture_succeeded(capture.capture_succeeded);
+    req.set_full_strip_quality_established(capture.full_strip_quality_established);
+    req.set_sensor_client_id(impl_->config.client_id);
+    swarmkit::v1::SubmitEdgeCaptureReply rep;
+    int attempts = 0;
+    const grpc::Status transport = InvokeUnaryWithRetry(
+        impl_->config, correlation, &attempts,
+        [this, &req, &rep](grpc::ClientContext* ctx) {
+            return impl_->stub->SubmitEdgeCapture(ctx, req, &rep);
+        });
+    if (!transport.ok()) {
+        PopulateTransportError(&out.error, transport, correlation, attempts);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.accepted();
+    out.message = rep.message();
+    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
+    return out;
+}
+
+EdgeResult Client::CancelEdge(const core::ExecutionHandle& expected) const {
+    EdgeResult out;
+    const std::string correlation = MakeCorrelationId("cancel-edge");
+    swarmkit::v1::CancelEdgeRequest req;
+    auto* context = req.mutable_ctx();
+    context->set_drone_id(expected.drone_id);
+    context->set_client_id(impl_->config.client_id);
+    context->set_priority(static_cast<std::int32_t>(impl_->config.priority));
+    context->set_correlation_id(correlation);
+    core::internal::PopulateExecutionHandle(expected, req.mutable_expected_execution_handle());
+    swarmkit::v1::CancelEdgeReply rep;
+    int attempts = 0;
+    const grpc::Status transport = InvokeUnaryWithRetry(
+        impl_->config, correlation, &attempts,
+        [this, &req, &rep](grpc::ClientContext* ctx) {
+            return impl_->stub->CancelEdge(ctx, req, &rep);
+        });
+    if (!transport.ok()) {
+        PopulateTransportError(&out.error, transport, correlation, attempts);
+        out.message = out.error.user_message;
+        return out;
+    }
+    out.ok = rep.cancelled();
+    out.message = rep.message();
+    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
     return out;
 }
 

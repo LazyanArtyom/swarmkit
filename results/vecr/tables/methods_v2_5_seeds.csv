@@ -1,0 +1,5 @@
+scenario,method,trials,reported_complete,false_completions,fcr,completion_report_rate,truth_complete,false_negative_count,false_negative_rate_among_truth_complete,unknown_rate,mean_truth_missing_fraction,mean_total_distance_m,interventions,unnecessary_interventions,initial_gap_detection_precision,initial_gap_detection_recall
+ALL,B0,40,40,15,0.375,1.0,25,0,0.0,0.0,0.0925,100.0,0,0,,
+ALL,B1,40,30,10,0.3333333333333333,0.75,25,5,0.2,0.0,0.0925,100.0,0,0,,
+ALL,B2,40,40,0,0.0,1.0,40,0,0.0,0.0,0.0,200.0,20,5,0.75,1.0
+ALL,P,40,40,0,0.0,1.0,40,0,0.0,0.0,0.0,163.0,20,5,0.75,1.0

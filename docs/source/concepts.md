@@ -89,15 +89,15 @@ truncation, incompatible schema, sequence discontinuity, session changes, and
 incomplete recordings. This supports incident analysis and replay without
 treating console logs as correctness evidence.
 
-## State Acceptance And Verification
+## Verified Edge Coverage and Recovery
 
-SwarmKit includes a common-time state acceptance runtime:
-
-- **Evidence Store**: Normalized telemetry is converted into typed causal evidence records.
-- **Clock Quality Arithmetic**: Source timestamps are mapped into common-time generation intervals $[g^-, g^+]$.
-- **Uncertainty Propagation**: Position error bounds are propagated conservatively over elapsed time ($\varepsilon_p = e_p + V_{\max}\Delta^+$).
-- **State-Quality Contracts**: Snapshots are accepted only if all required predicates (freshness, clock error, estimator health, coordinate frames, session epochs, completeness rules) are satisfied without silent downgrade.
-- **Certificates & Independent Verifier**: Accepted snapshots generate canonical SHA-256 content-bound certificates checked by an offline replay verifier.
+`ExecuteEdge` is an onboard operation associated with a directed graph edge,
+route, obligation mode, mission revision, and unique attempt ID. It reports
+arrival, bounded traversal, and evidence-supported survey separately. The
+agent retains disjoint accepted coverage intervals and proposes a bounded
+re-entry before the earliest missing section. The backend and authority
+arbiter still gate every command. The planner owns graph order and sharing
+policy. See [the method](../vecr/METHOD_AND_CORRECTNESS.md).
 
 ## Goals And Reports
 

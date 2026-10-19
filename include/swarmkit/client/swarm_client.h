@@ -218,6 +218,9 @@ class SwarmClient {
     /// @param request Goal definition and optional complete execution context.
     /// @return GoalResult from the target drone agent.
     [[nodiscard]] GoalResult SetActiveGoal(const ActiveGoalRequest& request) const;
+    [[nodiscard]] EdgeResult ExecuteEdge(const EdgeOperationRequest& request) const;
+    [[nodiscard]] EdgeResult GetEdgeStatus(const std::string& drone_id,
+                                           const std::string& attempt_id) const;
 
     /// @brief Set active goals across multiple drones with bounded parallelism.
     /// @param requests Map from drone_id to request. Each goal.drone_id is overwritten from the
