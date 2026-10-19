@@ -256,9 +256,14 @@ class AgentServerHarness {
         : AgentServerHarness(config, agent::internal::RuntimeProviders::System()) {}
 
     AgentServerHarness(const agent::AgentConfig& config,
-                       agent::internal::RuntimeProviders providers) {
-        auto backend = std::make_unique<RecordingBackend>();
-        backend_ = backend.get();
+                       agent::internal::RuntimeProviders providers)
+        : AgentServerHarness(config, std::make_unique<RecordingBackend>(),
+                             std::move(providers)) {}
+
+    AgentServerHarness(const agent::AgentConfig& config, agent::DroneBackendPtr backend,
+                       agent::internal::RuntimeProviders providers =
+                           agent::internal::RuntimeProviders::System()) {
+        backend_ = dynamic_cast<RecordingBackend*>(backend.get());
         services_ = agent::internal::MakeAgentServicesForTesting(config, std::move(backend),
                                                                  std::move(providers));
 

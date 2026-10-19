@@ -22,7 +22,8 @@
 namespace swarmkit::agent {
 namespace {
 
-constexpr double kEarthRadiusM = 6'371'000.0;
+// Match the local WGS84 approximation used by edge::Wgs84ToLocal/LocalToWgs84.
+constexpr double kEarthRadiusM = 6'378'137.0;
 constexpr int kDefaultTelemetryRateHz = 5;
 constexpr double kArrivalEpsilonM = 1e-5;
 

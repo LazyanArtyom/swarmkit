@@ -105,8 +105,10 @@ int RunEdge(client::Client& client, int argc, char** argv) {
     if (mode == "arrival") request.edge.obligation = edge::Obligation::kArrival;
     else if (mode == "traversal") request.edge.obligation = edge::Obligation::kTraversal;
     else if (mode == "survey") request.edge.obligation = edge::Obligation::kSurvey;
+    else if (mode == "traversal-survey")
+        request.edge.obligation = edge::Obligation::kTraversalAndSurvey;
     else {
-        std::cerr << "--obligation must be arrival|traversal|survey\n";
+        std::cerr << "--obligation must be arrival|traversal|survey|traversal-survey\n";
         return EXIT_FAILURE;
     }
     request.edge.corridor_half_width_m = *corridor;

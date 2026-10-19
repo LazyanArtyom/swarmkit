@@ -645,6 +645,7 @@ enum EdgeObligation {
     EDGE_ARRIVAL = 1;
     EDGE_TRAVERSAL = 2;
     EDGE_SURVEY = 3;
+    EDGE_TRAVERSAL_AND_SURVEY = 4;
 }
 
 enum EdgePhase {
@@ -730,14 +731,26 @@ message GetEdgeStatusReply {
 }
 message SubmitEdgeCaptureRequest {
     string drone_id = 1;
-    string attempt_id = 2;
-    string capture_id = 3;
-    string calibration_id = 4;
-    int64 agent_monotonic_ms = 5;
-    EdgeInterval guaranteed_full_strip_interval = 6;
-    bool capture_succeeded = 7;
-    bool full_strip_quality_established = 8;
-    string sensor_client_id = 9;
+    string mission_id = 2;
+    uint64 mission_revision = 3;
+    string edge_id = 4;
+    string attempt_id = 5;
+    string capture_id = 6;
+    string calibration_id = 7;
+    int64 agent_monotonic_ms = 8;
+    // Camera center in the edge's fixed local metric frame (route point 0).
+    double camera_center_east_m = 9;
+    double camera_center_north_m = 10;
+    double altitude_above_ground_m = 11;
+    double altitude_error_hard_bound_m = 12;
+    double horizontal_error_hard_bound_m = 13;
+    double along_fov_deg = 14;
+    double cross_fov_deg = 15;
+    bool capture_succeeded = 16;
+    bool image_quality_established = 17;
+    bool nadir_route_alignment_established = 18;
+    bool flat_ground_established = 19;
+    string sensor_client_id = 20;
 }
 message SubmitEdgeCaptureReply {
     bool accepted = 1;

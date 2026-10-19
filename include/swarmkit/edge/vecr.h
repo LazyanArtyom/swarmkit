@@ -60,7 +60,7 @@ class IntervalSet {
     std::vector<Interval> intervals_;
 };
 
-enum class Obligation { kArrival, kTraversal, kSurvey };
+enum class Obligation { kArrival, kTraversal, kSurvey, kTraversalAndSurvey };
 enum class Phase { kMoving, kRecovering, kFulfilled, kInterrupted, kUnknown };
 enum class EvidenceQuality { kUnknown, kEstimated, kBounded };
 
@@ -75,8 +75,10 @@ struct EdgeRequest {
     double corridor_half_width_m{};
     double arrival_radius_m{};
     double arrival_max_speed_mps{};
+    double target_altitude_m{};  // Relative altitude in the command/telemetry frame.
     double maximum_missing_m{};
     double maximum_speed_mps{};  // Required for whole-interval traversal proof.
+    double minimum_recovery_battery_percent{};
     double recovery_overlap_m{};
     std::uint32_t max_recovery_attempts{};
     std::uint32_t sustained_deviation_samples{3};
@@ -93,12 +95,19 @@ struct PositionObservation {
     std::optional<double> speed_mps;
     // Presence is permitted only for a documented deterministic hard bound.
     std::optional<double> horizontal_error_hard_bound_m;
+    std::optional<double> speed_error_hard_bound_mps;
+    std::optional<double> altitude_m;
+    std::optional<double> vertical_error_hard_bound_m;
+    std::optional<double> battery_percent;
 };
 
 // A sensor adapter must establish that a successful capture genuinely observed
 // the entire required strip cross section over this conservative interval.
 // This record is not generated from arrival or from vehicle position alone.
 struct CaptureEvidence {
+    std::string mission_id;
+    std::uint64_t mission_revision{};
+    std::string edge_id;
     std::string attempt_id;
     std::string capture_id;
     std::string calibration_id;
@@ -114,6 +123,9 @@ struct CaptureEvidence {
 // The footprint is conservative only for a straight route, rectangular FOV,
 // known route-aligned camera axes, and a horizontal flat survey plane.
 struct NadirCaptureInput {
+    std::string mission_id;
+    std::uint64_t mission_revision{};
+    std::string edge_id;
     std::string attempt_id;
     std::string capture_id;
     std::string calibration_id;
@@ -124,7 +136,6 @@ struct NadirCaptureInput {
     double horizontal_error_hard_bound_m{};
     double along_fov_deg{};
     double cross_fov_deg{};
-    double required_strip_half_width_m{};
     bool capture_succeeded{};
     bool image_quality_established{};
     bool nadir_route_alignment_established{};
@@ -132,7 +143,8 @@ struct NadirCaptureInput {
 };
 
 [[nodiscard]] std::optional<CaptureEvidence> BuildNadirStripEvidence(
-    const Route& route, const NadirCaptureInput& input);
+    const Route& route, double required_strip_half_width_m,
+    const NadirCaptureInput& input);
 
 struct Status {
     Phase phase{Phase::kUnknown};
@@ -174,6 +186,9 @@ class EdgeExecutionSupervisor {
     std::optional<PositionObservation> previous_;
     std::optional<Projection> previous_projection_;
     std::int64_t started_ms_{-1};
+    std::int64_t latest_position_ms_{-1};
+    std::int64_t arrival_candidate_ms_{-1};
+    std::int64_t last_valid_position_ms_{-1};
     std::int64_t last_recovery_ms_{-1};
     std::uint32_t deviation_samples_{};
     bool can_recover_{};

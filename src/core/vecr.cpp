@@ -12,6 +12,8 @@ namespace swarmkit::edge {
 namespace {
 constexpr double kEarthRadiusM = 6378137.0;
 constexpr double kGeometryToleranceM = 1e-6;
+constexpr std::int64_t kArrivalDwellMs = 200;
+constexpr std::int64_t kArrivalEvidenceFreshnessMs = 1000;
 
 [[nodiscard]] double Distance(Point a, Point b) {
     return std::hypot(a.east_m - b.east_m, a.north_m - b.north_m);
@@ -65,8 +67,11 @@ std::optional<Projection> Project(const Route& route, Point point) {
 }
 
 std::optional<CaptureEvidence> BuildNadirStripEvidence(const Route& route,
+                                                       double required_strip_half_width_m,
                                                        const NadirCaptureInput& input) {
-    if (route.points.size() != 2 || input.attempt_id.empty() || input.capture_id.empty() ||
+    if (route.points.size() != 2 || input.mission_id.empty() ||
+        input.mission_revision == 0 || input.edge_id.empty() ||
+        input.attempt_id.empty() || input.capture_id.empty() ||
         input.calibration_id.empty() || input.monotonic_ms < 0 ||
         !input.capture_succeeded || !input.image_quality_established ||
         !input.nadir_route_alignment_established || !input.flat_ground_established ||
@@ -74,10 +79,10 @@ std::optional<CaptureEvidence> BuildNadirStripEvidence(const Route& route,
         !std::isfinite(input.altitude_error_hard_bound_m) ||
         !std::isfinite(input.horizontal_error_hard_bound_m) ||
         !std::isfinite(input.along_fov_deg) || !std::isfinite(input.cross_fov_deg) ||
-        !std::isfinite(input.required_strip_half_width_m) ||
+        !std::isfinite(required_strip_half_width_m) ||
         input.altitude_error_hard_bound_m < 0.0 ||
         input.horizontal_error_hard_bound_m < 0.0 ||
-        input.required_strip_half_width_m <= 0.0 ||
+        required_strip_half_width_m <= 0.0 ||
         input.along_fov_deg <= 0.0 || input.along_fov_deg >= 170.0 ||
         input.cross_fov_deg <= 0.0 || input.cross_fov_deg >= 170.0) return std::nullopt;
     const double lower_altitude = input.altitude_above_ground_m -
@@ -94,13 +99,16 @@ std::optional<CaptureEvidence> BuildNadirStripEvidence(const Route& route,
         input.horizontal_error_hard_bound_m;
     if (!std::isfinite(half_along) || !std::isfinite(half_cross) ||
         half_along <= 0.0 ||
-        projection->cross_track_m + input.required_strip_half_width_m >
+        projection->cross_track_m + required_strip_half_width_m >
             half_cross + kGeometryToleranceM) return std::nullopt;
     const double length = Length(route);
     const Interval covered{std::max(0.0, projection->arclength_m - half_along),
                            std::min(length, projection->arclength_m + half_along)};
     if (covered.end_m - covered.begin_m <= kGeometryToleranceM) return std::nullopt;
-    return CaptureEvidence{.attempt_id = input.attempt_id,
+    return CaptureEvidence{.mission_id = input.mission_id,
+                           .mission_revision = input.mission_revision,
+                           .edge_id = input.edge_id,
+                           .attempt_id = input.attempt_id,
                            .capture_id = input.capture_id,
                            .calibration_id = input.calibration_id,
                            .monotonic_ms = input.monotonic_ms,
@@ -208,8 +216,12 @@ bool EdgeExecutionSupervisor::Valid() const {
            std::isfinite(request_.arrival_radius_m) && request_.arrival_radius_m > 0.0 &&
            std::isfinite(request_.arrival_max_speed_mps) &&
            request_.arrival_max_speed_mps >= 0.0 &&
+           std::isfinite(request_.target_altitude_m) &&
            std::isfinite(request_.maximum_missing_m) && request_.maximum_missing_m >= 0.0 &&
            std::isfinite(request_.maximum_speed_mps) && request_.maximum_speed_mps >= 0.0 &&
+           std::isfinite(request_.minimum_recovery_battery_percent) &&
+           request_.minimum_recovery_battery_percent >= 0.0 &&
+           request_.minimum_recovery_battery_percent <= 100.0 &&
            std::isfinite(request_.recovery_overlap_m) && request_.recovery_overlap_m >= 0.0 &&
            request_.sustained_deviation_samples > 0 && request_.recovery_cooldown_ms >= 0 &&
            request_.timeout_ms > 0;
@@ -229,7 +241,9 @@ void EdgeExecutionSupervisor::Recompute() {
         status_.at_b_verified &&
         (request_.obligation == Obligation::kArrival ||
          (request_.obligation == Obligation::kTraversal && status_.traversal_verified) ||
-         (request_.obligation == Obligation::kSurvey && status_.survey_verified));
+         (request_.obligation == Obligation::kSurvey && status_.survey_verified) ||
+         (request_.obligation == Obligation::kTraversalAndSurvey &&
+          status_.traversal_verified && status_.survey_verified));
     if (obligation_met) {
         status_.phase = Phase::kFulfilled;
         status_.reason = "edge obligation verified";
@@ -243,9 +257,14 @@ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to
         status_.recovery_attempts >= request_.max_recovery_attempts ||
         (last_recovery_ms_ >= 0 && now_ms - last_recovery_ms_ < request_.recovery_cooldown_ms))
         return;
-    const auto gaps = request_.obligation == Obligation::kTraversal
-                          ? traversal_.Missing()
-                          : survey_.Missing();
+    auto gaps = request_.obligation == Obligation::kTraversal
+                    ? traversal_.Missing() : survey_.Missing();
+    if (request_.obligation == Obligation::kTraversalAndSurvey) {
+        const auto traversal_gaps = traversal_.Missing();
+        gaps.insert(gaps.end(), traversal_gaps.begin(), traversal_gaps.end());
+        std::sort(gaps.begin(), gaps.end(),
+                  [](Interval a, Interval b) { return a.begin_m < b.begin_m; });
+    }
     if (request_.obligation == Obligation::kArrival || gaps.empty()) return;
     const double s = std::max(0.0, gaps.front().begin_m - request_.recovery_overlap_m);
     status_.pending_reentry = PointAt(request_.route, s);
@@ -255,9 +274,10 @@ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to
 
 Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& observation) {
     if (Terminal(status_.phase)) return Snapshot();
+    if (observation.monotonic_ms < 0 ||
+        observation.monotonic_ms <= latest_position_ms_) return Snapshot();
     if (started_ms_ < 0) started_ms_ = observation.monotonic_ms;
-    if (observation.monotonic_ms < started_ms_ ||
-        (previous_ && observation.monotonic_ms <= previous_->monotonic_ms)) return Snapshot();
+    latest_position_ms_ = observation.monotonic_ms;
     if (observation.monotonic_ms - started_ms_ > request_.timeout_ms) {
         status_.phase = Phase::kInterrupted;
         status_.reason = "edge timeout";
@@ -265,12 +285,25 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
         return Snapshot();
     }
     if (observation.failsafe) return Interrupt("vehicle failsafe");
+    if (observation.battery_percent &&
+        (!std::isfinite(*observation.battery_percent) ||
+         *observation.battery_percent < request_.minimum_recovery_battery_percent))
+        return Interrupt("battery below edge recovery threshold");
     if (!observation.valid || !Finite(observation.position) ||
         (observation.horizontal_error_hard_bound_m &&
          (!std::isfinite(*observation.horizontal_error_hard_bound_m) ||
-          *observation.horizontal_error_hard_bound_m < 0.0))) {
+          *observation.horizontal_error_hard_bound_m < 0.0)) ||
+        (observation.speed_error_hard_bound_mps &&
+         (!std::isfinite(*observation.speed_error_hard_bound_mps) ||
+          *observation.speed_error_hard_bound_mps < 0.0)) ||
+        (observation.altitude_m && !std::isfinite(*observation.altitude_m)) ||
+        (observation.vertical_error_hard_bound_m &&
+         (!std::isfinite(*observation.vertical_error_hard_bound_m) ||
+          *observation.vertical_error_hard_bound_m < 0.0))) {
         previous_.reset();
         previous_projection_.reset();
+        status_.at_b_verified = false;
+        arrival_candidate_ms_ = -1;
         status_.phase = Phase::kUnknown;
         status_.traversal_quality = EvidenceQuality::kUnknown;
         status_.reason = "position unavailable or invalid";
@@ -280,20 +313,37 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
     if (!projection || projection->ambiguous) {
         previous_.reset();
         previous_projection_.reset();
+        status_.at_b_verified = false;
+        arrival_candidate_ms_ = -1;
         status_.phase = Phase::kUnknown;
         status_.reason = "route projection ambiguous";
         return Snapshot();
     }
     const double endpoint_distance = Distance(observation.position, request_.route.points.back());
-    if (observation.speed_mps && std::isfinite(*observation.speed_mps) &&
-        *observation.speed_mps <= request_.arrival_max_speed_mps &&
-        endpoint_distance <= request_.arrival_radius_m) status_.at_b_verified = true;
+    last_valid_position_ms_ = observation.monotonic_ms;
+    const bool qualified_at_b = observation.horizontal_error_hard_bound_m &&
+        observation.speed_mps && std::isfinite(*observation.speed_mps) &&
+        *observation.speed_mps >= 0.0 && observation.speed_error_hard_bound_mps &&
+        observation.altitude_m && observation.vertical_error_hard_bound_m &&
+        *observation.speed_mps + *observation.speed_error_hard_bound_mps <=
+            request_.arrival_max_speed_mps &&
+        std::hypot(endpoint_distance + *observation.horizontal_error_hard_bound_m,
+                   std::abs(*observation.altitude_m - request_.target_altitude_m) +
+                       *observation.vertical_error_hard_bound_m) <= request_.arrival_radius_m;
+    if (qualified_at_b) {
+        if (arrival_candidate_ms_ < 0) arrival_candidate_ms_ = observation.monotonic_ms;
+        status_.at_b_verified = observation.monotonic_ms - arrival_candidate_ms_ >=
+                                kArrivalDwellMs;
+    } else {
+        arrival_candidate_ms_ = -1;
+        status_.at_b_verified = false;
+    }
 
     const double error = observation.horizontal_error_hard_bound_m.value_or(0.0);
     const bool within_sample = projection->cross_track_m + error <= request_.corridor_half_width_m;
     if (!within_sample) ++deviation_samples_;
     else deviation_samples_ = 0;
-    if (previous_ && previous_projection_ && within_sample &&
+    if (request_.route.points.size() == 2 && previous_ && previous_projection_ && within_sample &&
         !previous_projection_->ambiguous && previous_->horizontal_error_hard_bound_m &&
         observation.horizontal_error_hard_bound_m && request_.maximum_speed_mps > 0.0 &&
         projection->arclength_m > previous_projection_->arclength_m) {
@@ -301,10 +351,15 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
                           1000.0;
         const double previous_bound = previous_projection_->cross_track_m +
                                       *previous_->horizontal_error_hard_bound_m;
+        const double displacement_bound = request_.maximum_speed_mps * dt +
+            *previous_->horizontal_error_hard_bound_m +
+            *observation.horizontal_error_hard_bound_m;
         const double whole_interval_bound =
             (previous_bound + projection->cross_track_m + error +
              request_.maximum_speed_mps * dt) / 2.0;
-        if (whole_interval_bound <= request_.corridor_half_width_m) {
+        if (Distance(previous_->position, observation.position) <=
+                displacement_bound + kGeometryToleranceM &&
+            whole_interval_bound <= request_.corridor_half_width_m) {
             static_cast<void>(traversal_.Add({std::min(previous_projection_->arclength_m,
                                                        projection->arclength_m),
                                               std::max(previous_projection_->arclength_m,
@@ -316,7 +371,10 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
     }
     previous_ = observation;
     previous_projection_ = projection;
-    can_recover_ = observation.safe_to_navigate;
+    can_recover_ = observation.safe_to_navigate && observation.battery_percent.has_value() &&
+                   observation.horizontal_error_hard_bound_m.has_value() &&
+                   *observation.horizontal_error_hard_bound_m <=
+                       request_.corridor_half_width_m;
     if (status_.phase == Phase::kUnknown) status_.phase = Phase::kMoving;
     Recompute();
     if (deviation_samples_ >= request_.sustained_deviation_samples ||
@@ -327,11 +385,20 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
 }
 
 Status EdgeExecutionSupervisor::ObserveCapture(const CaptureEvidence& evidence) {
-    if (Terminal(status_.phase) || evidence.attempt_id != request_.attempt_id ||
+    if (Terminal(status_.phase) || evidence.mission_id != request_.mission_id ||
+        evidence.mission_revision != request_.mission_revision ||
+        evidence.edge_id != request_.edge_id ||
+        evidence.attempt_id != request_.attempt_id ||
         evidence.capture_id.empty() || evidence.calibration_id.empty() ||
         !evidence.capture_succeeded || !evidence.full_strip_quality_established ||
         started_ms_ < 0 || evidence.monotonic_ms < started_ms_ ||
+        evidence.monotonic_ms > latest_position_ms_ + kArrivalEvidenceFreshnessMs ||
         captures_.size() >= 4096 || captures_.contains(evidence.capture_id)) return Snapshot();
+    if (status_.at_b_verified &&
+        evidence.monotonic_ms - last_valid_position_ms_ > kArrivalEvidenceFreshnessMs) {
+        status_.at_b_verified = false;
+        arrival_candidate_ms_ = -1;
+    }
     if (survey_.Add(evidence.guaranteed_full_strip_interval)) {
         captures_.emplace(evidence.capture_id, evidence);
         Recompute();
@@ -347,6 +414,7 @@ Status EdgeExecutionSupervisor::RecoveryDispatched(bool accepted, std::int64_t m
     last_recovery_ms_ = monotonic_ms;
     deviation_samples_ = 0;
     status_.at_b_verified = false;  // A repaired edge must finish at B again.
+    arrival_candidate_ms_ = -1;
     status_.phase = Phase::kMoving;
     status_.reason = "re-entry command accepted; physical outcome pending";
     return Snapshot();

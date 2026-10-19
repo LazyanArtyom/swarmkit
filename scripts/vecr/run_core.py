@@ -164,6 +164,11 @@ def main() -> None:
     for directory in ("raw", "tables", "reports"):
         (output / directory).mkdir(parents=True, exist_ok=True)
     raw = output / "raw" / f"core_v2_{seeds}_seeds.csv"
+    if raw.exists():
+        raise SystemExit(
+            f"{raw} is a frozen v2 research artifact; this historical runner will not overwrite it. "
+            "Use a new versioned protocol for new experiments."
+        )
     subprocess.run([str(BINARY), str(raw), str(seeds)], check=True, cwd=ROOT)
     with raw.open(newline="") as source:
         rows = list(csv.DictReader(source))

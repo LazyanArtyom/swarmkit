@@ -19,7 +19,9 @@ EdgeRequest Request(Obligation obligation = Obligation::kSurvey) {
     request.corridor_half_width_m = 4;
     request.arrival_radius_m = 1;
     request.arrival_max_speed_mps = 0.5;
+    request.target_altitude_m = 10;
     request.maximum_speed_mps = 5;
+    request.minimum_recovery_battery_percent = 20;
     request.recovery_overlap_m = 2;
     request.max_recovery_attempts = 2;
     request.sustained_deviation_samples = 3;
@@ -31,11 +33,16 @@ EdgeRequest Request(Obligation obligation = Obligation::kSurvey) {
 PositionObservation Position(double x, std::int64_t time_ms, double y = 0, bool stopped = false) {
     return {.position = {x, y}, .monotonic_ms = time_ms, .valid = true,
             .safe_to_navigate = true, .speed_mps = stopped ? 0.0 : 1.0,
-            .horizontal_error_hard_bound_m = 0.0};
+            .horizontal_error_hard_bound_m = 0.0,
+            .speed_error_hard_bound_mps = 0.0,
+            .altitude_m = 10.0,
+            .vertical_error_hard_bound_m = 0.0,
+            .battery_percent = 100.0};
 }
 
 CaptureEvidence Capture(double a, double b, std::int64_t time_ms, std::string id) {
-    return {.attempt_id = "attempt-2", .capture_id = std::move(id),
+    return {.mission_id = "mission", .mission_revision = 2, .edge_id = "A-B",
+            .attempt_id = "attempt-2", .capture_id = std::move(id),
             .calibration_id = "calibration", .monotonic_ms = time_ms,
             .guaranteed_full_strip_interval = {a, b}, .capture_succeeded = true,
             .full_strip_quality_established = true};
@@ -62,7 +69,8 @@ TEST_CASE("VECR arrival does not imply surveyed terrain", "[vecr]") {
     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
     static_cast<void>(supervisor.ObserveCapture(Capture(0, 40, 1000, "a")));
     static_cast<void>(supervisor.ObserveCapture(Capture(70, 100, 1000, "b")));
-    const auto status = supervisor.ObservePosition(Position(100, 2000, 0, true));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+    const auto status = supervisor.ObservePosition(Position(100, 2300, 0, true));
     CHECK(status.at_b_verified);
     CHECK_FALSE(status.survey_verified);
     CHECK(status.phase != Phase::kFulfilled);
@@ -81,11 +89,17 @@ TEST_CASE("VECR retains accepted off-corridor survey and enforces attempt identi
     auto stale = Capture(0, 100, 2000, "stale");
     stale.attempt_id = "previous-attempt";
     CHECK_FALSE(supervisor.ObserveCapture(stale).survey_verified);
+    auto wrong_revision = Capture(0, 100, 2000, "wrong-revision");
+    wrong_revision.mission_revision = 3;
+    CHECK_FALSE(supervisor.ObserveCapture(wrong_revision).survey_verified);
+    auto uncorrelated = Capture(0, 100, 4000, "future-pose");
+    CHECK_FALSE(supervisor.ObserveCapture(uncorrelated).survey_verified);
     const auto accepted = supervisor.ObserveCapture(Capture(0, 100, 2000, "valid"));
     CHECK(accepted.survey_verified);
     CHECK_FALSE(accepted.at_b_verified);
     CHECK(accepted.phase != Phase::kFulfilled);
-    const auto done = supervisor.ObservePosition(Position(100, 3000, 0, true));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 3000, 0, true)));
+    const auto done = supervisor.ObservePosition(Position(100, 3300, 0, true));
     CHECK(done.phase == Phase::kFulfilled);
     CHECK_FALSE(done.traversal_verified);
 }
@@ -107,10 +121,21 @@ TEST_CASE("VECR ignores duplicate captures and rejects absent camera evidence", 
 TEST_CASE("VECR sparse samples cannot prove whole interval traversal", "[vecr]") {
     EdgeExecutionSupervisor supervisor(Request(Obligation::kTraversal));
     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
-    const auto status = supervisor.ObservePosition(Position(100, 11000, 0, true));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 11000, 0, true)));
+    const auto status = supervisor.ObservePosition(Position(100, 11300, 0, true));
     CHECK(status.at_b_verified);
     CHECK_FALSE(status.traversal_verified);
     CHECK(status.phase != Phase::kFulfilled);
+}
+
+TEST_CASE("VECR rejects kinematically impossible traversal samples", "[vecr]") {
+    EdgeExecutionSupervisor supervisor(Request(Obligation::kTraversal));
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    const auto jumped = supervisor.ObservePosition(Position(100, 2000, 0, true));
+    CHECK_FALSE(jumped.traversal_verified);
+    CHECK(jumped.traversal_missing.size() == 1);
+    CHECK(jumped.traversal_missing.front().begin_m == 0);
+    CHECK(jumped.traversal_missing.front().end_m == 100);
 }
 
 TEST_CASE("VECR recovery is bounded and failsafe wins", "[vecr]") {
@@ -118,9 +143,10 @@ TEST_CASE("VECR recovery is bounded and failsafe wins", "[vecr]") {
     req.max_recovery_attempts = 1;
     EdgeExecutionSupervisor supervisor(req);
     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
-    auto proposed = supervisor.ObservePosition(Position(100, 2000, 0, true));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+    auto proposed = supervisor.ObservePosition(Position(100, 2300, 0, true));
     REQUIRE(proposed.pending_reentry);
-    static_cast<void>(supervisor.RecoveryDispatched(true, 2000));
+    static_cast<void>(supervisor.RecoveryDispatched(true, 2300));
     CHECK(supervisor.Snapshot().recovery_attempts == 1);
     proposed = supervisor.ObservePosition(Position(100, 4000, 0, true));
     CHECK_FALSE(proposed.pending_reentry);
@@ -149,6 +175,9 @@ TEST_CASE("VECR rejects degenerate route and resolves polyline projection", "[ve
 TEST_CASE("VECR nadir adapter contracts footprint with hard bounds", "[vecr]") {
     const Route route{{{0, 0}, {100, 0}}};
     NadirCaptureInput input;
+    input.mission_id = "mission";
+    input.mission_revision = 2;
+    input.edge_id = "A-B";
     input.attempt_id = "attempt-2";
     input.capture_id = "image-1";
     input.calibration_id = "calibration-1";
@@ -159,26 +188,132 @@ TEST_CASE("VECR nadir adapter contracts footprint with hard bounds", "[vecr]") {
     input.horizontal_error_hard_bound_m = 0.5;
     input.along_fov_deg = 60;
     input.cross_fov_deg = 90;
-    input.required_strip_half_width_m = 4;
     input.capture_succeeded = true;
     input.image_quality_established = true;
     input.nadir_route_alignment_established = true;
     input.flat_ground_established = true;
-    const auto evidence = BuildNadirStripEvidence(route, input);
+    const auto evidence = BuildNadirStripEvidence(route, 4, input);
     REQUIRE(evidence);
     CHECK(evidence->guaranteed_full_strip_interval.begin_m > 45);
     CHECK(evidence->guaranteed_full_strip_interval.end_m < 55);
     input.image_quality_established = false;
-    CHECK_FALSE(BuildNadirStripEvidence(route, input));
+    CHECK_FALSE(BuildNadirStripEvidence(route, 4, input));
     input.image_quality_established = true;
     input.camera_center.north_m = 5;
-    CHECK_FALSE(BuildNadirStripEvidence(route, input));
+    CHECK_FALSE(BuildNadirStripEvidence(route, 4, input));
     input.camera_center.north_m = 1;
     input.cross_fov_deg = 0;
-    CHECK_FALSE(BuildNadirStripEvidence(route, input));
+    CHECK_FALSE(BuildNadirStripEvidence(route, 4, input));
     input.cross_fov_deg = 90;
     input.altitude_error_hard_bound_m = 11;
-    CHECK_FALSE(BuildNadirStripEvidence(route, input));
+    CHECK_FALSE(BuildNadirStripEvidence(route, 4, input));
     input.altitude_error_hard_bound_m = 1;
-    CHECK_FALSE(BuildNadirStripEvidence(Route{{{0, 0}, {50, 0}, {100, 0}}}, input));
+    CHECK_FALSE(BuildNadirStripEvidence(Route{{{0, 0}, {50, 0}, {100, 0}}}, 4, input));
+}
+
+TEST_CASE("VECR stop arrival requires bounded three-dimensional dwell", "[vecr]") {
+    EdgeExecutionSupervisor supervisor(Request(Obligation::kArrival));
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    auto uncertain = Position(100, 2000, 0, true);
+    uncertain.horizontal_error_hard_bound_m.reset();
+    CHECK_FALSE(supervisor.ObservePosition(uncertain).at_b_verified);
+    auto bad_speed = Position(100, 2300, 0, true);
+    bad_speed.speed_mps = -1.0;
+    CHECK_FALSE(supervisor.ObservePosition(bad_speed).at_b_verified);
+    auto wrong_height = Position(100, 2600, 0, true);
+    wrong_height.altitude_m = 20.0;
+    CHECK_FALSE(supervisor.ObservePosition(wrong_height).at_b_verified);
+    auto jump = Position(100, 2900, 0, true);
+    CHECK_FALSE(supervisor.ObservePosition(jump).at_b_verified);
+    CHECK_FALSE(supervisor.ObservePosition(Position(0, 3000)).at_b_verified);
+    CHECK_FALSE(supervisor.ObservePosition(Position(100, 3200, 0, true)).at_b_verified);
+    CHECK(supervisor.ObservePosition(Position(100, 3500, 0, true)).phase == Phase::kFulfilled);
+}
+
+TEST_CASE("VECR late survey cannot fulfill from an old arrival", "[vecr]") {
+    EdgeExecutionSupervisor supervisor(Request());
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+    CHECK(supervisor.ObservePosition(Position(100, 2300, 0, true)).at_b_verified);
+    CHECK_FALSE(supervisor.ObservePosition(Position(0, 2400)).at_b_verified);
+    const auto away = supervisor.ObserveCapture(Capture(0, 100, 2500, "late-away"));
+    CHECK(away.survey_verified);
+    CHECK(away.phase != Phase::kFulfilled);
+    CHECK_FALSE(away.at_b_verified);
+    static_cast<void>(supervisor.ObservePosition(Position(100, 3000, 0, true)));
+    CHECK(supervisor.ObservePosition(Position(100, 3300, 0, true)).phase == Phase::kFulfilled);
+}
+
+TEST_CASE("VECR stale position after dropout cannot restore arrival", "[vecr]") {
+    EdgeExecutionSupervisor supervisor(Request());
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+    auto lost = Position(0, 2200);
+    lost.valid = false;
+    CHECK(supervisor.ObservePosition(lost).phase == Phase::kUnknown);
+    CHECK_FALSE(supervisor.ObservePosition(Position(100, 2100, 0, true)).at_b_verified);
+    const auto late = supervisor.ObserveCapture(Capture(0, 100, 4000, "late"));
+    CHECK_FALSE(late.at_b_verified);
+    CHECK(late.phase != Phase::kFulfilled);
+}
+
+TEST_CASE("VECR does not credit a polyline traversal from endpoint samples", "[vecr]") {
+    auto request = Request(Obligation::kTraversal);
+    request.route.points = {{0, 0}, {50, 50}, {100, 0}};
+    request.maximum_speed_mps = 500;
+    EdgeExecutionSupervisor supervisor(request);
+    REQUIRE(supervisor.Valid());
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+    const auto state = supervisor.ObservePosition(Position(100, 2300, 0, true));
+    CHECK(state.at_b_verified);
+    CHECK_FALSE(state.traversal_verified);
+    CHECK(state.phase != Phase::kFulfilled);
+}
+
+TEST_CASE("VECR combined obligation requires both bounded traversal and survey", "[vecr]") {
+    EdgeExecutionSupervisor supervisor(Request(Obligation::kTraversalAndSurvey));
+    for (int x = 0; x <= 100; ++x) {
+        static_cast<void>(supervisor.ObservePosition(
+            Position(x, 1000 + x * 1000, 0, x == 100)));
+    }
+    const auto at_b = supervisor.ObservePosition(Position(100, 101300, 0, true));
+    CHECK(at_b.at_b_verified);
+    CHECK(at_b.traversal_verified);
+    CHECK_FALSE(at_b.survey_verified);
+    CHECK(at_b.phase != Phase::kFulfilled);
+    const auto done = supervisor.ObserveCapture(Capture(0, 100, 101400, "full-strip"));
+    CHECK(done.survey_verified);
+    CHECK(done.phase == Phase::kFulfilled);
+}
+
+TEST_CASE("VECR low battery interrupts before any recovery proposal", "[vecr]") {
+    EdgeExecutionSupervisor supervisor(Request());
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    auto low = Position(100, 2000, 0, true);
+    low.battery_percent = 5.0;
+    const auto status = supervisor.ObservePosition(low);
+    CHECK(status.phase == Phase::kInterrupted);
+    CHECK_FALSE(status.pending_reentry);
+    CHECK(status.recovery_attempts == 0);
+}
+
+TEST_CASE("VECR declines recovery from unbounded navigation position", "[vecr]") {
+    EdgeExecutionSupervisor supervisor(Request());
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    auto at_b = Position(100, 2000, 0, true);
+    at_b.horizontal_error_hard_bound_m.reset();
+    static_cast<void>(supervisor.ObservePosition(at_b));
+    at_b.monotonic_ms = 2300;
+    const auto unbounded = supervisor.ObservePosition(at_b);
+    CHECK_FALSE(unbounded.at_b_verified);
+    CHECK_FALSE(unbounded.pending_reentry);
+    at_b.monotonic_ms = 2600;
+    at_b.horizontal_error_hard_bound_m = 5;
+    CHECK_FALSE(supervisor.ObservePosition(at_b).pending_reentry);
+    at_b.monotonic_ms = 2900;
+    at_b.horizontal_error_hard_bound_m = 0;
+    CHECK_FALSE(supervisor.ObservePosition(at_b).pending_reentry);
+    at_b.monotonic_ms = 3200;
+    CHECK(supervisor.ObservePosition(at_b).pending_reentry.has_value());
 }

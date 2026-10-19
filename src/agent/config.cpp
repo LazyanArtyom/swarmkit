@@ -313,6 +313,10 @@ core::Result AgentConfig::Validate() const {
         return core::Result::Rejected(
             "VECR sensor adapter requires mTLS or explicit unsafe bench mode");
     }
+    if (vecr_sensor_client_id.empty() != vecr_sensor_calibration_id.empty()) {
+        return core::Result::Rejected(
+            "VECR sensor client and calibration IDs must be configured together");
+    }
     return security.Validate();
 }
 
@@ -499,6 +503,12 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         if (!sensor_client.has_value()) return std::unexpected(sensor_client.error());
         if (sensor_client->has_value())
             config.vecr_sensor_client_id = sensor_client->value_or(std::string{});
+        const auto sensor_calibration =
+            core::yaml::ReadOptionalScalar<std::string>(vecr, "sensor_calibration_id");
+        if (!sensor_calibration.has_value())
+            return std::unexpected(sensor_calibration.error());
+        if (sensor_calibration->has_value())
+            config.vecr_sensor_calibration_id = sensor_calibration->value_or(std::string{});
         const auto sim_recovery =
             core::yaml::ReadOptionalScalar<bool>(vecr, "sim_recovery_enabled");
         if (!sim_recovery.has_value()) return std::unexpected(sim_recovery.error());

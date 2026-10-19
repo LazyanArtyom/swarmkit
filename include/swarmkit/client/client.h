@@ -910,7 +910,7 @@ class Client {
     [[nodiscard]] EdgeResult GetEdgeStatus(const std::string& drone_id,
                                            const std::string& attempt_id) const;
     [[nodiscard]] EdgeResult SubmitEdgeCapture(const std::string& drone_id,
-                                               const edge::CaptureEvidence& capture) const;
+                                               const edge::NadirCaptureInput& capture) const;
     [[nodiscard]] EdgeResult CancelEdge(const core::ExecutionHandle& expected) const;
 
     /// @brief Publish a small app-defined data-plane message.

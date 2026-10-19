@@ -21,9 +21,11 @@ estimator state, accuracy fields, and command/goal linkage for monitoring and
 `ExecuteEdge` gives an external graph planner an agent-local edge operation.
 Its report distinguishes backend command acceptance, arrival at B, bounded
 route traversal, verified strip survey, missing survey intervals, and terminal
-fulfillment. A camera adapter must submit calibrated, quality-qualified
-full-strip capture intervals; arrival or a camera command ACK cannot create
-survey evidence. The agent uses the existing arbiter, backend, telemetry lease,
+fulfillment. A configured sensor adapter submits capture pose, FOV, hard bounds,
+calibration ID and quality assertions. The agent computes conservative survey
+intervals from those inputs. A trusted calibrated source is still required to
+establish that the assertions match physical images; arrival or a camera command
+ACK cannot create survey evidence. The agent uses the existing arbiter, backend, telemetry lease,
 report stream and session/attempt identity. Automatic re-entry is currently
 enabled only for the simulator backend with `agent.vecr.sim_recovery_enabled`;
 real vehicle recovery needs a qualified geofence and mode feasibility check.

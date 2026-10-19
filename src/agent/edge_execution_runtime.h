@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -56,6 +57,7 @@ class EdgeExecutionRuntime {
         swarmkit::v1::EdgeOperation operation;
         core::ExecutionHandle handle;
         commands::CommandContext context;
+        core::BackendCommandOutcome initial_dispatch;
         TelemetryLease lease;
         std::atomic<bool> stop{false};
         std::thread worker;
@@ -64,6 +66,11 @@ class EdgeExecutionRuntime {
         edge::Phase last_reported_phase{edge::Phase::kUnknown};
         bool last_reported_arrival{};
         std::optional<edge::Point> reentry_target;
+        std::int64_t reentry_candidate_ms{-1};
+        std::optional<double> last_battery_percent;
+        std::optional<edge::Point> last_bounded_position;
+        std::optional<double> last_position_hard_bound_m;
+        std::int64_t last_position_ms{-1};
         std::int64_t started_agent_ms{};
         std::int64_t last_frame_agent_ms{};
     };
@@ -84,8 +91,10 @@ class EdgeExecutionRuntime {
     CommandArbiter* arbiter_;
     const AgentConfig* config_;
     RuntimeProviders providers_;
+    std::mutex start_mutex_;
     mutable std::mutex mutex_;
     std::unordered_map<std::string, std::shared_ptr<Attempt>> attempts_;
+    std::map<std::pair<std::string, std::string>, std::shared_ptr<Attempt>> history_;
 };
 
 }  // namespace swarmkit::agent::internal

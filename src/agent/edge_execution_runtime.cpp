@@ -30,6 +30,12 @@ namespace {
     return phase == edge::Phase::kFulfilled || phase == edge::Phase::kInterrupted;
 }
 
+[[nodiscard]] bool SafetyOverrideMode(const std::string& mode) {
+    return mode == "SIM_RTL" || mode == "SIM_LAND" || mode == "SIM_TERMINATED" ||
+           mode == "RTL" || mode == "LAND" || mode == "QRTL" || mode == "QLAND" ||
+           mode == "FAILSAFE";
+}
+
 [[nodiscard]] bool ValidGeo(const swarmkit::v1::GeoPoint& point) {
     return std::isfinite(point.lat_deg()) && std::isfinite(point.lon_deg()) &&
            std::isfinite(point.alt_m()) && point.lat_deg() >= -85.0 &&
@@ -56,8 +62,9 @@ EdgeExecutionRuntime::~EdgeExecutionRuntime() { Shutdown(); }
 
 std::optional<edge::EdgeRequest> EdgeExecutionRuntime::Convert(
     const swarmkit::v1::EdgeOperation& operation) {
-    if (operation.route_size() < 2 || operation.route_size() > 128 ||
+    if (operation.route_size() != 2 ||
         operation.obligation() == swarmkit::v1::EDGE_OBLIGATION_UNSPECIFIED ||
+        operation.obligation() > swarmkit::v1::EDGE_TRAVERSAL_AND_SURVEY ||
         !ValidGeo(operation.route(0)) || operation.commanded_speed_mps() <= 0.0F ||
         !std::isfinite(operation.commanded_speed_mps())) return std::nullopt;
     edge::EdgeRequest request;
@@ -69,10 +76,14 @@ std::optional<edge::EdgeRequest> EdgeExecutionRuntime::Convert(
     request.obligation = operation.obligation() == swarmkit::v1::EDGE_ARRIVAL
                              ? edge::Obligation::kArrival
                              : operation.obligation() == swarmkit::v1::EDGE_TRAVERSAL
-                                   ? edge::Obligation::kTraversal : edge::Obligation::kSurvey;
+                                   ? edge::Obligation::kTraversal
+                                   : operation.obligation() == swarmkit::v1::EDGE_SURVEY
+                                         ? edge::Obligation::kSurvey
+                                         : edge::Obligation::kTraversalAndSurvey;
     request.corridor_half_width_m = operation.corridor_half_width_m();
     request.arrival_radius_m = operation.arrival_radius_m();
     request.arrival_max_speed_mps = operation.arrival_max_speed_mps();
+    request.target_altitude_m = operation.route(operation.route_size() - 1).alt_m();
     request.maximum_missing_m = operation.maximum_missing_m();
     request.maximum_speed_mps = operation.maximum_speed_mps();
     request.recovery_overlap_m = operation.recovery_overlap_m();
@@ -142,8 +153,13 @@ void EdgeExecutionRuntime::Publish(const Attempt& attempt, const edge::Status& s
     report.set_drone_id(attempt.handle.drone_id);
     report.set_correlation_id(attempt.handle.correlation_id);
     report.set_type(swarmkit::v1::EDGE_REPORT);
-    report.set_severity(status.phase == edge::Phase::kInterrupted ? swarmkit::v1::REPORT_WARNING
-                                                                : swarmkit::v1::REPORT_INFO);
+    const bool safety_critical = status.reason.find("failsafe") != std::string::npos ||
+                                 status.reason.find("battery") != std::string::npos ||
+                                 status.reason.find("safety mode") != std::string::npos;
+    report.set_severity(status.phase == edge::Phase::kInterrupted
+                            ? (safety_critical ? swarmkit::v1::REPORT_CRITICAL
+                                               : swarmkit::v1::REPORT_WARNING)
+                            : swarmkit::v1::REPORT_INFO);
     report.set_message(status.reason);
     core::internal::PopulateExecutionHandle(attempt.handle, report.mutable_execution_handle());
     *report.mutable_edge() = ToReport(attempt, status);
@@ -155,11 +171,30 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
                                          const commands::CommandContext& context,
                                          swarmkit::v1::EdgeReport* status,
                                          core::BackendCommandOutcome* dispatch) {
+    std::lock_guard<std::mutex> start_lock(start_mutex_);
     auto request = Convert(operation);
     if (!request) return core::Result::Rejected("invalid edge operation or unsupported route frame");
+    request->minimum_recovery_battery_percent =
+        config_->vehicle_profile.min_battery_percent;
     if (operation.drone_id() != context.drone_id || handle.drone_id != operation.drone_id() ||
         handle.physical_attempt_id != operation.attempt_id())
         return core::Result::Rejected("edge/context/physical attempt identity mismatch");
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto key = std::make_pair(operation.drone_id(), operation.attempt_id());
+        if (const auto it = history_.find(key); it != history_.end()) {
+            const auto& prior = it->second;
+            if (prior->operation.SerializeAsString() != operation.SerializeAsString() ||
+                prior->handle.client_id != handle.client_id)
+                return core::Result::Rejected("edge attempt ID reused with different request");
+            std::lock_guard<std::mutex> attempt_lock(prior->mutex);
+            *status = ToReport(*prior, prior->supervisor.Snapshot());
+            *dispatch = prior->initial_dispatch;
+            return core::Result::Success("existing edge attempt returned without redispatch");
+        }
+        if (history_.size() >= 4096)
+            return core::Result::Rejected("edge attempt history capacity reached");
+    }
     const auto capabilities = backend_->GetCapabilities();
     if (std::find(capabilities.supported_commands.begin(), capabilities.supported_commands.end(),
                   "goto") == capabilities.supported_commands.end())
@@ -200,12 +235,14 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
     }
     auto attempt = std::make_shared<Attempt>(std::move(*request), operation, handle, context,
                                               std::move(lease));
+    attempt->initial_dispatch = *dispatch;
     attempt->started_agent_ms = providers_.MonotonicTimeNs() / 1'000'000;
     attempt->last_frame_agent_ms = attempt->started_agent_ms;
     *status = ToReport(*attempt, attempt->supervisor.Snapshot());
     {
         std::lock_guard<std::mutex> lock(mutex_);
         attempts_[operation.drone_id()] = attempt;
+        history_.emplace(std::make_pair(operation.drone_id(), operation.attempt_id()), attempt);
     }
     Publish(*attempt, attempt->supervisor.Snapshot());
     attempt->worker = std::thread([this, attempt] { Work(attempt); });
@@ -217,12 +254,11 @@ std::optional<swarmkit::v1::EdgeReport> EdgeExecutionRuntime::Get(
     std::shared_ptr<Attempt> attempt;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        const auto it = attempts_.find(drone_id);
-        if (it == attempts_.end()) return std::nullopt;
+        const auto it = history_.find(std::make_pair(drone_id, attempt_id));
+        if (it == history_.end()) return std::nullopt;
         attempt = it->second;
     }
     std::lock_guard<std::mutex> lock(attempt->mutex);
-    if (attempt->supervisor.Request().attempt_id != attempt_id) return std::nullopt;
     return ToReport(*attempt, attempt->supervisor.Snapshot());
 }
 
@@ -253,23 +289,57 @@ core::Result EdgeExecutionRuntime::SubmitCapture(
     bool should_publish = false;
     {
         std::lock_guard<std::mutex> lock(attempt->mutex);
-        if (capture.attempt_id() != attempt->supervisor.Request().attempt_id ||
-            !capture.has_guaranteed_full_strip_interval())
-            return core::Result::Rejected("capture attempt identity or interval missing");
+        const auto& requested = attempt->supervisor.Request();
+        if (capture.mission_id() != requested.mission_id ||
+            capture.mission_revision() != requested.mission_revision ||
+            capture.edge_id() != requested.edge_id ||
+            capture.attempt_id() != requested.attempt_id ||
+            capture.calibration_id() != config_->vecr_sensor_calibration_id)
+            return core::Result::Rejected("capture binding or calibration invalid");
         const auto before = attempt->supervisor.Snapshot();
-        const edge::CaptureEvidence evidence{
+        const edge::NadirCaptureInput input{
+            .mission_id = capture.mission_id(),
+            .mission_revision = capture.mission_revision(),
+            .edge_id = capture.edge_id(),
             .attempt_id = capture.attempt_id(), .capture_id = capture.capture_id(),
             .calibration_id = capture.calibration_id(),
             .monotonic_ms = capture.agent_monotonic_ms(),
-            .guaranteed_full_strip_interval =
-                {capture.guaranteed_full_strip_interval().begin_m(),
-                 capture.guaranteed_full_strip_interval().end_m()},
+            .camera_center = {capture.camera_center_east_m(),
+                              capture.camera_center_north_m()},
+            .altitude_above_ground_m = capture.altitude_above_ground_m(),
+            .altitude_error_hard_bound_m = capture.altitude_error_hard_bound_m(),
+            .horizontal_error_hard_bound_m = capture.horizontal_error_hard_bound_m(),
+            .along_fov_deg = capture.along_fov_deg(),
+            .cross_fov_deg = capture.cross_fov_deg(),
             .capture_succeeded = capture.capture_succeeded(),
-            .full_strip_quality_established = capture.full_strip_quality_established()};
-        updated = attempt->supervisor.ObserveCapture(evidence);
+            .image_quality_established = capture.image_quality_established(),
+            .nadir_route_alignment_established = capture.nadir_route_alignment_established(),
+            .flat_ground_established = capture.flat_ground_established()};
+        if (!attempt->last_bounded_position ||
+            !attempt->last_position_hard_bound_m ||
+            input.monotonic_ms < attempt->last_position_ms - 500 ||
+            input.monotonic_ms > attempt->last_position_ms + 500)
+            return core::Result::Rejected("capture has no nearby bounded vehicle pose");
+        const double elapsed_s = std::abs(input.monotonic_ms - attempt->last_position_ms) / 1000.0;
+        const double possible_displacement_m =
+            *attempt->last_position_hard_bound_m + input.horizontal_error_hard_bound_m +
+            requested.maximum_speed_mps * elapsed_s;
+        if (!std::isfinite(possible_displacement_m) ||
+            std::hypot(input.camera_center.east_m - attempt->last_bounded_position->east_m,
+                       input.camera_center.north_m - attempt->last_bounded_position->north_m) >
+                possible_displacement_m + 1e-6)
+            return core::Result::Rejected(
+                "capture pose inconsistent with vehicle telemetry: capture_east=" +
+                std::to_string(input.camera_center.east_m) + " vehicle_east=" +
+                std::to_string(attempt->last_bounded_position->east_m) + " dt_ms=" +
+                std::to_string(input.monotonic_ms - attempt->last_position_ms));
+        const auto evidence = edge::BuildNadirStripEvidence(
+            requested.route, requested.corridor_half_width_m, input);
+        if (!evidence) return core::Result::Rejected("camera footprint cannot prove full strip");
+        updated = attempt->supervisor.ObserveCapture(*evidence);
         *status = ToReport(*attempt, updated);
         if (updated.survey_covered_m <= before.survey_covered_m) {
-            if (attempt->supervisor.WasCaptureAccepted(evidence))
+            if (attempt->supervisor.WasCaptureAccepted(*evidence))
                 return core::Result::Success("capture already accepted");
             return core::Result::Rejected(
                 "capture not accepted: invalid, stale, uncertain or terminal attempt");
@@ -330,26 +400,44 @@ void EdgeExecutionRuntime::DispatchRecovery(const std::shared_ptr<Attempt>& atte
     const auto health = backend_->GetHealth();
     bool allowed = config_->vecr_sim_recovery_enabled && capabilities.backend_name == "sim" &&
                    health.ready && health.failsafe == false && health.gps_ok == true &&
-                   health.ekf_ok == true && health.armed == true;
+                   health.ekf_ok == true && health.armed == true &&
+                   (health.mode == "SIM_GOTO" || health.mode == "SIM_HOLD");
+    {
+        std::lock_guard<std::mutex> lock(attempt->mutex);
+        allowed = allowed && !attempt->stop.load(std::memory_order_relaxed) &&
+                  attempt->supervisor.Snapshot().phase == edge::Phase::kRecovering &&
+                  attempt->last_battery_percent &&
+                  *attempt->last_battery_percent >=
+                      attempt->supervisor.Request().minimum_recovery_battery_percent;
+    }
     if (allowed) {
         allowed = arbiter_->CheckAndGrant(
             attempt->context, std::chrono::milliseconds{config_->default_authority_ttl_ms}).IsOk();
     }
-    if (allowed) {
-        const auto& origin = attempt->operation.route(0);
-        const edge::GeoPoint geo = edge::LocalToWgs84(origin.lat_deg(), origin.lon_deg(), target);
-        commands::CommandEnvelope command;
-        command.context = attempt->context;
-        command.command = commands::NavCmd{commands::CmdGoto{
-            .lat_deg = geo.lat_deg, .lon_deg = geo.lon_deg, .alt_m = origin.alt_m(),
-            .speed_mps = attempt->operation.commanded_speed_mps()}};
-        allowed = backend_->Execute(command).result.IsOk();
-    }
     edge::Status updated;
     {
         std::lock_guard<std::mutex> lock(attempt->mutex);
+        if (attempt->stop.load(std::memory_order_relaxed) ||
+            Terminal(attempt->supervisor.Snapshot().phase)) return;
+        allowed = allowed && attempt->supervisor.Snapshot().pending_reentry.has_value() &&
+                  attempt->last_battery_percent &&
+                  *attempt->last_battery_percent >=
+                      attempt->supervisor.Request().minimum_recovery_battery_percent;
+        if (allowed) {
+            const auto& origin = attempt->operation.route(0);
+            const edge::GeoPoint geo = edge::LocalToWgs84(origin.lat_deg(), origin.lon_deg(), target);
+            commands::CommandEnvelope command;
+            command.context = attempt->context;
+            command.command = commands::NavCmd{commands::CmdGoto{
+                .lat_deg = geo.lat_deg, .lon_deg = geo.lon_deg, .alt_m = origin.alt_m(),
+                .speed_mps = attempt->operation.commanded_speed_mps()}};
+            allowed = backend_->Execute(command).result.IsOk();
+        }
         updated = attempt->supervisor.RecoveryDispatched(allowed, now_ms);
-        if (allowed) attempt->reentry_target = target;
+        if (allowed) {
+            attempt->reentry_target = target;
+            attempt->reentry_candidate_ms = -1;
+        }
     }
     Publish(*attempt, updated);
 }
@@ -358,27 +446,41 @@ void EdgeExecutionRuntime::DispatchReturnToB(const std::shared_ptr<Attempt>& att
     const auto health = backend_->GetHealth();
     bool allowed = health.ready && health.failsafe == false && health.gps_ok == true &&
                    health.ekf_ok == true && health.armed == true &&
-                   arbiter_->CheckAndGrant(
-                       attempt->context,
-                       std::chrono::milliseconds{config_->default_authority_ttl_ms}).IsOk();
-    if (allowed) {
-        const auto& target = attempt->operation.route(attempt->operation.route_size() - 1);
-        commands::CommandEnvelope command;
-        command.context = attempt->context;
-        command.command = commands::NavCmd{commands::CmdGoto{
-            .lat_deg = target.lat_deg(), .lon_deg = target.lon_deg(), .alt_m = target.alt_m(),
-            .speed_mps = attempt->operation.commanded_speed_mps()}};
-        allowed = backend_->Execute(command).result.IsOk();
+                   (health.mode == "SIM_GOTO" || health.mode == "SIM_HOLD");
+    {
+        std::lock_guard<std::mutex> lock(attempt->mutex);
+        allowed = allowed && !attempt->stop.load(std::memory_order_relaxed) &&
+                  !Terminal(attempt->supervisor.Snapshot().phase) &&
+                  attempt->last_battery_percent &&
+                  *attempt->last_battery_percent >=
+                      attempt->supervisor.Request().minimum_recovery_battery_percent;
     }
-    if (!allowed) {
-        edge::Status interrupted;
-        {
-            std::lock_guard<std::mutex> lock(attempt->mutex);
+    if (allowed)
+        allowed = arbiter_->CheckAndGrant(
+            attempt->context,
+            std::chrono::milliseconds{config_->default_authority_ttl_ms}).IsOk();
+    std::optional<edge::Status> interrupted;
+    {
+        std::lock_guard<std::mutex> lock(attempt->mutex);
+        if (attempt->stop.load(std::memory_order_relaxed) ||
+            Terminal(attempt->supervisor.Snapshot().phase)) return;
+        allowed = allowed && attempt->last_battery_percent &&
+                  *attempt->last_battery_percent >=
+                      attempt->supervisor.Request().minimum_recovery_battery_percent;
+        if (allowed) {
+            const auto& target = attempt->operation.route(attempt->operation.route_size() - 1);
+            commands::CommandEnvelope command;
+            command.context = attempt->context;
+            command.command = commands::NavCmd{commands::CmdGoto{
+                .lat_deg = target.lat_deg(), .lon_deg = target.lon_deg(), .alt_m = target.alt_m(),
+                .speed_mps = attempt->operation.commanded_speed_mps()}};
+            allowed = backend_->Execute(command).result.IsOk();
+        }
+        if (!allowed)
             interrupted = attempt->supervisor.Interrupt(
                 "cannot safely continue from recovery re-entry to B");
-        }
-        Publish(*attempt, interrupted);
     }
+    if (interrupted) Publish(*attempt, *interrupted);
 }
 
 void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
@@ -421,20 +523,48 @@ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
         }
         observation.failsafe = frame.validity.failsafe && frame.failsafe;
         observation.safe_to_navigate = observation.valid && !observation.failsafe &&
+                                       frame.validity.failsafe &&
                                        frame.validity.armed && frame.armed;
-        if (frame.HasVelocity()) observation.speed_mps = std::hypot(frame.vx_mps, frame.vy_mps);
+        if (frame.HasBattery()) observation.battery_percent = frame.battery_percent;
+        if (frame.HasVelocity() && frame.velocity_frame == core::CoordinateFrame::kLocalNed)
+            observation.speed_mps = std::hypot(frame.vx_mps, frame.vy_mps);
+        if (frame.HasRelativeAltitude()) observation.altitude_m = frame.rel_alt_m;
         if (frame.accuracy.horizontal_position &&
             frame.accuracy.horizontal_position->descriptor.semantics ==
                 core::UncertaintySemantics::kDeterministicHardBound)
             observation.horizontal_error_hard_bound_m =
                 frame.accuracy.horizontal_position->value;
+        if (frame.accuracy.horizontal_velocity &&
+            frame.accuracy.horizontal_velocity->descriptor.semantics ==
+                core::UncertaintySemantics::kDeterministicHardBound)
+            observation.speed_error_hard_bound_mps =
+                frame.accuracy.horizontal_velocity->value;
+        if (frame.accuracy.vertical_position &&
+            frame.accuracy.vertical_position->descriptor.semantics ==
+                core::UncertaintySemantics::kDeterministicHardBound)
+            observation.vertical_error_hard_bound_m =
+                frame.accuracy.vertical_position->value;
         edge::Status updated;
         bool publish = false;
         std::optional<edge::Point> reentry;
         bool return_to_b = false;
         {
             std::lock_guard<std::mutex> lock(attempt->mutex);
-            updated = attempt->supervisor.ObservePosition(observation);
+            updated = frame.validity.mode && SafetyOverrideMode(frame.mode)
+                          ? attempt->supervisor.Interrupt("autopilot safety mode active")
+                          : attempt->supervisor.ObservePosition(observation);
+            attempt->last_battery_percent = observation.battery_percent;
+            if (observation.valid && observation.horizontal_error_hard_bound_m &&
+                std::isfinite(*observation.horizontal_error_hard_bound_m) &&
+                *observation.horizontal_error_hard_bound_m >= 0) {
+                attempt->last_bounded_position = observation.position;
+                attempt->last_position_hard_bound_m =
+                    observation.horizontal_error_hard_bound_m;
+                attempt->last_position_ms = observation.monotonic_ms;
+            } else {
+                attempt->last_bounded_position.reset();
+                attempt->last_position_hard_bound_m.reset();
+            }
             publish = updated.phase != attempt->last_reported_phase ||
                       updated.at_b_verified != attempt->last_reported_arrival;
             if (publish) {
@@ -442,14 +572,32 @@ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
                 attempt->last_reported_arrival = updated.at_b_verified;
             }
             reentry = updated.pending_reentry;
-            if (attempt->reentry_target && observation.valid &&
-                std::hypot(observation.position.east_m - attempt->reentry_target->east_m,
-                           observation.position.north_m - attempt->reentry_target->north_m) <=
-                    attempt->supervisor.Request().arrival_radius_m &&
-                observation.speed_mps && *observation.speed_mps <=
-                    attempt->supervisor.Request().arrival_max_speed_mps) {
-                attempt->reentry_target.reset();
-                return_to_b = true;
+            if (attempt->reentry_target) {
+                const auto& request = attempt->supervisor.Request();
+                const bool at_reentry = observation.valid &&
+                    observation.horizontal_error_hard_bound_m &&
+                    observation.speed_mps && std::isfinite(*observation.speed_mps) &&
+                    *observation.speed_mps >= 0 && observation.speed_error_hard_bound_mps &&
+                    observation.altitude_m && observation.vertical_error_hard_bound_m &&
+                    std::hypot(std::hypot(
+                        observation.position.east_m - attempt->reentry_target->east_m,
+                        observation.position.north_m - attempt->reentry_target->north_m) +
+                        *observation.horizontal_error_hard_bound_m,
+                        std::abs(*observation.altitude_m - request.target_altitude_m) +
+                        *observation.vertical_error_hard_bound_m) <= request.arrival_radius_m &&
+                    *observation.speed_mps + *observation.speed_error_hard_bound_mps <=
+                        request.arrival_max_speed_mps;
+                if (at_reentry) {
+                    if (attempt->reentry_candidate_ms < 0)
+                        attempt->reentry_candidate_ms = observation.monotonic_ms;
+                    if (observation.monotonic_ms - attempt->reentry_candidate_ms >= 200) {
+                        attempt->reentry_target.reset();
+                        attempt->reentry_candidate_ms = -1;
+                        return_to_b = true;
+                    }
+                } else {
+                    attempt->reentry_candidate_ms = -1;
+                }
             }
         }
         if (publish) Publish(*attempt, updated);
@@ -466,6 +614,7 @@ void EdgeExecutionRuntime::Shutdown() {
         std::lock_guard<std::mutex> lock(mutex_);
         for (auto& [_, attempt] : attempts_) attempts.push_back(attempt);
         attempts_.clear();
+        history_.clear();
     }
     for (auto& attempt : attempts) attempt->stop.store(true, std::memory_order_relaxed);
     for (auto& attempt : attempts) if (attempt->worker.joinable()) attempt->worker.join();

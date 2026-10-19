@@ -2916,7 +2916,10 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
     operation->set_obligation(request.edge.obligation == edge::Obligation::kArrival
                                   ? swarmkit::v1::EDGE_ARRIVAL
                                   : request.edge.obligation == edge::Obligation::kTraversal
-                                        ? swarmkit::v1::EDGE_TRAVERSAL : swarmkit::v1::EDGE_SURVEY);
+                                        ? swarmkit::v1::EDGE_TRAVERSAL
+                                        : request.edge.obligation == edge::Obligation::kSurvey
+                                              ? swarmkit::v1::EDGE_SURVEY
+                                              : swarmkit::v1::EDGE_TRAVERSAL_AND_SURVEY);
     operation->set_corridor_half_width_m(request.edge.corridor_half_width_m);
     operation->set_arrival_radius_m(request.edge.arrival_radius_m);
     operation->set_arrival_max_speed_mps(request.edge.arrival_max_speed_mps);
@@ -2975,21 +2978,29 @@ EdgeResult Client::GetEdgeStatus(const std::string& drone_id,
 }
 
 EdgeResult Client::SubmitEdgeCapture(const std::string& drone_id,
-                                     const edge::CaptureEvidence& capture) const {
+                                     const edge::NadirCaptureInput& capture) const {
     EdgeResult out;
     const std::string correlation = MakeCorrelationId("edge-capture");
     swarmkit::v1::SubmitEdgeCaptureRequest req;
     req.set_drone_id(drone_id);
+    req.set_mission_id(capture.mission_id);
+    req.set_mission_revision(capture.mission_revision);
+    req.set_edge_id(capture.edge_id);
     req.set_attempt_id(capture.attempt_id);
     req.set_capture_id(capture.capture_id);
     req.set_calibration_id(capture.calibration_id);
     req.set_agent_monotonic_ms(capture.monotonic_ms);
-    req.mutable_guaranteed_full_strip_interval()->set_begin_m(
-        capture.guaranteed_full_strip_interval.begin_m);
-    req.mutable_guaranteed_full_strip_interval()->set_end_m(
-        capture.guaranteed_full_strip_interval.end_m);
+    req.set_camera_center_east_m(capture.camera_center.east_m);
+    req.set_camera_center_north_m(capture.camera_center.north_m);
+    req.set_altitude_above_ground_m(capture.altitude_above_ground_m);
+    req.set_altitude_error_hard_bound_m(capture.altitude_error_hard_bound_m);
+    req.set_horizontal_error_hard_bound_m(capture.horizontal_error_hard_bound_m);
+    req.set_along_fov_deg(capture.along_fov_deg);
+    req.set_cross_fov_deg(capture.cross_fov_deg);
     req.set_capture_succeeded(capture.capture_succeeded);
-    req.set_full_strip_quality_established(capture.full_strip_quality_established);
+    req.set_image_quality_established(capture.image_quality_established);
+    req.set_nadir_route_alignment_established(capture.nadir_route_alignment_established);
+    req.set_flat_ground_established(capture.flat_ground_established);
     req.set_sensor_client_id(impl_->config.client_id);
     swarmkit::v1::SubmitEdgeCaptureReply rep;
     int attempts = 0;
