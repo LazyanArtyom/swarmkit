@@ -264,7 +264,16 @@ class AgentServerHarness {
                        agent::internal::RuntimeProviders providers =
                            agent::internal::RuntimeProviders::System()) {
         backend_ = dynamic_cast<RecordingBackend*>(backend.get());
-        services_ = agent::internal::MakeAgentServicesForTesting(config, std::move(backend),
+        agent::AgentConfig effective = config;
+        if (effective.vecr_attempt_journal_path.empty()) {
+            static std::atomic<std::uint64_t> next_journal{0};
+            temporary_vecr_journal_ = std::filesystem::temp_directory_path() /
+                ("swarmkit-vecr-harness-" +
+                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                 "-" + std::to_string(next_journal.fetch_add(1)) + ".journal");
+            effective.vecr_attempt_journal_path = temporary_vecr_journal_.string();
+        }
+        services_ = agent::internal::MakeAgentServicesForTesting(effective, std::move(backend),
                                                                  std::move(providers));
 
         grpc::ServerBuilder builder;
@@ -298,6 +307,12 @@ class AgentServerHarness {
         if (server_) {
             server_->Shutdown();
         }
+        server_.reset();
+        services_.reset();
+        if (!temporary_vecr_journal_.empty()) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary_vecr_journal_, ignored);
+        }
     }
 
     AgentServerHarness(const AgentServerHarness&) = delete;
@@ -325,6 +340,7 @@ class AgentServerHarness {
     }
 
     RecordingBackend* backend_{nullptr};
+    std::filesystem::path temporary_vecr_journal_;
     std::unique_ptr<agent::internal::AgentServiceBundle> services_;
     std::unique_ptr<grpc::Server> server_;
     std::string address_;

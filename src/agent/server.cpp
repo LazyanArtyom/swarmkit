@@ -1945,6 +1945,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         std::string client_id;
         if (const core::Result auth = AuthorizePeer(ctx, config_.security, &client_id);
             !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        if (const auto ready = edges_.JournalReady(); !ready.IsOk())
+            return {grpc::StatusCode::FAILED_PRECONDITION, ready.message};
         const auto snapshot = edges_.Get(req->drone_id(), req->attempt_id());
         reply->set_found(snapshot.has_value());
         if (snapshot) *reply->mutable_status() = *snapshot;

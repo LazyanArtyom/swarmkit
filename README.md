@@ -29,6 +29,9 @@ ACK cannot create survey evidence. The agent uses the existing arbiter, backend,
 report stream and session/attempt identity. Automatic re-entry is currently
 enabled only for the simulator backend with `agent.vecr.sim_recovery_enabled`;
 real vehicle recovery needs a qualified geofence and mode feasibility check.
+An agent-local attempt journal is synced before command dispatch and preserves
+terminal edge reports across agent restarts. Its storage must be persistent;
+attempts interrupted by a restart remain `UNKNOWN` until reconciled.
 
 The reproducible geometric experiment and its limitations are in
 [VECR results](results/vecr/reports/CORE_RESULTS_V2_100_SEEDS.md) and

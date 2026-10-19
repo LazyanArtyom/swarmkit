@@ -192,6 +192,8 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     output << "  min_telemetry_rate_hz: 2\n";
     output << "  safety:\n";
     output << "    allow_unsafe_bench_commands: true\n";
+    output << "  vecr:\n";
+    output << "    attempt_journal_path: /tmp/swarmkit-agent-vecr-test.journal\n";
     output << "  reports:\n";
     output << "    backlog_size: 2048\n";
     output << "  data:\n";
@@ -238,6 +240,7 @@ TEST_CASE("LoadAgentConfigFromFile parses YAML values", "[agent][config]") {
     CHECK(kLoaded->default_authority_ttl_ms == 7000);
     CHECK(kLoaded->default_telemetry_rate_hz == 8);
     CHECK(kLoaded->min_telemetry_rate_hz == 2);
+    CHECK(kLoaded->vecr_attempt_journal_path == "/tmp/swarmkit-agent-vecr-test.journal");
     CHECK(kLoaded->reports.backlog_size == 2048);
     CHECK(kLoaded->data.artifact_dir == "/tmp/swarmkit-artifacts-test");
     CHECK(kLoaded->data.message_backlog_size == 99);

@@ -1966,6 +1966,177 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     CHECK(harness.Backend().ExecuteCallCount() == 2);
 }
 
+TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous replay",
+          "[client][integration][vecr][journal]") {
+    const auto certificates = testsupport::MakeDevMtlsPaths();
+    agent::AgentConfig config;
+    config.agent_id = "restart-agent";
+    config.bind_addr = "127.0.0.1:0";
+    config.security.root_ca_cert_path = certificates.root_ca_cert_path;
+    config.security.cert_chain_path = certificates.server_cert_chain_path;
+    config.security.private_key_path = certificates.server_private_key_path;
+    const auto base = std::filesystem::temp_directory_path() /
+        ("swarmkit-edge-restart-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    auto configure_backend = [](testsupport::AgentServerHarness& harness) {
+        agent::BackendHealth health;
+        health.ready = true;
+        health.last_heartbeat_unix_ms = 1;
+        health.last_telemetry_unix_ms = 1;
+        health.armed = true;
+        health.landed = false;
+        health.failsafe = false;
+        health.gps_ok = true;
+        health.ekf_ok = true;
+        health.mode = "SIM_GOTO";
+        harness.Backend().SetHealth(health);
+        core::BackendCapabilities capabilities;
+        capabilities.backend_name = "recording";
+        capabilities.supported_commands = {"goto"};
+        harness.Backend().SetCapabilities(capabilities);
+    };
+    EdgeOperationRequest request;
+    request.edge.mission_id = "restart-mission";
+    request.edge.mission_revision = 1;
+    request.edge.edge_id = "A-B";
+    request.edge.attempt_id = "ambiguous-1";
+    request.edge.drone_id = "drone-1";
+    request.edge.route.points = {{0, 0}, {20, 0}};
+    request.edge.obligation = edge::Obligation::kArrival;
+    request.edge.corridor_half_width_m = 4;
+    request.edge.arrival_radius_m = 2;
+    request.edge.arrival_max_speed_mps = 0.5;
+    request.edge.maximum_speed_mps = 10;
+    request.edge.timeout_ms = 10000;
+    request.wgs84_origin = {40, 44};
+    request.altitude_m = 10;
+    request.commanded_speed_mps = 2;
+
+    config.vecr_attempt_journal_path = (base.string() + "-unknown.journal");
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        Client client = MakeClient(harness.Address());
+        const auto started = client.ExecuteEdge(request);
+        INFO(started.message);
+        REQUIRE(started.ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 1);
+    }
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        Client client = MakeClient(harness.Address());
+        const auto unresolved = client.GetEdgeStatus("drone-1", "ambiguous-1");
+        REQUIRE(unresolved.status);
+        CHECK(unresolved.status->status.phase == edge::Phase::kUnknown);
+        CHECK_FALSE(client.ExecuteEdge(request).ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 0);
+    }
+    std::filesystem::remove(config.vecr_attempt_journal_path);
+
+    config.vecr_attempt_journal_path = (base.string() + "-terminal.journal");
+    request.edge.attempt_id = "terminal-1";
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        Client client = MakeClient(harness.Address());
+        REQUIRE(client.ExecuteEdge(request).ok);
+        REQUIRE(testsupport::WaitUntil([&] {
+            return harness.Backend().HasTelemetryStream("drone-1");
+        }, kWaitTimeout));
+        core::TelemetryFrame frame;
+        frame.drone_id = "drone-1";
+        frame.validity.failsafe = true;
+        frame.failsafe = true;
+        REQUIRE(testsupport::WaitUntil([&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            const auto status = client.GetEdgeStatus("drone-1", "terminal-1");
+            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
+        }, kWaitTimeout));
+    }
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        Client client = MakeClient(harness.Address());
+        const auto terminal = client.GetEdgeStatus("drone-1", "terminal-1");
+        REQUIRE(terminal.status);
+        CHECK(terminal.status->status.phase == edge::Phase::kInterrupted);
+        CHECK(client.ExecuteEdge(request).ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 0);
+    }
+    std::filesystem::remove(config.vecr_attempt_journal_path);
+
+    config.vecr_attempt_journal_path = (base.string() + "-rejected.journal");
+    request.edge.attempt_id = "rejected-1";
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        harness.Backend().SetExecuteHandler([](const commands::CommandEnvelope&) {
+            return core::BackendCommandOutcome{
+                .result = core::Result::Rejected("scripted backend refusal"),
+                .dispatch_state = core::BackendDispatchState::kRejected};
+        });
+        Client client = MakeClient(harness.Address());
+        CHECK_FALSE(client.ExecuteEdge(request).ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 1);
+    }
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        Client client = MakeClient(harness.Address());
+        const auto rejected = client.GetEdgeStatus("drone-1", "rejected-1");
+        REQUIRE(rejected.status);
+        CHECK(rejected.status->status.phase == edge::Phase::kInterrupted);
+        CHECK_FALSE(client.ExecuteEdge(request).ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 0);
+    }
+    std::filesystem::remove(config.vecr_attempt_journal_path);
+
+    config.vecr_attempt_journal_path = (base.string() + "-uncertain.journal");
+    request.edge.attempt_id = "uncertain-1";
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        harness.Backend().SetExecuteHandler([](const commands::CommandEnvelope&) {
+            return core::BackendCommandOutcome{
+                .result = core::Result::Failed("acknowledgment lost"),
+                .dispatch_state = core::BackendDispatchState::kUnknown};
+        });
+        Client client = MakeClient(harness.Address());
+        CHECK_FALSE(client.ExecuteEdge(request).ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 1);
+    }
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        Client client = MakeClient(harness.Address());
+        const auto uncertain = client.GetEdgeStatus("drone-1", "uncertain-1");
+        REQUIRE(uncertain.status);
+        CHECK(uncertain.status->status.phase == edge::Phase::kUnknown);
+        CHECK_FALSE(client.ExecuteEdge(request).ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 0);
+    }
+    std::filesystem::remove(config.vecr_attempt_journal_path);
+
+    config.vecr_attempt_journal_path = (base.string() + "-corrupt.journal");
+    request.edge.attempt_id = "corrupt-1";
+    {
+        std::ofstream corrupt(config.vecr_attempt_journal_path, std::ios::binary);
+        corrupt << "invalid journal bytes";
+    }
+    {
+        testsupport::AgentServerHarness harness(config);
+        configure_backend(harness);
+        Client client = MakeClient(harness.Address());
+        const auto lookup = client.GetEdgeStatus("drone-1", "corrupt-1");
+        CHECK_FALSE(lookup.ok);
+        CHECK(lookup.message.find("journal") != std::string::npos);
+        CHECK_FALSE(client.ExecuteEdge(request).ok);
+        CHECK(harness.Backend().ExecuteCallCount() == 0);
+    }
+    std::filesystem::remove(config.vecr_attempt_journal_path);
+}
+
 TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
           "[client][integration][vecr]") {
     const auto certificates = testsupport::MakeDevMtlsPaths();

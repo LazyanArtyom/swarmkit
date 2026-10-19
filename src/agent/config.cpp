@@ -30,6 +30,7 @@ constexpr std::string_view kAgentEnvDefaultTelemetryRateHz = "DEFAULT_TELEMETRY_
 constexpr std::string_view kAgentEnvMinTelemetryRateHz = "MIN_TELEMETRY_RATE_HZ";
 constexpr std::string_view kAgentEnvTelemetryRetentionFrames = "TELEMETRY_RETENTION_FRAMES";
 constexpr std::string_view kAgentEnvAllowUnsafeBenchCommands = "ALLOW_UNSAFE_BENCH_COMMANDS";
+constexpr std::string_view kAgentEnvVecrAttemptJournalPath = "VECR_ATTEMPT_JOURNAL_PATH";
 constexpr std::string_view kAgentEnvReportBacklogSize = "REPORT_BACKLOG_SIZE";
 constexpr std::string_view kAgentEnvEvidenceFile = "EVIDENCE_FILE";
 constexpr std::string_view kAgentEnvEvidenceRunId = "EVIDENCE_RUN_ID";
@@ -375,6 +376,7 @@ void AgentConfig::ApplyEnvironment(std::string_view prefix) {
         }
     }
     ApplyStringEnv(prefix, kAgentEnvArtifactDir, &data.artifact_dir);
+    ApplyStringEnv(prefix, kAgentEnvVecrAttemptJournalPath, &vecr_attempt_journal_path);
     ApplyIntEnv(prefix, kAgentEnvDataMessageBacklogSize, &data.message_backlog_size);
     ApplyIntEnv(prefix, kAgentEnvDataMaxMessagePayloadBytes, &data.max_message_payload_bytes);
     ApplyIntEnv(prefix, kAgentEnvDataArtifactChunkBytes, &data.artifact_chunk_bytes);
@@ -514,6 +516,12 @@ std::expected<AgentConfig, core::Result> LoadAgentConfigFromFile(const std::stri
         if (!sim_recovery.has_value()) return std::unexpected(sim_recovery.error());
         if (sim_recovery->has_value())
             config.vecr_sim_recovery_enabled = sim_recovery->value_or(false);
+        const auto attempt_journal =
+            core::yaml::ReadOptionalScalar<std::string>(vecr, "attempt_journal_path");
+        if (!attempt_journal.has_value())
+            return std::unexpected(attempt_journal.error());
+        if (attempt_journal->has_value())
+            config.vecr_attempt_journal_path = attempt_journal->value_or(std::string{});
     }
 
     if (const YAML::Node reports = root["reports"]; reports) {

@@ -11,6 +11,7 @@
 #include <thread>
 #include <unordered_map>
 
+#include "edge_attempt_journal.h"
 #include "report_hub.h"
 #include "runtime_providers.h"
 #include "swarmkit/agent/arbiter.h"
@@ -39,6 +40,7 @@ class EdgeExecutionRuntime {
                                      core::BackendCommandOutcome* dispatch);
     [[nodiscard]] std::optional<swarmkit::v1::EdgeReport> Get(const std::string& drone_id,
                                                                const std::string& attempt_id) const;
+    [[nodiscard]] core::Result JournalReady() const { return journal_.Ready(); }
     [[nodiscard]] bool Active(const std::string& drone_id) const;
     [[nodiscard]] core::Result SubmitCapture(const swarmkit::v1::SubmitEdgeCaptureRequest& capture,
                                               swarmkit::v1::EdgeReport* status);
@@ -91,6 +93,7 @@ class EdgeExecutionRuntime {
     CommandArbiter* arbiter_;
     const AgentConfig* config_;
     RuntimeProviders providers_;
+    EdgeAttemptJournal journal_;
     std::mutex start_mutex_;
     mutable std::mutex mutex_;
     std::unordered_map<std::string, std::shared_ptr<Attempt>> attempts_;

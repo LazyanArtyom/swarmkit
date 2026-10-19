@@ -59,6 +59,11 @@ agent:
   data:
     artifact_dir: "/var/lib/swarmkit/artifacts"
 
+  vecr:
+    # Keep this file on persistent local storage. The agent fsyncs each attempt
+    # reservation before dispatch and refuses VECR commands if it cannot write.
+    attempt_journal_path: "/var/lib/swarmkit/vecr-attempts.journal"
+
   security:
     transport_security: "mtls"
     root_ca_cert_path: "/etc/swarmkit/certs/ca.pem"

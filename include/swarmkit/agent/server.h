@@ -186,6 +186,9 @@ struct AgentConfig {
     // Simulator-only recovery path. Real backends require a separate
     // geofence/flight-mode feasibility integration before enabling recovery.
     bool vecr_sim_recovery_enabled{false};
+    // Durable append-only attempt ledger. Empty selects an agent-specific file
+    // below data.artifact_dir. Place this on persistent storage in deployments.
+    std::string vecr_attempt_journal_path;
     AgentSecurityConfig security{};
 
     /// @brief Validate address, telemetry, authority, profile, data, reports, and security.

@@ -59,5 +59,9 @@ agent:
   data:
     artifact_dir: "/tmp/swarmkit-hardware-lab-artifacts"
 
+  vecr:
+    # Lab-only path; use persistent storage when attempt identity must survive reboot.
+    attempt_journal_path: "/tmp/swarmkit-hardware-lab-attempts.journal"
+
   security:
     transport_security: "insecure"

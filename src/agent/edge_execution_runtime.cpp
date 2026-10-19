@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -42,6 +43,34 @@ namespace {
            point.lat_deg() <= 85.0 && point.lon_deg() >= -180.0 && point.lon_deg() <= 180.0;
 }
 
+[[nodiscard]] std::string JournalPath(const AgentConfig& config) {
+    if (!config.vecr_attempt_journal_path.empty())
+        return config.vecr_attempt_journal_path;
+    constexpr char kHex[] = "0123456789abcdef";
+    std::string safe_id;
+    safe_id.reserve(config.agent_id.size() * 2);
+    for (const unsigned char character : config.agent_id) {
+        safe_id.push_back(kHex[character >> 4]);
+        safe_id.push_back(kHex[character & 0x0fU]);
+    }
+    return (std::filesystem::path(config.data.artifact_dir) /
+            (safe_id + "-edge-attempts.journal")).string();
+}
+
+[[nodiscard]] swarmkit::v1::EdgeReport ReservedReport(
+    const swarmkit::v1::EdgeOperation& operation, const core::ExecutionHandle& handle) {
+    swarmkit::v1::EdgeReport report;
+    report.set_mission_id(operation.mission_id());
+    report.set_mission_revision(operation.mission_revision());
+    report.set_edge_id(operation.edge_id());
+    report.set_attempt_id(operation.attempt_id());
+    report.set_drone_id(operation.drone_id());
+    report.set_phase(swarmkit::v1::EDGE_UNKNOWN);
+    report.set_reason("edge command reserved; physical dispatch outcome unknown");
+    core::internal::PopulateExecutionHandle(handle, report.mutable_execution_handle());
+    return report;
+}
+
 }  // namespace
 
 EdgeExecutionRuntime::Attempt::Attempt(edge::EdgeRequest request,
@@ -56,7 +85,7 @@ EdgeExecutionRuntime::EdgeExecutionRuntime(TelemetryManager* telemetry, ReportHu
                                            IDroneBackend* backend, CommandArbiter* arbiter,
                                            const AgentConfig* config, RuntimeProviders providers)
     : telemetry_(telemetry), reports_(reports), backend_(backend), arbiter_(arbiter),
-      config_(config), providers_(std::move(providers)) {}
+      config_(config), providers_(std::move(providers)), journal_(JournalPath(*config)) {}
 
 EdgeExecutionRuntime::~EdgeExecutionRuntime() { Shutdown(); }
 
@@ -149,6 +178,12 @@ swarmkit::v1::EdgeReport EdgeExecutionRuntime::ToReport(const Attempt& attempt,
 }
 
 void EdgeExecutionRuntime::Publish(const Attempt& attempt, const edge::Status& status) {
+    const auto edge_report = ToReport(attempt, status);
+    if (const auto saved = journal_.Append({
+            .operation = attempt.operation, .client_id = attempt.handle.client_id,
+            .report = edge_report, .dispatch_accepted = true});
+        !saved.IsOk())
+        core::Logger::ErrorFmt("VECR attempt journal append failed: {}", saved.message);
     swarmkit::v1::AgentReport report;
     report.set_drone_id(attempt.handle.drone_id);
     report.set_correlation_id(attempt.handle.correlation_id);
@@ -162,7 +197,7 @@ void EdgeExecutionRuntime::Publish(const Attempt& attempt, const edge::Status& s
                             : swarmkit::v1::REPORT_INFO);
     report.set_message(status.reason);
     core::internal::PopulateExecutionHandle(attempt.handle, report.mutable_execution_handle());
-    *report.mutable_edge() = ToReport(attempt, status);
+    *report.mutable_edge() = edge_report;
     reports_->Publish(std::move(report));
 }
 
@@ -179,6 +214,7 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
     if (operation.drone_id() != context.drone_id || handle.drone_id != operation.drone_id() ||
         handle.physical_attempt_id != operation.attempt_id())
         return core::Result::Rejected("edge/context/physical attempt identity mismatch");
+    if (const auto ready = journal_.Ready(); !ready.IsOk()) return ready;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto key = std::make_pair(operation.drone_id(), operation.attempt_id());
@@ -192,6 +228,21 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
             *dispatch = prior->initial_dispatch;
             return core::Result::Success("existing edge attempt returned without redispatch");
         }
+    }
+    if (const auto prior = journal_.Get(operation.drone_id(), operation.attempt_id())) {
+        if (prior->operation.SerializeAsString() != operation.SerializeAsString() ||
+            prior->client_id != handle.client_id)
+            return core::Result::Rejected("edge attempt ID reused with different request");
+        *status = prior->report;
+        if (prior->dispatch_accepted)
+            return core::Result::Success("durable edge attempt returned without redispatch");
+        if (prior->report.phase() == swarmkit::v1::EDGE_INTERRUPTED)
+            return core::Result::Rejected("initial edge command was rejected; no redispatch");
+        return core::Result::Rejected(
+            "edge attempt previously reserved; physical dispatch outcome requires reconciliation");
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (history_.size() >= 4096)
             return core::Result::Rejected("edge attempt history capacity reached");
     }
@@ -228,8 +279,30 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
     envelope.command = commands::NavCmd{commands::CmdGoto{
         .lat_deg = target.lat_deg(), .lon_deg = target.lon_deg(), .alt_m = target.alt_m(),
         .speed_mps = operation.commanded_speed_mps()}};
+    const auto reserved = ReservedReport(operation, handle);
+    if (const auto saved = journal_.Append({
+            .operation = operation, .client_id = handle.client_id,
+            .report = reserved, .dispatch_accepted = false});
+        !saved.IsOk()) {
+        telemetry_->ReleaseLease(lease);
+        return saved;
+    }
     *dispatch = backend_->Execute(envelope);
     if (!dispatch->result.IsOk()) {
+        auto rejected = reserved;
+        if (dispatch->dispatch_state == core::BackendDispatchState::kRejected) {
+            rejected.set_phase(swarmkit::v1::EDGE_INTERRUPTED);
+            rejected.set_reason("initial edge command rejected: " + dispatch->result.message);
+        } else {
+            rejected.set_reason("initial edge dispatch outcome uncertain: " +
+                                dispatch->result.message);
+        }
+        if (const auto saved = journal_.Append({
+                .operation = operation, .client_id = handle.client_id,
+                .report = rejected, .dispatch_accepted = false});
+            !saved.IsOk())
+            core::Logger::ErrorFmt("VECR attempt journal append failed: {}", saved.message);
+        *status = std::move(rejected);
         telemetry_->ReleaseLease(lease);
         return dispatch->result;
     }
@@ -255,8 +328,11 @@ std::optional<swarmkit::v1::EdgeReport> EdgeExecutionRuntime::Get(
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto it = history_.find(std::make_pair(drone_id, attempt_id));
-        if (it == history_.end()) return std::nullopt;
-        attempt = it->second;
+        if (it != history_.end()) attempt = it->second;
+    }
+    if (!attempt) {
+        const auto entry = journal_.Get(drone_id, attempt_id);
+        return entry ? std::optional{entry->report} : std::nullopt;
     }
     std::lock_guard<std::mutex> lock(attempt->mutex);
     return ToReport(*attempt, attempt->supervisor.Snapshot());

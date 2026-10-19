@@ -56,10 +56,20 @@ agent:
       - "swarmkit-cli"
 ```
 
-`reports` is an in-memory notification/replay stream. Durable correctness evidence is written only
-by `execution_recorder`; the old report-only JSONL path does not exist. `invalidate_run` stops with
+`reports` is an in-memory notification/replay stream. The execution recorder writes the detailed
+evidence log, and the VECR attempt journal separately preserves dispatch identity and latest
+status. The old report-only JSONL path does not exist. `invalidate_run` stops with
 an explicitly invalid recording when retention is exhausted. `rotate_oldest` must be selected
 explicitly for bounded operational logging where loss of the oldest evidence is acceptable.
+
+VECR edge attempts also use `agent.vecr.attempt_journal_path` (or
+`SWARMKIT_AGENT_VECR_ATTEMPT_JOURNAL_PATH`). The agent fsyncs an attempt reservation before
+dispatching a backend command and stores subsequent status reports there. Put this journal on
+persistent local storage for restart recovery. If omitted, the agent creates an agent-specific
+file below `agent.data.artifact_dir`. An inaccessible, corrupt, full, or concurrently locked journal
+blocks new VECR commands. Deleting the journal loses duplicate protection for its IDs, so keep it
+with deployment state and backups. After an unclean restart, attempts without a terminal report return
+`UNKNOWN` and their IDs cannot be dispatched again; they require external reconciliation.
 
 The built-in simulator accepts strict options through `agent.backend_options`.
 Unknown keys and invalid values fail backend creation:
