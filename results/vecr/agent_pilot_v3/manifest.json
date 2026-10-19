@@ -1,0 +1,48 @@
+{
+  "protocol": "agent-pilot-v3",
+  "evidence_class": "agent-backed simulation",
+  "source_revision": "6bdeb1d440988f7346634a8d2dbdc7cb3aa108cd",
+  "test_binary_sha256": "15dceab5cffddee2243c7d25f432b041ed0f4890f20ed8a9407e80ec24b87c66",
+  "command": [
+    "/Users/artyom/Documents/MyProjects/swarmkit/build/mac-release/tests/swarmkit_tests",
+    "[sim-backend]",
+    "--reporter",
+    "compact"
+  ],
+  "test_exit_code": 0,
+  "cases": [
+    {
+      "scenario": "agent_camera_gap",
+      "attempts": 1,
+      "terminal_phase": "FULFILLED",
+      "truth_covered_cells": 80,
+      "truth_cells": 80,
+      "reported_survey_covered_m": 20.000000000212196,
+      "physical_distance_m": 45.59999999967218,
+      "recovery_attempts": 1,
+      "motor_failure_injected": false,
+      "trace_rows": 234
+    },
+    {
+      "scenario": "agent_motor_failure",
+      "attempts": 1,
+      "terminal_phase": "INTERRUPTED",
+      "truth_covered_cells": 76,
+      "truth_cells": 80,
+      "reported_survey_covered_m": 19.000000000212285,
+      "physical_distance_m": 19.99999999999975,
+      "recovery_attempts": 1,
+      "motor_failure_injected": true,
+      "trace_rows": 104
+    }
+  ],
+  "sha256": {
+    "README.md": "c931b742dc001fba3d22a230e318462a18b2fecf619384faf71290939f3f23ca",
+    "configuration.json": "2743adaac928f8f6bc95adef259aa2af53085773b10b96eaa9a5af3414d77bf9",
+    "execution.log": "b50a9e6f23878df77eabd8005fbcdf9ebca054539e213854bc322aeb4f22fca7",
+    "figures/survey_vs_physical_distance.svg": "94fc3bfb3a8e91bd01c8a17952057b27631cd8a5d52d946d925f931b66819a1f",
+    "raw/agent_camera_gap.csv": "4a7f0ae70b71409e6432d0de93229f126f597ef95bfe0d703515f943d39529c1",
+    "raw/agent_motor_failure.csv": "eeff0d5eda851db94e62f211f2a81c969ba89cf9b7c46a9a561d654b5645e2b0",
+    "tables/observed_attempts.csv": "9d8bacb132bf2450eb5a054d82674738ee452c7a20a89d04bca3dacc9302b5f3"
+  }
+}
