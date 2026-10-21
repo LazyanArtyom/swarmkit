@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="500" viewBox="0 0 1020 500">
+<rect width="100%" height="100%" fill="white"/>
+<text x="30" y="34" font-size="20" font-family="sans-serif">Travel distance by scenario</text>
+<text x="22" y="60" font-size="12" font-family="sans-serif">Mean actual distance, m</text>
+<path d="M92 68V414H1000" fill="none" stroke="#333"/>
+<text x="30" y="418.0" font-size="11" font-family="sans-serif">0.0</text>
+<path d="M92 414.0H1000" stroke="#ddd"/>
+<text x="30" y="331.5" font-size="11" font-family="sans-serif">16.8</text>
+<path d="M92 327.5H1000" stroke="#ddd"/>
+<text x="30" y="245.0" font-size="11" font-family="sans-serif">33.6</text>
+<path d="M92 241.0H1000" stroke="#ddd"/>
+<text x="30" y="158.5" font-size="11" font-family="sans-serif">50.3</text>
+<path d="M92 154.5H1000" stroke="#ddd"/>
+<text x="30" y="72.0" font-size="11" font-family="sans-serif">67.1</text>
+<path d="M92 68.0H1000" stroke="#ddd"/>
+<text x="129.4" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S00</text>
+<rect x="103.5" y="310.7" width="24.9" height="103.3" fill="#2468b4"/>
+<path d="M115.9 310.7V310.7 M111.9 310.7H119.9 M111.9 310.7H119.9" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="130.4" y="310.7" width="24.9" height="103.3" fill="#d27b28"/>
+<path d="M142.9 310.7V310.7 M138.9 310.7H146.9 M138.9 310.7H146.9" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="204.2" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S01</text>
+<rect x="178.3" y="310.7" width="24.9" height="103.3" fill="#2468b4"/>
+<path d="M190.8 310.7V310.7 M186.8 310.7H194.8 M186.8 310.7H194.8" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="205.2" y="310.7" width="24.9" height="103.3" fill="#d27b28"/>
+<path d="M217.7 310.7V310.7 M213.7 310.7H221.7 M213.7 310.7H221.7" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="279.1" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S02</text>
+<rect x="253.1" y="157.3" width="24.9" height="256.7" fill="#2468b4"/>
+<path d="M265.6 158.8V155.4 M261.6 158.8H269.6 M261.6 155.4H269.6" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="280.1" y="157.3" width="24.9" height="256.7" fill="#d27b28"/>
+<path d="M292.6 158.8V155.4 M288.6 158.8H296.6 M288.6 155.4H296.6" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="353.9" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S03</text>
+<rect x="328.0" y="93.9" width="24.9" height="320.1" fill="#2468b4"/>
+<path d="M340.4 94.2V93.6 M336.4 94.2H344.4 M336.4 93.6H344.4" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="354.9" y="181.8" width="24.9" height="232.2" fill="#d27b28"/>
+<path d="M367.4 189.0V178.2 M363.4 189.0H371.4 M363.4 178.2H371.4" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="428.8" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S04</text>
+<rect x="402.8" y="103.7" width="24.9" height="310.3" fill="#2468b4"/>
+<path d="M415.3 103.7V103.7 M411.3 103.7H419.3 M411.3 103.7H419.3" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="429.8" y="164.2" width="24.9" height="249.8" fill="#d27b28"/>
+<path d="M442.2 167.6V157.3 M438.2 167.6H446.2 M438.2 157.3H446.2" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="503.6" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S05</text>
+<rect x="477.6" y="103.7" width="24.9" height="310.3" fill="#2468b4"/>
+<path d="M490.1 103.7V103.7 M486.1 103.7H494.1 M486.1 103.7H494.1" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="504.6" y="157.3" width="24.9" height="256.7" fill="#d27b28"/>
+<path d="M517.1 157.3V157.3 M513.1 157.3H521.1 M513.1 157.3H521.1" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="578.4" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S06</text>
+<rect x="552.5" y="290.2" width="24.9" height="123.8" fill="#2468b4"/>
+<path d="M564.9 291.5V288.3 M560.9 291.5H568.9 M560.9 288.3H568.9" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="579.4" y="290.2" width="24.9" height="123.8" fill="#d27b28"/>
+<path d="M591.9 291.5V288.3 M587.9 291.5H595.9 M587.9 288.3H595.9" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="653.2" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S07</text>
+<rect x="627.3" y="102.2" width="24.9" height="311.8" fill="#2468b4"/>
+<path d="M639.8 102.2V102.2 M635.8 102.2H643.8 M635.8 102.2H643.8" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="654.2" y="128.6" width="24.9" height="285.4" fill="#d27b28"/>
+<path d="M666.7 128.6V128.6 M662.7 128.6H670.7 M662.7 128.6H670.7" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="728.1" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S08</text>
+<rect x="702.1" y="103.7" width="24.9" height="310.3" fill="#2468b4"/>
+<path d="M714.6 103.7V103.7 M710.6 103.7H718.6 M710.6 103.7H718.6" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="729.1" y="177.9" width="24.9" height="236.1" fill="#d27b28"/>
+<path d="M741.6 177.9V177.9 M737.6 177.9H745.6 M737.6 177.9H745.6" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="802.9" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S09</text>
+<rect x="777.0" y="103.7" width="24.9" height="310.3" fill="#2468b4"/>
+<path d="M789.4 103.7V103.7 M785.4 103.7H793.4 M785.4 103.7H793.4" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="803.9" y="181.4" width="24.9" height="232.6" fill="#d27b28"/>
+<path d="M816.4 188.2V177.9 M812.4 188.2H820.4 M812.4 177.9H820.4" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="877.8" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S16</text>
+<rect x="851.8" y="310.7" width="24.9" height="103.3" fill="#2468b4"/>
+<path d="M864.3 310.7V310.7 M860.3 310.7H868.3 M860.3 310.7H868.3" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="878.8" y="310.7" width="24.9" height="103.3" fill="#d27b28"/>
+<path d="M891.2 310.7V310.7 M887.2 310.7H895.2 M887.2 310.7H895.2" stroke="#222" fill="none" stroke-width="1.3"/>
+<text x="952.6" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S19</text>
+<rect x="926.6" y="310.7" width="24.9" height="103.3" fill="#2468b4"/>
+<path d="M939.1 310.7V310.7 M935.1 310.7H943.1 M935.1 310.7H943.1" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="953.6" y="310.7" width="24.9" height="103.3" fill="#d27b28"/>
+<path d="M966.1 310.7V310.7 M962.1 310.7H970.1 M962.1 310.7H970.1" stroke="#222" fill="none" stroke-width="1.3"/>
+<rect x="92" y="467" width="12" height="12" fill="#2468b4"/>
+<text x="110" y="478" font-size="12" font-family="sans-serif">B2</text>
+<rect x="252" y="467" width="12" height="12" fill="#d27b28"/>
+<text x="270" y="478" font-size="12" font-family="sans-serif">P</text>
+</svg>

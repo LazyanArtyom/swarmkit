@@ -1,4 +1,12 @@
-# VECR implementation status — 2026-10-21
+# VECR implementation status — 2026-10-22
+
+The v4.2 simulator validation is complete: 2,400 confirmatory B2/P agent
+attempts across 12 comparative scenarios and 100 paired seeds, 72 separate
+held-out sensitivity attempts, seven rendered figures, 107 verified final
+artifact hashes, and release/UBSan/focused regression gates passing. See
+`FINAL_VALIDATION_V4_2.md` for measured effects, negative outcomes and
+remaining limits. The trial source is `5adb687`; corrected analysis source is
+`60f79e8`. SITL, real camera calibration and physical flight remain untested.
 
 The v4.1 campaign was stopped after 1,452 attempts because S06 crosswind
 never drove the true path outside the configured corridor. V4.2 increases

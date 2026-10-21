@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="500" viewBox="0 0 1020 500">
+<rect width="100%" height="100%" fill="white"/>
+<text x="30" y="34" font-size="20" font-family="sans-serif">False survey completion and reported availability</text>
+<text x="22" y="60" font-size="12" font-family="sans-serif">Fraction of all assigned attempts</text>
+<path d="M92 68V414H1000" fill="none" stroke="#333"/>
+<text x="30" y="418.0" font-size="11" font-family="sans-serif">0.0</text>
+<path d="M92 414.0H1000" stroke="#ddd"/>
+<text x="30" y="331.5" font-size="11" font-family="sans-serif">0.2</text>
+<path d="M92 327.5H1000" stroke="#ddd"/>
+<text x="30" y="245.0" font-size="11" font-family="sans-serif">0.5</text>
+<path d="M92 241.0H1000" stroke="#ddd"/>
+<text x="30" y="158.5" font-size="11" font-family="sans-serif">0.8</text>
+<path d="M92 154.5H1000" stroke="#ddd"/>
+<text x="30" y="72.0" font-size="11" font-family="sans-serif">1.0</text>
+<path d="M92 68.0H1000" stroke="#ddd"/>
+<text x="129.4" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S00</text>
+<rect x="96.5" y="68.0" width="15.0" height="346.0" fill="#2468b4"/>
+<rect x="113.4" y="68.0" width="15.0" height="346.0" fill="#d27b28"/>
+<rect x="130.4" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="147.4" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="204.2" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S01</text>
+<rect x="171.3" y="68.0" width="15.0" height="346.0" fill="#2468b4"/>
+<rect x="188.3" y="68.0" width="15.0" height="346.0" fill="#d27b28"/>
+<rect x="205.2" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="222.2" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="279.1" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S02</text>
+<rect x="246.2" y="414.0" width="15.0" height="0.0" fill="#2468b4"/>
+<rect x="263.1" y="414.0" width="15.0" height="0.0" fill="#d27b28"/>
+<rect x="280.1" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="297.0" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="353.9" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S03</text>
+<rect x="321.0" y="68.0" width="15.0" height="346.0" fill="#2468b4"/>
+<rect x="337.9" y="68.0" width="15.0" height="346.0" fill="#d27b28"/>
+<rect x="354.9" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="371.9" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="428.8" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S04</text>
+<rect x="395.8" y="68.0" width="15.0" height="346.0" fill="#2468b4"/>
+<rect x="412.8" y="68.0" width="15.0" height="346.0" fill="#d27b28"/>
+<rect x="429.8" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="446.7" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="503.6" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S05</text>
+<rect x="470.6" y="68.0" width="15.0" height="346.0" fill="#2468b4"/>
+<rect x="487.6" y="68.0" width="15.0" height="346.0" fill="#d27b28"/>
+<rect x="504.6" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="521.5" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="578.4" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S06</text>
+<rect x="545.5" y="68.0" width="15.0" height="346.0" fill="#2468b4"/>
+<rect x="562.4" y="68.0" width="15.0" height="346.0" fill="#d27b28"/>
+<rect x="579.4" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="596.4" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="653.2" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S07</text>
+<rect x="620.3" y="68.0" width="15.0" height="346.0" fill="#2468b4"/>
+<rect x="637.3" y="68.0" width="15.0" height="346.0" fill="#d27b28"/>
+<rect x="654.2" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="671.2" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="728.1" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S08</text>
+<rect x="695.1" y="414.0" width="15.0" height="0.0" fill="#2468b4"/>
+<rect x="712.1" y="414.0" width="15.0" height="0.0" fill="#d27b28"/>
+<rect x="729.1" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="746.0" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="802.9" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S09</text>
+<rect x="770.0" y="298.7" width="15.0" height="115.3" fill="#2468b4"/>
+<rect x="786.9" y="414.0" width="15.0" height="0.0" fill="#d27b28"/>
+<rect x="803.9" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="820.9" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="877.8" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S16</text>
+<rect x="844.8" y="414.0" width="15.0" height="0.0" fill="#2468b4"/>
+<rect x="861.8" y="414.0" width="15.0" height="0.0" fill="#d27b28"/>
+<rect x="878.8" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="895.7" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<text x="952.6" y="436" text-anchor="middle" font-size="12" font-family="sans-serif">S19</text>
+<rect x="919.6" y="414.0" width="15.0" height="0.0" fill="#2468b4"/>
+<rect x="936.6" y="414.0" width="15.0" height="0.0" fill="#d27b28"/>
+<rect x="953.6" y="414.0" width="15.0" height="0.0" fill="#7c58a4"/>
+<rect x="970.5" y="414.0" width="15.0" height="0.0" fill="#b54444"/>
+<rect x="92" y="467" width="12" height="12" fill="#2468b4"/>
+<text x="110" y="478" font-size="12" font-family="sans-serif">B2 fulfilled</text>
+<rect x="252" y="467" width="12" height="12" fill="#d27b28"/>
+<text x="270" y="478" font-size="12" font-family="sans-serif">P fulfilled</text>
+<rect x="412" y="467" width="12" height="12" fill="#7c58a4"/>
+<text x="430" y="478" font-size="12" font-family="sans-serif">B2 false complete</text>
+<rect x="572" y="467" width="12" height="12" fill="#b54444"/>
+<text x="590" y="478" font-size="12" font-family="sans-serif">P false complete</text>
+</svg>

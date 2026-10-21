@@ -6,6 +6,16 @@ AgentService, edge runtime and SimBackend. Truth is scored privately from
 physical simulation frames and actual synthetic-camera acquisition. These
 are simulator measurements only, not ArduPilot SITL or real camera data.
 
+`final_v4_2/` is the complete confirmatory result: 2,400 attempts, 100
+paired seeds in each of 12 comparative scenarios, and 107 SHA-256-verified
+artifacts. `sensitivity_v4_2_seed101_103/` is a separate 72-attempt held-out
+run. Its attempt/event statistics are analyzed, but its seed range has no
+saved trajectory traces, so it has no trajectory figures. Read
+`docs/vecr/FINAL_VALIDATION_V4_2.md` for every gate, measured advantages,
+negative outcomes, and limits. `docs/vecr/ANALYSIS_CORRECTION_V4_2.md`
+records the analysis-only correction made after raw collection; the trial
+source and raw outcomes remain frozen.
+
 The v4.0 campaign stopped at S16 seed 10 because its scripted motor failure
 never fired; `partial_aborted_s16_010/` preserves all 2,018 counted rows and
 the failing trial. V4.1 stopped after 1,452 rows when S06 did not cross the

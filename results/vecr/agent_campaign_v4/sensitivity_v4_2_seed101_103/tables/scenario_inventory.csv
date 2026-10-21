@@ -1,0 +1,22 @@
+scenario_id,class,purpose,fault,eligible_policies,validation_status,attempts_n,fault_realized_n
+S00,COMPARATIVE,nominal arrival and survey,none,B2|P,EXECUTED_AGENT_BACKED,6,0
+S01,COMPARATIVE,bounded GPS jitter,gps_jitter,B2|P,EXECUTED_AGENT_BACKED,6,6
+S02,COMPARATIVE,persistent cross-track wind,persistent_wind,B2|P,EXECUTED_AGENT_BACKED,6,6
+S03,COMPARATIVE,physical detour and missed strip,detour_wind,B2|P,EXECUTED_AGENT_BACKED,6,6
+S04,COMPARATIVE,localized transient camera outage,transient_camera_gap,B2|P,EXECUTED_AGENT_BACKED,6,6
+S05,COMPARATIVE,capture metadata omitted during a span,metadata_drop,B2|P,EXECUTED_AGENT_BACKED,6,6
+S06,COMPARATIVE,off-center flight with wide true camera footprint,offcenter_wide_camera,B2|P,EXECUTED_AGENT_BACKED,6,6
+S07,COMPARATIVE,telemetry samples dropped at agent ingress; no guaranteed intersample excursion,sparse_telemetry,B2|P,EXECUTED_AGENT_BACKED,6,6
+S08,COMPARATIVE,temporary invalid position,gnss_outage,B2|P,EXECUTED_AGENT_BACKED,6,6
+S09,COMPARATIVE,invalid coordinate frame during a span,estimator_jump,B2|P,EXECUTED_AGENT_BACKED,6,6
+S10,DIAGNOSTIC,high-speed destination passage; model may eventually settle and cannot isolate a brief crossing,fast_fly_through,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S11,DIAGNOSTIC,metadata rejection and authenticated dishonest-camera trust boundary,,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S12,SAFETY,simulated battery safety interruption,safety_battery,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S13,UNSUPPORTED,remote subscriber transport loss and replay not yet instrumented in v4 harness,,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S14,UNSUPPORTED,peer transport interruption not yet instrumented in v4 harness,,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S15,DIAGNOSTIC,agent restart and same-drone reconciliation gate,,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S16,COMPARATIVE,motor failure after partial coverage and recovery start,motor_failure_on_repair,B2|P,EXECUTED_AGENT_BACKED,6,6
+S17,UNSUPPORTED,simultaneous multi-UAV agent campaign not yet instrumented,,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S18,DIAGNOSTIC,attempt identity and revision isolation,,,NOT_IN_PAIRED_CAMPAIGN,0,NA
+S19,COMPARATIVE,rejected physical recovery command,recovery_command_rejected,B2|P,EXECUTED_AGENT_BACKED,6,6
+S20,CAPABILITY_BOUNDARY,polyline rejected by straight-route implementation,,,NOT_IN_PAIRED_CAMPAIGN,0,NA

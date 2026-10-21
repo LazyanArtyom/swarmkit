@@ -1,0 +1,235 @@
+run_id,config_id,scenario_id,seed,policy,attempt_id,tick,simulation_time_ms,kind,truth_east_m,truth_north_m,detail
+v4-smoke-S00-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S00,101,B2,S00-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S00-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S00,101,P,S00-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S00-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S00,102,B2,S00-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S00-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S00,102,P,S00-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S00-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S00,103,B2,S00-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S00-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S00,103,P,S00-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S01-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,101,B2,S01-101-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,101,B2,S01-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S01-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,101,P,S01-101-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,101,P,S01-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S01-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,102,B2,S01-102-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,102,B2,S01-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S01-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,102,P,S01-102-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,102,P,S01-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S01-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,103,B2,S01-103-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,103,B2,S01-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S01-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,103,P,S01-103-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S01,103,P,S01-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S02-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,101,B2,S02-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S02-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,101,B2,S02-101-B2,0,100,wind_realized,0.009999902417515652,0.25396416916505882,north_mps=2.539957
+v4-smoke-S02-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,101,P,S02-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S02-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,101,P,S02-101-P,0,100,wind_realized,0.009999902417515652,0.25396416916505882,north_mps=2.539957
+v4-smoke-S02-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,102,B2,S02-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S02-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,102,B2,S02-102-B2,0,100,wind_realized,0.0099999014369650512,0.25523700476882599,north_mps=2.552687
+v4-smoke-S02-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,102,P,S02-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S02-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,102,P,S02-102-P,0,100,wind_realized,0.0099999014369650512,0.25523700476882599,north_mps=2.552687
+v4-smoke-S02-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,103,B2,S02-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S02-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,103,B2,S02-103-B2,0,100,wind_realized,0.0099999020745012487,0.25441015424568919,north_mps=2.544418
+v4-smoke-S02-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,103,P,S02-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S02-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S02,103,P,S02-103-P,0,100,wind_realized,0.0099999020745012487,0.25441015424568919,north_mps=2.544418
+v4-smoke-S03-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,B2,S03-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,B2,S03-101-B2,45,4600,wind_realized,8.1999952519992476,0.19449949178760229,north_mps=1.955499
+v4-smoke-S03-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,B2,S03-101-B2,-1,11400,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S03-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,B2,S03-101-B2,-1,22600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,P,S03-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,P,S03-101-P,45,4600,wind_realized,8.1999952519992476,0.19449949178760229,north_mps=1.955499
+v4-smoke-S03-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,P,S03-101-P,-1,11400,backend_goto_accepted,,,target_east_m=8.199995;target_north_m=0.000000
+v4-smoke-S03-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,101,P,S03-101-P,-1,18400,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,B2,S03-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,B2,S03-102-B2,44,4500,wind_realized,7.9999952445541815,0.19793962879974947,north_mps=1.989909
+v4-smoke-S03-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,B2,S03-102-B2,-1,11400,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S03-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,B2,S03-102-B2,-1,22600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,P,S03-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,P,S03-102-P,44,4500,wind_realized,7.9999952445541815,0.19793962879974947,north_mps=1.989909
+v4-smoke-S03-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,P,S03-102-P,-1,11400,backend_goto_accepted,,,target_east_m=8.199946;target_north_m=0.000000
+v4-smoke-S03-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,102,P,S03-102-P,-1,18400,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,B2,S03-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,B2,S03-103-B2,49,5000,wind_realized,8.9999939682464323,0.20441392591176524,north_mps=2.055978
+v4-smoke-S03-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,B2,S03-103-B2,-1,11400,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S03-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,B2,S03-103-B2,-1,22400,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,P,S03-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S03-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,P,S03-103-P,49,5000,wind_realized,8.9999939682464323,0.20441392591176524,north_mps=2.055978
+v4-smoke-S03-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,P,S03-103-P,-1,11400,backend_goto_accepted,,,target_east_m=9.199932;target_north_m=0.000000
+v4-smoke-S03-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S03,103,P,S03-103-P,-1,17800,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,B2,S04-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,B2,S04-101-B2,40,4100,fault_realized,7.2000000000000055,0,S04
+v4-smoke-S04-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,B2,S04-101-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S04-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,B2,S04-101-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,P,S04-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,P,S04-101-P,40,4100,fault_realized,7.2000000000000055,0,S04
+v4-smoke-S04-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,P,S04-101-P,-1,11000,backend_goto_accepted,,,target_east_m=6.200000;target_north_m=0.000000
+v4-smoke-S04-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,101,P,S04-101-P,-1,19000,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,B2,S04-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,B2,S04-102-B2,40,4100,fault_realized,7.2000000000000055,0,S04
+v4-smoke-S04-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,B2,S04-102-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S04-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,B2,S04-102-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,P,S04-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,P,S04-102-P,40,4100,fault_realized,7.2000000000000055,0,S04
+v4-smoke-S04-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,P,S04-102-P,-1,11000,backend_goto_accepted,,,target_east_m=6.200000;target_north_m=0.000000
+v4-smoke-S04-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,102,P,S04-102-P,-1,19000,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,B2,S04-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,B2,S04-103-B2,35,3600,fault_realized,6.2000000000000046,0,S04
+v4-smoke-S04-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,B2,S04-103-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S04-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,B2,S04-103-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,P,S04-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S04-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,P,S04-103-P,35,3600,fault_realized,6.2000000000000046,0,S04
+v4-smoke-S04-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,P,S04-103-P,-1,11000,backend_goto_accepted,,,target_east_m=5.200000;target_north_m=0.000000
+v4-smoke-S04-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S04,103,P,S04-103-P,-1,19600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,B2,S05-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,B2,S05-101-B2,35,3600,fault_realized,6.2000000000000046,0,S05
+v4-smoke-S05-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,B2,S05-101-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S05-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,B2,S05-101-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,P,S05-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,P,S05-101-P,35,3600,fault_realized,6.2000000000000046,0,S05
+v4-smoke-S05-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,P,S05-101-P,-1,11000,backend_goto_accepted,,,target_east_m=5.200000;target_north_m=0.000000
+v4-smoke-S05-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,101,P,S05-101-P,-1,19600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,B2,S05-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,B2,S05-102-B2,35,3600,fault_realized,6.2000000000000046,0,S05
+v4-smoke-S05-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,B2,S05-102-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S05-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,B2,S05-102-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,P,S05-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,P,S05-102-P,35,3600,fault_realized,6.2000000000000046,0,S05
+v4-smoke-S05-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,P,S05-102-P,-1,11000,backend_goto_accepted,,,target_east_m=5.200000;target_north_m=0.000000
+v4-smoke-S05-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,102,P,S05-102-P,-1,19600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,B2,S05-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,B2,S05-103-B2,35,3600,fault_realized,6.2000000000000046,0,S05
+v4-smoke-S05-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,B2,S05-103-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S05-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,B2,S05-103-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,P,S05-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S05-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,P,S05-103-P,35,3600,fault_realized,6.2000000000000046,0,S05
+v4-smoke-S05-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,P,S05-103-P,-1,11000,backend_goto_accepted,,,target_east_m=5.200000;target_north_m=0.000000
+v4-smoke-S05-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S05,103,P,S05-103-P,-1,19600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S06-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,101,B2,S06-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S06-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,101,B2,S06-101-B2,45,4600,wind_realized,8.1999892145603308,0.29316032441855899,north_mps=2.947435
+v4-smoke-S06-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,101,P,S06-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S06-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,101,P,S06-101-P,45,4600,wind_realized,8.1999892145603308,0.29316032441855899,north_mps=2.947435
+v4-smoke-S06-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,102,B2,S06-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S06-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,102,B2,S06-102-B2,48,4900,wind_realized,8.7999875423581102,0.29910775156644293,north_mps=3.008092
+v4-smoke-S06-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,102,P,S06-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S06-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,102,P,S06-102-P,48,4900,wind_realized,8.7999875423581102,0.29910775156644293,north_mps=3.008092
+v4-smoke-S06-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,103,B2,S06-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S06-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,103,B2,S06-103-B2,45,4600,wind_realized,8.1999879607009909,0.30973599770852295,north_mps=3.114087
+v4-smoke-S06-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,103,P,S06-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S06-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S06,103,P,S06-103-P,45,4600,wind_realized,8.1999879607009909,0.30973599770852295,north_mps=3.114087
+v4-smoke-S07-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,B2,S07-101-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,B2,S07-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,B2,S07-101-B2,-1,8200,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S07-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,B2,S07-101-B2,-1,16200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,P,S07-101-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,P,S07-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,P,S07-101-P,-1,8200,backend_goto_accepted,,,target_east_m=2.560000;target_north_m=0.000000
+v4-smoke-S07-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,101,P,S07-101-P,-1,15200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,B2,S07-102-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,B2,S07-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,B2,S07-102-B2,-1,8200,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S07-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,B2,S07-102-B2,-1,16200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,P,S07-102-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,P,S07-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,P,S07-102-P,-1,8200,backend_goto_accepted,,,target_east_m=2.560000;target_north_m=0.000000
+v4-smoke-S07-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,102,P,S07-102-P,-1,15200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,B2,S07-103-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,B2,S07-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,B2,S07-103-B2,-1,8200,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S07-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,B2,S07-103-B2,-1,16200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,P,S07-103-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,P,S07-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S07-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,P,S07-103-P,-1,8200,backend_goto_accepted,,,target_east_m=2.560000;target_north_m=0.000000
+v4-smoke-S07-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S07,103,P,S07-103-P,-1,15200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,B2,S08-101-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,B2,S08-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,B2,S08-101-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S08-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,B2,S08-101-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,P,S08-101-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,P,S08-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,P,S08-101-P,-1,11000,backend_goto_accepted,,,target_east_m=7.200000;target_north_m=0.000000
+v4-smoke-S08-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,101,P,S08-101-P,-1,18600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,B2,S08-102-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,B2,S08-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,B2,S08-102-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S08-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,B2,S08-102-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,P,S08-102-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,P,S08-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,P,S08-102-P,-1,11000,backend_goto_accepted,,,target_east_m=7.200000;target_north_m=0.000000
+v4-smoke-S08-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,102,P,S08-102-P,-1,18600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,B2,S08-103-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,B2,S08-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,B2,S08-103-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S08-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,B2,S08-103-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,P,S08-103-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,P,S08-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S08-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,P,S08-103-P,-1,11000,backend_goto_accepted,,,target_east_m=7.200000;target_north_m=0.000000
+v4-smoke-S08-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S08,103,P,S08-103-P,-1,18600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,B2,S09-101-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,B2,S09-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,B2,S09-101-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S09-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,B2,S09-101-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,P,S09-101-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,P,S09-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,P,S09-101-P,-1,11000,backend_goto_accepted,,,target_east_m=7.200000;target_north_m=0.000000
+v4-smoke-S09-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,101,P,S09-101-P,-1,18600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,B2,S09-102-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,B2,S09-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,B2,S09-102-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S09-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,B2,S09-102-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,P,S09-102-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,P,S09-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,P,S09-102-P,-1,11000,backend_goto_accepted,,,target_east_m=8.200000;target_north_m=0.000000
+v4-smoke-S09-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,102,P,S09-102-P,-1,18000,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,B2,S09-103-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,B2,S09-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,B2,S09-103-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S09-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,B2,S09-103-B2,-1,22200,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,P,S09-103-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,P,S09-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S09-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,P,S09-103-P,-1,11000,backend_goto_accepted,,,target_east_m=7.200000;target_north_m=0.000000
+v4-smoke-S09-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S09,103,P,S09-103-P,-1,18600,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S16-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,B2,S16-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S16-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,B2,S16-101-B2,35,3600,fault_realized,6.2000000000000046,0,S16
+v4-smoke-S16-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,B2,S16-101-B2,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,B2,S16-101-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S16-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,P,S16-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S16-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,P,S16-101-P,35,3600,fault_realized,6.2000000000000046,0,S16
+v4-smoke-S16-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,P,S16-101-P,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,101,P,S16-101-P,-1,11000,backend_goto_accepted,,,target_east_m=5.200000;target_north_m=0.000000
+v4-smoke-S16-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,B2,S16-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S16-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,B2,S16-102-B2,40,4100,fault_realized,7.2000000000000055,0,S16
+v4-smoke-S16-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,B2,S16-102-B2,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,B2,S16-102-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S16-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,P,S16-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S16-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,P,S16-102-P,40,4100,fault_realized,7.2000000000000055,0,S16
+v4-smoke-S16-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,P,S16-102-P,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,102,P,S16-102-P,-1,11000,backend_goto_accepted,,,target_east_m=6.200000;target_north_m=0.000000
+v4-smoke-S16-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,B2,S16-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S16-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,B2,S16-103-B2,40,4100,fault_realized,7.2000000000000055,0,S16
+v4-smoke-S16-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,B2,S16-103-B2,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,B2,S16-103-B2,-1,11000,backend_goto_accepted,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S16-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,P,S16-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S16-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,P,S16-103-P,40,4100,fault_realized,7.2000000000000055,0,S16
+v4-smoke-S16-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,P,S16-103-P,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S16,103,P,S16-103-P,-1,11000,backend_goto_accepted,,,target_east_m=6.200000;target_north_m=0.000000
+v4-smoke-S19-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,B2,S19-101-B2,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,B2,S19-101-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S19-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,B2,S19-101-B2,35,3600,fault_realized,6.2000000000000046,0,S19
+v4-smoke-S19-101-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,B2,S19-101-B2,-1,11000,backend_goto_rejected,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S19-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,P,S19-101-P,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,P,S19-101-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S19-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,P,S19-101-P,35,3600,fault_realized,6.2000000000000046,0,S19
+v4-smoke-S19-101-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,101,P,S19-101-P,-1,11000,backend_goto_rejected,,,target_east_m=5.200000;target_north_m=0.000000
+v4-smoke-S19-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,B2,S19-102-B2,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,B2,S19-102-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S19-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,B2,S19-102-B2,40,4100,fault_realized,7.2000000000000055,0,S19
+v4-smoke-S19-102-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,B2,S19-102-B2,-1,11000,backend_goto_rejected,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S19-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,P,S19-102-P,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,P,S19-102-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S19-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,P,S19-102-P,40,4100,fault_realized,7.2000000000000055,0,S19
+v4-smoke-S19-102-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,102,P,S19-102-P,-1,11000,backend_goto_rejected,,,target_east_m=6.200000;target_north_m=0.000000
+v4-smoke-S19-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,B2,S19-103-B2,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,B2,S19-103-B2,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S19-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,B2,S19-103-B2,40,4100,fault_realized,7.2000000000000055,0,S19
+v4-smoke-S19-103-B2,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,B2,S19-103-B2,-1,11000,backend_goto_rejected,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S19-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,P,S19-103-P,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,P,S19-103-P,-1,0,backend_goto_accepted,,,target_east_m=20.000000;target_north_m=0.000000
+v4-smoke-S19-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,P,S19-103-P,40,4100,fault_realized,7.2000000000000055,0,S19
+v4-smoke-S19-103-P,f72d23b81e15de7010f1ca5cb9f30bfe34377988559c27d0f1a193000c69d516,S19,103,P,S19-103-P,-1,11000,backend_goto_rejected,,,target_east_m=6.200000;target_north_m=0.000000

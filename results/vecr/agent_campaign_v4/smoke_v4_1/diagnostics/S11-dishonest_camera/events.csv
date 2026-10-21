@@ -1,0 +1,3 @@
+scenario_id,seed,policy,attempt_id,tick,simulation_time_ms,kind,truth_east_m,truth_north_m,detail
+S11,1,P,S11-1-P,-1,0,backend_goto_accepted,,,"target_east_m=20.000000;target_north_m=0.000000"
+S11,1,P,S11-1-P,45,4600,fault_realized,8.2000000000000011,0,"S11"
