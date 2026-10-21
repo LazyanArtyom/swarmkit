@@ -648,6 +648,11 @@ enum EdgeObligation {
     EDGE_TRAVERSAL_AND_SURVEY = 4;
 }
 
+enum EdgeRepairPolicy {
+    EDGE_REPAIR_TARGETED_GAP = 0;
+    EDGE_REPAIR_FULL_EDGE_RESTART = 1;
+}
+
 enum EdgePhase {
     EDGE_PHASE_UNSPECIFIED = 0;
     EDGE_MOVING = 1;
@@ -687,6 +692,7 @@ message EdgeOperation {
     int64 recovery_cooldown_ms = 16;
     int64 timeout_ms = 17;
     float commanded_speed_mps = 18;
+    EdgeRepairPolicy repair_policy = 19;
 }
 
 message EdgeReport {

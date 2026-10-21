@@ -12,6 +12,7 @@
 #include <limits>
 #include <mutex>
 #include <numbers>
+#include <stdexcept>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -48,6 +49,10 @@ struct VehicleState {
     double velocity_north_mps{};
     double velocity_east_mps{};
     double velocity_up_mps{};
+    double control_velocity_north_mps{};
+    double control_velocity_east_mps{};
+    double wind_north_mps{};
+    double wind_east_mps{};
     float battery_percent{};
     float cruise_speed_mps{};
     float yaw_deg{};
@@ -262,7 +267,95 @@ namespace {
     return frame;
 }
 
+void IntegrateDynamicVehicle(const SimBackendConfig& config, VehicleState* vehicle,
+                             int duration_ms) {
+    const double dt = static_cast<double>(duration_ms) / 1000.0;
+    const double acceleration = config.max_horizontal_acceleration_mps2;
+    vehicle->simulation_time_ms += duration_ms;
+    ++vehicle->truth_sequence;
+    double desired_north = 0;
+    double desired_east = 0;
+    double desired_up = 0;
+    if (vehicle->armed && !vehicle->failed && !vehicle->paused) {
+        if (vehicle->velocity_command) {
+            auto& command = *vehicle->velocity_command;
+            const double speed = std::hypot(command.north_mps, command.east_mps);
+            const double scale = speed > config.max_horizontal_speed_mps
+                                     ? config.max_horizontal_speed_mps / speed
+                                     : 1.0;
+            desired_north = command.north_mps * scale;
+            desired_east = command.east_mps * scale;
+            desired_up = ClampMagnitude(command.up_mps, config.max_climb_speed_mps,
+                                        config.max_descent_speed_mps);
+            command.remaining_ms -= duration_ms;
+            if (command.remaining_ms <= 0) {
+                vehicle->velocity_command.reset();
+                vehicle->mode = "SIM_HOLD";
+            }
+        } else if (vehicle->target) {
+            const Target target = *vehicle->target;
+            const double delta_north = target.north_m - vehicle->north_m;
+            const double delta_east = target.east_m - vehicle->east_m;
+            const double distance = std::hypot(delta_north, delta_east);
+            const double requested_speed =
+                target.speed_mps > 0.0F ? target.speed_mps : vehicle->cruise_speed_mps;
+            const double braking_speed = std::sqrt(2.0 * acceleration * distance);
+            const double speed =
+                std::min({requested_speed, static_cast<double>(config.max_horizontal_speed_mps),
+                          braking_speed});
+            if (distance > 1e-9) {
+                desired_north = delta_north / distance * speed;
+                desired_east = delta_east / distance * speed;
+            }
+            desired_up = ClampMagnitude((target.up_m - vehicle->up_m) / dt,
+                                        config.max_climb_speed_mps, config.max_descent_speed_mps);
+        }
+    }
+    const double change_north = desired_north - vehicle->control_velocity_north_mps;
+    const double change_east = desired_east - vehicle->control_velocity_east_mps;
+    const double change = std::hypot(change_north, change_east);
+    const double max_change = acceleration * dt;
+    const double scale = change > max_change ? max_change / change : 1.0;
+    const double old_north = vehicle->control_velocity_north_mps;
+    const double old_east = vehicle->control_velocity_east_mps;
+    vehicle->control_velocity_north_mps += change_north * scale;
+    vehicle->control_velocity_east_mps += change_east * scale;
+    const bool wind_applies = vehicle->armed && !vehicle->landed;
+    const double wind_north = wind_applies ? vehicle->wind_north_mps : 0.0;
+    const double wind_east = wind_applies ? vehicle->wind_east_mps : 0.0;
+    vehicle->north_m +=
+        (old_north + vehicle->control_velocity_north_mps) * 0.5 * dt + wind_north * dt;
+    vehicle->east_m += (old_east + vehicle->control_velocity_east_mps) * 0.5 * dt + wind_east * dt;
+    vehicle->velocity_north_mps = vehicle->control_velocity_north_mps + wind_north;
+    vehicle->velocity_east_mps = vehicle->control_velocity_east_mps + wind_east;
+    vehicle->velocity_up_mps = desired_up;
+    vehicle->up_m = std::clamp(vehicle->up_m + desired_up * dt, 0.0,
+                               static_cast<double>(config.max_altitude_m));
+    if (vehicle->target && config.stop_at_target) {
+        const Target target = *vehicle->target;
+        if (std::hypot(target.north_m - vehicle->north_m, target.east_m - vehicle->east_m) <=
+                0.05 &&
+            std::abs(target.up_m - vehicle->up_m) <= 0.05 &&
+            std::hypot(vehicle->velocity_north_mps, vehicle->velocity_east_mps) <= 0.5) {
+            vehicle->target.reset();
+            if (vehicle->mode == "SIM_LAND" || vehicle->mode == "SIM_RTL") {
+                vehicle->armed = false;
+                vehicle->landed = true;
+            }
+            vehicle->mode = "SIM_HOLD";
+        }
+    }
+    vehicle->landed = vehicle->up_m <= kArrivalEpsilonM;
+    vehicle->battery_percent =
+        std::max(0.0F, vehicle->battery_percent -
+                           config.battery_drain_percent_per_second * static_cast<float>(dt));
+}
+
 void IntegrateVehicle(const SimBackendConfig& config, VehicleState* vehicle, int duration_ms) {
+    if (config.max_horizontal_acceleration_mps2 > 0.0F) {
+        IntegrateDynamicVehicle(config, vehicle, duration_ms);
+        return;
+    }
     const double duration_seconds = static_cast<double>(duration_ms) / 1000.0;
     vehicle->simulation_time_ms += duration_ms;
     ++vehicle->truth_sequence;
@@ -838,6 +931,8 @@ core::Result SimBackendConfig::Validate() const {
     if (default_cruise_speed_mps > max_horizontal_speed_mps) {
         return core::Result::Rejected("default simulator cruise speed exceeds horizontal limit");
     }
+    if (!std::isfinite(max_horizontal_acceleration_mps2) || max_horizontal_acceleration_mps2 < 0.0F)
+        return core::Result::Rejected("simulator acceleration limit is invalid");
     if (!std::isfinite(home_lat_deg) || home_lat_deg < -90.0 || home_lat_deg > 90.0 ||
         !std::isfinite(home_lon_deg) || home_lon_deg < -180.0 || home_lon_deg > 180.0 ||
         !std::isfinite(home_alt_m)) {
@@ -904,6 +999,15 @@ void SimBackendControl::SetFailure(const std::string& drone_id, bool failed, std
     if (evidence_callback) {
         evidence_callback(event);
     }
+}
+
+void SimBackendControl::SetWind(const std::string& drone_id, double north_mps, double east_mps) {
+    if (!std::isfinite(north_mps) || !std::isfinite(east_mps))
+        throw std::invalid_argument("simulator wind must be finite");
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    auto& vehicle = Vehicle(state_.get(), drone_id);
+    vehicle.wind_north_mps = north_mps;
+    vehicle.wind_east_mps = east_mps;
 }
 
 std::optional<SimulationTruthFrame> SimBackendControl::Truth(const std::string& drone_id) const {

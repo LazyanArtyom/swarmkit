@@ -58,6 +58,9 @@ struct SimBackendConfig {
     double home_alt_m{0.0};
     float initial_battery_percent{95.0F};
     float max_horizontal_speed_mps{10.0F};
+    // Zero selects the exact kinematic test model. Research campaigns set a
+    // finite value and record it in their protocol.
+    float max_horizontal_acceleration_mps2{0.0F};
     float max_climb_speed_mps{5.0F};
     float max_descent_speed_mps{3.0F};
     float max_altitude_m{120.0F};
@@ -83,6 +86,7 @@ class SimBackendControl {
 
     /// Inject or clear a model-level failure without changing telemetry truth.
     void SetFailure(const std::string& drone_id, bool failed, std::string detail = {});
+    void SetWind(const std::string& drone_id, double north_mps, double east_mps);
 
     [[nodiscard]] std::optional<SimulationTruthFrame> Truth(const std::string& drone_id) const;
     [[nodiscard]] std::vector<std::string> DroneIds() const;

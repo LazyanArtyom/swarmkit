@@ -1,0 +1,85 @@
+run_id,config_id,scenario_id,seed,policy,attempt_id,tick,simulation_time_ms,kind,truth_east_m,truth_north_m,detail
+v4-smoke-S01-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S01,1,B2,S01-1-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S01,1,P,S01-1-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S01,2,B2,S01-2-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S01,2,P,S01-2-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S01,3,B2,S01-3-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S01-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S01,3,P,S01-3-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S02-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S02,1,B2,S02-1-B2,0,100,wind_realized,0.0099999126786542956,0.24024023859977967,north_mps=2.402701
+v4-smoke-S02-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S02,1,P,S02-1-P,0,100,wind_realized,0.0099999126786542956,0.24024023859977967,north_mps=2.402701
+v4-smoke-S02-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S02,2,B2,S02-2-B2,0,100,wind_realized,0.0099999033145945094,0.25279407410952914,north_mps=2.528255
+v4-smoke-S02-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S02,2,P,S02-2-P,0,100,wind_realized,0.0099999033145945094,0.25279407410952914,north_mps=2.528255
+v4-smoke-S02-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S02,3,B2,S02-3-B2,0,100,wind_realized,0.0099999004299512993,0.2565376196862082,north_mps=2.565695
+v4-smoke-S02-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S02,3,P,S02-3-P,0,100,wind_realized,0.0099999004299512993,0.2565376196862082,north_mps=2.565695
+v4-smoke-S03-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S03,1,B2,S03-1-B2,45,4600,wind_realized,8.1999952250096602,0.19505156248135372,north_mps=1.961050
+v4-smoke-S03-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S03,1,P,S03-1-P,45,4600,wind_realized,8.1999952250096602,0.19505156248135372,north_mps=1.961050
+v4-smoke-S03-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S03,2,B2,S03-2-B2,44,4500,wind_realized,7.9999953906295431,0.1948755611194653,north_mps=1.959106
+v4-smoke-S03-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S03,2,P,S03-2-P,44,4500,wind_realized,7.9999953906295431,0.1948755611194653,north_mps=1.959106
+v4-smoke-S03-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S03,3,B2,S03-3-B2,45,4600,wind_realized,8.1999950832166988,0.19792664515518196,north_mps=1.989956
+v4-smoke-S03-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S03,3,P,S03-3-P,45,4600,wind_realized,8.1999950832166988,0.19792664515518196,north_mps=1.989956
+v4-smoke-S04-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S04,1,B2,S04-1-B2,45,4600,fault_realized,8.2000000000000011,0,S04
+v4-smoke-S04-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S04,1,P,S04-1-P,45,4600,fault_realized,8.2000000000000011,0,S04
+v4-smoke-S04-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S04,2,B2,S04-2-B2,45,4600,fault_realized,8.2000000000000011,0,S04
+v4-smoke-S04-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S04,2,P,S04-2-P,45,4600,fault_realized,8.2000000000000011,0,S04
+v4-smoke-S04-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S04,3,B2,S04-3-B2,46,4700,fault_realized,8.3999999999999968,0,S04
+v4-smoke-S04-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S04,3,P,S04-3-P,46,4700,fault_realized,8.3999999999999968,0,S04
+v4-smoke-S05-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S05,1,B2,S05-1-B2,46,4700,fault_realized,8.3999999999999968,0,S05
+v4-smoke-S05-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S05,1,P,S05-1-P,46,4700,fault_realized,8.3999999999999968,0,S05
+v4-smoke-S05-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S05,2,B2,S05-2-B2,43,4400,fault_realized,7.800000000000006,0,S05
+v4-smoke-S05-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S05,2,P,S05-2-P,43,4400,fault_realized,7.800000000000006,0,S05
+v4-smoke-S05-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S05,3,B2,S05-3-B2,43,4400,fault_realized,7.800000000000006,0,S05
+v4-smoke-S05-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S05,3,P,S05-3-P,43,4400,fault_realized,7.800000000000006,0,S05
+v4-smoke-S06-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S06,1,B2,S06-1-B2,47,4800,wind_realized,8.5999948555840877,0.19561788514048561,north_mps=1.967113
+v4-smoke-S06-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S06,1,P,S06-1-P,47,4800,wind_realized,8.5999948555840877,0.19561788514048561,north_mps=1.967113
+v4-smoke-S06-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S06,2,B2,S06-2-B2,47,4800,wind_realized,8.5999944803115405,0.20262790188151206,north_mps=2.037605
+v4-smoke-S06-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S06,2,P,S06-2-P,47,4800,wind_realized,8.5999944803115405,0.20262790188151206,north_mps=2.037605
+v4-smoke-S06-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S06,3,B2,S06-3-B2,45,4600,wind_realized,8.1999952712688824,0.19410437196104646,north_mps=1.951527
+v4-smoke-S06-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S06,3,P,S06-3-P,45,4600,wind_realized,8.1999952712688824,0.19410437196104646,north_mps=1.951527
+v4-smoke-S07-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S07,1,B2,S07-1-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S07,1,P,S07-1-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S07,2,B2,S07-2-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S07,2,P,S07-2-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S07,3,B2,S07-3-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S07-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S07,3,P,S07-3-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S08,1,B2,S08-1-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S08,1,P,S08-1-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S08,2,B2,S08-2-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S08,2,P,S08-2-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S08,3,B2,S08-3-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S08-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S08,3,P,S08-3-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S09,1,B2,S09-1-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S09,1,P,S09-1-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S09,2,B2,S09-2-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S09,2,P,S09-2-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S09,3,B2,S09-3-B2,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S09-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S09,3,P,S09-3-P,-1,0,telemetry_fault_realized,,,filtered simulator telemetry before agent ingress
+v4-smoke-S16-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,1,B2,S16-1-B2,44,4500,fault_realized,8.0000000000000053,0,S16
+v4-smoke-S16-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,1,B2,S16-1-B2,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,1,P,S16-1-P,44,4500,fault_realized,8.0000000000000053,0,S16
+v4-smoke-S16-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,1,P,S16-1-P,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,2,B2,S16-2-B2,46,4700,fault_realized,8.3999999999999968,0,S16
+v4-smoke-S16-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,2,B2,S16-2-B2,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,2,P,S16-2-P,46,4700,fault_realized,8.3999999999999968,0,S16
+v4-smoke-S16-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,2,P,S16-2-P,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,3,B2,S16-3-B2,43,4400,fault_realized,7.800000000000006,0,S16
+v4-smoke-S16-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,3,B2,S16-3-B2,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S16-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,3,P,S16-3-P,43,4400,fault_realized,7.800000000000006,0,S16
+v4-smoke-S16-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S16,3,P,S16-3-P,109,11000,motor_failure_realized,20.039599999999769,0,
+v4-smoke-S19-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,1,B2,S19-1-B2,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,1,B2,S19-1-B2,44,4500,fault_realized,8.0000000000000053,0,S19
+v4-smoke-S19-001-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,1,B2,S19-1-B2,-1,11000,backend_goto_rejected,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S19-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,1,P,S19-1-P,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,1,P,S19-1-P,44,4500,fault_realized,8.0000000000000053,0,S19
+v4-smoke-S19-001-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,1,P,S19-1-P,-1,11000,backend_goto_rejected,,,target_east_m=7.200000;target_north_m=0.000000
+v4-smoke-S19-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,2,B2,S19-2-B2,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,2,B2,S19-2-B2,45,4600,fault_realized,8.2000000000000011,0,S19
+v4-smoke-S19-002-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,2,B2,S19-2-B2,-1,11000,backend_goto_rejected,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S19-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,2,P,S19-2-P,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,2,P,S19-2-P,45,4600,fault_realized,8.2000000000000011,0,S19
+v4-smoke-S19-002-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,2,P,S19-2-P,-1,11000,backend_goto_rejected,,,target_east_m=7.200000;target_north_m=0.000000
+v4-smoke-S19-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,3,B2,S19-3-B2,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,3,B2,S19-3-B2,47,4800,fault_realized,8.5999999999999925,0,S19
+v4-smoke-S19-003-B2,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,3,B2,S19-3-B2,-1,11000,backend_goto_rejected,,,target_east_m=0.000000;target_north_m=0.000000
+v4-smoke-S19-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,3,P,S19-3-P,-1,0,recovery_command_rejected,,,
+v4-smoke-S19-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,3,P,S19-3-P,47,4800,fault_realized,8.5999999999999925,0,S19
+v4-smoke-S19-003-P,ceb2bd61524291f4689aeff7f2f83a0577f4ca1fe843bb18be62b044e1165f12,S19,3,P,S19-3-P,-1,11000,backend_goto_rejected,,,target_east_m=8.200000;target_north_m=0.000000

@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Artyom Lazyan. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
 #include <catch2/catch_test_macros.hpp>
-
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -30,6 +29,8 @@ namespace {
     entry.report.set_phase(phase);
     entry.report.set_reason("recorded outcome");
     entry.dispatch_accepted = accepted;
+    entry.physical_navigation_unresolved =
+        phase != swarmkit::v1::EDGE_FULFILLED && phase != swarmkit::v1::EDGE_INTERRUPTED;
     return entry;
 }
 
@@ -53,7 +54,9 @@ TEST_CASE("VECR attempt journal preserves terminal outcome and unknown restart s
         CHECK(unknown->report.phase() == swarmkit::v1::EDGE_UNKNOWN);
         CHECK_FALSE(unknown->dispatch_accepted);
         CHECK(unknown->report.reason().find("agent restarted") != std::string::npos);
+        REQUIRE(journal.Unresolved("drone-1"));
         REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
+        CHECK_FALSE(journal.Unresolved("drone-1"));
     }
     {
         swarmkit::agent::internal::EdgeAttemptJournal journal(path.string());
@@ -62,6 +65,7 @@ TEST_CASE("VECR attempt journal preserves terminal outcome and unknown restart s
         REQUIRE(terminal);
         CHECK(terminal->report.phase() == swarmkit::v1::EDGE_FULFILLED);
         CHECK(terminal->dispatch_accepted);
+        CHECK_FALSE(journal.Unresolved("drone-1"));
         CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_INTERRUPTED, true)).IsOk());
         const auto retained = journal.Get("drone-1", "attempt-1");
         REQUIRE(retained);
@@ -85,6 +89,65 @@ TEST_CASE("VECR attempt journal fails closed on a truncated record", "[vecr][jou
         swarmkit::agent::internal::EdgeAttemptJournal journal(path.string());
         CHECK_FALSE(journal.Ready().IsOk());
         CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_MOVING, true)).IsOk());
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("VECR journal storage faults never acknowledge a terminal commit", "[vecr][journal]") {
+    using Journal = swarmkit::agent::internal::EdgeAttemptJournal;
+    for (const auto fault :
+         {Journal::Fault::kNoSpace, Journal::Fault::kQuota, Journal::Fault::kReadOnly,
+          Journal::Fault::kPartialWrite, Journal::Fault::kFsync}) {
+        const auto path = JournalPath("write-fault");
+        {
+            Journal journal(path.string(), [fault](const Journal::Entry& entry) {
+                return entry.report.phase() == swarmkit::v1::EDGE_FULFILLED ? fault
+                                                                            : Journal::Fault::kNone;
+            });
+            REQUIRE(journal.Ready().IsOk());
+            REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_MOVING, true)).IsOk());
+            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
+            CHECK_FALSE(journal.Ready().IsOk());
+            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
+        }
+        {
+            Journal restarted(path.string());
+            if (fault == Journal::Fault::kPartialWrite) {
+                CHECK_FALSE(restarted.Ready().IsOk());
+            } else {
+                REQUIRE(restarted.Ready().IsOk());
+                const auto recovered = restarted.Get("drone-1", "attempt-1");
+                REQUIRE(recovered);
+                CHECK(recovered->report.phase() == (fault == Journal::Fault::kFsync
+                                                        ? swarmkit::v1::EDGE_FULFILLED
+                                                        : swarmkit::v1::EDGE_UNKNOWN));
+            }
+        }
+        std::filesystem::remove(path);
+    }
+}
+
+TEST_CASE("Interrupted obligation retains an unresolved physical-navigation gate",
+          "[vecr][journal]") {
+    using Journal = swarmkit::agent::internal::EdgeAttemptJournal;
+    const auto path = JournalPath("interrupted-navigation");
+    auto interrupted = Record(swarmkit::v1::EDGE_INTERRUPTED, true);
+    interrupted.physical_navigation_unresolved = true;
+    {
+        Journal journal(path.string());
+        REQUIRE(journal.Ready().IsOk());
+        REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_MOVING, true)).IsOk());
+        REQUIRE(journal.Append(interrupted).IsOk());
+        REQUIRE(journal.Unresolved("drone-1"));
+    }
+    {
+        Journal journal(path.string());
+        REQUIRE(journal.Ready().IsOk());
+        REQUIRE(journal.Unresolved("drone-1"));
+        interrupted.physical_navigation_unresolved = false;
+        interrupted.report.set_reason("physical simulator hold confirmed");
+        REQUIRE(journal.Append(interrupted).IsOk());
+        CHECK_FALSE(journal.Unresolved("drone-1"));
     }
     std::filesystem::remove(path);
 }

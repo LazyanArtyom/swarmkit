@@ -103,6 +103,44 @@ TEST_CASE("Built-in simulator factory validates experiment options", "[agent][si
     CHECK(invalid.error().code == core::StatusCode::kRejected);
 }
 
+TEST_CASE("SimBackend finite acceleration and wind change physical trajectory",
+          "[agent][sim][dynamics]") {
+    SimBackendConfig config;
+    config.clock_mode = SimulationClockMode::kManual;
+    config.max_horizontal_acceleration_mps2 = 2.0F;
+    auto simulator = MakeSimBackend(config);
+    REQUIRE(simulator);
+    REQUIRE(simulator->backend->Execute(Flight("drone-1", commands::CmdArm{})).IsOk());
+    REQUIRE(
+        simulator->backend->Execute(Flight("drone-1", commands::CmdTakeoff{.alt_m = 10})).IsOk());
+    REQUIRE(simulator->control->Advance("drone-1", 3s).IsOk());
+    REQUIRE(simulator->backend
+                ->Execute(
+                    Navigation("drone-1", commands::CmdGoto{.lat_deg = config.home_lat_deg,
+                                                            .lon_deg = config.home_lon_deg + 0.0003,
+                                                            .alt_m = 10,
+                                                            .speed_mps = 2}))
+                .IsOk());
+    REQUIRE(simulator->control->Advance("drone-1", 100ms).IsOk());
+    auto truth = simulator->control->Truth("drone-1");
+    REQUIRE(truth);
+    CHECK(truth->east_m > 0);
+    CHECK(truth->east_m < 0.02);
+    CHECK(truth->velocity_east_mps <= 0.201);
+    simulator->control->SetWind("drone-1", 1, 0);
+    REQUIRE(simulator->control->Advance("drone-1", 100ms).IsOk());
+    truth = simulator->control->Truth("drone-1");
+    REQUIRE(truth);
+    CHECK(truth->north_m > 0.09);
+    CHECK(truth->north_m < 0.11);
+    REQUIRE(simulator->backend->Execute(Navigation("drone-1", commands::CmdHoldPosition{})).IsOk());
+    REQUIRE(simulator->control->Advance("drone-1", 100ms).IsOk());
+    truth = simulator->control->Truth("drone-1");
+    REQUIRE(truth);
+    CHECK(truth->mode == "SIM_HOLD");
+    CHECK(std::hypot(truth->velocity_east_mps, truth->velocity_north_mps) > 0.5);
+}
+
 TEST_CASE("SimBackend responds deterministically to takeoff velocity hold and failure",
           "[agent][sim]") {
     std::vector<SimulationTruthFrame> truth_log;

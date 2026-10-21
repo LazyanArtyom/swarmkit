@@ -102,6 +102,7 @@ void PrintUsage() {
            "  edge execute --mission-id ID --edge-id ID --attempt-id ID --revision N\n"
            "       --from-lat L --from-lon L --to-lat L --to-lon L --alt M\n"
            "       [--obligation arrival|traversal|survey|traversal-survey] [--corridor-m M]\n"
+           "       [--repair-policy targeted-gap|full-edge-restart]\n"
            "  edge status --attempt-id ID [--drone ID]\n"
            "  edge watch [--attempt-id ID] [--drone ID] [--duration-ms MS]\n"
            "\n"

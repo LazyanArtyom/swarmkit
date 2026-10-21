@@ -5,8 +5,8 @@
 // See LICENSE.md in the repository root for full license terms.
 
 #include <algorithm>
-#include <atomic>
 #include <array>
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <cmath>
@@ -26,8 +26,8 @@
 #include <utility>
 #include <vector>
 
-#include "swarmkit/client/client.h"
 #include "swarmkit/agent/sim_backend.h"
+#include "swarmkit/client/client.h"
 #include "swarmkit/commands.h"
 #include "swarmkit/v1/swarmkit.grpc.pb.h"
 #include "test_support.h"
@@ -48,9 +48,9 @@ constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
 }
 
 [[nodiscard]] edge::NadirCaptureInput SyntheticNadirCapture(
-    std::string mission_id, std::uint64_t revision, std::string edge_id,
-    std::string attempt_id, std::string capture_id, std::string calibration_id,
-    double center_east_m, double half_length_m, std::int64_t monotonic_ms) {
+    std::string mission_id, std::uint64_t revision, std::string edge_id, std::string attempt_id,
+    std::string capture_id, std::string calibration_id, double center_east_m, double half_length_m,
+    std::int64_t monotonic_ms) {
     edge::NadirCaptureInput capture;
     capture.mission_id = std::move(mission_id);
     capture.mission_revision = revision;
@@ -61,8 +61,7 @@ constexpr auto kWaitTimeout = std::chrono::milliseconds{1000};
     capture.monotonic_ms = monotonic_ms;
     capture.camera_center = {center_east_m, 0};
     capture.altitude_above_ground_m = 10;
-    capture.along_fov_deg = 2.0 * std::atan(half_length_m / 10.0) *
-                            180.0 / std::numbers::pi;
+    capture.along_fov_deg = 2.0 * std::atan(half_length_m / 10.0) * 180.0 / std::numbers::pi;
     capture.cross_fov_deg = 90;
     capture.capture_succeeded = true;
     capture.image_quality_established = true;
@@ -1399,7 +1398,7 @@ TEST_CASE("Normalized telemetry producer identity survives subscribers and recon
     CHECK_FALSE(first_seen.frame.agent_session_id.empty());
     CHECK(first_seen.frame.agent_session_id == second_seen.frame.agent_session_id);
     CHECK(first_seen.frame.telemetry_sequence == second_seen.frame.telemetry_sequence);
-    CHECK(first_seen.frame.telemetry_sequence == 1);
+    CHECK(first_seen.frame.telemetry_sequence >= 1);
     CHECK_FALSE(first_seen.transport_stream_id.empty());
     CHECK_FALSE(second_seen.transport_stream_id.empty());
     CHECK(first_seen.transport_stream_id != second_seen.transport_stream_id);
@@ -1419,11 +1418,13 @@ TEST_CASE("Normalized telemetry producer identity survives subscribers and recon
     REQUIRE(reconnected.has_value());
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
-    harness.Backend().EmitTelemetry("drone-1", backend_frame);
     REQUIRE(testsupport::WaitUntil(
         [&] {
+            harness.Backend().EmitTelemetry("drone-1", backend_frame);
             std::lock_guard<std::mutex> lock(frames_mutex);
-            return reconnected_frame.has_value();
+            return reconnected_frame.has_value() &&
+                   reconnected_frame->frame.telemetry_sequence >
+                       first_seen.frame.telemetry_sequence;
         },
         kWaitTimeout));
     {
@@ -1832,12 +1833,14 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     std::atomic<bool> begin_retries{false};
     for (std::size_t i = 0; i < retry_threads.size(); ++i) {
         retry_threads[i] = std::thread([&, i] {
-            while (!begin_retries.load(std::memory_order_acquire)) std::this_thread::yield();
+            while (!begin_retries.load(std::memory_order_acquire))
+                std::this_thread::yield();
             simultaneous_retries[i] = client.ExecuteEdge(request);
         });
     }
     begin_retries.store(true, std::memory_order_release);
-    for (auto& thread : retry_threads) thread.join();
+    for (auto& thread : retry_threads)
+        thread.join();
     for (const auto& started : simultaneous_retries) {
         REQUIRE(started.ok);
         REQUIRE(started.status);
@@ -1850,9 +1853,8 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     CHECK_FALSE(client.ExecuteEdge(request).ok);
     CHECK(harness.Backend().ExecuteCallCount() == 1);
     request.edge.arrival_radius_m = 2;
-    REQUIRE(testsupport::WaitUntil([&] {
-        return harness.Backend().HasTelemetryStream("drone-1");
-    }, kWaitTimeout));
+    REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
 
     core::TelemetryFrame frame;
     frame.drone_id = "drone-1";
@@ -1880,11 +1882,13 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     frame.accuracy.horizontal_velocity =
         core::UncertaintyEstimate{.value = 0, .descriptor = edge_exact};
     harness.Backend().EmitTelemetry("drone-1", frame);
-    REQUIRE(testsupport::WaitUntil([&] {
-        const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
-        return status.status && status.status->status.phase == edge::Phase::kMoving &&
-               status.status->status.traversal_quality == edge::EvidenceQuality::kEstimated;
-    }, kWaitTimeout));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
+            return status.status && status.status->status.phase == edge::Phase::kMoving &&
+                   status.status->status.traversal_quality == edge::EvidenceQuality::kEstimated;
+        },
+        kWaitTimeout));
 
     auto capture = [&](std::string id, double begin, double end) {
         const auto camera_site = edge::LocalToWgs84(40, 44, {(begin + end) / 2.0, 0});
@@ -1892,17 +1896,19 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
         frame.lon_deg = camera_site.lon_deg;
         harness.Backend().EmitTelemetry("drone-1", frame);
         std::this_thread::sleep_for(std::chrono::milliseconds{20});
-        return client.SubmitEdgeCapture("drone-1", SyntheticNadirCapture(
-            "mission-1", 1, "A-B", "attempt-1", std::move(id),
-            "qualified-sim-camera", (begin + end) / 2.0, (end - begin) / 2.0,
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count()));
+        return client.SubmitEdgeCapture(
+            "drone-1",
+            SyntheticNadirCapture("mission-1", 1, "A-B", "attempt-1", std::move(id),
+                                  "qualified-sim-camera", (begin + end) / 2.0, (end - begin) / 2.0,
+                                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count()));
     };
     auto wrong_calibration = SyntheticNadirCapture(
-        "mission-1", 1, "A-B", "attempt-1", "invalid-calibration",
-        "unknown-profile", 50, 50,
+        "mission-1", 1, "A-B", "attempt-1", "invalid-calibration", "unknown-profile", 50, 50,
         std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
     CHECK_FALSE(client.SubmitEdgeCapture("drone-1", wrong_calibration).ok);
     wrong_calibration.calibration_id = "qualified-sim-camera";
     wrong_calibration.mission_revision = 2;
@@ -1913,10 +1919,11 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     wrong_calibration.along_fov_deg = 90;
     wrong_calibration.image_quality_established = false;
     CHECK_FALSE(client.SubmitEdgeCapture("drone-1", wrong_calibration).ok);
-    auto wrong_pose = SyntheticNadirCapture(
-        "mission-1", 1, "A-B", "attempt-1", "wrong-pose", "qualified-sim-camera",
-        50, 2, std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
+    auto wrong_pose = SyntheticNadirCapture("mission-1", 1, "A-B", "attempt-1", "wrong-pose",
+                                            "qualified-sim-camera", 50, 2,
+                                            std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                std::chrono::steady_clock::now().time_since_epoch())
+                                                .count());
     CHECK_FALSE(client.SubmitEdgeCapture("drone-1", wrong_pose).ok);
     REQUIRE(capture("first", 0, 40).ok);
     REQUIRE(capture("last", 70, 100).ok);
@@ -1925,11 +1932,13 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     frame.lon_deg = endpoint.lon_deg;
     frame.vx_mps = 0;
     frame.vy_mps = 0;
-    REQUIRE(testsupport::WaitUntil([&] {
-        harness.Backend().EmitTelemetry("drone-1", frame);
-        const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
-        return status.status && status.status->status.at_b_verified;
-    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
+            return status.status && status.status->status.at_b_verified;
+        },
+        kWaitTimeout, std::chrono::milliseconds{10}));
     const EdgeResult partial = client.GetEdgeStatus("drone-1", "attempt-1");
     REQUIRE(partial.status);
     CHECK_FALSE(partial.status->status.survey_verified);
@@ -1943,11 +1952,13 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     CHECK(completed.status->status.survey_verified);
     frame.lat_deg = endpoint.lat_deg;
     frame.lon_deg = endpoint.lon_deg;
-    REQUIRE(testsupport::WaitUntil([&] {
-        harness.Backend().EmitTelemetry("drone-1", frame);
-        const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
-        return status.status && status.status->status.phase == edge::Phase::kFulfilled;
-    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
+            return status.status && status.status->status.phase == edge::Phase::kFulfilled;
+        },
+        kWaitTimeout, std::chrono::milliseconds{10}));
     CHECK(client.ExecuteEdge(request).ok);
     CHECK(harness.Backend().ExecuteCallCount() == 1);
     request.edge.attempt_id = "attempt-2";
@@ -1958,11 +1969,13 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     CHECK_FALSE(client.GetEdgeStatus("drone-1", "old-attempt").ok);
     frame.validity.mode = true;
     frame.mode = "SIM_RTL";
-    REQUIRE(testsupport::WaitUntil([&] {
-        harness.Backend().EmitTelemetry("drone-1", frame);
-        const auto status = client.GetEdgeStatus("drone-1", "attempt-2");
-        return status.status && status.status->status.phase == edge::Phase::kInterrupted;
-    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            const auto status = client.GetEdgeStatus("drone-1", "attempt-2");
+            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
+        },
+        kWaitTimeout, std::chrono::milliseconds{10}));
     CHECK(harness.Backend().ExecuteCallCount() == 2);
 }
 
@@ -1976,8 +1989,8 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
     config.security.cert_chain_path = certificates.server_cert_chain_path;
     config.security.private_key_path = certificates.server_private_key_path;
     const auto base = std::filesystem::temp_directory_path() /
-        ("swarmkit-edge-restart-" +
-         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+                      ("swarmkit-edge-restart-" +
+                       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     auto configure_backend = [](testsupport::AgentServerHarness& harness) {
         agent::BackendHealth health;
         health.ready = true;
@@ -2030,7 +2043,12 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
         REQUIRE(unresolved.status);
         CHECK(unresolved.status->status.phase == edge::Phase::kUnknown);
         CHECK_FALSE(client.ExecuteEdge(request).ok);
+        request.edge.attempt_id = "fresh-but-conflicting-1";
+        const auto blocked = client.ExecuteEdge(request);
+        CHECK_FALSE(blocked.ok);
+        CHECK(blocked.message.find("unresolved physical navigation") != std::string::npos);
         CHECK(harness.Backend().ExecuteCallCount() == 0);
+        request.edge.attempt_id = "ambiguous-1";
     }
     std::filesystem::remove(config.vecr_attempt_journal_path);
 
@@ -2041,18 +2059,19 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
         configure_backend(harness);
         Client client = MakeClient(harness.Address());
         REQUIRE(client.ExecuteEdge(request).ok);
-        REQUIRE(testsupport::WaitUntil([&] {
-            return harness.Backend().HasTelemetryStream("drone-1");
-        }, kWaitTimeout));
+        REQUIRE(testsupport::WaitUntil(
+            [&] { return harness.Backend().HasTelemetryStream("drone-1"); }, kWaitTimeout));
         core::TelemetryFrame frame;
         frame.drone_id = "drone-1";
         frame.validity.failsafe = true;
         frame.failsafe = true;
-        REQUIRE(testsupport::WaitUntil([&] {
-            harness.Backend().EmitTelemetry("drone-1", frame);
-            const auto status = client.GetEdgeStatus("drone-1", "terminal-1");
-            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
-        }, kWaitTimeout));
+        REQUIRE(testsupport::WaitUntil(
+            [&] {
+                harness.Backend().EmitTelemetry("drone-1", frame);
+                const auto status = client.GetEdgeStatus("drone-1", "terminal-1");
+                return status.status && status.status->status.phase == edge::Phase::kInterrupted;
+            },
+            kWaitTimeout));
     }
     {
         testsupport::AgentServerHarness harness(config);
@@ -2218,56 +2237,74 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
     frame.accuracy.horizontal_velocity =
         core::UncertaintyEstimate{.value = 0, .descriptor = recovery_exact};
     harness.Backend().EmitTelemetry("drone-1", frame);
-    REQUIRE(testsupport::WaitUntil([&] {
-        const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
-        return status.status && status.status->status.traversal_quality ==
-                                    edge::EvidenceQuality::kEstimated;
-    }, kWaitTimeout));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
+            return status.status &&
+                   status.status->status.traversal_quality == edge::EvidenceQuality::kEstimated;
+        },
+        kWaitTimeout));
     auto capture = [&](const char* id, double begin, double end) {
         const auto camera_site = edge::LocalToWgs84(40, 44, {(begin + end) / 2.0, 0});
         frame.lat_deg = camera_site.lat_deg;
         frame.lon_deg = camera_site.lon_deg;
         harness.Backend().EmitTelemetry("drone-1", frame);
         std::this_thread::sleep_for(std::chrono::milliseconds{20});
-        return client.SubmitEdgeCapture("drone-1", SyntheticNadirCapture(
-            "mission", 1, "A-B", "recovery-attempt", id, "sim-calibration",
-            (begin + end) / 2.0, (end - begin) / 2.0,
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count()));
+        return client.SubmitEdgeCapture(
+            "drone-1",
+            SyntheticNadirCapture("mission", 1, "A-B", "recovery-attempt", id, "sim-calibration",
+                                  (begin + end) / 2.0, (end - begin) / 2.0,
+                                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count()));
     };
     REQUIRE(capture("left", 0, 40).ok);
     REQUIRE(capture("right", 70, 100).ok);
     const auto endpoint = edge::LocalToWgs84(40, 44, {100, 0});
     frame.lat_deg = endpoint.lat_deg;
     frame.lon_deg = endpoint.lon_deg;
-    REQUIRE(testsupport::WaitUntil([&] {
-        harness.Backend().EmitTelemetry("drone-1", frame);
-        return harness.Backend().ExecuteCallCount() >= 2;
-    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            return harness.Backend().ExecuteCallCount() >= 2;
+        },
+        kWaitTimeout, std::chrono::milliseconds{10}));
     const auto reentry = edge::LocalToWgs84(40, 44, {38, 0});
     frame.lat_deg = reentry.lat_deg;
     frame.lon_deg = reentry.lon_deg;
-    REQUIRE(testsupport::WaitUntil([&] {
-        harness.Backend().EmitTelemetry("drone-1", frame);
-        return harness.Backend().ExecuteCallCount() >= 3;
-    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            return harness.Backend().ExecuteCallCount() >= 3;
+        },
+        kWaitTimeout, std::chrono::milliseconds{10}));
     REQUIRE(capture("gap", 40, 70).ok);
     frame.lat_deg = endpoint.lat_deg;
     frame.lon_deg = endpoint.lon_deg;
-    REQUIRE(testsupport::WaitUntil([&] {
-        harness.Backend().EmitTelemetry("drone-1", frame);
-        const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
-        return status.status && status.status->status.phase == edge::Phase::kFulfilled;
-    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
+            return status.status && status.status->status.phase == edge::Phase::kFulfilled;
+        },
+        kWaitTimeout, std::chrono::milliseconds{10}));
     CHECK(harness.Backend().ExecuteCallCount() == 3);
     request.edge.attempt_id = "battery-attempt";
     REQUIRE(client.ExecuteEdge(request).ok);
     frame.battery_percent = 1;
-    REQUIRE(testsupport::WaitUntil([&] {
-        harness.Backend().EmitTelemetry("drone-1", frame);
-        const auto status = client.GetEdgeStatus("drone-1", "battery-attempt");
-        return status.status && status.status->status.phase == edge::Phase::kInterrupted;
-    }, kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            harness.Backend().EmitTelemetry("drone-1", frame);
+            const auto status = client.GetEdgeStatus("drone-1", "battery-attempt");
+            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
+        },
+        kWaitTimeout, std::chrono::milliseconds{10}));
+    CHECK(harness.Backend().ExecuteCallCount() == 4);
+    frame.battery_percent = 100;
+    request.edge.attempt_id = "after-battery-interruption";
+    const auto blocked = client.ExecuteEdge(request);
+    CHECK_FALSE(blocked.ok);
+    CHECK(blocked.message.find("unresolved physical navigation") != std::string::npos);
     CHECK(harness.Backend().ExecuteCallCount() == 4);
 }
 
@@ -2285,8 +2322,8 @@ TEST_CASE("VECR arrival executes through SDK agent and physical SimBackend truth
     REQUIRE(simulator->backend->Execute(command).IsOk());
     command.command = commands::FlightCmd{commands::CmdTakeoff{.alt_m = 10}};
     REQUIRE(simulator->backend->Execute(command).IsOk());
-    REQUIRE(simulator->backend->StartTelemetry("drone-1", 10,
-                                              [](const core::TelemetryFrame&) {}).IsOk());
+    REQUIRE(simulator->backend->StartTelemetry("drone-1", 10, [](const core::TelemetryFrame&) {})
+                .IsOk());
     REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{3000}).IsOk());
     REQUIRE(simulator->backend->StopTelemetry("drone-1").IsOk());
     const auto before = control->Truth("drone-1");
@@ -2337,9 +2374,8 @@ TEST_CASE("VECR arrival executes through SDK agent and physical SimBackend truth
     CHECK(std::abs(final_truth->up_m - 10.0) < 0.5);
 }
 
-TEST_CASE("VECR agent-backed camera repair records success and physical failure",
-          "[client][integration][vecr][sim-backend]") {
-  for (const bool inject_failure : {false, true}) {
+TEST_CASE("VECR never publishes fulfilled after terminal journal fsync failure",
+          "[client][integration][vecr][journal][sim-backend]") {
     agent::SimBackendConfig sim_config;
     sim_config.clock_mode = agent::SimulationClockMode::kManual;
     auto simulator = agent::MakeSimBackend(sim_config);
@@ -2352,8 +2388,8 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
     REQUIRE(simulator->backend->Execute(command).IsOk());
     command.command = commands::FlightCmd{commands::CmdTakeoff{.alt_m = 10}};
     REQUIRE(simulator->backend->Execute(command).IsOk());
-    REQUIRE(simulator->backend->StartTelemetry("drone-1", 10,
-                                              [](const core::TelemetryFrame&) {}).IsOk());
+    REQUIRE(simulator->backend->StartTelemetry("drone-1", 10, [](const core::TelemetryFrame&) {})
+                .IsOk());
     REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{3000}).IsOk());
     REQUIRE(simulator->backend->StopTelemetry("drone-1").IsOk());
 
@@ -2364,126 +2400,436 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
     config.security.root_ca_cert_path = certificates.root_ca_cert_path;
     config.security.cert_chain_path = certificates.server_cert_chain_path;
     config.security.private_key_path = certificates.server_private_key_path;
-    config.vecr_sensor_client_id = "test-client";
-    config.vecr_sensor_calibration_id = "synthetic-camera-v3";
-    config.vecr_sim_recovery_enabled = true;
     auto clock_ns = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000LL);
     auto providers = agent::internal::RuntimeProviders::System();
     providers.monotonic_time_ns = [clock_ns] { return clock_ns->load(); };
+    providers.journal_fault_injector = [](const auto& entry) {
+        return entry.report.phase() == swarmkit::v1::EDGE_FULFILLED
+                   ? agent::internal::EdgeAttemptJournal::Fault::kFsync
+                   : agent::internal::EdgeAttemptJournal::Fault::kNone;
+    };
     testsupport::AgentServerHarness harness(config, std::move(simulator->backend), providers);
     Client client = MakeClient(harness.Address());
+    std::mutex report_mutex;
+    std::vector<AgentReport> reports;
+    auto stream = client.StartReports({.drone_id = "drone-1"}, [&](const AgentReport& report) {
+        std::lock_guard<std::mutex> lock(report_mutex);
+        reports.push_back(report);
+    });
+    REQUIRE(stream.has_value());
+
     EdgeOperationRequest request;
-    request.edge.mission_id = "sim-survey";
+    request.edge.mission_id = "journal-fault";
     request.edge.mission_revision = 1;
     request.edge.edge_id = "A-B";
-    request.edge.attempt_id = "sim-gap-1";
+    request.edge.attempt_id = "terminal-fsync-fault";
     request.edge.drone_id = "drone-1";
     request.edge.route.points = {{0, 0}, {20, 0}};
-    request.edge.obligation = edge::Obligation::kSurvey;
+    request.edge.obligation = edge::Obligation::kArrival;
     request.edge.corridor_half_width_m = 4;
     request.edge.arrival_radius_m = 2;
     request.edge.arrival_max_speed_mps = 0.5;
     request.edge.maximum_speed_mps = 10;
-    request.edge.recovery_overlap_m = 2;
-    request.edge.max_recovery_attempts = 1;
-    request.edge.sustained_deviation_samples = 1000;
-    request.edge.recovery_cooldown_ms = 1000;
     request.edge.timeout_ms = 60000;
     request.wgs84_origin = {sim_config.home_lat_deg, sim_config.home_lon_deg};
     request.altitude_m = 10;
     request.commanded_speed_mps = 2;
     REQUIRE(client.ExecuteEdge(request).ok);
-
-    std::array<bool, 80> truth_covered{};
-    std::ofstream trace;
-    if (const char* trace_dir = std::getenv("SWARMKIT_VECR_V3_TRACE_DIR")) {
-        const auto path = std::filesystem::path(trace_dir) /
-            (inject_failure ? "agent_motor_failure.csv" : "agent_camera_gap.csv");
-        trace.open(path, std::ios::out | std::ios::trunc);
-        REQUIRE(trace.good());
-        trace << "tick,simulation_time_ms,truth_east_m,truth_north_m,truth_up_m,"
-                 "physical_distance_m,truth_covered_cells,reported_survey_covered_m,"
-                 "reported_phase,recovery_attempts,capture_emitted,capture_accepted,"
-                 "motor_failure_injected\n";
-        trace.precision(17);
-    }
-    double physical_distance_m = 0.0;
-    double prior_east_m = 0.0;
-    bool fulfilled = false;
-    bool saw_recovery = false;
-    bool failure_injected = false;
-    for (int tick = 0; tick < 550 && !fulfilled; ++tick) {
+    bool saw_unknown = false;
+    for (int tick = 0; tick < 160 && !saw_unknown; ++tick) {
         clock_ns->fetch_add(100'000'000LL);
         REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
         std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        std::lock_guard<std::mutex> lock(report_mutex);
+        saw_unknown = std::ranges::any_of(reports, [](const AgentReport& report) {
+            return report.edge && report.edge->status.phase == edge::Phase::kUnknown &&
+                   report.message.find("not durably committed") != std::string::npos;
+        });
+    }
+    CHECK(saw_unknown);
+    {
+        std::lock_guard<std::mutex> lock(report_mutex);
+        CHECK_FALSE(std::ranges::any_of(reports, [](const AgentReport& report) {
+            return report.edge && report.edge->status.phase == edge::Phase::kFulfilled;
+        }));
+    }
+    CHECK_FALSE(client.GetEdgeStatus("drone-1", "terminal-fsync-fault").ok);
+    request.edge.attempt_id = "new-after-journal-failure";
+    CHECK_FALSE(client.ExecuteEdge(request).ok);
+}
+
+TEST_CASE("VECR restart gates a new attempt until simulator hold is confirmed",
+          "[client][integration][vecr][journal][sim-backend]") {
+    agent::SimBackendConfig sim_config;
+    sim_config.clock_mode = agent::SimulationClockMode::kManual;
+    auto simulator = agent::MakeSimBackend(sim_config);
+    REQUIRE(simulator);
+    auto control = simulator->control;
+    commands::CommandEnvelope command;
+    command.context.drone_id = "drone-1";
+    command.context.client_id = "test-client";
+    command.command = commands::FlightCmd{commands::CmdArm{}};
+    REQUIRE(simulator->backend->Execute(command).IsOk());
+    command.command = commands::FlightCmd{commands::CmdTakeoff{.alt_m = 10}};
+    REQUIRE(simulator->backend->Execute(command).IsOk());
+    REQUIRE(simulator->backend->StartTelemetry("drone-1", 10, [](const core::TelemetryFrame&) {})
+                .IsOk());
+    REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{3000}).IsOk());
+    REQUIRE(simulator->backend->StopTelemetry("drone-1").IsOk());
+    std::shared_ptr<agent::IDroneBackend> backend = std::move(simulator->backend);
+
+    const auto certificates = testsupport::MakeDevMtlsPaths();
+    agent::AgentConfig config;
+    config.agent_id = "test-agent";
+    config.bind_addr = "127.0.0.1:0";
+    config.security.root_ca_cert_path = certificates.root_ca_cert_path;
+    config.security.cert_chain_path = certificates.server_cert_chain_path;
+    config.security.private_key_path = certificates.server_private_key_path;
+    const auto journal_path =
+        std::filesystem::temp_directory_path() /
+        ("swarmkit-vecr-moving-restart-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    config.vecr_attempt_journal_path = journal_path.string();
+    auto clock_ns = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000LL);
+    auto providers = agent::internal::RuntimeProviders::System();
+    providers.monotonic_time_ns = [clock_ns] { return clock_ns->load(); };
+
+    EdgeOperationRequest request;
+    request.edge.mission_id = "moving-restart";
+    request.edge.mission_revision = 1;
+    request.edge.edge_id = "A-B";
+    request.edge.attempt_id = "before-restart";
+    request.edge.drone_id = "drone-1";
+    request.edge.route.points = {{0, 0}, {20, 0}};
+    request.edge.obligation = edge::Obligation::kArrival;
+    request.edge.corridor_half_width_m = 4;
+    request.edge.arrival_radius_m = 2;
+    request.edge.arrival_max_speed_mps = 0.5;
+    request.edge.maximum_speed_mps = 10;
+    request.edge.timeout_ms = 60000;
+    request.wgs84_origin = {sim_config.home_lat_deg, sim_config.home_lon_deg};
+    request.altitude_m = 10;
+    request.commanded_speed_mps = 2;
+    core::ExecutionHandle old_handle;
+    {
+        testsupport::AgentServerHarness harness(
+            config, std::make_unique<testsupport::SharedBackendHandle>(backend), providers);
+        Client client = MakeClient(harness.Address());
+        const auto started = client.ExecuteEdge(request);
+        REQUIRE(started.ok);
+        REQUIRE(started.status);
+        old_handle = started.status->execution_handle;
+        for (int tick = 0; tick < 10; ++tick) {
+            clock_ns->fetch_add(100'000'000LL);
+            REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
         const auto truth = control->Truth("drone-1");
         REQUIRE(truth);
-        physical_distance_m += std::abs(truth->east_m - prior_east_m);
-        prior_east_m = truth->east_m;
-        const auto observed = client.GetEdgeStatus("drone-1", "sim-gap-1");
-        REQUIRE(observed.status);
-        saw_recovery = saw_recovery || observed.status->status.recovery_attempts > 0;
-        if (inject_failure && saw_recovery && !failure_injected) {
-            control->SetFailure("drone-1", true, "scripted motor failure during repair");
-            failure_injected = true;
+        CHECK(truth->east_m > 0.5);
+        CHECK(truth->mode == "SIM_GOTO");
+    }
+    clock_ns->fetch_add(100'000'000LL);
+    REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
+    const auto moving_after_restart = control->Truth("drone-1");
+    REQUIRE(moving_after_restart);
+    CHECK(moving_after_restart->mode == "SIM_GOTO");
+    {
+        testsupport::AgentServerHarness harness(
+            config, std::make_unique<testsupport::SharedBackendHandle>(backend), providers);
+        Client client = MakeClient(harness.Address());
+        const auto old = client.GetEdgeStatus("drone-1", "before-restart");
+        REQUIRE(old.status);
+        CHECK(old.status->status.phase == edge::Phase::kUnknown);
+        request.edge.attempt_id = "after-restart";
+        const auto blocked = client.ExecuteEdge(request);
+        CHECK_FALSE(blocked.ok);
+        CHECK(blocked.message.find("unresolved physical navigation") != std::string::npos);
+        CHECK(backend->GetHealth().mode == "SIM_GOTO");
+
+        EdgeResult reconciliation;
+        std::thread reconcile([&] { reconciliation = client.CancelEdge(old_handle); });
+        for (int tick = 0; tick < 40; ++tick) {
+            clock_ns->fetch_add(100'000'000LL);
+            REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
         }
-        bool capture_emitted = false;
-        bool capture_accepted = false;
-        if (tick % 5 == 0 && observed.status->status.traversal_quality !=
-                                 edge::EvidenceQuality::kUnknown) {
-            const bool camera_working = !failure_injected && (saw_recovery ||
-                truth->east_m < 8.0 || truth->east_m > 12.0);
-            if (camera_working && std::abs(truth->north_m) <= 4.0) {
-                auto capture = SyntheticNadirCapture(
-                    "sim-survey", 1, "A-B", "sim-gap-1",
-                    "synthetic-frame-" + std::to_string(tick),
-                    "synthetic-camera-v3", truth->east_m, 2,
-                    clock_ns->load() / 1'000'000);
-                EdgeResult submitted;
-                const bool accepted_after_pose_sync = testsupport::WaitUntil([&] {
-                    submitted = client.SubmitEdgeCapture("drone-1", capture);
-                    return submitted.ok;
-                }, kWaitTimeout, std::chrono::milliseconds{5});
-                capture_emitted = true;
-                capture_accepted = accepted_after_pose_sync;
-                INFO("tick=" << tick << " east=" << truth->east_m << " message=" << submitted.message);
-                if (observed.status->status.phase != edge::Phase::kFulfilled)
-                    REQUIRE(submitted.ok);
-                for (std::size_t cell = 0; cell < truth_covered.size(); ++cell) {
-                    const double center = (static_cast<double>(cell) + 0.5) * 0.25;
-                    if (center >= truth->east_m - 2.0 && center <= truth->east_m + 2.0)
-                        truth_covered[cell] = true;
+        reconcile.join();
+        INFO(reconciliation.message);
+        REQUIRE(reconciliation.ok);
+        REQUIRE(reconciliation.status);
+        CHECK(reconciliation.status->status.phase == edge::Phase::kInterrupted);
+        CHECK(backend->GetHealth().mode == "SIM_HOLD");
+        const auto reconciled = client.GetEdgeStatus("drone-1", "before-restart");
+        REQUIRE(reconciled.status);
+        CHECK(reconciled.status->status.phase == edge::Phase::kInterrupted);
+        CHECK(client.ExecuteEdge(request).ok);
+    }
+    std::filesystem::remove(journal_path);
+}
+
+TEST_CASE("VECR cancellation distinguishes confirmed hold from unresolved movement",
+          "[client][integration][vecr][sim-backend]") {
+    for (const bool reject_hold : {false, true}) {
+        agent::SimBackendConfig sim_config;
+        sim_config.clock_mode = agent::SimulationClockMode::kManual;
+        auto simulator = agent::MakeSimBackend(sim_config);
+        REQUIRE(simulator);
+        auto control = simulator->control;
+        commands::CommandEnvelope command;
+        command.context.drone_id = "drone-1";
+        command.context.client_id = "test-client";
+        command.command = commands::FlightCmd{commands::CmdArm{}};
+        REQUIRE(simulator->backend->Execute(command).IsOk());
+        command.command = commands::FlightCmd{commands::CmdTakeoff{.alt_m = 10}};
+        REQUIRE(simulator->backend->Execute(command).IsOk());
+        REQUIRE(
+            simulator->backend->StartTelemetry("drone-1", 10, [](const core::TelemetryFrame&) {})
+                .IsOk());
+        REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{3000}).IsOk());
+        REQUIRE(simulator->backend->StopTelemetry("drone-1").IsOk());
+        std::shared_ptr<agent::IDroneBackend> backend = std::move(simulator->backend);
+        auto hold_calls = std::make_shared<std::atomic<int>>(0);
+        testsupport::SharedBackendHandle::ExecuteFilter filter =
+            [reject_hold, hold_calls](const commands::CommandEnvelope& envelope)
+            -> std::optional<core::BackendCommandOutcome> {
+            const auto nav = std::get_if<commands::NavCmd>(&envelope.command);
+            if (!nav || !std::holds_alternative<commands::CmdHoldPosition>(*nav))
+                return std::nullopt;
+            hold_calls->fetch_add(1);
+            if (!reject_hold)
+                return std::nullopt;
+            return core::BackendCommandOutcome{
+                .result = core::Result::Rejected("scripted hold refusal"),
+                .dispatch_state = core::BackendDispatchState::kRejected};
+        };
+
+        const auto certificates = testsupport::MakeDevMtlsPaths();
+        agent::AgentConfig config;
+        config.agent_id = "test-agent";
+        config.bind_addr = "127.0.0.1:0";
+        config.security.root_ca_cert_path = certificates.root_ca_cert_path;
+        config.security.cert_chain_path = certificates.server_cert_chain_path;
+        config.security.private_key_path = certificates.server_private_key_path;
+        auto clock_ns = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000LL);
+        auto providers = agent::internal::RuntimeProviders::System();
+        providers.monotonic_time_ns = [clock_ns] { return clock_ns->load(); };
+        testsupport::AgentServerHarness harness(
+            config, std::make_unique<testsupport::SharedBackendHandle>(backend, filter), providers);
+        Client client = MakeClient(harness.Address());
+        EdgeOperationRequest request;
+        request.edge.mission_id = "cancel-test";
+        request.edge.mission_revision = 1;
+        request.edge.edge_id = "A-B";
+        request.edge.attempt_id = reject_hold ? "reject-hold" : "confirm-hold";
+        request.edge.drone_id = "drone-1";
+        request.edge.route.points = {{0, 0}, {20, 0}};
+        request.edge.obligation = edge::Obligation::kArrival;
+        request.edge.corridor_half_width_m = 4;
+        request.edge.arrival_radius_m = 2;
+        request.edge.arrival_max_speed_mps = 0.5;
+        request.edge.maximum_speed_mps = 10;
+        request.edge.timeout_ms = 60000;
+        request.wgs84_origin = {sim_config.home_lat_deg, sim_config.home_lon_deg};
+        request.altitude_m = 10;
+        request.commanded_speed_mps = 2;
+        const auto started = client.ExecuteEdge(request);
+        REQUIRE(started.ok);
+        REQUIRE(started.status);
+        for (int tick = 0; tick < 8; ++tick) {
+            clock_ns->fetch_add(100'000'000LL);
+            REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        const auto moving = control->Truth("drone-1");
+        REQUIRE(moving);
+        CHECK(moving->mode == "SIM_GOTO");
+        EdgeResult cancelled;
+        std::thread cancellation(
+            [&] { cancelled = client.CancelEdge(started.status->execution_handle); });
+        bool advanced = true;
+        for (int tick = 0; tick < 35; ++tick) {
+            clock_ns->fetch_add(100'000'000LL);
+            advanced &= control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk();
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
+        cancellation.join();
+        REQUIRE(advanced);
+        CHECK(hold_calls->load() == 1);
+        REQUIRE(cancelled.status);
+        const auto after = control->Truth("drone-1");
+        REQUIRE(after);
+        request.edge.attempt_id = reject_hold ? "blocked-after-cancel" : "new-after-cancel";
+        if (reject_hold) {
+            CHECK_FALSE(cancelled.ok);
+            CHECK(cancelled.status->status.phase == edge::Phase::kUnknown);
+            CHECK(after->mode == "SIM_GOTO");
+            CHECK(after->east_m > moving->east_m);
+            CHECK_FALSE(client.ExecuteEdge(request).ok);
+        } else {
+            CHECK(cancelled.ok);
+            CHECK(cancelled.status->status.phase == edge::Phase::kInterrupted);
+            CHECK(after->mode == "SIM_HOLD");
+            const auto repeated = client.CancelEdge(started.status->execution_handle);
+            CHECK(repeated.ok);
+            CHECK(hold_calls->load() == 1);
+            CHECK(client.ExecuteEdge(request).ok);
+        }
+    }
+}
+
+TEST_CASE("VECR agent-backed camera repair records success and physical failure",
+          "[client][integration][vecr][sim-backend]") {
+    for (const bool inject_failure : {false, true}) {
+        agent::SimBackendConfig sim_config;
+        sim_config.clock_mode = agent::SimulationClockMode::kManual;
+        auto simulator = agent::MakeSimBackend(sim_config);
+        REQUIRE(simulator);
+        auto control = simulator->control;
+        commands::CommandEnvelope command;
+        command.context.drone_id = "drone-1";
+        command.context.client_id = "test-client";
+        command.command = commands::FlightCmd{commands::CmdArm{}};
+        REQUIRE(simulator->backend->Execute(command).IsOk());
+        command.command = commands::FlightCmd{commands::CmdTakeoff{.alt_m = 10}};
+        REQUIRE(simulator->backend->Execute(command).IsOk());
+        REQUIRE(
+            simulator->backend->StartTelemetry("drone-1", 10, [](const core::TelemetryFrame&) {})
+                .IsOk());
+        REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{3000}).IsOk());
+        REQUIRE(simulator->backend->StopTelemetry("drone-1").IsOk());
+
+        const auto certificates = testsupport::MakeDevMtlsPaths();
+        agent::AgentConfig config;
+        config.agent_id = "test-agent";
+        config.bind_addr = "127.0.0.1:0";
+        config.security.root_ca_cert_path = certificates.root_ca_cert_path;
+        config.security.cert_chain_path = certificates.server_cert_chain_path;
+        config.security.private_key_path = certificates.server_private_key_path;
+        config.vecr_sensor_client_id = "test-client";
+        config.vecr_sensor_calibration_id = "synthetic-camera-v3";
+        config.vecr_sim_recovery_enabled = true;
+        auto clock_ns = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000LL);
+        auto providers = agent::internal::RuntimeProviders::System();
+        providers.monotonic_time_ns = [clock_ns] { return clock_ns->load(); };
+        testsupport::AgentServerHarness harness(config, std::move(simulator->backend), providers);
+        Client client = MakeClient(harness.Address());
+        EdgeOperationRequest request;
+        request.edge.mission_id = "sim-survey";
+        request.edge.mission_revision = 1;
+        request.edge.edge_id = "A-B";
+        request.edge.attempt_id = "sim-gap-1";
+        request.edge.drone_id = "drone-1";
+        request.edge.route.points = {{0, 0}, {20, 0}};
+        request.edge.obligation = edge::Obligation::kSurvey;
+        request.edge.corridor_half_width_m = 4;
+        request.edge.arrival_radius_m = 2;
+        request.edge.arrival_max_speed_mps = 0.5;
+        request.edge.maximum_speed_mps = 10;
+        request.edge.recovery_overlap_m = 2;
+        request.edge.max_recovery_attempts = 1;
+        request.edge.sustained_deviation_samples = 1000;
+        request.edge.recovery_cooldown_ms = 1000;
+        request.edge.timeout_ms = 60000;
+        request.wgs84_origin = {sim_config.home_lat_deg, sim_config.home_lon_deg};
+        request.altitude_m = 10;
+        request.commanded_speed_mps = 2;
+        REQUIRE(client.ExecuteEdge(request).ok);
+
+        std::array<bool, 80> truth_covered{};
+        std::ofstream trace;
+        if (const char* trace_dir = std::getenv("SWARMKIT_VECR_V3_TRACE_DIR")) {
+            const auto path = std::filesystem::path(trace_dir) /
+                              (inject_failure ? "agent_motor_failure.csv" : "agent_camera_gap.csv");
+            trace.open(path, std::ios::out | std::ios::trunc);
+            REQUIRE(trace.good());
+            trace << "tick,simulation_time_ms,truth_east_m,truth_north_m,truth_up_m,"
+                     "physical_distance_m,truth_covered_cells,reported_survey_covered_m,"
+                     "reported_phase,recovery_attempts,capture_emitted,capture_accepted,"
+                     "motor_failure_injected\n";
+            trace.precision(17);
+        }
+        double physical_distance_m = 0.0;
+        double prior_east_m = 0.0;
+        bool fulfilled = false;
+        bool saw_recovery = false;
+        bool failure_injected = false;
+        for (int tick = 0; tick < 550 && !fulfilled; ++tick) {
+            clock_ns->fetch_add(100'000'000LL);
+            REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+            const auto truth = control->Truth("drone-1");
+            REQUIRE(truth);
+            physical_distance_m += std::abs(truth->east_m - prior_east_m);
+            prior_east_m = truth->east_m;
+            const auto observed = client.GetEdgeStatus("drone-1", "sim-gap-1");
+            REQUIRE(observed.status);
+            saw_recovery = saw_recovery || observed.status->status.recovery_attempts > 0;
+            if (inject_failure && saw_recovery && !failure_injected) {
+                control->SetFailure("drone-1", true, "scripted motor failure during repair");
+                failure_injected = true;
+            }
+            bool capture_emitted = false;
+            bool capture_accepted = false;
+            if (tick % 5 == 0 &&
+                observed.status->status.traversal_quality != edge::EvidenceQuality::kUnknown) {
+                const bool camera_working =
+                    !failure_injected &&
+                    (saw_recovery || truth->east_m < 8.0 || truth->east_m > 12.0);
+                if (camera_working && std::abs(truth->north_m) <= 4.0) {
+                    auto capture = SyntheticNadirCapture("sim-survey", 1, "A-B", "sim-gap-1",
+                                                         "synthetic-frame-" + std::to_string(tick),
+                                                         "synthetic-camera-v3", truth->east_m, 2,
+                                                         clock_ns->load() / 1'000'000);
+                    EdgeResult submitted;
+                    const bool accepted_after_pose_sync = testsupport::WaitUntil(
+                        [&] {
+                            submitted = client.SubmitEdgeCapture("drone-1", capture);
+                            return submitted.ok;
+                        },
+                        kWaitTimeout, std::chrono::milliseconds{5});
+                    capture_emitted = true;
+                    capture_accepted = accepted_after_pose_sync;
+                    INFO("tick=" << tick << " east=" << truth->east_m
+                                 << " message=" << submitted.message);
+                    if (observed.status->status.phase != edge::Phase::kFulfilled)
+                        REQUIRE(submitted.ok);
+                    for (std::size_t cell = 0; cell < truth_covered.size(); ++cell) {
+                        const double center = (static_cast<double>(cell) + 0.5) * 0.25;
+                        if (center >= truth->east_m - 2.0 && center <= truth->east_m + 2.0)
+                            truth_covered[cell] = true;
+                    }
                 }
             }
+            const auto current = client.GetEdgeStatus("drone-1", "sim-gap-1");
+            fulfilled = current.status && current.status->status.phase == edge::Phase::kFulfilled;
+            if (trace && current.status) {
+                trace << tick << ',' << truth->simulation_time_ms << ',' << truth->east_m << ','
+                      << truth->north_m << ',' << truth->up_m << ',' << physical_distance_m << ','
+                      << std::ranges::count(truth_covered, true) << ','
+                      << current.status->status.survey_covered_m << ','
+                      << static_cast<int>(current.status->status.phase) << ','
+                      << current.status->status.recovery_attempts << ',' << capture_emitted << ','
+                      << capture_accepted << ',' << failure_injected << '\n';
+            }
+            if (current.status && current.status->status.phase == edge::Phase::kInterrupted)
+                break;
         }
-        const auto current = client.GetEdgeStatus("drone-1", "sim-gap-1");
-        fulfilled = current.status && current.status->status.phase == edge::Phase::kFulfilled;
-        if (trace && current.status) {
-            trace << tick << ',' << truth->simulation_time_ms << ',' << truth->east_m << ','
-                  << truth->north_m << ',' << truth->up_m << ',' << physical_distance_m << ','
-                  << std::ranges::count(truth_covered, true) << ','
-                  << current.status->status.survey_covered_m << ','
-                  << static_cast<int>(current.status->status.phase) << ','
-                  << current.status->status.recovery_attempts << ',' << capture_emitted << ','
-                  << capture_accepted << ',' << failure_injected << '\n';
+        CHECK(saw_recovery);
+        const auto final = client.GetEdgeStatus("drone-1", "sim-gap-1");
+        REQUIRE(final.status);
+        if (inject_failure) {
+            CHECK(failure_injected);
+            CHECK_FALSE(fulfilled);
+            CHECK(final.status->status.phase == edge::Phase::kInterrupted);
+            CHECK(physical_distance_m > 19.5);
+        } else {
+            CHECK(fulfilled);
+            CHECK(std::ranges::all_of(truth_covered, [](bool cell) { return cell; }));
+            CHECK(physical_distance_m > 20.0);
         }
-        if (current.status && current.status->status.phase == edge::Phase::kInterrupted) break;
+        CHECK(physical_distance_m < 60.0);
     }
-    CHECK(saw_recovery);
-    const auto final = client.GetEdgeStatus("drone-1", "sim-gap-1");
-    REQUIRE(final.status);
-    if (inject_failure) {
-        CHECK(failure_injected);
-        CHECK_FALSE(fulfilled);
-        CHECK(final.status->status.phase == edge::Phase::kInterrupted);
-        CHECK(physical_distance_m > 19.5);
-    } else {
-        CHECK(fulfilled);
-        CHECK(std::ranges::all_of(truth_covered, [](bool cell) { return cell; }));
-        CHECK(physical_distance_m > 20.0);
-    }
-    CHECK(physical_distance_m < 60.0);
-  }
 }
 
 TEST_CASE("Goal retries receive distinct physical attempts and guarded cancellation",

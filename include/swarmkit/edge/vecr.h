@@ -53,7 +53,9 @@ class IntervalSet {
     [[nodiscard]] std::vector<Interval> Missing() const;
     [[nodiscard]] double CoveredMeters() const;
     [[nodiscard]] double PrefixMeters() const;
-    [[nodiscard]] const std::vector<Interval>& Intervals() const { return intervals_; }
+    [[nodiscard]] const std::vector<Interval>& Intervals() const {
+        return intervals_;
+    }
 
    private:
     double length_m_{};
@@ -61,6 +63,7 @@ class IntervalSet {
 };
 
 enum class Obligation { kArrival, kTraversal, kSurvey, kTraversalAndSurvey };
+enum class RepairPolicy { kTargetedGap, kFullEdgeRestart };
 enum class Phase { kMoving, kRecovering, kFulfilled, kInterrupted, kUnknown };
 enum class EvidenceQuality { kUnknown, kEstimated, kBounded };
 
@@ -72,6 +75,7 @@ struct EdgeRequest {
     std::string drone_id;
     Route route;
     Obligation obligation{Obligation::kSurvey};
+    RepairPolicy repair_policy{RepairPolicy::kTargetedGap};
     double corridor_half_width_m{};
     double arrival_radius_m{};
     double arrival_max_speed_mps{};
@@ -143,8 +147,7 @@ struct NadirCaptureInput {
 };
 
 [[nodiscard]] std::optional<CaptureEvidence> BuildNadirStripEvidence(
-    const Route& route, double required_strip_half_width_m,
-    const NadirCaptureInput& input);
+    const Route& route, double required_strip_half_width_m, const NadirCaptureInput& input);
 
 struct Status {
     Phase phase{Phase::kUnknown};
@@ -167,7 +170,9 @@ class EdgeExecutionSupervisor {
    public:
     explicit EdgeExecutionSupervisor(EdgeRequest request);
     [[nodiscard]] bool Valid() const;
-    [[nodiscard]] const EdgeRequest& Request() const { return request_; }
+    [[nodiscard]] const EdgeRequest& Request() const {
+        return request_;
+    }
     [[nodiscard]] Status ObservePosition(const PositionObservation& observation);
     [[nodiscard]] Status ObserveCapture(const CaptureEvidence& evidence);
     [[nodiscard]] Status RecoveryDispatched(bool accepted, std::int64_t monotonic_ms);

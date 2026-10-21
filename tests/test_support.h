@@ -245,6 +245,72 @@ template <typename Handler>
     };
 }
 
+// Lets a simulator keep the same physical state while an AgentService is destroyed
+// and recreated. Each server still owns its own backend handle.
+class SharedBackendHandle final : public agent::IDroneBackend {
+   public:
+    using ExecuteFilter =
+        std::function<std::optional<core::BackendCommandOutcome>(const commands::CommandEnvelope&)>;
+    using ExecuteObserver =
+        std::function<void(const commands::CommandEnvelope&, const core::BackendCommandOutcome&)>;
+    using TelemetryFilter =
+        std::function<std::optional<core::TelemetryFrame>(const core::TelemetryFrame&)>;
+    explicit SharedBackendHandle(std::shared_ptr<agent::IDroneBackend> backend,
+                                 ExecuteFilter filter = {}, ExecuteObserver observer = {},
+                                 TelemetryFilter telemetry_filter = {})
+        : backend_(std::move(backend)),
+          filter_(std::move(filter)),
+          observer_(std::move(observer)),
+          telemetry_filter_(std::move(telemetry_filter)) {}
+
+    core::Result Start() override {
+        return backend_->Start();
+    }
+    core::BackendCommandOutcome Execute(const commands::CommandEnvelope& command) override {
+        if (filter_) {
+            if (auto result = filter_(command)) {
+                if (observer_)
+                    observer_(command, *result);
+                return *result;
+            }
+        }
+        auto result = backend_->Execute(command);
+        if (observer_)
+            observer_(command, result);
+        return result;
+    }
+    core::Result StartTelemetry(const std::string& drone_id, int rate_hertz,
+                                TelemetryCallback callback) override {
+        if (!telemetry_filter_)
+            return backend_->StartTelemetry(drone_id, rate_hertz, std::move(callback));
+        return backend_->StartTelemetry(
+            drone_id, rate_hertz,
+            [filter = telemetry_filter_,
+             callback = std::move(callback)](const core::TelemetryFrame& frame) {
+                if (auto filtered = filter(frame))
+                    callback(*filtered);
+            });
+    }
+    core::Result StopTelemetry(const std::string& drone_id) override {
+        return backend_->StopTelemetry(drone_id);
+    }
+    agent::BackendHealth GetHealth() const override {
+        return backend_->GetHealth();
+    }
+    core::BackendCapabilities GetCapabilities() const override {
+        return backend_->GetCapabilities();
+    }
+    void SetEvidenceCallback(const EvidenceCallback& callback) override {
+        backend_->SetEvidenceCallback(callback);
+    }
+
+   private:
+    std::shared_ptr<agent::IDroneBackend> backend_;
+    ExecuteFilter filter_;
+    ExecuteObserver observer_;
+    TelemetryFilter telemetry_filter_;
+};
+
 class AgentServerHarness {
    public:
     AgentServerHarness() : AgentServerHarness(MakeDefaultConfig()) {}
@@ -257,20 +323,20 @@ class AgentServerHarness {
 
     AgentServerHarness(const agent::AgentConfig& config,
                        agent::internal::RuntimeProviders providers)
-        : AgentServerHarness(config, std::make_unique<RecordingBackend>(),
-                             std::move(providers)) {}
+        : AgentServerHarness(config, std::make_unique<RecordingBackend>(), std::move(providers)) {}
 
-    AgentServerHarness(const agent::AgentConfig& config, agent::DroneBackendPtr backend,
-                       agent::internal::RuntimeProviders providers =
-                           agent::internal::RuntimeProviders::System()) {
+    AgentServerHarness(
+        const agent::AgentConfig& config, agent::DroneBackendPtr backend,
+        agent::internal::RuntimeProviders providers = agent::internal::RuntimeProviders::System()) {
         backend_ = dynamic_cast<RecordingBackend*>(backend.get());
         agent::AgentConfig effective = config;
         if (effective.vecr_attempt_journal_path.empty()) {
             static std::atomic<std::uint64_t> next_journal{0};
-            temporary_vecr_journal_ = std::filesystem::temp_directory_path() /
+            temporary_vecr_journal_ =
+                std::filesystem::temp_directory_path() /
                 ("swarmkit-vecr-harness-" +
-                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
-                 "-" + std::to_string(next_journal.fetch_add(1)) + ".journal");
+                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
+                 std::to_string(next_journal.fetch_add(1)) + ".journal");
             effective.vecr_attempt_journal_path = temporary_vecr_journal_.string();
         }
         services_ = agent::internal::MakeAgentServicesForTesting(effective, std::move(backend),

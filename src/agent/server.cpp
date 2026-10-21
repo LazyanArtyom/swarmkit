@@ -37,9 +37,9 @@
 #include <vector>
 
 #include "active_goal_supervisor.h"
-#include "edge_execution_runtime.h"
 #include "command_preconditions.h"
 #include "config_yaml.h"
+#include "edge_execution_runtime.h"
 #include "env_utils.h"
 #include "execution_recorder.h"
 #include "proto_execution.h"
@@ -1886,18 +1886,18 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
-    grpc::Status ExecuteEdge(grpc::ServerContext* ctx,
-                             const swarmkit::v1::ExecuteEdgeRequest* req,
+    grpc::Status ExecuteEdge(grpc::ServerContext* ctx, const swarmkit::v1::ExecuteEdgeRequest* req,
                              swarmkit::v1::ExecuteEdgeReply* reply) override {
         if (req == nullptr || reply == nullptr || !req->has_ctx() || !req->has_edge())
             return {grpc::StatusCode::INVALID_ARGUMENT, "edge and command context required"};
         CommandContext context = ToCoreContext(req->ctx());
         context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "edge");
         if (const core::Result auth = AuthorizePeer(ctx, config_.security, &context.client_id);
-            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
-        if (context.drone_id.empty()) context.drone_id = req->edge().drone_id();
-        if (const core::Result validation = ValidateCommandContext(context);
-            !validation.IsOk())
+            !auth.IsOk())
+            return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        if (context.drone_id.empty())
+            context.drone_id = req->edge().drone_id();
+        if (const core::Result validation = ValidateCommandContext(context); !validation.IsOk())
             return {grpc::StatusCode::INVALID_ARGUMENT, validation.message};
         if (context.drone_id != req->edge().drone_id())
             return {grpc::StatusCode::INVALID_ARGUMENT, "edge drone identity mismatch"};
@@ -1926,8 +1926,8 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             .context = context.execution_context,
         };
         core::BackendCommandOutcome dispatch;
-        const core::Result result = edges_.Start(req->edge(), handle, context,
-                                                 reply->mutable_status(), &dispatch);
+        const core::Result result =
+            edges_.Start(req->edge(), handle, context, reply->mutable_status(), &dispatch);
         reply->set_ok(result.IsOk());
         reply->set_message(result.message);
         reply->set_error_code(ToProtoErrorCode(result.error.code));
@@ -1944,12 +1944,14 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return {grpc::StatusCode::INVALID_ARGUMENT, "drone and attempt required"};
         std::string client_id;
         if (const core::Result auth = AuthorizePeer(ctx, config_.security, &client_id);
-            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+            !auth.IsOk())
+            return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
         if (const auto ready = edges_.JournalReady(); !ready.IsOk())
             return {grpc::StatusCode::FAILED_PRECONDITION, ready.message};
         const auto snapshot = edges_.Get(req->drone_id(), req->attempt_id());
         reply->set_found(snapshot.has_value());
-        if (snapshot) *reply->mutable_status() = *snapshot;
+        if (snapshot)
+            *reply->mutable_status() = *snapshot;
         return grpc::Status::OK;
     }
 
@@ -1960,9 +1962,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             return {grpc::StatusCode::INVALID_ARGUMENT, "capture required"};
         std::string client_id = req->sensor_client_id();
         if (const core::Result auth = AuthorizePeer(ctx, config_.security, &client_id);
-            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
-        if (config_.vecr_sensor_client_id.empty() ||
-            client_id != config_.vecr_sensor_client_id)
+            !auth.IsOk())
+            return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        if (config_.vecr_sensor_client_id.empty() || client_id != config_.vecr_sensor_client_id)
             return {grpc::StatusCode::PERMISSION_DENIED, "untrusted sensor adapter"};
         const core::Result result = edges_.SubmitCapture(*req, reply->mutable_status());
         reply->set_accepted(result.IsOk());
@@ -1970,8 +1972,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         return grpc::Status::OK;
     }
 
-    grpc::Status CancelEdge(grpc::ServerContext* ctx,
-                            const swarmkit::v1::CancelEdgeRequest* req,
+    grpc::Status CancelEdge(grpc::ServerContext* ctx, const swarmkit::v1::CancelEdgeRequest* req,
                             swarmkit::v1::CancelEdgeReply* reply) override {
         if (req == nullptr || reply == nullptr || !req->has_ctx() ||
             !req->has_expected_execution_handle())
@@ -1979,9 +1980,9 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
         CommandContext context = ToCoreContext(req->ctx());
         context.correlation_id = ResolveCorrelationId(ctx, context.correlation_id, "cancel-edge");
         if (const core::Result auth = AuthorizePeer(ctx, config_.security, &context.client_id);
-            !auth.IsOk()) return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
-        if (const core::Result validation = ValidateCommandContext(context);
-            !validation.IsOk())
+            !auth.IsOk())
+            return {grpc::StatusCode::PERMISSION_DENIED, auth.message};
+        if (const core::Result validation = ValidateCommandContext(context); !validation.IsOk())
             return {grpc::StatusCode::INVALID_ARGUMENT, validation.message};
         const core::ExecutionHandle expected =
             core::internal::ToCoreExecutionHandle(req->expected_execution_handle());
@@ -1993,7 +1994,7 @@ class AgentServiceImpl final : public swarmkit::v1::AgentService::Service {
             reply->set_message(grant.message);
             return grpc::Status::OK;
         }
-        const core::Result result = edges_.Cancel(expected, reply->mutable_status());
+        const core::Result result = edges_.Cancel(expected, context, reply->mutable_status());
         reply->set_cancelled(result.IsOk());
         reply->set_message(result.message);
         return grpc::Status::OK;

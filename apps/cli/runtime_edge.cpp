@@ -21,8 +21,7 @@ void PrintEdge(const client::AgentReport::EdgeReport& report) {
               << " at_b=" << report.status.at_b_verified
               << " traversal=" << report.status.traversal_verified
               << " survey=" << report.status.survey_verified
-              << " covered_m=" << report.status.survey_covered_m
-              << " missing=";
+              << " covered_m=" << report.status.survey_covered_m << " missing=";
     for (const auto& gap : report.status.survey_missing)
         std::cout << '[' << gap.begin_m << ',' << gap.end_m << ']';
     std::cout << " reason=" << report.status.reason << '\n';
@@ -57,10 +56,11 @@ int RunEdge(client::Client& client, int argc, char** argv) {
         std::signal(SIGTERM, OnSignal);
         client::ReportSubscription subscription;
         subscription.drone_id = drone;
-        auto stream = client.StartReports(subscription, [attempt](const client::AgentReport& report) {
-            if (report.edge && (attempt.empty() || report.edge->attempt_id == attempt))
-                PrintReportText(report, std::cout);
-        });
+        auto stream =
+            client.StartReports(subscription, [attempt](const client::AgentReport& report) {
+                if (report.edge && (attempt.empty() || report.edge->attempt_id == attempt))
+                    PrintReportText(report, std::cout);
+            });
         if (!stream) {
             std::cerr << stream.error().user_message << '\n';
             return EXIT_FAILURE;
@@ -79,16 +79,22 @@ int RunEdge(client::Client& client, int argc, char** argv) {
         std::cerr << "edge execute requires --mission-id, --edge-id, --attempt-id\n";
         return EXIT_FAILURE;
     }
-    const auto from_lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--from-lat"), "--from-lat");
-    const auto from_lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--from-lon"), "--from-lon");
+    const auto from_lat =
+        ParseDoubleArg(common::GetOptionValue(argc, argv, "--from-lat"), "--from-lat");
+    const auto from_lon =
+        ParseDoubleArg(common::GetOptionValue(argc, argv, "--from-lon"), "--from-lon");
     const auto to_lat = ParseDoubleArg(common::GetOptionValue(argc, argv, "--to-lat"), "--to-lat");
     const auto to_lon = ParseDoubleArg(common::GetOptionValue(argc, argv, "--to-lon"), "--to-lon");
     const auto altitude = ParseDoubleArg(common::GetOptionValue(argc, argv, "--alt"), "--alt");
-    const auto corridor = ParseDoubleArg(common::GetOptionValue(argc, argv, "--corridor-m", "4"), "--corridor-m");
-    const auto arrival = ParseDoubleArg(common::GetOptionValue(argc, argv, "--accept-radius", "2"), "--accept-radius");
+    const auto corridor =
+        ParseDoubleArg(common::GetOptionValue(argc, argv, "--corridor-m", "4"), "--corridor-m");
+    const auto arrival = ParseDoubleArg(common::GetOptionValue(argc, argv, "--accept-radius", "2"),
+                                        "--accept-radius");
     const auto speed = ParseFloatArg(common::GetOptionValue(argc, argv, "--speed", "2"), "--speed");
-    const auto revision = ParseIntArg(common::GetOptionValue(argc, argv, "--revision", "1"), "--revision");
-    const auto timeout = ParseIntArg(common::GetOptionValue(argc, argv, "--timeout-ms", "120000"), "--timeout-ms");
+    const auto revision =
+        ParseIntArg(common::GetOptionValue(argc, argv, "--revision", "1"), "--revision");
+    const auto timeout =
+        ParseIntArg(common::GetOptionValue(argc, argv, "--timeout-ms", "120000"), "--timeout-ms");
     if (!from_lat || !from_lon || !to_lat || !to_lon || !altitude || !corridor || !arrival ||
         !speed || !revision || !timeout || *revision <= 0 || *timeout <= 0) {
         std::cerr << "invalid edge coordinates or numeric policy\n";
@@ -100,22 +106,36 @@ int RunEdge(client::Client& client, int argc, char** argv) {
     request.edge.edge_id = edge_id;
     request.edge.attempt_id = attempt;
     request.edge.drone_id = drone;
-    request.edge.route.points = {{0, 0}, edge::Wgs84ToLocal(*from_lat, *from_lon, *to_lat, *to_lon)};
+    request.edge.route.points = {{0, 0},
+                                 edge::Wgs84ToLocal(*from_lat, *from_lon, *to_lat, *to_lon)};
     const std::string mode = common::GetOptionValue(argc, argv, "--obligation", "survey");
-    if (mode == "arrival") request.edge.obligation = edge::Obligation::kArrival;
-    else if (mode == "traversal") request.edge.obligation = edge::Obligation::kTraversal;
-    else if (mode == "survey") request.edge.obligation = edge::Obligation::kSurvey;
+    if (mode == "arrival")
+        request.edge.obligation = edge::Obligation::kArrival;
+    else if (mode == "traversal")
+        request.edge.obligation = edge::Obligation::kTraversal;
+    else if (mode == "survey")
+        request.edge.obligation = edge::Obligation::kSurvey;
     else if (mode == "traversal-survey")
         request.edge.obligation = edge::Obligation::kTraversalAndSurvey;
     else {
         std::cerr << "--obligation must be arrival|traversal|survey|traversal-survey\n";
         return EXIT_FAILURE;
     }
+    const std::string repair =
+        common::GetOptionValue(argc, argv, "--repair-policy", "targeted-gap");
+    if (repair == "targeted-gap")
+        request.edge.repair_policy = edge::RepairPolicy::kTargetedGap;
+    else if (repair == "full-edge-restart")
+        request.edge.repair_policy = edge::RepairPolicy::kFullEdgeRestart;
+    else {
+        std::cerr << "--repair-policy must be targeted-gap|full-edge-restart\n";
+        return EXIT_FAILURE;
+    }
     request.edge.corridor_half_width_m = *corridor;
     request.edge.arrival_radius_m = *arrival;
     request.edge.arrival_max_speed_mps = 0.5;
     request.edge.maximum_missing_m = 0;
-    request.edge.maximum_speed_mps = 0; // Unknown until a hard physical bound is established.
+    request.edge.maximum_speed_mps = 0;  // Unknown until a hard physical bound is established.
     request.edge.sustained_deviation_samples = 3;
     request.edge.recovery_cooldown_ms = 1000;
     request.edge.timeout_ms = *timeout;

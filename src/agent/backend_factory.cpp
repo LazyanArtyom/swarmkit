@@ -217,7 +217,7 @@ namespace {
 
 [[nodiscard]] std::expected<DroneBackendPtr, core::Result> CreateSimBackend(
     const BackendFactoryRequest& request) {
-    constexpr std::array<std::string_view, 13> kAllowedOptions{
+    constexpr std::array<std::string_view, 14> kAllowedOptions{
         "integration_step_ms",
         "initial_source_unix_time_ms",
         "home_lat_deg",
@@ -225,6 +225,7 @@ namespace {
         "home_alt_m",
         "initial_battery_percent",
         "max_horizontal_speed_mps",
+        "max_horizontal_acceleration_mps2",
         "max_climb_speed_mps",
         "max_descent_speed_mps",
         "max_altitude_m",
@@ -251,6 +252,8 @@ namespace {
         StrictDoubleOption(request, "initial_battery_percent", config.initial_battery_percent);
     const auto max_horizontal =
         StrictDoubleOption(request, "max_horizontal_speed_mps", config.max_horizontal_speed_mps);
+    const auto acceleration = StrictDoubleOption(request, "max_horizontal_acceleration_mps2",
+                                                 config.max_horizontal_acceleration_mps2);
     const auto max_climb =
         StrictDoubleOption(request, "max_climb_speed_mps", config.max_climb_speed_mps);
     const auto max_descent =
@@ -262,8 +265,8 @@ namespace {
                                           config.battery_drain_percent_per_second);
     const auto stop_at_target = StrictBoolOption(request, "stop_at_target", config.stop_at_target);
     if (!integration_step || !initial_time || !home_lat || !home_lon || !home_alt ||
-        !initial_battery || !max_horizontal || !max_climb || !max_descent || !max_altitude ||
-        !cruise || !drain || !stop_at_target) {
+        !initial_battery || !max_horizontal || !acceleration || !max_climb || !max_descent ||
+        !max_altitude || !cruise || !drain || !stop_at_target) {
         const auto first_error = [&](const auto& value) -> std::optional<core::Result> {
             return value.has_value() ? std::nullopt : std::optional<core::Result>{value.error()};
         };
@@ -286,6 +289,9 @@ namespace {
             return std::unexpected(*error);
         }
         if (auto error = first_error(max_horizontal)) {
+            return std::unexpected(*error);
+        }
+        if (auto error = first_error(acceleration)) {
             return std::unexpected(*error);
         }
         if (auto error = first_error(max_climb)) {
@@ -317,6 +323,7 @@ namespace {
     config.home_alt_m = *home_alt;
     config.initial_battery_percent = static_cast<float>(*initial_battery);
     config.max_horizontal_speed_mps = static_cast<float>(*max_horizontal);
+    config.max_horizontal_acceleration_mps2 = static_cast<float>(*acceleration);
     config.max_climb_speed_mps = static_cast<float>(*max_climb);
     config.max_descent_speed_mps = static_cast<float>(*max_descent);
     config.max_altitude_m = static_cast<float>(*max_altitude);

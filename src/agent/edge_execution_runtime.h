@@ -8,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 
@@ -26,9 +27,9 @@ namespace swarmkit::agent::internal {
 
 class EdgeExecutionRuntime {
    public:
-    EdgeExecutionRuntime(TelemetryManager* telemetry, ReportHub* reports,
-                         IDroneBackend* backend, CommandArbiter* arbiter,
-                         const AgentConfig* config, RuntimeProviders providers);
+    EdgeExecutionRuntime(TelemetryManager* telemetry, ReportHub* reports, IDroneBackend* backend,
+                         CommandArbiter* arbiter, const AgentConfig* config,
+                         RuntimeProviders providers);
     ~EdgeExecutionRuntime();
     EdgeExecutionRuntime(const EdgeExecutionRuntime&) = delete;
     EdgeExecutionRuntime& operator=(const EdgeExecutionRuntime&) = delete;
@@ -39,13 +40,16 @@ class EdgeExecutionRuntime {
                                      swarmkit::v1::EdgeReport* status,
                                      core::BackendCommandOutcome* dispatch);
     [[nodiscard]] std::optional<swarmkit::v1::EdgeReport> Get(const std::string& drone_id,
-                                                               const std::string& attempt_id) const;
-    [[nodiscard]] core::Result JournalReady() const { return journal_.Ready(); }
+                                                              const std::string& attempt_id) const;
+    [[nodiscard]] core::Result JournalReady() const {
+        return journal_.Ready();
+    }
     [[nodiscard]] bool Active(const std::string& drone_id) const;
     [[nodiscard]] core::Result SubmitCapture(const swarmkit::v1::SubmitEdgeCaptureRequest& capture,
-                                              swarmkit::v1::EdgeReport* status);
+                                             swarmkit::v1::EdgeReport* status);
     [[nodiscard]] core::Result Cancel(const core::ExecutionHandle& expected,
-                                       swarmkit::v1::EdgeReport* status);
+                                      const commands::CommandContext& context,
+                                      swarmkit::v1::EdgeReport* status);
     void Preempt(const std::string& drone_id, const std::string& affected_client_id);
     void Shutdown();
 
@@ -75,17 +79,23 @@ class EdgeExecutionRuntime {
         std::int64_t last_position_ms{-1};
         std::int64_t started_agent_ms{};
         std::int64_t last_frame_agent_ms{};
+        std::optional<swarmkit::v1::EdgeReport> physical_unknown_report;
     };
 
     [[nodiscard]] static std::optional<edge::EdgeRequest> Convert(
         const swarmkit::v1::EdgeOperation& operation);
     [[nodiscard]] static swarmkit::v1::EdgeReport ToReport(const Attempt& attempt,
                                                            const edge::Status& status);
-    void Publish(const Attempt& attempt, const edge::Status& status);
+    [[nodiscard]] core::Result Publish(const Attempt& attempt, const edge::Status& status,
+                                       swarmkit::v1::EdgeReport* published = nullptr,
+                                       std::string_view physical_unknown_reason = {},
+                                       bool physical_hold_confirmed = false);
     void Work(const std::shared_ptr<Attempt>& attempt);
     void DispatchRecovery(const std::shared_ptr<Attempt>& attempt, edge::Point target,
                           std::int64_t now_ms);
     void DispatchReturnToB(const std::shared_ptr<Attempt>& attempt);
+    [[nodiscard]] core::Result ConfirmSimulatorHold(const commands::CommandContext& context,
+                                                    const std::string& drone_id);
 
     TelemetryManager* telemetry_;
     ReportHub* reports_;

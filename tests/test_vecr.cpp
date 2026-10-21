@@ -31,8 +31,11 @@ EdgeRequest Request(Obligation obligation = Obligation::kSurvey) {
 }
 
 PositionObservation Position(double x, std::int64_t time_ms, double y = 0, bool stopped = false) {
-    return {.position = {x, y}, .monotonic_ms = time_ms, .valid = true,
-            .safe_to_navigate = true, .speed_mps = stopped ? 0.0 : 1.0,
+    return {.position = {x, y},
+            .monotonic_ms = time_ms,
+            .valid = true,
+            .safe_to_navigate = true,
+            .speed_mps = stopped ? 0.0 : 1.0,
             .horizontal_error_hard_bound_m = 0.0,
             .speed_error_hard_bound_mps = 0.0,
             .altitude_m = 10.0,
@@ -41,10 +44,15 @@ PositionObservation Position(double x, std::int64_t time_ms, double y = 0, bool 
 }
 
 CaptureEvidence Capture(double a, double b, std::int64_t time_ms, std::string id) {
-    return {.mission_id = "mission", .mission_revision = 2, .edge_id = "A-B",
-            .attempt_id = "attempt-2", .capture_id = std::move(id),
-            .calibration_id = "calibration", .monotonic_ms = time_ms,
-            .guaranteed_full_strip_interval = {a, b}, .capture_succeeded = true,
+    return {.mission_id = "mission",
+            .mission_revision = 2,
+            .edge_id = "A-B",
+            .attempt_id = "attempt-2",
+            .capture_id = std::move(id),
+            .calibration_id = "calibration",
+            .monotonic_ms = time_ms,
+            .guaranteed_full_strip_interval = {a, b},
+            .capture_succeeded = true,
             .full_strip_quality_established = true};
 }
 }  // namespace
@@ -80,6 +88,26 @@ TEST_CASE("VECR arrival does not imply surveyed terrain", "[vecr]") {
     REQUIRE(status.survey_missing.size() == 1);
     CHECK(status.survey_missing.front().begin_m == 40);
     CHECK(status.survey_missing.front().end_m == 70);
+}
+
+TEST_CASE("B2 and targeted recovery share evidence but propose different re-entry",
+          "[vecr][repair-policy]") {
+    for (const auto policy : {RepairPolicy::kTargetedGap, RepairPolicy::kFullEdgeRestart}) {
+        auto request = Request();
+        request.repair_policy = policy;
+        EdgeExecutionSupervisor supervisor(request);
+        REQUIRE(supervisor.Valid());
+        static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+        static_cast<void>(supervisor.ObserveCapture(Capture(0, 40, 1000, "a")));
+        static_cast<void>(supervisor.ObserveCapture(Capture(70, 100, 1000, "b")));
+        static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+        const auto status = supervisor.ObservePosition(Position(100, 2300, 0, true));
+        REQUIRE(status.pending_reentry);
+        CHECK(status.survey_covered_m == 70);
+        CHECK(status.survey_missing.size() == 1);
+        CHECK(status.pending_reentry->east_m ==
+              (policy == RepairPolicy::kFullEdgeRestart ? 0 : 38));
+    }
 }
 
 TEST_CASE("VECR retains accepted off-corridor survey and enforces attempt identity", "[vecr]") {
@@ -153,8 +181,7 @@ TEST_CASE("VECR recovery is bounded and failsafe wins", "[vecr]") {
     auto fail = Position(100, 5000, 0, true);
     fail.failsafe = true;
     CHECK(supervisor.ObservePosition(fail).phase == Phase::kInterrupted);
-    CHECK(supervisor.ObserveCapture(Capture(0, 100, 5000, "late")).phase ==
-          Phase::kInterrupted);
+    CHECK(supervisor.ObserveCapture(Capture(0, 100, 5000, "late")).phase == Phase::kInterrupted);
 }
 
 TEST_CASE("VECR rejects degenerate route and resolves polyline projection", "[vecr]") {
@@ -274,8 +301,7 @@ TEST_CASE("VECR does not credit a polyline traversal from endpoint samples", "[v
 TEST_CASE("VECR combined obligation requires both bounded traversal and survey", "[vecr]") {
     EdgeExecutionSupervisor supervisor(Request(Obligation::kTraversalAndSurvey));
     for (int x = 0; x <= 100; ++x) {
-        static_cast<void>(supervisor.ObservePosition(
-            Position(x, 1000 + x * 1000, 0, x == 100)));
+        static_cast<void>(supervisor.ObservePosition(Position(x, 1000 + x * 1000, 0, x == 100)));
     }
     const auto at_b = supervisor.ObservePosition(Position(100, 101300, 0, true));
     CHECK(at_b.at_b_verified);

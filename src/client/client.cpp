@@ -1678,19 +1678,21 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     report.edge_id = source.edge_id();
     report.attempt_id = source.attempt_id();
     report.drone_id = source.drone_id();
-    report.status.phase = source.phase() == swarmkit::v1::EDGE_MOVING ? edge::Phase::kMoving :
-                          source.phase() == swarmkit::v1::EDGE_RECOVERING ? edge::Phase::kRecovering :
-                          source.phase() == swarmkit::v1::EDGE_FULFILLED ? edge::Phase::kFulfilled :
-                          source.phase() == swarmkit::v1::EDGE_INTERRUPTED ? edge::Phase::kInterrupted :
-                          edge::Phase::kUnknown;
+    report.status.phase =
+        source.phase() == swarmkit::v1::EDGE_MOVING        ? edge::Phase::kMoving
+        : source.phase() == swarmkit::v1::EDGE_RECOVERING  ? edge::Phase::kRecovering
+        : source.phase() == swarmkit::v1::EDGE_FULFILLED   ? edge::Phase::kFulfilled
+        : source.phase() == swarmkit::v1::EDGE_INTERRUPTED ? edge::Phase::kInterrupted
+                                                           : edge::Phase::kUnknown;
     report.status.at_b_verified = source.at_b_verified();
     report.status.traversal_verified = source.traversal_verified();
     report.status.survey_verified = source.survey_verified();
     report.status.traversal_quality =
         source.traversal_quality() == swarmkit::v1::EDGE_EVIDENCE_BOUNDED
             ? edge::EvidenceQuality::kBounded
-            : source.traversal_quality() == swarmkit::v1::EDGE_EVIDENCE_ESTIMATED
-                  ? edge::EvidenceQuality::kEstimated : edge::EvidenceQuality::kUnknown;
+        : source.traversal_quality() == swarmkit::v1::EDGE_EVIDENCE_ESTIMATED
+            ? edge::EvidenceQuality::kEstimated
+            : edge::EvidenceQuality::kUnknown;
     report.status.survey_covered_m = source.survey_covered_m();
     report.status.survey_prefix_m = source.survey_prefix_m();
     for (const auto& missing : source.survey_missing())
@@ -1700,8 +1702,8 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     report.status.recovery_attempts = source.recovery_attempts();
     report.status.reason = source.reason();
     if (source.has_pending_reentry()) {
-        report.pending_reentry_wgs84 = edge::GeoPoint{
-            source.pending_reentry().lat_deg(), source.pending_reentry().lon_deg()};
+        report.pending_reentry_wgs84 =
+            edge::GeoPoint{source.pending_reentry().lat_deg(), source.pending_reentry().lon_deg()};
     }
     if (source.has_execution_handle())
         report.execution_handle = core::internal::ToCoreExecutionHandle(source.execution_handle());
@@ -1734,7 +1736,8 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     if (proto_report.has_goal()) {
         report.goal = ToGoalReport(proto_report.goal());
     }
-    if (proto_report.has_edge()) report.edge = ToEdgeReport(proto_report.edge());
+    if (proto_report.has_edge())
+        report.edge = ToEdgeReport(proto_report.edge());
     return report;
 }
 
@@ -2906,26 +2909,28 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
     operation->set_attempt_id(request.edge.attempt_id);
     operation->set_drone_id(request.edge.drone_id);
     for (const auto& point : request.edge.route.points) {
-        const edge::GeoPoint geo = edge::LocalToWgs84(
-            request.wgs84_origin.lat_deg, request.wgs84_origin.lon_deg, point);
+        const edge::GeoPoint geo =
+            edge::LocalToWgs84(request.wgs84_origin.lat_deg, request.wgs84_origin.lon_deg, point);
         auto* route_point = operation->add_route();
         route_point->set_lat_deg(geo.lat_deg);
         route_point->set_lon_deg(geo.lon_deg);
         route_point->set_alt_m(request.altitude_m);
     }
-    operation->set_obligation(request.edge.obligation == edge::Obligation::kArrival
-                                  ? swarmkit::v1::EDGE_ARRIVAL
-                                  : request.edge.obligation == edge::Obligation::kTraversal
-                                        ? swarmkit::v1::EDGE_TRAVERSAL
-                                        : request.edge.obligation == edge::Obligation::kSurvey
-                                              ? swarmkit::v1::EDGE_SURVEY
-                                              : swarmkit::v1::EDGE_TRAVERSAL_AND_SURVEY);
+    operation->set_obligation(
+        request.edge.obligation == edge::Obligation::kArrival     ? swarmkit::v1::EDGE_ARRIVAL
+        : request.edge.obligation == edge::Obligation::kTraversal ? swarmkit::v1::EDGE_TRAVERSAL
+        : request.edge.obligation == edge::Obligation::kSurvey
+            ? swarmkit::v1::EDGE_SURVEY
+            : swarmkit::v1::EDGE_TRAVERSAL_AND_SURVEY);
     operation->set_corridor_half_width_m(request.edge.corridor_half_width_m);
     operation->set_arrival_radius_m(request.edge.arrival_radius_m);
     operation->set_arrival_max_speed_mps(request.edge.arrival_max_speed_mps);
     operation->set_maximum_missing_m(request.edge.maximum_missing_m);
     operation->set_maximum_speed_mps(request.edge.maximum_speed_mps);
     operation->set_recovery_overlap_m(request.edge.recovery_overlap_m);
+    operation->set_repair_policy(request.edge.repair_policy == edge::RepairPolicy::kFullEdgeRestart
+                                     ? swarmkit::v1::EDGE_REPAIR_FULL_EDGE_RESTART
+                                     : swarmkit::v1::EDGE_REPAIR_TARGETED_GAP);
     operation->set_max_recovery_attempts(request.edge.max_recovery_attempts);
     operation->set_sustained_deviation_samples(request.edge.sustained_deviation_samples);
     operation->set_recovery_cooldown_ms(request.edge.recovery_cooldown_ms);
@@ -2934,8 +2939,7 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
     swarmkit::v1::ExecuteEdgeReply rep;
     int attempts = 0;
     const grpc::Status transport = InvokeUnaryWithRetry(
-        impl_->config, correlation, &attempts,
-        [this, &req, &rep](grpc::ClientContext* ctx) {
+        impl_->config, correlation, &attempts, [this, &req, &rep](grpc::ClientContext* ctx) {
             return impl_->stub->ExecuteEdge(ctx, req, &rep);
         });
     if (!transport.ok()) {
@@ -2945,15 +2949,16 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
     }
     out.ok = rep.ok();
     out.message = rep.message();
-    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.message(),
-                       correlation, attempts);
-    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
-    if (rep.has_backend_outcome()) out.backend_outcome = ToCoreBackendOutcome(rep.backend_outcome());
+    PopulateReplyError(&out.error, rep.error_code(), rep.message(), rep.message(), correlation,
+                       attempts);
+    if (rep.has_status())
+        out.status = ToEdgeReport(rep.status());
+    if (rep.has_backend_outcome())
+        out.backend_outcome = ToCoreBackendOutcome(rep.backend_outcome());
     return out;
 }
 
-EdgeResult Client::GetEdgeStatus(const std::string& drone_id,
-                                 const std::string& attempt_id) const {
+EdgeResult Client::GetEdgeStatus(const std::string& drone_id, const std::string& attempt_id) const {
     EdgeResult out;
     const std::string correlation = MakeCorrelationId("edge-status");
     swarmkit::v1::GetEdgeStatusRequest req;
@@ -2962,8 +2967,7 @@ EdgeResult Client::GetEdgeStatus(const std::string& drone_id,
     swarmkit::v1::GetEdgeStatusReply rep;
     int attempts = 0;
     const grpc::Status transport = InvokeUnaryWithRetry(
-        impl_->config, correlation, &attempts,
-        [this, &req, &rep](grpc::ClientContext* ctx) {
+        impl_->config, correlation, &attempts, [this, &req, &rep](grpc::ClientContext* ctx) {
             return impl_->stub->GetEdgeStatus(ctx, req, &rep);
         });
     if (!transport.ok()) {
@@ -2973,7 +2977,8 @@ EdgeResult Client::GetEdgeStatus(const std::string& drone_id,
     }
     out.ok = rep.found();
     out.message = out.ok ? "edge status found" : "edge attempt not found";
-    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
+    if (rep.has_status())
+        out.status = ToEdgeReport(rep.status());
     return out;
 }
 
@@ -3005,8 +3010,7 @@ EdgeResult Client::SubmitEdgeCapture(const std::string& drone_id,
     swarmkit::v1::SubmitEdgeCaptureReply rep;
     int attempts = 0;
     const grpc::Status transport = InvokeUnaryWithRetry(
-        impl_->config, correlation, &attempts,
-        [this, &req, &rep](grpc::ClientContext* ctx) {
+        impl_->config, correlation, &attempts, [this, &req, &rep](grpc::ClientContext* ctx) {
             return impl_->stub->SubmitEdgeCapture(ctx, req, &rep);
         });
     if (!transport.ok()) {
@@ -3016,7 +3020,8 @@ EdgeResult Client::SubmitEdgeCapture(const std::string& drone_id,
     }
     out.ok = rep.accepted();
     out.message = rep.message();
-    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
+    if (rep.has_status())
+        out.status = ToEdgeReport(rep.status());
     return out;
 }
 
@@ -3033,8 +3038,7 @@ EdgeResult Client::CancelEdge(const core::ExecutionHandle& expected) const {
     swarmkit::v1::CancelEdgeReply rep;
     int attempts = 0;
     const grpc::Status transport = InvokeUnaryWithRetry(
-        impl_->config, correlation, &attempts,
-        [this, &req, &rep](grpc::ClientContext* ctx) {
+        impl_->config, correlation, &attempts, [this, &req, &rep](grpc::ClientContext* ctx) {
             return impl_->stub->CancelEdge(ctx, req, &rep);
         });
     if (!transport.ok()) {
@@ -3044,7 +3048,8 @@ EdgeResult Client::CancelEdge(const core::ExecutionHandle& expected) const {
     }
     out.ok = rep.cancelled();
     out.message = rep.message();
-    if (rep.has_status()) out.status = ToEdgeReport(rep.status());
+    if (rep.has_status())
+        out.status = ToEdgeReport(rep.status());
     return out;
 }
 

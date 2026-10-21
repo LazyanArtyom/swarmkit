@@ -20,6 +20,10 @@ add_executable(swarmkit_tests
     test_telemetry_manager.cpp
     test_telemetry_sink.cpp
     test_vecr.cpp
+    test_vecr_truth_oracle.cpp
+    test_vecr_agent_trial.cpp
+    vecr_agent_trial.cpp
+    vecr_truth_oracle.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../apps/cli/telemetry_sink.cpp
 )
 
@@ -44,3 +48,16 @@ swarmkit_set_warnings(swarmkit_tests)
 swarmkit_enable_sanitizers(swarmkit_tests)
 
 add_test(NAME swarmkit_tests COMMAND swarmkit_tests)
+
+add_executable(swarmkit_vecr_agent_trial
+    vecr_agent_trial_main.cpp
+    vecr_agent_trial.cpp
+    vecr_truth_oracle.cpp
+)
+target_link_libraries(swarmkit_vecr_agent_trial PRIVATE
+    swarmkit_agent
+    swarmkit_evidence
+    swarmkit_client
+)
+swarmkit_set_warnings(swarmkit_vecr_agent_trial)
+swarmkit_enable_sanitizers(swarmkit_vecr_agent_trial)

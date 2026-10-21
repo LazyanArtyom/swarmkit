@@ -41,13 +41,19 @@ SimBackend attempts and independent simulator truth. This is not an ArduPilot
 SITL or real camera validation. Prior state-acceptance research was archived
 under [docs/vecr/archive](docs/vecr/archive) and removed from the active SDK.
 
+The [v4 simulator protocol](docs/vecr/SIMULATION_PROTOCOL_V4.md) defines a
+paired agent-backed comparison of targeted-gap VECR and coverage-aware
+full-edge restart, with private ground truth and a 21-case capability
+inventory. Results and exact run status are under
+[agent campaign v4](results/vecr/agent_campaign_v4/README.md).
+
 Example (already armed and in a safe guided simulation state):
 
 ```bash
 ./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge execute \
   --drone drone-1 --mission-id demo --revision 1 --edge-id A-B --attempt-id try-1 \
   --from-lat 40.0000 --from-lon 44.0000 --to-lat 40.0000 --to-lon 44.0010 \
-  --alt 10 --speed 2 --obligation survey
+  --alt 10 --speed 2 --obligation survey --repair-policy targeted-gap
 ./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge status \
   --drone drone-1 --attempt-id try-1
 ./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge watch \

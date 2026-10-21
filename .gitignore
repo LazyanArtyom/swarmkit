@@ -34,6 +34,8 @@ graph_info.json
 
 # Python virtual environments
 .venv/
+__pycache__/
+*.pyc
 
 # ---- IDE / Editor ----
 .idea/
