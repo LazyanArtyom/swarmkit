@@ -462,19 +462,25 @@ def analyze(output):
                                 for r in raw) for phase in phases]) for arm in ("B2", "P")],
              "Assigned attempts")
     first_seed = manifest["seeds"][0]
-    traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S04-{first_seed:03d}-{arm}.csv")
-              for arm in ("B2", "P")}
-    gap_row = by_key["S04", str(manifest["seeds"][0]), "P"]
-    gap = float(gap_row["gap_begin_m"]), float(gap_row["gap_end_m"])
-    trajectory_figure(output / "figures/trajectory_good_bad.svg", traces,
-                      "S04 physical paths under paired camera outage", "trajectory", gap)
-    trajectory_figure(output / "figures/coverage_timeline.svg", traces,
-                      "S04 independent true camera coverage through repair", "coverage")
-    detour_traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S03-{first_seed:03d}-{arm}.csv")
-                     for arm in ("B2", "P")}
-    detour_row = by_key["S03", str(manifest["seeds"][0]), "P"]
-    detour_map_figure(output / "figures/trajectory_detour.svg", detour_traces,
-                      (float(detour_row["gap_begin_m"]), float(detour_row["gap_end_m"])))
+    trace_paths = {
+        (sid, arm): output / "raw/traces" /
+        f"v4-{manifest['mode']}-{sid}-{first_seed:03d}-{arm}.csv"
+        for sid in ("S03", "S04") for arm in ("B2", "P")}
+    has_trace_figures = all(path.is_file() for path in trace_paths.values())
+    if manifest["mode"] == "full" and not has_trace_figures:
+        raise ValueError("full campaign is missing required example traces")
+    if has_trace_figures:
+        traces = {arm: rows(trace_paths["S04", arm]) for arm in ("B2", "P")}
+        gap_row = by_key["S04", str(first_seed), "P"]
+        gap = float(gap_row["gap_begin_m"]), float(gap_row["gap_end_m"])
+        trajectory_figure(output / "figures/trajectory_good_bad.svg", traces,
+                          "S04 physical paths under paired camera outage", "trajectory", gap)
+        trajectory_figure(output / "figures/coverage_timeline.svg", traces,
+                          "S04 independent true camera coverage through repair", "coverage")
+        detour_traces = {arm: rows(trace_paths["S03", arm]) for arm in ("B2", "P")}
+        detour_row = by_key["S03", str(first_seed), "P"]
+        detour_map_figure(output / "figures/trajectory_detour.svg", detour_traces,
+                          (float(detour_row["gap_begin_m"]), float(detour_row["gap_end_m"])))
     lines = ["# Agent-backed VECR simulator results", "",
              "## Experimental goal", "",
              "Evaluate truthfulness and recovery cost for a directed A→B surveying obligation.",
@@ -570,7 +576,11 @@ def analyze(output):
         "max_recovery_attempts": 1}
     manifest["analysis_correction"] = (
         "Post-raw correctness correction: macro true completion requires both private "
-        "survey and arrival; held-out trace seed comes from the manifest. Raw data unchanged.")
+        "survey and arrival; held-out statistics do not invent absent trajectory traces. "
+        "Raw data unchanged.")
+    manifest["trace_figures_status"] = (
+        "generated from saved traces" if has_trace_figures else
+        "not generated: no saved example traces for these seeds")
     manifest["artifact_sha256"] = artifact_hashes
     manifest["validation"] = {"expected_attempts": len(expected_keys),
                               "observed_attempts": len(raw), "paired_rows_valid": True,

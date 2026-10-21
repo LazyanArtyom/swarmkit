@@ -36,6 +36,15 @@ def main(output):
     expected_paths = set(manifest["artifact_sha256"])
     if actual_paths != expected_paths:
         raise ValueError(f"artifact set differs: missing={expected_paths-actual_paths} extra={actual_paths-expected_paths}")
+    if manifest["mode"] == "full":
+        required_figures = {
+            "figures/trajectory_good_bad.svg", "figures/trajectory_detour.svg",
+            "figures/coverage_timeline.svg", "figures/distance_by_scenario.svg",
+            "figures/time_by_scenario.svg",
+            "figures/false_completion_and_availability.svg",
+            "figures/failure_modes.svg"}
+        if not required_figures <= expected_paths:
+            raise ValueError("full campaign is missing required figures")
     for relative, expected_hash in manifest["artifact_sha256"].items():
         if digest(output / relative) != expected_hash:
             raise ValueError(f"artifact hash mismatch: {relative}")

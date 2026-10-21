@@ -15,14 +15,16 @@ distance, time, reported-completion and false-completion calculations are
 unchanged. The validator now recomputes all five paired point estimates from
 raw B2/P rows, including the macro result.
 
-The figure generator also assumed that the first saved trace had seed 1. It
-now uses the first seed listed in each manifest, allowing the separately
-collected 101–103 sensitivity run to be analyzed without relabeling or
-mixing it with the 1–100 confirmatory run. The scenario inventory records
-executed and realized-fault counts. The failure chart explicitly shows zero
-paired cancellation and safety counts; the S12 safety intervention remains a
-separate diagnostic. Source-file and dependency-manifest hashes are added to
-the final verification manifest.
+The first held-out analysis attempt exposed that the runner saves detailed
+traces only for seeds 1–3. The separately collected 101–103 sensitivity run
+therefore has attempt/event rows but no trajectory traces. The analyzer now
+omits trajectory figures for that sensitivity output, records why in its
+manifest, and requires the full 1–100 campaign to contain all example traces
+and figures. No trajectory is inferred or substituted. The scenario inventory
+records executed and realized-fault counts. The failure chart explicitly
+shows zero paired cancellation and safety counts; the S12 safety intervention
+remains a separate diagnostic. Source-file and dependency-manifest hashes are
+added to the final verification manifest.
 
 The trial harness sets `sustained_deviation_samples` to 1,000 for both arms.
 This isolates recovery strategy after a missing survey is found at B, and
