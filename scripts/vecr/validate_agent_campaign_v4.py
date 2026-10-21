@@ -5,6 +5,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import pathlib
 
 
@@ -57,6 +58,25 @@ def main(output):
            int(method["false_complete_n"]) != sum(row["false_complete"] == "1"
                                                    for row in subset):
             raise ValueError("summary denominator/count mismatch")
+    comparisons = list(csv.DictReader((output / "tables/paired_comparisons.csv").open(newline="")))
+    if {row["scenario_id"] for row in comparisons} != set(cases) | {"ALL_MACRO"}:
+        raise ValueError("scenario or macro paired comparison missing")
+    by_key = {(row["scenario_id"], row["seed"], row["policy"]): row for row in rows}
+    for comparison in comparisons:
+        sid = comparison["scenario_id"]
+        if int(comparison["paired_seeds_n"]) != len(manifest["seeds"]):
+            raise ValueError("paired seed denominator mismatch")
+        delta_by_seed = []
+        for seed in manifest["seeds"]:
+            scenario_ids = cases if sid == "ALL_MACRO" else [sid]
+            deltas = [float(by_key[case, str(seed), "P"]["physical_distance_m"]) -
+                      float(by_key[case, str(seed), "B2"]["physical_distance_m"])
+                      for case in scenario_ids]
+            delta_by_seed.append(sum(deltas) / len(deltas))
+        measured = sum(delta_by_seed) / len(delta_by_seed)
+        if not math.isclose(measured, float(comparison["delta_distance_m_mean"]),
+                            rel_tol=1e-10, abs_tol=1e-10):
+            raise ValueError("paired distance arithmetic mismatch")
     print(f"VALID: {len(rows)} paired-assignment rows and {len(expected_paths)} SHA-256 artifacts")
 
 

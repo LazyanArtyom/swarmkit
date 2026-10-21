@@ -282,7 +282,14 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
         const std::int64_t elapsed_ms = truth->simulation_time_ms - trial_start_ms;
         const bool in_gap =
             truth->east_m >= config.gap_begin_m && truth->east_m <= config.gap_end_m;
-        const bool transient_gap = in_gap && elapsed_ms <= 12'000;
+        // Suppress a capture whenever its footprint would overlap the scripted
+        // missing strip. Suppressing only captures centered inside the strip
+        // can leave complete coverage for some capture phases, so a later
+        // recovery-only fault would never be exercised.
+        const bool footprint_overlaps_gap =
+            truth->east_m + config.camera_along_half_m >= config.gap_begin_m &&
+            truth->east_m - config.camera_along_half_m <= config.gap_end_m;
+        const bool transient_gap = footprint_overlaps_gap && elapsed_ms <= 12'000;
         bool actual_image = !truth->failed;
         bool metadata_sent = true;
         if ((config.fault == TrialFault::kTransientCameraGap ||
@@ -299,17 +306,19 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
         if (config.fault == TrialFault::kDetectableBadMetadata && transient_gap)
             actual_image = false;
         const bool realized =
-            in_gap && (((config.fault == TrialFault::kTransientCameraGap ||
+            tick % config.capture_period_ticks == 0 &&
+            (((config.fault == TrialFault::kTransientCameraGap ||
                          config.fault == TrialFault::kMotorFailureOnRepair ||
                          config.fault == TrialFault::kRecoveryCommandRejected) &&
                         transient_gap) ||
-                       config.fault == TrialFault::kPersistentCameraGap ||
+                       (config.fault == TrialFault::kPersistentCameraGap && in_gap) ||
                        (config.fault == TrialFault::kMetadataDrop && transient_gap) ||
-                       config.fault == TrialFault::kDishonestCamera ||
+                       (config.fault == TrialFault::kDishonestCamera && in_gap) ||
                        (config.fault == TrialFault::kDetectableBadMetadata && transient_gap));
         if (realized && !gap_fault_recorded) {
             gap_fault_recorded = true;
-            if (config.fault != TrialFault::kMotorFailureOnRepair)
+            if (config.fault != TrialFault::kMotorFailureOnRepair &&
+                config.fault != TrialFault::kRecoveryCommandRejected)
                 result.requested_fault_realized = true;
             result.events.push_back({.tick = tick,
                                      .simulation_time_ms = elapsed_ms,

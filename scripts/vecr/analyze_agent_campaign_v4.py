@@ -233,6 +233,25 @@ def analyze(output):
             diffs[f"delta_{key}_ci_low"] = low
             diffs[f"delta_{key}_ci_high"] = high
         paired.append({"scenario_id": sid, "paired_seeds_n": len(pairs), **diffs})
+    scenario_paired = list(paired)
+    macro_diffs = {}
+    for key, parser in (("distance_m", lambda r: float(r["physical_distance_m"])),
+                        ("time_s", lambda r: float(r["elapsed_simulation_ms"]) / 1000),
+                        ("true_complete", lambda r: float(r["truth_survey_complete"])),
+                        ("reported_complete", lambda r: float(r["reported_phase"] == "FULFILLED")),
+                        ("false_complete", lambda r: float(r["false_complete"]))):
+        # The scenario set is fixed. Resample independent seed clusters, not
+        # individual scenario attempts, for the average scenario effect.
+        values = [mean(parser(by_key[case["id"], str(seed), "P"]) -
+                       parser(by_key[case["id"], str(seed), "B2"])
+                       for case in expected) for seed in manifest["seeds"]]
+        low, high = paired_ci(values, nboot,
+                              config["bootstrap_seed"] + sum(map(ord, "ALL_MACRO" + key)))
+        macro_diffs[f"delta_{key}_mean"] = mean(values)
+        macro_diffs[f"delta_{key}_ci_low"] = low
+        macro_diffs[f"delta_{key}_ci_high"] = high
+    paired.append({"scenario_id": "ALL_MACRO", "paired_seeds_n": len(manifest["seeds"]),
+                   **macro_diffs})
     for arm in ("B2", "P"):
         subset = [r for r in raw if r["policy"] == arm]
         distance = [float(r["physical_distance_m"]) for r in subset]
@@ -332,19 +351,22 @@ def analyze(output):
              "", "## Scenarios", "",
              f"{len(expected)} comparative cases × {len(manifest['seeds'])} seeds × 2 policies = {len(raw)} actual agent-backed attempts. S13, S14 and S17 remain unsupported; other noncomparative cases are excluded from these statistics.",
              "", "## Ground-truth design", "",
-             "Private simulator poses and actual camera acquisition feed a separate 0.25 m raster oracle. The agent receives normalized telemetry and adapter metadata only.",
+             "Private simulator poses and actual camera acquisition feed a separate 0.25 m along-edge cell oracle. A cell counts only when the modeled camera footprint spans the full required strip width. This is not a two-dimensional terrain-image oracle. The agent receives normalized telemetry and adapter metadata only.",
              "", "## Metrics", "",
              "Distance integrates true 20 ms physical steps. Time is simulated mission-clock duration. False completion is FULFILLED with at least one required truth cell missing. All assigned trials stay in denominators.",
              "", "## Results (actual values with uncertainty)", "",
              "| Scenario | n pairs | B2 true/reported/false | P true/reported/false | B2 mean m | P mean m | Δ P−B2 m (95% paired CI) | Δ time s (95% paired CI) |",
              "|---|---:|---|---|---:|---:|---|---|"]
-    for comparison in paired:
+    for comparison in scenario_paired:
         sid = comparison["scenario_id"]
         b = next(r for r in methods if r["scenario_id"] == sid and r["policy"] == "B2")
         p = next(r for r in methods if r["scenario_id"] == sid and r["policy"] == "P")
         counts = lambda r: f"{r['true_complete_n']}/{r['reported_complete_n']}/{r['false_complete_n']}"
         lines.append(f"| {sid} | {comparison['paired_seeds_n']} | {counts(b)} | {counts(p)} | {fmt(b['distance_mean_m'])} | {fmt(p['distance_mean_m'])} | {fmt(comparison['delta_distance_m_mean'])} [{fmt(comparison['delta_distance_m_ci_low'])}, {fmt(comparison['delta_distance_m_ci_high'])}] | {fmt(comparison['delta_time_s_mean'])} [{fmt(comparison['delta_time_s_ci_low'])}, {fmt(comparison['delta_time_s_ci_high'])}] |")
+    b2_all = next(r for r in methods if r["scenario_id"] == "ALL_DESCRIPTIVE" and r["policy"] == "B2")
+    relative_saving = -macro_diffs["delta_distance_m_mean"] / b2_all["distance_mean_m"]
     lines += ["", "Each true/reported/false entry is a count of assigned attempts, not a conditional success-only mean. Wilson intervals and additional distributions are in `tables/methods_summary.csv`; all paired effect intervals are in `tables/paired_comparisons.csv`.",
+              f"Across the fixed 12-scenario set, the descriptive macro mean P−B2 distance is {fmt(macro_diffs['delta_distance_m_mean'])} m (95% seed-cluster bootstrap [{fmt(macro_diffs['delta_distance_m_ci_low'])}, {fmt(macro_diffs['delta_distance_m_ci_high'])}]); the corresponding relative travel saving is {fmt(100 * relative_saving)}% of B2 mean assigned-task distance. This includes failed tasks and is not a recovery-efficiency claim where completion differs.",
               "", "### Separate noncomparative diagnostics", "",
               "| Scenario | Variant | Reported | True survey | False complete | Fault realized |",
               "|---|---|---|---|---|---|"]
@@ -354,7 +376,7 @@ def analyze(output):
               "", "## Tradeoffs/negative results", "",
               "Shorter travel on failed or interrupted tasks is not a recovery benefit. Compare completion counts before interpreting a negative distance difference. Persistent faults can cause both policies to fail. A plausible dishonest camera can create false fulfillment, outside honest-adapter assumptions.",
               "", "## Threats to validity", "",
-              "The simulator has simplified horizontal acceleration, instant modeled camera acquisition, perfect base telemetry and no terrain occlusion. Location-tied interventions may have policy-dependent realized duration. Scenario seeds vary preregistered gap position/length and wind strength but do not sample a full field distribution. S15 recreates AgentService in one host process with a surviving simulator; an OS process power loss was not tested. No electrical energy or CPU/RSS benchmark is reported.",
+              "The simulator has simplified horizontal acceleration, instant modeled camera acquisition, a one-dimensional full-strip coverage oracle, perfect base telemetry and no terrain occlusion. Location-tied interventions may have policy-dependent realized duration. Scenario seeds vary preregistered gap position/length and wind strength but do not sample a full field distribution. S15 recreates AgentService in one host process with a surviving simulator; an OS process power loss was not tested. No electrical energy or CPU/RSS benchmark is reported.",
               "", "## Reproducibility", "",
               f"Source revision `{manifest['source_revision']}`; binary SHA-256 `{manifest['binary_sha256']}`; config SHA-256 `{manifest['config_id_sha256']}`. See manifest for host, commands and artifact hashes.",
               "", "## What is not demonstrated", "",

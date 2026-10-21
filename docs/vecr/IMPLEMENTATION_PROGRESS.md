@@ -1,5 +1,14 @@
 # VECR implementation status — 2026-10-21
 
+The first v4.0 full campaign stopped after 2,018 completed attempts when
+S16 seed 10 did not enter recovery and its scheduled motor failure did not
+occur. The partial output is preserved with `INCOMPLETE` status. V4.1 changes
+the synthetic camera-gap trigger to suppress scheduled captures whose true
+footprints overlap the missing strip; fault realization now requires an
+affected capture, actual motor failure or actual command rejection. All 100
+S16 and S19 seeds were preflighted under both policies before the v4.1 final
+run. See `SIMULATION_PROTOCOL_V4_1.md`.
+
 V4 adds a shared agent-side repair policy: targeted-gap VECR or coverage-aware
 full-edge restart B2. Both use the same verification state, sensor evidence,
 arrival and safety contracts; only the repair re-entry point changes. The
