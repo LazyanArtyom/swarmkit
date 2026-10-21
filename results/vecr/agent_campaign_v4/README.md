@@ -1,4 +1,4 @@
-# Agent-backed VECR simulator campaign v4.1
+# Agent-backed VECR simulator campaign v4.2
 
 This directory contains a preregistered B2 full-edge-restart versus P
 targeted-gap comparison. Both policies execute through the same SDK, TLS
@@ -6,30 +6,31 @@ AgentService, edge runtime and SimBackend. Truth is scored privately from
 physical simulation frames and actual synthetic-camera acquisition. These
 are simulator measurements only, not ArduPilot SITL or real camera data.
 
-The original v4.0 campaign stopped at S16 seed 10 because its scripted motor
-failure never fired; `partial_aborted_s16_010/` preserves all 2,018 completed
-rows and the failing trial. See
-`docs/vecr/SIMULATION_PROTOCOL_V4_1.md` for the correction. V4.0 rows are
-excluded from v4.1 statistics.
+The v4.0 campaign stopped at S16 seed 10 because its scripted motor failure
+never fired; `partial_aborted_s16_010/` preserves all 2,018 counted rows and
+the failing trial. V4.1 stopped after 1,452 rows when S06 did not cross the
+required corridor boundary; `partial_aborted_s06_fidelity_v4_1/` preserves
+that attempt set. Both are marked `INCOMPLETE` and excluded from v4.2
+statistics. The protocol addenda in `docs/vecr/` explain each correction.
 
-Build `swarmkit_vecr_agent_trial`, then run the v4.1 smoke and full campaigns:
+Build `swarmkit_vecr_agent_trial`, then run the v4.2 smoke and full campaigns:
 
 ```bash
 cmake --build --preset mac-release --target swarmkit_vecr_agent_trial
 python3 scripts/vecr/run_agent_campaign_v4.py \
-  --config results/vecr/agent_campaign_v4/config/protocol_v4_1.json \
+  --config results/vecr/agent_campaign_v4/config/protocol_v4_2.json \
   --mode smoke --seeds 1:3 \
-  --output results/vecr/agent_campaign_v4/smoke_v4_1
+  --output results/vecr/agent_campaign_v4/smoke_protocol_v4_2
 python3 scripts/vecr/run_agent_campaign_v4.py \
-  --config results/vecr/agent_campaign_v4/config/protocol_v4_1.json \
+  --config results/vecr/agent_campaign_v4/config/protocol_v4_2.json \
   --mode full --seeds 1:100 \
-  --output results/vecr/agent_campaign_v4/final_v4_1
+  --output results/vecr/agent_campaign_v4/final_v4_2
 python3 scripts/vecr/run_agent_diagnostics_v4.py \
-  --campaign results/vecr/agent_campaign_v4/final_v4_1
+  --campaign results/vecr/agent_campaign_v4/final_v4_2
 python3 scripts/vecr/analyze_agent_campaign_v4.py \
-  --output results/vecr/agent_campaign_v4/final_v4_1
+  --output results/vecr/agent_campaign_v4/final_v4_2
 python3 scripts/vecr/validate_agent_campaign_v4.py \
-  --output results/vecr/agent_campaign_v4/final_v4_1
+  --output results/vecr/agent_campaign_v4/final_v4_2
 ```
 
 The runner refuses to overwrite any output directory. Full mode requires

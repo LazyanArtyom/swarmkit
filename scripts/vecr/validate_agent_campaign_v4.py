@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import pathlib
+import subprocess
 
 
 def digest(path):
@@ -18,6 +19,11 @@ def main(output):
     config = json.loads((output / "protocol.json").read_text())
     if manifest["study_status"] != "ANALYZED":
         raise ValueError("campaign was not fully analyzed")
+    if manifest["mode"] == "full" and "analysis_code_sha256" in manifest:
+        source = subprocess.check_output(
+            ["git", "show", f"{manifest['analysis_revision']}:scripts/vecr/analyze_agent_campaign_v4.py"])
+        if hashlib.sha256(source).hexdigest() != manifest["analysis_code_sha256"]:
+            raise ValueError("analysis code hash/revision mismatch")
     if digest(output / "protocol.json") != manifest["config_id_sha256"]:
         raise ValueError("protocol hash mismatch")
     actual_paths = {str(path.relative_to(output)) for path in output.rglob("*")
@@ -58,6 +64,19 @@ def main(output):
            int(method["false_complete_n"]) != sum(row["false_complete"] == "1"
                                                    for row in subset):
             raise ValueError("summary denominator/count mismatch")
+        true_edge = lambda row: (row["truth_survey_complete"] == "1" and
+                                 row["truth_at_b"] == "1")
+        if "true_survey_n" in method:
+            if int(method["true_survey_n"]) != sum(row["truth_survey_complete"] == "1"
+                                                    for row in subset) or \
+               int(method["true_complete_n"]) != sum(true_edge(row) for row in subset) or \
+               int(method["true_positive_n"]) != sum(true_edge(row) and
+                                                      row["reported_phase"] == "FULFILLED"
+                                                      for row in subset) or \
+               int(method["false_edge_complete_n"]) != sum(
+                   row["reported_phase"] == "FULFILLED" and not true_edge(row)
+                   for row in subset):
+                raise ValueError("independent truth/edge-completion arithmetic mismatch")
     comparisons = list(csv.DictReader((output / "tables/paired_comparisons.csv").open(newline="")))
     if {row["scenario_id"] for row in comparisons} != set(cases) | {"ALL_MACRO"}:
         raise ValueError("scenario or macro paired comparison missing")

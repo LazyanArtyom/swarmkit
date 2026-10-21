@@ -308,13 +308,13 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
         const bool realized =
             tick % config.capture_period_ticks == 0 &&
             (((config.fault == TrialFault::kTransientCameraGap ||
-                         config.fault == TrialFault::kMotorFailureOnRepair ||
-                         config.fault == TrialFault::kRecoveryCommandRejected) &&
-                        transient_gap) ||
-                       (config.fault == TrialFault::kPersistentCameraGap && in_gap) ||
-                       (config.fault == TrialFault::kMetadataDrop && transient_gap) ||
-                       (config.fault == TrialFault::kDishonestCamera && in_gap) ||
-                       (config.fault == TrialFault::kDetectableBadMetadata && transient_gap));
+               config.fault == TrialFault::kMotorFailureOnRepair ||
+               config.fault == TrialFault::kRecoveryCommandRejected) &&
+              transient_gap) ||
+             (config.fault == TrialFault::kPersistentCameraGap && in_gap) ||
+             (config.fault == TrialFault::kMetadataDrop && transient_gap) ||
+             (config.fault == TrialFault::kDishonestCamera && in_gap) ||
+             (config.fault == TrialFault::kDetectableBadMetadata && transient_gap));
         if (realized && !gap_fault_recorded) {
             gap_fault_recorded = true;
             if (config.fault != TrialFault::kMotorFailureOnRepair &&
@@ -345,10 +345,7 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
         bool accepted = false;
         if (tick % config.capture_period_ticks == 0) {
             captured = actual_image;
-            const double cross_half = config.fault == TrialFault::kOffcenterWideCamera ? 14.0
-                                      : config.fault == TrialFault::kDetourWind
-                                          ? 5.0
-                                          : config.camera_cross_half_m;
+            const double cross_half = config.camera_cross_half_m;
             oracle->ObserveActualCapture(*truth, actual_image, config.camera_along_half_m,
                                          cross_half);
             if (actual_image)

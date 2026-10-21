@@ -4,8 +4,10 @@
 
 #include "vecr_agent_trial.h"
 
-TEST_CASE("B2 and VECR execute the same camera-gap trial through agent and SimBackend",
-          "[vecr][agent-campaign]") {
+TEST_CASE(
+    "B2 and VECR execute the same camera-gap trial through agent and "
+    "SimBackend",
+    "[vecr][agent-campaign]") {
     swarmkit::testsupport::VecrTrialConfig config;
     config.scenario_id = "S04";
     config.seed = 1;
@@ -76,7 +78,7 @@ TEST_CASE("Persistent motor failure interrupts both agent-backed recovery polici
             config.policy = policy;
             const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
             INFO("seed=" << seed << " policy=" << static_cast<int>(policy)
-                          << " phase=" << static_cast<int>(observed.reported_phase));
+                         << " phase=" << static_cast<int>(observed.reported_phase));
             CHECK(observed.requested_fault_realized);
             CHECK(observed.recovery_attempts == 1);
             CHECK(observed.reported_phase == swarmkit::edge::Phase::kInterrupted);
@@ -104,8 +106,10 @@ TEST_CASE("Rejected recovery command is a realized failure for both policies",
     }
 }
 
-TEST_CASE("Physical detour and wide off-center sensing have different survey outcomes",
-          "[vecr][agent-campaign]") {
+TEST_CASE(
+    "Physical detour and wide off-center sensing have different survey "
+    "outcomes",
+    "[vecr][agent-campaign]") {
     swarmkit::testsupport::VecrTrialConfig config;
     config.seed = 1;
     config.gap_begin_m = 6;
@@ -113,6 +117,7 @@ TEST_CASE("Physical detour and wide off-center sensing have different survey out
     config.wind_north_mps = 2;
     config.scenario_id = "S03";
     config.fault = swarmkit::testsupport::TrialFault::kDetourWind;
+    config.camera_cross_half_m = 5;
     const auto detour = swarmkit::testsupport::RunVecrAgentTrial(config);
     CHECK(detour.requested_fault_realized);
     CHECK(detour.max_truth_cross_track_m > 4);
@@ -120,9 +125,31 @@ TEST_CASE("Physical detour and wide off-center sensing have different survey out
     CHECK(detour.truth_survey_complete);
     config.scenario_id = "S06";
     config.fault = swarmkit::testsupport::TrialFault::kOffcenterWideCamera;
+    config.camera_cross_half_m = 14;
     const auto wide = swarmkit::testsupport::RunVecrAgentTrial(config);
     CHECK(wide.requested_fault_realized);
     CHECK(wide.max_truth_cross_track_m > 4);
     CHECK(wide.recovery_attempts == 0);
     CHECK(wide.truth_survey_complete);
+}
+
+TEST_CASE("S06 short wind zone crosses the corridor while wide sensing covers it",
+          "[vecr][agent-campaign]") {
+    swarmkit::testsupport::VecrTrialConfig config;
+    config.scenario_id = "S06";
+    config.seed = 1;
+    config.fault = swarmkit::testsupport::TrialFault::kOffcenterWideCamera;
+    config.gap_begin_m = 8.262826256419121;
+    config.gap_end_m = 12.158663513898638;
+    config.wind_north_mps = 2.9506691517960726;
+    config.camera_cross_half_m = 14;
+    for (const auto policy : {swarmkit::edge::RepairPolicy::kTargetedGap,
+                              swarmkit::edge::RepairPolicy::kFullEdgeRestart}) {
+        config.policy = policy;
+        const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
+        CHECK(observed.requested_fault_realized);
+        CHECK(observed.max_truth_cross_track_m > 4);
+        CHECK(observed.truth_survey_complete);
+        CHECK(observed.reported_phase == swarmkit::edge::Phase::kFulfilled);
+    }
 }

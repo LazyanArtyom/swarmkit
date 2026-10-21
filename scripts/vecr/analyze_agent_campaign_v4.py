@@ -10,6 +10,7 @@ import math
 import pathlib
 import random
 import statistics
+import subprocess
 
 
 def rows(path):
@@ -62,6 +63,10 @@ def fmt(value):
     return "NA" if value is None or (isinstance(value, float) and not math.isfinite(value)) else f"{value:.3f}"
 
 
+def truth_edge(row):
+    return row["truth_survey_complete"] == "1" and row["truth_at_b"] == "1"
+
+
 def xml(value):
     return (str(value).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
@@ -71,7 +76,9 @@ def svg_bars(path, title, labels, series, ylabel, ymax=None, error_bars=None):
     colors = ["#2468b4", "#d27b28", "#7c58a4", "#b54444"]
     width, height = 1020, 500
     all_values = [value for _, values in series for value in values if math.isfinite(value)]
-    maximum = max(all_values + [1]) if ymax is None else ymax
+    error_highs = ([high for arm in error_bars for _, high in arm]
+                   if error_bars else [])
+    maximum = max(all_values + error_highs + [1]) * 1.08 if ymax is None else ymax
     chart_left, chart_top, chart_bottom = 92, 68, 414
     step = (width - chart_left - 30) / max(1, len(labels))
     elements = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
@@ -109,38 +116,100 @@ def svg_bars(path, title, labels, series, ylabel, ymax=None, error_bars=None):
 
 def trajectory_figure(path, traces, title, mode, gap=None):
     colors = {"B2": "#2468b4", "P": "#d27b28"}
-    elements = ['<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="400" viewBox="0 0 1000 400">',
-                '<rect width="100%" height="100%" fill="white"/>',
-                f'<text x="40" y="32" font-size="20" font-family="sans-serif">{xml(title)}</text>']
+    left, right, top, bottom = 86, 940, 72, 320
+    max_time = max(float(row["simulation_time_ms"]) / 1000
+                   for data in traces.values() for row in data)
+    time_to_x = lambda seconds: left + (right - left) * seconds / max_time
     if mode == "trajectory":
-        elements += ['<rect x="70" y="110" width="840" height="160" fill="#e3f0e7" stroke="#7b9d82"/>',
-                     '<text x="72" y="290" font-size="12" font-family="sans-serif">Required corridor ±4 m; A=0 m, B=20 m</text>']
-        if gap:
-            left, right = gap
-            elements.append(f'<rect x="{70+42*left:.1f}" y="110" width="{42*(right-left):.1f}" height="160" fill="#f4d5d0" fill-opacity=".65"/>')
-            elements.append(f'<text x="{70+42*left:.1f}" y="98" font-size="12" font-family="sans-serif">Initial camera outage</text>')
+        y_max = 20.0
+        y_of = lambda row: float(row["truth_east_m"])
+        ylabel = "True along-edge position (m)"
     else:
-        elements.append('<text x="70" y="345" font-size="12" font-family="sans-serif">Time in simulated seconds; solid=private truth cells, dashed=agent-reported coverage converted to 0.25 m cells</text>')
+        y_max = max(float(row["truth_covered_cells"])
+                    for data in traces.values() for row in data)
+        y_of = lambda row: float(row["truth_covered_cells"])
+        ylabel = "Covered 0.25 m cells"
+    value_to_y = lambda value: bottom - (bottom - top) * value / y_max
+    elements = ['<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="440" viewBox="0 0 1000 440">',
+                '<rect width="100%" height="100%" fill="white"/>',
+                f'<text x="36" y="32" font-size="20" font-family="sans-serif">{xml(title)}</text>',
+                f'<text x="38" y="54" font-size="12" font-family="sans-serif">{xml(ylabel)}</text>']
+    if mode == "trajectory" and gap:
+        gap_bottom, gap_top = value_to_y(gap[0]), value_to_y(gap[1])
+        elements.append(f'<rect x="{left}" y="{gap_top:.1f}" width="{right-left}" height="{gap_bottom-gap_top:.1f}" fill="#f5dad5"/>')
+        elements.append(f'<text x="{right-160}" y="{gap_top-7:.1f}" font-size="12" font-family="sans-serif">Initial camera gap</text>')
+    for step in range(5):
+        value = y_max * step / 4
+        y = value_to_y(value)
+        elements.append(f'<path d="M{left} {y:.1f}H{right}" stroke="#ddd"/>')
+        elements.append(f'<text x="{left-10}" y="{y+4:.1f}" text-anchor="end" font-size="11" font-family="sans-serif">{value:.0f}</text>')
+        seconds = max_time * step / 4
+        x = time_to_x(seconds)
+        elements.append(f'<path d="M{x:.1f} {top}V{bottom}" stroke="#eee"/>')
+        elements.append(f'<text x="{x:.1f}" y="{bottom+18}" text-anchor="middle" font-size="11" font-family="sans-serif">{seconds:.0f}</text>')
+    elements.append(f'<path d="M{left} {top}V{bottom}H{right}" fill="none" stroke="#333"/>')
+    elements.append(f'<text x="{(left+right)/2:.1f}" y="{bottom+39}" text-anchor="middle" font-size="12" font-family="sans-serif">Simulated mission time (s)</text>')
     for policy, data in traces.items():
-        points = []
-        for row in data:
-            if mode == "trajectory":
-                x = 70 + 42 * float(row["truth_east_m"])
-                y = 190 - 20 * float(row["truth_north_m"])
-            else:
-                x = 70 + 12 * float(row["simulation_time_ms"]) / 1000
-                y = 305 - 2.5 * float(row["truth_covered_cells"])
-            points.append(f"{x:.1f},{y:.1f}")
-        elements.append(f'<polyline points="{" ".join(points)}" fill="none" stroke="{colors[policy]}" stroke-width="2"/>')
+        points = [f'{time_to_x(float(row["simulation_time_ms"])/1000):.1f},{value_to_y(y_of(row)):.1f}'
+                  for row in data]
+        elements.append(f'<polyline points="{" ".join(points)}" fill="none" stroke="{colors[policy]}" stroke-width="2.5"/>')
         if mode == "coverage":
-            observed_points = [f"{70+12*float(row['simulation_time_ms'])/1000:.1f},{305-2.5*float(row['reported_covered_m'])/.25:.1f}"
+            observed_points = [f'{time_to_x(float(row["simulation_time_ms"])/1000):.1f},{value_to_y(float(row["reported_covered_m"])/.25):.1f}'
                                for row in data]
-            elements.append(f'<polyline points="{" ".join(observed_points)}" fill="none" stroke="{colors[policy]}" stroke-width="1.5" stroke-dasharray="5 4"/>')
-        elements.append(f'<text x="{700 if policy == "B2" else 810}" y="365" fill="{colors[policy]}" font-size="14" font-family="sans-serif">{policy}</text>')
+            elements.append(f'<polyline points="{" ".join(observed_points)}" fill="none" stroke="{colors[policy]}" stroke-width="2" stroke-dasharray="5 4"/>')
+        else:
+            repair = [row for row in data if int(row["recovery_attempts"]) > 0]
+            if repair:
+                reentry = min(repair, key=lambda row: float(row["truth_east_m"]))
+                x = time_to_x(float(reentry["simulation_time_ms"]) / 1000)
+                y = value_to_y(float(reentry["truth_east_m"]))
+                elements.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="{colors[policy]}" stroke="white"/>')
+    if mode == "trajectory":
+        legend = [("B2 true path", "#2468b4", False), ("P true path", "#d27b28", False),
+                  ("Re-entry point", "#555", True)]
+    else:
+        legend = [("B2 truth", "#2468b4", False), ("B2 accepted", "#2468b4", True),
+                  ("P truth", "#d27b28", False), ("P accepted", "#d27b28", True)]
+    for index, (label, color, dashed) in enumerate(legend):
+        x = left + index * 205
+        dash = ' stroke-dasharray="5 4"' if dashed and mode == "coverage" else ""
+        if mode == "trajectory" and dashed:
+            elements.append(f'<circle cx="{x+12}" cy="405" r="5" fill="{color}"/>')
+        else:
+            elements.append(f'<path d="M{x} 405H{x+25}" stroke="{color}" stroke-width="2.5"{dash}/>')
+        elements.append(f'<text x="{x+32}" y="409" font-size="12" font-family="sans-serif">{label}</text>')
+    path.write_text("\n".join(elements + ["</svg>"]) + "\n")
+
+
+def detour_map_figure(path, traces, wind_zone):
+    colors = {"B2": "#2468b4", "P": "#d27b28"}
+    x_of = lambda east: 75 + 42 * east
+    y_of = lambda north: 215 - 23 * north
+    elements = ['<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="440" viewBox="0 0 1000 440">',
+                '<rect width="100%" height="100%" fill="white"/>',
+                '<text x="35" y="32" font-size="20" font-family="sans-serif">S03 true trajectories under localized cross-track wind</text>',
+                f'<rect x="75" y="{y_of(4):.1f}" width="840" height="{y_of(-4)-y_of(4):.1f}" fill="#e4f0e8" stroke="#7c9e86"/>',
+                f'<rect x="{x_of(wind_zone[0]):.1f}" y="55" width="{42*(wind_zone[1]-wind_zone[0]):.1f}" height="320" fill="#f5dad5" fill-opacity=".6"/>',
+                f'<path d="M75 {y_of(0)}H915" stroke="#8b958e" stroke-dasharray="6 5"/>',
+                '<text x="78" y="386" font-size="12" font-family="sans-serif">Green: required ±4 m corridor. Red: scripted crosswind zone. A=0 m, B=20 m.</text>']
+    for east in (0, 5, 10, 15, 20):
+        elements.append(f'<text x="{x_of(east):.1f}" y="409" text-anchor="middle" font-size="11" font-family="sans-serif">{east}</text>')
+    elements.append('<text x="480" y="427" text-anchor="middle" font-size="12" font-family="sans-serif">East along edge (m)</text>')
+    for policy, data in traces.items():
+        points = [f'{x_of(float(row["truth_east_m"])):.1f},{y_of(float(row["truth_north_m"])):.1f}'
+                  for row in data]
+        elements.append(f'<polyline points="{" ".join(points)}" fill="none" stroke="{colors[policy]}" stroke-width="2.3"/>')
+        elements.append(f'<path d="M{580 if policy == "B2" else 705} 360h25" stroke="{colors[policy]}" stroke-width="2.5"/>')
+        elements.append(f'<text x="{612 if policy == "B2" else 737}" y="364" font-size="12" font-family="sans-serif">{policy} true path</text>')
     path.write_text("\n".join(elements + ["</svg>"]) + "\n")
 
 
 def analyze(output):
+    analysis_dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        capture_output=True, text=True, check=True).stdout.strip()
+    if analysis_dirty:
+        raise ValueError("analysis requires a clean tracked source revision")
     config = json.loads((output / "protocol.json").read_text())
     manifest_path = output / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -177,22 +246,36 @@ def analyze(output):
                    for arm in ("B2", "P")}
         for arm, subset in subsets.items():
             n = len(subset)
-            truth_n = sum(r["truth_survey_complete"] == "1" for r in subset)
+            survey_n = sum(r["truth_survey_complete"] == "1" for r in subset)
+            truth_n = sum(truth_edge(r) for r in subset)
             report_n = sum(r["reported_phase"] == "FULFILLED" for r in subset)
             false_n = sum(r["false_complete"] == "1" for r in subset)
-            tp_n = sum(r["truth_survey_complete"] == "1" and
-                       r["reported_phase"] == "FULFILLED" for r in subset)
+            false_edge_n = sum(r["reported_phase"] == "FULFILLED" and
+                               not truth_edge(r) for r in subset)
+            tp_n = sum(truth_edge(r) and r["reported_phase"] == "FULFILLED"
+                       for r in subset)
             distance = [float(r["physical_distance_m"]) for r in subset]
             seconds = [float(r["elapsed_simulation_ms"]) / 1000 for r in subset]
             low, high = wilson(false_n, n)
+            true_low, true_high = wilson(truth_n, n)
+            tp_low, tp_high = wilson(tp_n, n)
             completed_low, completed_high = wilson(report_n, n)
             distance_low, distance_high = paired_ci(
                 distance, nboot, config["bootstrap_seed"] + sum(map(ord, sid + arm + "distance")))
             time_low, time_high = paired_ci(
                 seconds, nboot, config["bootstrap_seed"] + sum(map(ord, sid + arm + "time")))
             method = {"scenario_id": sid, "policy": arm, "assigned_n": n,
+                      "true_survey_n": survey_n,
                       "true_complete_n": truth_n, "reported_complete_n": report_n,
                       "true_positive_n": tp_n, "false_complete_n": false_n,
+                      "false_edge_complete_n": false_edge_n,
+                      "true_complete_rate": truth_n / n,
+                      "true_complete_wilson_low": true_low,
+                      "true_complete_wilson_high": true_high,
+                      "true_positive_rate": tp_n / n,
+                      "true_positive_wilson_low": tp_low,
+                      "true_positive_wilson_high": tp_high,
+                      "false_negative_n": truth_n - tp_n,
                       "false_complete_rate": false_n / n,
                       "false_complete_wilson_low": low,
                       "false_complete_wilson_high": high,
@@ -213,7 +296,12 @@ def analyze(output):
                       "time_mean_s": mean(seconds), "time_median_s": quantile(seconds, .5),
                       "time_mean_ci_low": time_low, "time_mean_ci_high": time_high,
                       "time_p95_s": quantile(seconds, .95),
+                      "time_iqr_s": quantile(seconds, .75) - quantile(seconds, .25),
                       "recoveries_mean": mean([int(r["recovery_attempts"]) for r in subset]),
+                      "recovery_attempted_n": sum(int(r["recovery_attempts"]) > 0 for r in subset),
+                      "recovery_true_positive_n": sum(int(r["recovery_attempts"]) > 0 and
+                                                      truth_edge(r) and
+                                                      r["reported_phase"] == "FULFILLED" for r in subset),
                       "truth_missing_fraction_mean": mean([float(r["truth_missing_fraction"]) for r in subset]),
                       "captures_acquired_mean": mean([int(r["capture_acquired"]) for r in subset])}
             methods.append(method)
@@ -223,7 +311,7 @@ def analyze(output):
         diffs = {}
         for key, parser in (("distance_m", lambda r: float(r["physical_distance_m"])),
                             ("time_s", lambda r: float(r["elapsed_simulation_ms"]) / 1000),
-                            ("true_complete", lambda r: float(r["truth_survey_complete"])),
+                            ("true_complete", lambda r: float(truth_edge(r))),
                             ("reported_complete", lambda r: float(r["reported_phase"] == "FULFILLED")),
                             ("false_complete", lambda r: float(r["false_complete"]))):
             values = [parser(p) - parser(b) for b, p in pairs]
@@ -260,10 +348,20 @@ def analyze(output):
         false = sum(r["false_complete"] == "1" for r in subset)
         methods.append({"scenario_id": "ALL_DESCRIPTIVE", "policy": arm,
                         "assigned_n": len(subset),
-                        "true_complete_n": sum(r["truth_survey_complete"] == "1" for r in subset),
+                        "true_survey_n": sum(r["truth_survey_complete"] == "1" for r in subset),
+                        "true_complete_n": sum(truth_edge(r) for r in subset),
                         "reported_complete_n": fulfilled,
-                        "true_positive_n": fulfilled - false,
+                        "true_positive_n": sum(truth_edge(r) and r["reported_phase"] == "FULFILLED" for r in subset),
                         "false_complete_n": false,
+                        "false_edge_complete_n": sum(r["reported_phase"] == "FULFILLED" and
+                                                      not truth_edge(r) for r in subset),
+                        "true_complete_rate": sum(truth_edge(r) for r in subset) / len(subset),
+                        "true_complete_wilson_low": "NA",
+                        "true_complete_wilson_high": "NA",
+                        "true_positive_rate": sum(truth_edge(r) and r["reported_phase"] == "FULFILLED" for r in subset) / len(subset),
+                        "true_positive_wilson_low": "NA",
+                        "true_positive_wilson_high": "NA",
+                        "false_negative_n": sum(truth_edge(r) and r["reported_phase"] != "FULFILLED" for r in subset),
                         "false_complete_rate": false / len(subset),
                         "false_complete_wilson_low": "NA",
                         "false_complete_wilson_high": "NA",
@@ -283,7 +381,12 @@ def analyze(output):
                         "time_mean_s": mean(seconds), "time_median_s": quantile(seconds, .5),
                         "time_mean_ci_low": "NA", "time_mean_ci_high": "NA",
                         "time_p95_s": quantile(seconds, .95),
+                        "time_iqr_s": quantile(seconds, .75) - quantile(seconds, .25),
                         "recoveries_mean": mean(int(r["recovery_attempts"]) for r in subset),
+                        "recovery_attempted_n": sum(int(r["recovery_attempts"]) > 0 for r in subset),
+                        "recovery_true_positive_n": sum(int(r["recovery_attempts"]) > 0 and
+                                                        truth_edge(r) and
+                                                        r["reported_phase"] == "FULFILLED" for r in subset),
                         "truth_missing_fraction_mean": mean(float(r["truth_missing_fraction"]) for r in subset),
                         "captures_acquired_mean": mean(int(r["capture_acquired"]) for r in subset)})
     write_csv(output / "tables/methods_summary.csv", methods)
@@ -327,9 +430,19 @@ def analyze(output):
                ("B2 false complete", "B2", "false_complete_rate"),
                ("P false complete", "P", "false_complete_rate"))],
              "Fraction of all assigned attempts", 1)
-    phases = ["FULFILLED", "INTERRUPTED", "UNKNOWN", "MOVING", "RECOVERING"]
-    svg_bars(output / "figures/failure_modes.svg", "Reported trial outcomes",
-             phases, [(arm, [sum(r["policy"] == arm and r["reported_phase"] == phase
+    def failure_class(row):
+        if row["reported_phase"] == "INTERRUPTED" and row["fault"] == "motor_failure_on_repair":
+            return "MOTOR"
+        if row["reported_phase"] == "INTERRUPTED" and row["fault"] == "recovery_command_rejected":
+            return "REJECTED"
+        if row["reported_phase"] == "INTERRUPTED":
+            return "INCOMPLETE"
+        if row["reported_phase"] == "INFRASTRUCTURE_ERROR":
+            return "INFRA"
+        return row["reported_phase"]
+    phases = ["FULFILLED", "INCOMPLETE", "MOTOR", "REJECTED", "UNKNOWN", "INFRA"]
+    svg_bars(output / "figures/failure_modes.svg", "Paired outcomes: MOTOR=S16, REJECTED=S19",
+             phases, [(arm, [sum(r["policy"] == arm and failure_class(r) == phase
                                 for r in raw) for phase in phases]) for arm in ("B2", "P")],
              "Assigned attempts")
     traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S04-001-{arm}.csv")
@@ -340,7 +453,11 @@ def analyze(output):
                       "S04 physical paths under paired camera outage", "trajectory", gap)
     trajectory_figure(output / "figures/coverage_timeline.svg", traces,
                       "S04 independent true camera coverage through repair", "coverage")
-    totals = {arm: [r for r in raw if r["policy"] == arm] for arm in ("B2", "P")}
+    detour_traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S03-001-{arm}.csv")
+                     for arm in ("B2", "P")}
+    detour_row = by_key["S03", str(manifest["seeds"][0]), "P"]
+    detour_map_figure(output / "figures/trajectory_detour.svg", detour_traces,
+                      (float(detour_row["gap_begin_m"]), float(detour_row["gap_end_m"])))
     lines = ["# Agent-backed VECR simulator results", "",
              "## Experimental goal", "",
              "Evaluate truthfulness and recovery cost for a directed A→B surveying obligation.",
@@ -353,9 +470,9 @@ def analyze(output):
              "", "## Ground-truth design", "",
              "Private simulator poses and actual camera acquisition feed a separate 0.25 m along-edge cell oracle. A cell counts only when the modeled camera footprint spans the full required strip width. This is not a two-dimensional terrain-image oracle. The agent receives normalized telemetry and adapter metadata only.",
              "", "## Metrics", "",
-             "Distance integrates true 20 ms physical steps. Time is simulated mission-clock duration. False completion is FULFILLED with at least one required truth cell missing. All assigned trials stay in denominators.",
+             "Distance integrates true 20 ms physical steps. Time is simulated mission-clock duration. True edge completion requires both independent full-strip survey and true physical arrival at B. False survey completion is FULFILLED with at least one required truth cell missing; false edge completion additionally includes absence of true arrival. All assigned trials stay in denominators.",
              "", "## Results (actual values with uncertainty)", "",
-             "| Scenario | n pairs | B2 true/reported/false | P true/reported/false | B2 mean m | P mean m | Δ P−B2 m (95% paired CI) | Δ time s (95% paired CI) |",
+             "| Scenario | n pairs | B2 true edge/reported/false survey | P true edge/reported/false survey | B2 mean m | P mean m | Δ P−B2 m (95% paired CI) | Δ time s (95% paired CI) |",
              "|---|---:|---|---|---:|---:|---|---|"]
     for comparison in scenario_paired:
         sid = comparison["scenario_id"]
@@ -365,32 +482,55 @@ def analyze(output):
         lines.append(f"| {sid} | {comparison['paired_seeds_n']} | {counts(b)} | {counts(p)} | {fmt(b['distance_mean_m'])} | {fmt(p['distance_mean_m'])} | {fmt(comparison['delta_distance_m_mean'])} [{fmt(comparison['delta_distance_m_ci_low'])}, {fmt(comparison['delta_distance_m_ci_high'])}] | {fmt(comparison['delta_time_s_mean'])} [{fmt(comparison['delta_time_s_ci_low'])}, {fmt(comparison['delta_time_s_ci_high'])}] |")
     b2_all = next(r for r in methods if r["scenario_id"] == "ALL_DESCRIPTIVE" and r["policy"] == "B2")
     relative_saving = -macro_diffs["delta_distance_m_mean"] / b2_all["distance_mean_m"]
-    lines += ["", "Each true/reported/false entry is a count of assigned attempts, not a conditional success-only mean. Wilson intervals and additional distributions are in `tables/methods_summary.csv`; all paired effect intervals are in `tables/paired_comparisons.csv`.",
+    zero_event_upper = wilson(0, len(manifest["seeds"]))[1]
+    lines += ["", "Each true-edge/reported/false-survey entry is a count of assigned attempts, not a conditional success-only mean. Wilson intervals, independent truth-survey counts and false-edge-completion counts are in `tables/methods_summary.csv`; all paired effect intervals are in `tables/paired_comparisons.csv`.",
+              f"Both arms use the same evidence acceptance rules. They recorded B2 {b2_all['false_complete_n']}/{b2_all['assigned_n']} and P {sum(r['false_complete'] == '1' for r in raw if r['policy'] == 'P')}/{b2_all['assigned_n']} false survey completions in the comparative campaign. A zero-event scenario with {len(manifest['seeds'])} attempts still has a Wilson 95% upper bound of {fmt(100*zero_event_upper)}%; zero observed failures is not proof of zero risk or a verification-accuracy advantage for P.",
               f"Across the fixed 12-scenario set, the descriptive macro mean P−B2 distance is {fmt(macro_diffs['delta_distance_m_mean'])} m (95% seed-cluster bootstrap [{fmt(macro_diffs['delta_distance_m_ci_low'])}, {fmt(macro_diffs['delta_distance_m_ci_high'])}]); the corresponding relative travel saving is {fmt(100 * relative_saving)}% of B2 mean assigned-task distance. This includes failed tasks and is not a recovery-efficiency claim where completion differs.",
               "", "### Separate noncomparative diagnostics", "",
               "| Scenario | Variant | Reported | True survey | False complete | Fault realized |",
               "|---|---|---|---|---|---|"]
     for row in diagnostic_rows:
         lines.append(f"| {row['scenario_id']} | {row['variant']} | {row['reported_phase']} | {row['truth_survey_complete']} | {row['false_complete']} | {row['fault_realized']} |")
+    negative_lines = []
+    for sid in ("S02", "S08", "S09", "S16", "S19"):
+        b = next(r for r in methods if r["scenario_id"] == sid and r["policy"] == "B2")
+        p = next(r for r in methods if r["scenario_id"] == sid and r["policy"] == "P")
+        negative_lines.append(
+            f"- {sid}: true edge completion B2 {b['true_complete_n']}/{b['assigned_n']}, "
+            f"P {p['true_complete_n']}/{p['assigned_n']}; reported fulfillment B2 "
+            f"{b['reported_complete_n']}/{b['assigned_n']}, P "
+            f"{p['reported_complete_n']}/{p['assigned_n']}. "
+            "Shorter interrupted travel does not establish superior recovery.")
     lines += ["", "These single diagnostic attempts are not probability estimates and are not pooled with the B2/P comparison.",
               "", "## Tradeoffs/negative results", "",
-              "Shorter travel on failed or interrupted tasks is not a recovery benefit. Compare completion counts before interpreting a negative distance difference. Persistent faults can cause both policies to fail. A plausible dishonest camera can create false fulfillment, outside honest-adapter assumptions.",
+              *negative_lines,
+              "", "Persistent faults can cause both policies to fail. A plausible dishonest camera can create false fulfillment, outside honest-adapter assumptions. The S08/S09 travel contrasts must be read beside their reported availability and should not be framed as pure efficiency benefits when completion differs.",
               "", "## Threats to validity", "",
-              "The simulator has simplified horizontal acceleration, instant modeled camera acquisition, a one-dimensional full-strip coverage oracle, perfect base telemetry and no terrain occlusion. Location-tied interventions may have policy-dependent realized duration. Scenario seeds vary preregistered gap position/length and wind strength but do not sample a full field distribution. S15 recreates AgentService in one host process with a surviving simulator; an OS process power loss was not tested. No electrical energy or CPU/RSS benchmark is reported.",
+              "The simulator has simplified horizontal acceleration, instant modeled camera acquisition, a one-dimensional full-strip coverage oracle and a terminal-sample true-arrival check; it has perfect base telemetry and no terrain occlusion. Location-tied interventions may have policy-dependent realized duration. Scenario seeds vary preregistered gap position/length and wind strength but do not sample a full field distribution. S15 recreates AgentService in one host process with a surviving simulator; an OS process power loss was not tested. No electrical energy or CPU/RSS benchmark is reported.",
               "", "## Reproducibility", "",
-              f"Source revision `{manifest['source_revision']}`; binary SHA-256 `{manifest['binary_sha256']}`; config SHA-256 `{manifest['config_id_sha256']}`. See manifest for host, commands and artifact hashes.",
+             f"Trial source revision `{manifest['source_revision']}`; analysis revision `{subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()}`; binary SHA-256 `{manifest['binary_sha256']}`; config SHA-256 `{manifest['config_id_sha256']}`. See manifest for host, commands and artifact hashes.",
               "", "## What is not demonstrated", "",
               "Only simulator evidence has been obtained. SITL, real camera calibration, and physical flights are not validated. Remote transport-loss replay, peer interruption, OS process crash/power loss and simultaneous multi-UAV throughput are not validated by this campaign.", ""]
     (output / "reports/SCIENTIFIC_RESULTS.md").write_text("\n".join(lines))
+    p_all = next(r for r in methods if r["scenario_id"] == "ALL_DESCRIPTIVE" and r["policy"] == "P")
     (output / "reports/EXECUTIVE_RESULTS.md").write_text(
-        f"# Executive results\n\n{len(raw)} actual B2/P agent-backed attempts across {len(expected)} scenarios and {len(manifest['seeds'])} paired seeds.\n\nSee `SCIENTIFIC_RESULTS.md` and raw tables for measured values and uncertainty. Unsupported cases are excluded.\n")
+        f"# Executive results\n\n{len(raw)} actual B2/P agent-backed attempts across {len(expected)} scenarios and {len(manifest['seeds'])} paired seeds.\n\n"
+        f"B2: true edge {b2_all['true_complete_n']}/{b2_all['assigned_n']}, reported fulfilled {b2_all['reported_complete_n']}/{b2_all['assigned_n']}, false survey completion {b2_all['false_complete_n']}/{b2_all['assigned_n']}. "
+        f"P: true edge {p_all['true_complete_n']}/{p_all['assigned_n']}, reported fulfilled {p_all['reported_complete_n']}/{p_all['assigned_n']}, false survey completion {p_all['false_complete_n']}/{p_all['assigned_n']}.\n\n"
+        f"Across the fixed scenario set, P−B2 mean assigned-task distance was {fmt(macro_diffs['delta_distance_m_mean'])} m (95% seed-cluster bootstrap [{fmt(macro_diffs['delta_distance_m_ci_low'])}, {fmt(macro_diffs['delta_distance_m_ci_high'])}]); relative travel reduction was {fmt(100*relative_saving)}%. This includes failures; read scenario completion counts before treating it as a benefit.\n\n"
+        "The independent truth is a simplified along-edge full-strip model. S11's dishonest sensor variant produced a false completion. S13/S14/S17 remain unsupported. See `SCIENTIFIC_RESULTS.md` for measured tradeoffs and limits.\n")
     (output / "reports/LIMITATIONS_AND_NEGATIVE_RESULTS.md").write_text(
-        "# Limitations and negative results\n\nThe S11 dishonest camera case can fool the verifier when authenticated metadata lies; the independent oracle detects the unobserved ground. S13/S14/S17 are unsupported in this campaign. S07 does not guarantee an intersample excursion, and S10 cannot isolate a brief passage. S15 recreates a service object, not an OS process crash. Failed/interrupted tasks remain in all denominators. Real sensing, SITL and physical flight are unvalidated.\n")
+        "# Limitations and negative results\n\n" + "\n".join(negative_lines) +
+        "\n\nThe S11 dishonest camera case can fool the verifier when authenticated metadata lies; the independent oracle detects the unobserved ground. S13/S14/S17 are unsupported in this campaign. S07 does not guarantee an intersample excursion, and S10 cannot isolate a brief passage. S15 recreates a service object, not an OS process crash. The private oracle is a 0.25 m along-edge raster with a full-strip camera-width condition, not a two-dimensional photo-quality oracle; true arrival is checked at the terminal sample, not through an independent dwell history. Failed/interrupted tasks remain in all denominators. Real sensing, SITL and physical flight are unvalidated.\n")
     artifact_hashes = {}
     for path in sorted(output.rglob("*")):
         if path.is_file() and path != manifest_path:
             artifact_hashes[str(path.relative_to(output))] = hashlib.sha256(path.read_bytes()).hexdigest()
     manifest["study_status"] = "ANALYZED"
+    manifest["analysis_revision"] = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True).strip()
+    manifest["analysis_code_sha256"] = hashlib.sha256(
+        pathlib.Path(__file__).read_bytes()).hexdigest()
     manifest["artifact_sha256"] = artifact_hashes
     manifest["validation"] = {"expected_attempts": len(expected_keys),
                               "observed_attempts": len(raw), "paired_rows_valid": True,

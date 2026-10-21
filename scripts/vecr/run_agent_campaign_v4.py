@@ -47,7 +47,7 @@ def params(scenario, seed, config):
         "acceleration_mps2": config["acceleration_mps2"],
         "capture_period_ticks": config["capture_period_ticks"],
         "camera_along_half_m": config["camera_along_half_m"],
-        "camera_cross_half_m": config["camera_cross_half_m"],
+        "camera_cross_half_m": scenario.get("camera_cross_half_m", config["camera_cross_half_m"]),
     }
 
 
@@ -132,6 +132,14 @@ def main():
     events_path = output / "raw/execution_events.csv"
     faults_path = output / "raw/fault_events.csv"
     total = len(comparative) * len(seeds) * 2
+    def abort(run_id, reason):
+        manifest["study_status"] = "INCOMPLETE"
+        manifest["aborted_run_id"] = run_id
+        manifest["abort_reason"] = reason
+        manifest["aborted_unix_s"] = time.time()
+        (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        raise RuntimeError(f"{run_id}: {reason}")
+
     for scenario in comparative:
         for seed in seeds:
             settings = params(scenario, seed, config)
@@ -152,19 +160,22 @@ def main():
                     manifest["study_status"] = "INCOMPLETE"
                     manifest["infrastructure_error"] = row
                     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-                    raise RuntimeError(f"{run_id}: {proc.stderr[-1000:]}")
+                    abort(run_id, proc.stderr[-1000:])
                 rows = read_rows(trial_dir / "attempt.csv")
                 if len(rows) != 1:
-                    raise RuntimeError(f"{run_id}: expected one attempt row")
+                    abort(run_id, "expected one attempt row")
                 row = {"run_id": run_id, "config_id": config_id,
                        "edge_id": "A-B", "mission_id": "v4-graph-edge",
                        "mission_revision": 4, "fault": scenario["fault"],
                        "wall_time_s": wall_s, "infrastructure_error": "", **rows[0]}
                 if row["scenario_id"] != scenario["id"] or int(row["seed"]) != seed or \
                    row["policy"] != policy:
-                    raise RuntimeError(f"{run_id}: identity mismatch")
+                    abort(run_id, "identity mismatch")
                 if scenario["fault"] != "none" and row["requested_fault_realized"] != "1":
-                    raise RuntimeError(f"{run_id}: requested fault never realized")
+                    abort(run_id, "requested fault never realized")
+                if scenario["id"] == "S06" and \
+                   float(row["max_truth_cross_track_m"]) <= config["minimum_s06_cross_track_m"]:
+                    abort(run_id, "S06 path never left the required corridor")
                 if row["reported_phase"] == "FULFILLED" and row["false_complete"] == "1":
                     print(f"ADVERSARIAL OUTCOME {run_id}: false completion", flush=True)
                 append_rows(attempts_path, [row])

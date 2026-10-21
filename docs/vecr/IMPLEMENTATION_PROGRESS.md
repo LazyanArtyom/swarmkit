@@ -1,5 +1,11 @@
 # VECR implementation status — 2026-10-21
 
+The v4.1 campaign was stopped after 1,452 attempts because S06 crosswind
+never drove the true path outside the configured corridor. V4.2 increases
+only that scenario's wind, records its actual wide camera footprint explicitly
+in configuration and raw data, and asserts the physical excursion before
+counting an S06 trial. See `SIMULATION_PROTOCOL_V4_2.md`.
+
 The first v4.0 full campaign stopped after 2,018 completed attempts when
 S16 seed 10 did not enter recovery and its scheduled motor failure did not
 occur. The partial output is preserved with `INCOMPLETE` status. V4.1 changes

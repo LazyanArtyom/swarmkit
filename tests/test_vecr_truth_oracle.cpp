@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Artyom Lazyan. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-SwarmKit-Proprietary
 #include <catch2/catch_test_macros.hpp>
-
 #include <stdexcept>
 
 #include "vecr_truth_oracle.h"
@@ -35,8 +34,7 @@ TEST_CASE("VECR private raster oracle detects a narrow unseen gap", "[vecr][orac
     CHECK(oracle.Complete());
 }
 
-TEST_CASE("VECR private oracle refuses partial-width and failed acquisitions",
-          "[vecr][oracle]") {
+TEST_CASE("VECR private oracle refuses partial-width and failed acquisitions", "[vecr][oracle]") {
     VecrTruthOracle oracle(4, 0.25, 4);
     SimulationTruthFrame truth;
     truth.drone_id = "drone-1";
@@ -57,8 +55,7 @@ TEST_CASE("VECR private oracle refuses partial-width and failed acquisitions",
     CHECK(oracle.Complete());
 }
 
-TEST_CASE("VECR private oracle checks true stop and rejects invalid pose order",
-          "[vecr][oracle]") {
+TEST_CASE("VECR private oracle checks true stop and rejects invalid pose order", "[vecr][oracle]") {
     VecrTruthOracle oracle(20, 0.25, 4);
     SimulationTruthFrame truth;
     truth.drone_id = "drone-1";
