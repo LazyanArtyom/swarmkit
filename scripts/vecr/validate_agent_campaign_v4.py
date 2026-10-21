@@ -19,11 +19,16 @@ def main(output):
     config = json.loads((output / "protocol.json").read_text())
     if manifest["study_status"] != "ANALYZED":
         raise ValueError("campaign was not fully analyzed")
-    if manifest["mode"] == "full" and "analysis_code_sha256" in manifest:
+    if "analysis_code_sha256" in manifest:
         source = subprocess.check_output(
             ["git", "show", f"{manifest['analysis_revision']}:scripts/vecr/analyze_agent_campaign_v4.py"])
         if hashlib.sha256(source).hexdigest() != manifest["analysis_code_sha256"]:
             raise ValueError("analysis code hash/revision mismatch")
+    for path, expected_hash in manifest.get("source_file_sha256", {}).items():
+        source = subprocess.check_output(
+            ["git", "show", f"{manifest['source_revision']}:{path}"])
+        if hashlib.sha256(source).hexdigest() != expected_hash:
+            raise ValueError(f"trial source hash/revision mismatch: {path}")
     if digest(output / "protocol.json") != manifest["config_id_sha256"]:
         raise ValueError("protocol hash mismatch")
     actual_paths = {str(path.relative_to(output)) for path in output.rglob("*")
@@ -81,21 +86,41 @@ def main(output):
     if {row["scenario_id"] for row in comparisons} != set(cases) | {"ALL_MACRO"}:
         raise ValueError("scenario or macro paired comparison missing")
     by_key = {(row["scenario_id"], row["seed"], row["policy"]): row for row in rows}
+    parsers = {
+        "distance_m": lambda row: float(row["physical_distance_m"]),
+        "time_s": lambda row: float(row["elapsed_simulation_ms"]) / 1000,
+        "true_complete": lambda row: float(row["truth_survey_complete"] == "1" and
+                                          row["truth_at_b"] == "1"),
+        "reported_complete": lambda row: float(row["reported_phase"] == "FULFILLED"),
+        "false_complete": lambda row: float(row["false_complete"] == "1"),
+    }
     for comparison in comparisons:
         sid = comparison["scenario_id"]
         if int(comparison["paired_seeds_n"]) != len(manifest["seeds"]):
             raise ValueError("paired seed denominator mismatch")
-        delta_by_seed = []
-        for seed in manifest["seeds"]:
-            scenario_ids = cases if sid == "ALL_MACRO" else [sid]
-            deltas = [float(by_key[case, str(seed), "P"]["physical_distance_m"]) -
-                      float(by_key[case, str(seed), "B2"]["physical_distance_m"])
-                      for case in scenario_ids]
-            delta_by_seed.append(sum(deltas) / len(deltas))
-        measured = sum(delta_by_seed) / len(delta_by_seed)
-        if not math.isclose(measured, float(comparison["delta_distance_m_mean"]),
-                            rel_tol=1e-10, abs_tol=1e-10):
-            raise ValueError("paired distance arithmetic mismatch")
+        for metric, parse in parsers.items():
+            delta_by_seed = []
+            for seed in manifest["seeds"]:
+                scenario_ids = cases if sid == "ALL_MACRO" else [sid]
+                deltas = [parse(by_key[case, str(seed), "P"]) -
+                          parse(by_key[case, str(seed), "B2"])
+                          for case in scenario_ids]
+                delta_by_seed.append(sum(deltas) / len(deltas))
+            measured = sum(delta_by_seed) / len(delta_by_seed)
+            if not math.isclose(measured, float(comparison[f"delta_{metric}_mean"]),
+                                rel_tol=1e-10, abs_tol=1e-10):
+                raise ValueError(f"paired {metric} arithmetic mismatch")
+    inventory = list(csv.DictReader((output / "tables/scenario_inventory.csv").open(newline="")))
+    if len(inventory) != 21 or {row["scenario_id"] for row in inventory} != {
+            item["id"] for item in config["scenarios"]}:
+        raise ValueError("21-scenario inventory mismatch")
+    for item in inventory:
+        if item["class"] != "COMPARATIVE":
+            continue
+        subset = [row for row in rows if row["scenario_id"] == item["scenario_id"]]
+        if int(item["attempts_n"]) != len(subset) or int(item["fault_realized_n"]) != sum(
+                row["requested_fault_realized"] == "1" for row in subset):
+            raise ValueError("scenario inventory fault/count mismatch")
     print(f"VALID: {len(rows)} paired-assignment rows and {len(expected_paths)} SHA-256 artifacts")
 
 

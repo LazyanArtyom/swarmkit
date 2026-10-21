@@ -67,6 +67,11 @@ def truth_edge(row):
     return row["truth_survey_complete"] == "1" and row["truth_at_b"] == "1"
 
 
+def committed_sha(revision, path):
+    content = subprocess.check_output(["git", "show", f"{revision}:{path}"])
+    return hashlib.sha256(content).hexdigest()
+
+
 def xml(value):
     return (str(value).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
@@ -325,7 +330,7 @@ def analyze(output):
     macro_diffs = {}
     for key, parser in (("distance_m", lambda r: float(r["physical_distance_m"])),
                         ("time_s", lambda r: float(r["elapsed_simulation_ms"]) / 1000),
-                        ("true_complete", lambda r: float(r["truth_survey_complete"])),
+                        ("true_complete", lambda r: float(truth_edge(r))),
                         ("reported_complete", lambda r: float(r["reported_phase"] == "FULFILLED")),
                         ("false_complete", lambda r: float(r["false_complete"]))):
         # The scenario set is fixed. Resample independent seed clusters, not
@@ -400,15 +405,26 @@ def analyze(output):
     for row in inventory:
         if row["class"] == "COMPARATIVE":
             row["validation_status"] = "EXECUTED_AGENT_BACKED"
+            subset = [attempt for attempt in raw if attempt["scenario_id"] == row["scenario_id"]]
+            row["attempts_n"] = len(subset)
+            row["fault_realized_n"] = sum(attempt["requested_fault_realized"] == "1"
+                                           for attempt in subset)
         elif any(case["scenario_id"] == row["scenario_id"] for case in diagnostic_rows):
             matching = [case for case in diagnostic_rows
                         if case["scenario_id"] == row["scenario_id"]]
             row["validation_status"] = ("EXECUTED_AGENT_DIAGNOSTIC" if all(
                 case["fault_realized"] == "1" for case in matching)
                 else "INCONCLUSIVE_FAULT_NOT_REALIZED")
+            row["attempts_n"] = len(matching)
+            row["fault_realized_n"] = sum(case["fault_realized"] == "1" for case in matching)
         elif any(case["scenario_id"] == row["scenario_id"] and case["exit_code"] == "0"
                  for case in regression_rows):
             row["validation_status"] = "REGRESSION_TEST_ONLY"
+            row["attempts_n"] = 0
+            row["fault_realized_n"] = "NA"
+        else:
+            row["attempts_n"] = 0
+            row["fault_realized_n"] = "NA"
     write_csv(output / "tables/scenario_inventory.csv", inventory)
     ids = [case["id"] for case in expected]
     for metric, filename, title, ylabel in (("distance_mean_m", "distance_by_scenario.svg", "Travel distance by scenario", "Mean actual distance, m"),
@@ -440,12 +456,13 @@ def analyze(output):
         if row["reported_phase"] == "INFRASTRUCTURE_ERROR":
             return "INFRA"
         return row["reported_phase"]
-    phases = ["FULFILLED", "INCOMPLETE", "MOTOR", "REJECTED", "UNKNOWN", "INFRA"]
-    svg_bars(output / "figures/failure_modes.svg", "Paired outcomes: MOTOR=S16, REJECTED=S19",
+    phases = ["FULFILLED", "INCOMPLETE", "MOTOR", "REJECTED", "UNKNOWN", "CANCELLED", "SAFETY", "INFRA"]
+    svg_bars(output / "figures/failure_modes.svg", "Paired outcomes only; S12 safety is a separate diagnostic",
              phases, [(arm, [sum(r["policy"] == arm and failure_class(r) == phase
                                 for r in raw) for phase in phases]) for arm in ("B2", "P")],
              "Assigned attempts")
-    traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S04-001-{arm}.csv")
+    first_seed = manifest["seeds"][0]
+    traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S04-{first_seed:03d}-{arm}.csv")
               for arm in ("B2", "P")}
     gap_row = by_key["S04", str(manifest["seeds"][0]), "P"]
     gap = float(gap_row["gap_begin_m"]), float(gap_row["gap_end_m"])
@@ -453,7 +470,7 @@ def analyze(output):
                       "S04 physical paths under paired camera outage", "trajectory", gap)
     trajectory_figure(output / "figures/coverage_timeline.svg", traces,
                       "S04 independent true camera coverage through repair", "coverage")
-    detour_traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S03-001-{arm}.csv")
+    detour_traces = {arm: rows(output / "raw/traces" / f"v4-{manifest['mode']}-S03-{first_seed:03d}-{arm}.csv")
                      for arm in ("B2", "P")}
     detour_row = by_key["S03", str(manifest["seeds"][0]), "P"]
     detour_map_figure(output / "figures/trajectory_detour.svg", detour_traces,
@@ -495,18 +512,21 @@ def analyze(output):
     for sid in ("S02", "S08", "S09", "S16", "S19"):
         b = next(r for r in methods if r["scenario_id"] == sid and r["policy"] == "B2")
         p = next(r for r in methods if r["scenario_id"] == sid and r["policy"] == "P")
+        contrast = next(r for r in scenario_paired if r["scenario_id"] == sid)
         negative_lines.append(
             f"- {sid}: true edge completion B2 {b['true_complete_n']}/{b['assigned_n']}, "
             f"P {p['true_complete_n']}/{p['assigned_n']}; reported fulfillment B2 "
             f"{b['reported_complete_n']}/{b['assigned_n']}, P "
-            f"{p['reported_complete_n']}/{p['assigned_n']}. "
-            "Shorter interrupted travel does not establish superior recovery.")
+            f"{p['reported_complete_n']}/{p['assigned_n']}; P−B2 mean travel "
+            f"{fmt(contrast['delta_distance_m_mean'])} m and time "
+            f"{fmt(contrast['delta_time_s_mean'])} s. "
+            "Travel and time require the completion and safety context.")
     lines += ["", "These single diagnostic attempts are not probability estimates and are not pooled with the B2/P comparison.",
               "", "## Tradeoffs/negative results", "",
               *negative_lines,
               "", "Persistent faults can cause both policies to fail. A plausible dishonest camera can create false fulfillment, outside honest-adapter assumptions. The S08/S09 travel contrasts must be read beside their reported availability and should not be framed as pure efficiency benefits when completion differs.",
               "", "## Threats to validity", "",
-              "The simulator has simplified horizontal acceleration, instant modeled camera acquisition, a one-dimensional full-strip coverage oracle and a terminal-sample true-arrival check; it has perfect base telemetry and no terrain occlusion. Location-tied interventions may have policy-dependent realized duration. Scenario seeds vary preregistered gap position/length and wind strength but do not sample a full field distribution. S15 recreates AgentService in one host process with a surviving simulator; an OS process power loss was not tested. No electrical energy or CPU/RSS benchmark is reported.",
+              "The simulator has simplified horizontal acceleration, instant modeled camera acquisition, a one-dimensional full-strip coverage oracle and a terminal-sample true-arrival check; it has perfect base telemetry and no terrain occlusion. The paired trial sets sustained deviation to 1,000 samples to isolate post-arrival repair strategy, so it does not quantify early deviation-triggered re-entry. Location-tied interventions may have policy-dependent realized duration. Scenario seeds vary preregistered gap position/length and wind strength but do not sample a full field distribution. S15 recreates AgentService in one host process with a surviving simulator; an OS process power loss was not tested. No electrical energy or CPU/RSS benchmark is reported.",
               "", "## Reproducibility", "",
              f"Trial source revision `{manifest['source_revision']}`; analysis revision `{subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()}`; binary SHA-256 `{manifest['binary_sha256']}`; config SHA-256 `{manifest['config_id_sha256']}`. See manifest for host, commands and artifact hashes.",
               "", "## What is not demonstrated", "",
@@ -521,7 +541,7 @@ def analyze(output):
         "The independent truth is a simplified along-edge full-strip model. S11's dishonest sensor variant produced a false completion. S13/S14/S17 remain unsupported. See `SCIENTIFIC_RESULTS.md` for measured tradeoffs and limits.\n")
     (output / "reports/LIMITATIONS_AND_NEGATIVE_RESULTS.md").write_text(
         "# Limitations and negative results\n\n" + "\n".join(negative_lines) +
-        "\n\nThe S11 dishonest camera case can fool the verifier when authenticated metadata lies; the independent oracle detects the unobserved ground. S13/S14/S17 are unsupported in this campaign. S07 does not guarantee an intersample excursion, and S10 cannot isolate a brief passage. S15 recreates a service object, not an OS process crash. The private oracle is a 0.25 m along-edge raster with a full-strip camera-width condition, not a two-dimensional photo-quality oracle; true arrival is checked at the terminal sample, not through an independent dwell history. Failed/interrupted tasks remain in all denominators. Real sensing, SITL and physical flight are unvalidated.\n")
+        "\n\nThe S11 dishonest camera case can fool the verifier when authenticated metadata lies; the independent oracle detects the unobserved ground. S13/S14/S17 are unsupported in this campaign. S07 does not guarantee an intersample excursion, and S10 cannot isolate a brief passage. The paired trial uses a 1,000-sample sustained-deviation threshold to isolate post-arrival repair, so active mid-flight re-entry is not measured here. S15 recreates a service object, not an OS process crash. The private oracle is a 0.25 m along-edge raster with a full-strip camera-width condition, not a two-dimensional photo-quality oracle; true arrival is checked at the terminal sample, not through an independent dwell history. Failed/interrupted tasks remain in all denominators. Real sensing, SITL and physical flight are unvalidated.\n")
     artifact_hashes = {}
     for path in sorted(output.rglob("*")):
         if path.is_file() and path != manifest_path:
@@ -531,6 +551,26 @@ def analyze(output):
         ["git", "rev-parse", "HEAD"], text=True).strip()
     manifest["analysis_code_sha256"] = hashlib.sha256(
         pathlib.Path(__file__).read_bytes()).hexdigest()
+    trial_source_paths = (
+        "src/core/vecr.cpp", "src/agent/edge_execution_runtime.cpp",
+        "src/agent/edge_attempt_journal.cpp", "src/agent/backends/sim_backend.cpp",
+        "tests/vecr_agent_trial.cpp", "tests/vecr_agent_trial_main.cpp",
+        "tests/vecr_truth_oracle.cpp", "scripts/vecr/run_agent_campaign_v4.py",
+        "conanfile.py", "CMakePresets.json")
+    manifest["source_file_sha256"] = {
+        path: committed_sha(manifest["source_revision"], path)
+        for path in trial_source_paths}
+    manifest["dependency_lockfile"] = "none in repository; conanfile.py hash recorded"
+    manifest["simulator_version"] = f"SimBackend at {manifest['source_revision']}"
+    manifest["effective_runtime_constants"] = {
+        "sustained_deviation_samples": 1000,
+        "corridor_half_width_m": 4,
+        "arrival_radius_m": 2,
+        "edge_timeout_ms": 60000,
+        "max_recovery_attempts": 1}
+    manifest["analysis_correction"] = (
+        "Post-raw correctness correction: macro true completion requires both private "
+        "survey and arrival; held-out trace seed comes from the manifest. Raw data unchanged.")
     manifest["artifact_sha256"] = artifact_hashes
     manifest["validation"] = {"expected_attempts": len(expected_keys),
                               "observed_attempts": len(raw), "paired_rows_valid": True,
