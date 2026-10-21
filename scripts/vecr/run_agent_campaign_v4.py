@@ -94,14 +94,18 @@ def main():
     if not exe.is_file():
         raise FileNotFoundError(f"build trial executable first: {exe}")
     output = args.output.resolve()
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite campaign output: {output}")
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
+                           capture_output=True, text=True, check=True).stdout.strip()
+    if args.mode == "full" and dirty:
+        raise RuntimeError("full campaign requires a clean tracked source commit")
     output.mkdir(parents=True, exist_ok=False)
     for name in ("raw", "raw/traces", "raw/trials", "tables", "figures", "reports"):
         (output / name).mkdir()
     shutil.copy2(config_path, output / "protocol.json")
     config_id = sha(config_path)
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
-                           capture_output=True, text=True, check=True).stdout.strip()
     manifest = {"study_status": "RUNNING", "mode": args.mode, "seeds": seeds,
                 "config_id_sha256": config_id, "binary_sha256": sha(exe),
                 "source_revision": commit, "dirty_tree": bool(dirty),
