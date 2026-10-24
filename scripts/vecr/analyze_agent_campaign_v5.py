@@ -188,7 +188,7 @@ def main(out, benchmark):
                 entry = dict(
                     scenario=scenario,
                     population=population,
-                    metric=metric,
+                    metric="time_s" if metric == "time_ms" else metric,
                     pairs=len(pairs),
                     B2_mean=(
                         np.mean([val(b, metric) * scale for b, p in pairs])
