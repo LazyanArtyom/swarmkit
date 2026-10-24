@@ -16,3 +16,16 @@ matrix exported from the already frozen assignment manifest and assertions that
 the benchmark uses the same executable hash and one worker. These are metadata
 and validation additions; the experimental protocol and inference calculations
 remain those preregistered at `7896f20`.
+
+## Statistical audit before publication
+
+The first complete analysis exported Wilson intervals for both individual scenarios
+and pooled totals. Reused seed IDs make the pooled trials dependent across scenarios;
+those iid pooled bounds were inappropriate. The final analysis removes them, retains
+per-scenario Wilson bounds, and adds paired aggregate intervals resampling the 100
+whole seed clusters with all 19 honest primary conditions retained. Per-scenario
+bootstrap results and every measured value are unchanged. Precision and acceptance
+Wilson intervals are now explicit in the per-scenario table. The original prepublication
+analysis is retained in `final_v5/analysis_prepublication_revision_1.tar.gz`; it is
+superseded and must not be used for pooled uncertainty claims. No raw trial was changed,
+excluded or rerun. This is an analysis correction, not a new experimental protocol.

@@ -67,7 +67,7 @@ def wilson(n, total):
     d = 1 + z * z / total
     c = (p + z * z / (2 * total)) / d
     h = z * math.sqrt(p * (1 - p) / total + z * z / (4 * total * total)) / d
-    return max(0, c - h), min(1, c + h)
+    return (0.0 if n == 0 else max(0, c - h)), (1.0 if n == total else min(1, c + h))
 
 
 def val(r, k):
@@ -83,6 +83,8 @@ def stat(rows):
     truth = sum(int(r["truth_complete"]) for r in rows)
     lo, hi = wilson(fp, n)
     rec_lo, rec_hi = wilson(tp, tp + fn)
+    precision_lo, precision_hi = wilson(tp, report)
+    acceptance_lo, acceptance_hi = wilson(report, n)
     d = [val(r, "distance_m") for r in rows]
     t = [val(r, "time_ms") / 1000 for r in rows]
     return dict(
@@ -95,10 +97,14 @@ def stat(rows):
         FN=fn,
         TN=n - tp - fp - fn,
         precision=tp / report if report else None,
+        precision_ci_low=precision_lo,
+        precision_ci_high=precision_hi,
         recall=tp / truth if truth else None,
         recall_ci_low=rec_lo,
         recall_ci_high=rec_hi,
         acceptance=report / n,
+        acceptance_ci_low=acceptance_lo,
+        acceptance_ci_high=acceptance_hi,
         false_complete_rate=fp / n,
         false_ci_low=lo,
         false_ci_high=hi,
@@ -113,6 +119,25 @@ def stat(rows):
         interrupted=sum(r["phase"] == "INTERRUPTED" for r in rows),
         unknown_final=sum(r["phase"] == "UNKNOWN" for r in rows),
     )
+
+
+def cluster_deltas(rows, metric, scale=1):
+    clusters = collections.defaultdict(dict)
+    for row in rows:
+        clusters[int(row["seed"])][row["scenario"], row["policy"]] = (
+            val(row, metric) * scale
+        )
+    return [
+        float(
+            np.mean(
+                [
+                    values[scenario, "P"] - values[scenario, "B2"]
+                    for scenario in sorted({key[0] for key in values})
+                ]
+            )
+        )
+        for _, values in sorted(clusters.items())
+    ]
 
 
 def formatnum(x):
@@ -302,13 +327,41 @@ def main(out, benchmark):
         ("sensitivity", [r for r in rows if r["scenario"].startswith("X")]),
     ]:
         for p in ["B2", "P"]:
+            summary = stat([r for r in data if r["policy"] == p])
+            # Reusing seed IDs across conditions does not create independent
+            # Bernoulli trials. Do not export pooled iid Wilson intervals.
+            for key in summary:
+                if key.endswith(("_ci_low", "_ci_high")):
+                    summary[key] = None
             aggregates.append(
                 dict(
                     population=population,
                     policy=p,
-                    **stat([r for r in data if r["policy"] == p]),
+                    interval_scope="per-scenario Wilson intervals only; aggregate is descriptive",
+                    **summary,
                 )
             )
+    cluster_effects = []
+    for metric, scale in [
+        ("distance_m", 1),
+        ("time_ms", 0.001),
+        ("reported_complete", 1),
+        ("truth_complete", 1),
+    ]:
+        deltas = cluster_deltas(primary, metric, scale)
+        mean, low, high = ci(deltas)
+        cluster_effects.append(
+            dict(
+                population="honest_primary_fixed_mixture",
+                metric="time_s" if metric == "time_ms" else metric,
+                independent_seed_clusters=len(deltas),
+                conditions_per_seed=19,
+                delta_P_minus_B2=mean,
+                ci_low=low,
+                ci_high=high,
+            )
+        )
+    write_csv(tables / "paired_primary_cluster_effects.csv", cluster_effects)
     write_csv(tables / "aggregate_confusion.csv", aggregates)
     plt.rcParams.update({"font.size": 9, "svg.hashsalt": "vecr-v5", "figure.dpi": 100})
     # Availability on all assigned attempts, with conditional recall separately tabulated.
@@ -547,7 +600,7 @@ def main(out, benchmark):
         "",
         "Every unsuccessful attempt is listed with final reason, missing intervals and repair count. Every acquisition and metadata rejection is preserved. Repeated GNSS/frame invalidity prevents the estimator from generating bounded camera poses in the fault region; neither extra motion nor a command ACK restores that evidence. A shared 90 s deadline may stop B2 during its second full restart while VECR has already returned to B. These are policy costs under a fixed time budget, not infrastructure errors. Camera data that arrive after termination remain explicitly pending.",
         "",
-        "Confidence intervals use 10,000 paired seed bootstrap resamples, fixed RNG 20261024; binomial intervals use Wilson 95%. Conditional comparisons select pairs successful under both policies and can conceal differences in availability; the all-assigned table must accompany them. Seeds vary bounded pose/velocity/altitude errors and calibrated optical width. They do not represent real airframes, terrains or weather distributions. No multiple-comparison significance claims are made.",
+        "Confidence intervals use 10,000 paired seed bootstrap resamples, fixed RNG 20261024; per-scenario binomial intervals use Wilson 95%. Aggregate tables are descriptive: pooled iid binomial bounds are omitted because the same seeds recur across conditions. Fixed-mixture aggregate paired intervals resample whole seed clusters (100 clusters, retaining all 19 honest conditions); see `paired_primary_cluster_effects.csv`. Conditional comparisons select pairs successful under both policies and can conceal differences in availability; the all-assigned table must accompany them. Seeds vary bounded pose/velocity/altitude errors and calibrated optical width. They do not represent real airframes, terrains or weather distributions. No multiple-comparison significance claims are made.",
         "",
         "## Oracle and sensor limits",
         "",
@@ -595,6 +648,7 @@ def main(out, benchmark):
                 numpy=np.__version__,
                 matplotlib=matplotlib.__version__,
                 bootstrap_resamples=10000,
+                aggregate_resampling_unit="whole seed cluster across conditions",
                 bootstrap_seed=20261024,
                 gates=gates,
             ),
