@@ -10,3 +10,9 @@ measurements, assignments, exclusions, bootstrap operations, values or criteria.
 The analysis manifest records the actual analysis revision and script hash,
 separately from the frozen experimental revision. Earlier engineering-pilot tables
 remain unchanged; their paired time rows are in seconds despite the old label.
+
+Before final analysis, the report generator also gained a tidy scenario/configuration
+matrix exported from the already frozen assignment manifest and assertions that
+the benchmark uses the same executable hash and one worker. These are metadata
+and validation additions; the experimental protocol and inference calculations
+remain those preregistered at `7896f20`.

@@ -150,6 +150,33 @@ def main(out, benchmark):
     for folder in ["tables", "figures", "reports"]:
         (out / folder).mkdir(exist_ok=True)
     tables = out / "tables"
+    matrix = {}
+    for assignment in manifest["assignments"]:
+        scenario = assignment["scenario"]
+        if scenario not in matrix:
+            matrix[scenario] = {
+                k: v for k, v in assignment.items() if k not in ("seed", "policy")
+            }
+            matrix[scenario]["label"] = (
+                LABELS[int(scenario[1:])]
+                if scenario.startswith("M")
+                else "Sensitivity: " + assignment["factor"]
+            )
+            matrix[scenario]["paired_seeds"] = len(
+                {
+                    a["seed"]
+                    for a in manifest["assignments"]
+                    if a["scenario"] == scenario
+                }
+            )
+    matrix_columns = sorted(set().union(*(r.keys() for r in matrix.values())))
+    write_csv(
+        tables / "scenario_matrix.csv",
+        [
+            {k: row.get(k, "") for k in matrix_columns}
+            for _, row in sorted(matrix.items())
+        ],
+    )
     figs = out / "figures"
     groups = collections.defaultdict(list)
     for r in rows:
@@ -413,6 +440,11 @@ def main(out, benchmark):
     save(fig, figs, "06_truth_and_verified_coverage")
     perf = []
     if benchmark:
+        benchmark_manifest = json.loads((benchmark / "manifest.json").read_text())
+        assert (
+            benchmark_manifest["binary_sha256"] == manifest["binary_sha256"]
+        ), "benchmark must use the same executable"
+        assert benchmark_manifest["workers"] == 1, "benchmark must run serially"
         validate(benchmark, False)
         brows = read(benchmark / "per_attempt.csv")
         for r in brows:
