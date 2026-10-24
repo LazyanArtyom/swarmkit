@@ -47,6 +47,14 @@ full-edge restart, with private ground truth and a 21-case capability
 inventory. Results and exact run status are under
 [agent campaign v4](results/vecr/agent_campaign_v4/README.md).
 
+The completed [v5 digital-simulation study](results/vecr/agent_campaign_v5/README.md)
+adds attainable midflight recovery, noisy sensor estimates, independent exact-strip
+truth, 5,280 scientific attempts and 80 separate host benchmarks. See the
+[scientific results](results/vecr/agent_campaign_v5/final_v5/reports/SCIENTIFIC_RESULTS.md)
+and [validation gates and limitations](docs/vecr/FINAL_VALIDATION_V5.md).
+Previous studies remain frozen. V5 is agent-backed simulation; SITL and real
+camera/flight validation remain unfinished.
+
 Example (already armed and in a safe guided simulation state):
 
 ```bash

@@ -1,4 +1,21 @@
-# VECR implementation status — 2026-10-22
+# VECR implementation status — 2026-10-24
+
+The v5 digital-simulation campaign is complete: 5,280 paired-policy attempts
+across 21 primary scenarios and 18 sensitivity conditions, plus 80 separate
+serial host benchmarks. Independent reconstruction checked 453,524 delivered
+captures and 4,246 completed re-entry dwells. Release, UBSan, new regression,
+installed-SDK and artifact verification gates passed. Experimental source is
+`7896f20`; final analysis source is `62a3363`. See
+[FINAL_VALIDATION_V5.md](FINAL_VALIDATION_V5.md) for every gate, measured results,
+uncertainty, negative controls and unfinished scope. No SITL was run.
+
+VECR reduced travel by 25–28% in three equally successful midflight-recovery
+conditions. Both policies had zero false fulfillment across 4,880 honest-sensor
+attempts, but all 400 dishonest-sensor controls falsely fulfilled. Persistent
+missing evidence still prevented certification. These are agent-backed simulator
+results under a restricted full-strip camera model, not physical-flight claims.
+
+## Earlier frozen studies
 
 The v4.2 simulator validation is complete: 2,400 confirmatory B2/P agent
 attempts across 12 comparative scenarios and 100 paired seeds, 72 separate

@@ -1,0 +1,161 @@
+scenario,policy,submitted,reason,count
+M02,B2,0,delivery pending at attempt termination,100
+M02,B2,1,camera footprint cannot prove full strip,16600
+M02,P,0,delivery pending at attempt termination,100
+M02,P,1,camera footprint cannot prove full strip,16600
+M03,B2,0,delivery pending at attempt termination,25
+M03,B2,1,camera footprint cannot prove full strip,1862
+M03,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",22
+M03,P,0,delivery pending at attempt termination,21
+M03,P,1,camera footprint cannot prove full strip,1206
+M03,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",1
+M04,B2,0,delivery pending at attempt termination,25
+M04,B2,1,camera footprint cannot prove full strip,100
+M04,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",22
+M04,P,0,delivery pending at attempt termination,20
+M04,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",39
+M05,B2,0,delivery pending at attempt termination,25
+M05,B2,1,camera footprint cannot prove full strip,2300
+M05,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",22
+M05,P,0,delivery pending at attempt termination,73
+M05,P,1,camera footprint cannot prove full strip,1600
+M05,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",27
+M06,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",100
+M06,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",100
+M07,B2,0,delivery pending at attempt termination,100
+M07,B2,0,metadata intentionally absent,1200
+M07,P,0,delivery pending at attempt termination,68
+M07,P,0,metadata intentionally absent,1200
+M07,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",13
+M08,B2,0,delivery pending at attempt termination,100
+M08,B2,0,estimator lacks bounded valid pose,3200
+M08,B2,1,capture has no nearby bounded vehicle pose,200
+M08,P,0,delivery pending at attempt termination,100
+M08,P,0,estimator lacks bounded valid pose,4022
+M08,P,1,capture has no nearby bounded vehicle pose,172
+M09,B2,0,delivery pending at attempt termination,100
+M09,B2,0,estimator lacks bounded valid pose,3200
+M09,B2,1,capture has no nearby bounded vehicle pose,200
+M09,P,0,delivery pending at attempt termination,100
+M09,P,0,estimator lacks bounded valid pose,4022
+M09,P,1,capture has no nearby bounded vehicle pose,172
+M10,B2,0,estimator lacks bounded valid pose,18100
+M10,P,0,estimator lacks bounded valid pose,18100
+M11,B2,0,delivery pending at attempt termination,300
+M11,B2,1,capture has no nearby bounded vehicle pose,17800
+M11,P,0,delivery pending at attempt termination,300
+M11,P,1,capture has no nearby bounded vehicle pose,17800
+M12,B2,0,delivery pending at attempt termination,100
+M12,B2,1,capture binding or calibration invalid,18000
+M12,P,0,delivery pending at attempt termination,100
+M12,P,1,capture binding or calibration invalid,18000
+M13,B2,0,delivery pending at attempt termination,100
+M13,B2,1,camera footprint cannot prove full strip,18000
+M13,P,0,delivery pending at attempt termination,100
+M13,P,1,camera footprint cannot prove full strip,18000
+M16,B2,0,delivery pending at attempt termination,42
+M16,B2,1,camera footprint cannot prove full strip,100
+M16,P,0,delivery pending at attempt termination,42
+M16,P,1,camera footprint cannot prove full strip,100
+M17,B2,0,delivery pending at attempt termination,42
+M17,B2,0,estimator lacks bounded valid pose,58
+M17,B2,1,camera footprint cannot prove full strip,100
+M17,P,0,delivery pending at attempt termination,42
+M17,P,0,estimator lacks bounded valid pose,58
+M17,P,1,camera footprint cannot prove full strip,100
+M18,B2,0,delivery pending at attempt termination,100
+M18,B2,1,camera footprint cannot prove full strip,2399
+M18,P,0,delivery pending at attempt termination,100
+M18,P,1,camera footprint cannot prove full strip,2399
+M20,B2,0,delivery pending at attempt termination,100
+M20,P,0,delivery pending at attempt termination,66
+M20,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",10
+X00,B2,0,delivery pending at attempt termination,10
+X00,B2,1,camera footprint cannot prove full strip,660
+X00,P,0,delivery pending at attempt termination,16
+X00,P,1,camera footprint cannot prove full strip,443
+X01,B2,1,camera footprint cannot prove full strip,690
+X01,P,0,delivery pending at attempt termination,13
+X01,P,1,camera footprint cannot prove full strip,480
+X01,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",3
+X02,B2,0,delivery pending at attempt termination,7
+X02,B2,1,camera footprint cannot prove full strip,690
+X02,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X02,P,0,delivery pending at attempt termination,6
+X02,P,1,camera footprint cannot prove full strip,483
+X02,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",10
+X03,B2,0,delivery pending at attempt termination,7
+X03,B2,1,camera footprint cannot prove full strip,690
+X03,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X03,P,0,delivery pending at attempt termination,7
+X03,P,1,camera footprint cannot prove full strip,458
+X03,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",1
+X04,B2,0,delivery pending at attempt termination,30
+X04,B2,1,camera footprint cannot prove full strip,1737
+X04,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",18
+X04,P,0,delivery pending at attempt termination,30
+X04,P,1,camera footprint cannot prove full strip,1206
+X04,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",12
+X05,B2,0,delivery pending at attempt termination,7
+X05,B2,1,camera footprint cannot prove full strip,330
+X05,P,1,camera footprint cannot prove full strip,240
+X06,B2,0,delivery pending at attempt termination,14
+X06,B2,1,camera footprint cannot prove full strip,690
+X06,P,0,delivery pending at attempt termination,30
+X06,P,1,camera footprint cannot prove full strip,480
+X07,B2,0,delivery pending at attempt termination,30
+X07,B2,1,camera footprint cannot prove full strip,5400
+X07,P,0,delivery pending at attempt termination,30
+X07,P,1,camera footprint cannot prove full strip,5400
+X08,B2,0,delivery pending at attempt termination,18
+X08,B2,1,camera footprint cannot prove full strip,688
+X08,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",2
+X08,P,0,delivery pending at attempt termination,9
+X08,P,1,camera footprint cannot prove full strip,427
+X09,B2,0,delivery pending at attempt termination,30
+X09,B2,1,camera footprint cannot prove full strip,737
+X09,P,0,delivery pending at attempt termination,24
+X09,P,1,camera footprint cannot prove full strip,570
+X10,B2,0,delivery pending at attempt termination,7
+X10,B2,1,camera footprint cannot prove full strip,690
+X10,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X10,P,0,delivery pending at attempt termination,23
+X10,P,1,camera footprint cannot prove full strip,480
+X10,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X11,B2,0,delivery pending at attempt termination,7
+X11,B2,1,camera footprint cannot prove full strip,690
+X11,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X11,P,0,delivery pending at attempt termination,23
+X11,P,1,camera footprint cannot prove full strip,480
+X11,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X12,B2,0,delivery pending at attempt termination,7
+X12,B2,1,camera footprint cannot prove full strip,690
+X12,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X12,P,0,delivery pending at attempt termination,23
+X12,P,1,camera footprint cannot prove full strip,480
+X12,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X13,B2,0,delivery pending at attempt termination,7
+X13,B2,1,camera footprint cannot prove full strip,30
+X13,B2,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",7
+X13,P,0,delivery pending at attempt termination,7
+X13,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",9
+X14,B2,0,delivery pending at attempt termination,30
+X14,B2,0,metadata intentionally absent,240
+X14,P,0,delivery pending at attempt termination,18
+X14,P,0,metadata intentionally absent,240
+X14,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",1
+X15,B2,0,delivery pending at attempt termination,30
+X15,B2,0,metadata intentionally absent,360
+X15,P,0,delivery pending at attempt termination,20
+X15,P,0,metadata intentionally absent,360
+X15,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",3
+X16,B2,0,delivery pending at attempt termination,30
+X16,B2,0,metadata intentionally absent,600
+X16,P,0,delivery pending at attempt termination,20
+X16,P,0,metadata intentionally absent,600
+X16,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",1
+X17,B2,0,delivery pending at attempt termination,30
+X17,B2,0,metadata intentionally absent,240
+X17,P,0,delivery pending at attempt termination,22
+X17,P,0,metadata intentionally absent,240
+X17,P,1,"capture not accepted: invalid, stale, uncertain or terminal attempt",1
