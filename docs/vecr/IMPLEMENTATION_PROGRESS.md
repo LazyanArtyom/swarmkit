@@ -52,3 +52,15 @@ The old state-acceptance research simulator, results and isolated public core we
 The deterministic VECR strip experiment has frozen v1 outputs and amended v2 outputs. V2 models eight of the requested 21 scenario IDs, 100 seeds per ID, and four paired methods. Private raster truth is separate from the verifier's observed metadata. The model uses geometric replay rather than the production agent/backend; its figures do not establish flight or live sensor performance. See `results/vecr/reports/CORE_RESULTS_V2_100_SEEDS.md` and its manifest.
 
 Regression tests exercise the SDK → Agent → SimBackend path with independent simulator truth, successful gap repair and a motor failure during repair. The versioned [agent-backed v3 pilot](../../results/vecr/agent_pilot_v3/README.md) records those two attempts, raw traces, a configuration and hash manifest, and a figure. That pilot remains an integration check. No current VECR SITL campaign, Raspberry Pi timing study, peer/server goodput campaign or live camera evidence source has been executed. Independent SITL truth and the unsupported v4 cases remain open.
+
+## v5 follow-up (2026-10-24)
+
+The independent review drove a new simulator-only study. Recovery now remains
+RECOVERING until physical re-entry and continuation, prevents overlapping repairs,
+and exposes bounded departure with hysteresis. A noisy telemetry-only camera
+estimator and independent exact-strip oracle replace ideal metadata in the new
+harness. Full measurements/acquisitions/rejections/command/trajectory traces,
+21 primary cases, 18 sensitivity conditions, paired inference, lossless raw outputs
+and serial process performance measurement are implemented. See
+`SIMULATION_PROTOCOL_V5.md` and `FINAL_VALIDATION_V5.md` for execution status.
+Previous v4.2 results remain frozen and retain their narrower interpretation.

@@ -660,6 +660,7 @@ enum EdgePhase {
     EDGE_FULFILLED = 3;
     EDGE_INTERRUPTED = 4;
     EDGE_UNKNOWN = 5;
+    EDGE_DEVIATING = 6;
 }
 
 enum EdgeEvidenceQuality {
@@ -693,6 +694,7 @@ message EdgeOperation {
     int64 timeout_ms = 17;
     float commanded_speed_mps = 18;
     EdgeRepairPolicy repair_policy = 19;
+    double deviation_hysteresis_m = 20;
 }
 
 message EdgeReport {
@@ -714,6 +716,7 @@ message EdgeReport {
     GeoPoint pending_reentry = 16;
     ExecutionHandle execution_handle = 18;
     EdgeEvidenceQuality traversal_quality = 19;
+    optional int64 last_position_monotonic_ms = 20;
 }
 
 message ExecuteEdgeRequest {

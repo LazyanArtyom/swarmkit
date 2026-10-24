@@ -1680,6 +1680,7 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     report.drone_id = source.drone_id();
     report.status.phase =
         source.phase() == swarmkit::v1::EDGE_MOVING        ? edge::Phase::kMoving
+        : source.phase() == swarmkit::v1::EDGE_DEVIATING   ? edge::Phase::kDeviating
         : source.phase() == swarmkit::v1::EDGE_RECOVERING  ? edge::Phase::kRecovering
         : source.phase() == swarmkit::v1::EDGE_FULFILLED   ? edge::Phase::kFulfilled
         : source.phase() == swarmkit::v1::EDGE_INTERRUPTED ? edge::Phase::kInterrupted
@@ -1701,6 +1702,8 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
         report.status.traversal_missing.push_back({missing.begin_m(), missing.end_m()});
     report.status.recovery_attempts = source.recovery_attempts();
     report.status.reason = source.reason();
+    if (source.has_last_position_monotonic_ms())
+        report.status.last_position_monotonic_ms = source.last_position_monotonic_ms();
     if (source.has_pending_reentry()) {
         report.pending_reentry_wgs84 =
             edge::GeoPoint{source.pending_reentry().lat_deg(), source.pending_reentry().lon_deg()};
@@ -2934,6 +2937,7 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
     operation->set_max_recovery_attempts(request.edge.max_recovery_attempts);
     operation->set_sustained_deviation_samples(request.edge.sustained_deviation_samples);
     operation->set_recovery_cooldown_ms(request.edge.recovery_cooldown_ms);
+    operation->set_deviation_hysteresis_m(request.edge.deviation_hysteresis_m);
     operation->set_timeout_ms(request.edge.timeout_ms);
     operation->set_commanded_speed_mps(request.commanded_speed_mps);
     swarmkit::v1::ExecuteEdgeReply rep;

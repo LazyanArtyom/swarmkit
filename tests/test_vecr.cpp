@@ -343,3 +343,65 @@ TEST_CASE("VECR declines recovery from unbounded navigation position", "[vecr]")
     at_b.monotonic_ms = 3200;
     CHECK(supervisor.ObservePosition(at_b).pending_reentry.has_value());
 }
+
+TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another repair",
+          "[vecr][v5]") {
+    auto request = Request();
+    request.sustained_deviation_samples = 3;
+    EdgeExecutionSupervisor supervisor(request);
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    static_cast<void>(supervisor.ObserveCapture(Capture(0, 40, 1000, "prefix")));
+    CHECK(supervisor.ObservePosition(Position(50, 2000, 5)).phase == Phase::kDeviating);
+    CHECK(supervisor.ObservePosition(Position(51, 2100, 5)).phase == Phase::kDeviating);
+    auto proposed = supervisor.ObservePosition(Position(52, 2200, 5));
+    REQUIRE(proposed.pending_reentry);
+    CHECK(proposed.pending_reentry->east_m == 38);
+    CHECK(proposed.phase == Phase::kRecovering);
+    CHECK(supervisor.RecoveryDispatched(true, 2200).phase == Phase::kRecovering);
+    for (int i = 0; i < 10; ++i) {
+        const auto state = supervisor.ObservePosition(Position(45, 4000 + i * 100, 5));
+        CHECK(state.phase == Phase::kRecovering);
+        CHECK_FALSE(state.pending_reentry);
+        CHECK(state.recovery_attempts == 1);
+    }
+    static_cast<void>(supervisor.ObserveCapture(Capture(0, 100, 4900, "full")));
+    static_cast<void>(supervisor.ObservePosition(Position(100, 5000, 0, true)));
+    CHECK(supervisor.ObservePosition(Position(100, 5300, 0, true)).phase == Phase::kRecovering);
+    CHECK(supervisor.RecoveryReentryCompleted(5300).phase == Phase::kMoving);
+    static_cast<void>(supervisor.ObservePosition(Position(100, 5400, 0, true)));
+    CHECK(supervisor.ObservePosition(Position(100, 5600, 0, true)).phase == Phase::kFulfilled);
+}
+
+TEST_CASE("Deviation hysteresis and unknown bounds cannot manufacture consecutive departures",
+          "[vecr][v5]") {
+    auto request = Request();
+    EdgeExecutionSupervisor supervisor(request);
+    static_cast<void>(supervisor.ObservePosition(Position(50, 1000, 4.1)));
+    CHECK(supervisor.ObservePosition(Position(50, 1100, 3.9)).phase == Phase::kDeviating);
+    CHECK(supervisor.ObservePosition(Position(50, 1200, 3.4)).phase == Phase::kMoving);
+    static_cast<void>(supervisor.ObservePosition(Position(50, 1300, 4.2)));
+    auto invalid = Position(50, 1400, 8);
+    invalid.valid = false;
+    CHECK(supervisor.ObservePosition(invalid).phase == Phase::kUnknown);
+    CHECK_FALSE(supervisor.ObservePosition(Position(50, 1500, 4.2)).pending_reentry);
+    auto unbounded = Position(50, 1600, 8);
+    unbounded.horizontal_error_hard_bound_m.reset();
+    CHECK_FALSE(supervisor.ObservePosition(unbounded).pending_reentry);
+    CHECK_FALSE(supervisor.ObservePosition(Position(50, 1700, 4.2)).pending_reentry);
+}
+
+TEST_CASE("Midflight re-entry never targets the unseen future tail and cooldown follows completion",
+          "[vecr][v5]") {
+    auto request = Request();
+    request.sustained_deviation_samples = 1;
+    EdgeExecutionSupervisor supervisor(request);
+    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+    static_cast<void>(supervisor.ObserveCapture(Capture(0, 80, 1000, "wide")));
+    auto proposed = supervisor.ObservePosition(Position(50, 2000, 6));
+    REQUIRE(proposed.pending_reentry);
+    CHECK(proposed.pending_reentry->east_m == 48);
+    static_cast<void>(supervisor.RecoveryDispatched(true, 2000));
+    static_cast<void>(supervisor.RecoveryReentryCompleted(6000));
+    CHECK_FALSE(supervisor.ObservePosition(Position(50, 6500, 6)).pending_reentry);
+    CHECK(supervisor.ObservePosition(Position(50, 7000, 6)).pending_reentry.has_value());
+}

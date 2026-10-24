@@ -20,6 +20,7 @@ add_executable(swarmkit_tests
     test_telemetry_manager.cpp
     test_telemetry_sink.cpp
     test_vecr.cpp
+    test_vecr_v5_models.cpp
     test_vecr_truth_oracle.cpp
     test_vecr_agent_trial.cpp
     vecr_agent_trial.cpp
@@ -61,3 +62,8 @@ target_link_libraries(swarmkit_vecr_agent_trial PRIVATE
 )
 swarmkit_set_warnings(swarmkit_vecr_agent_trial)
 swarmkit_enable_sanitizers(swarmkit_vecr_agent_trial)
+
+add_executable(swarmkit_vecr_v5_trial vecr_v5_trial.cpp)
+target_link_libraries(swarmkit_vecr_v5_trial PRIVATE swarmkit_agent swarmkit_evidence swarmkit_client)
+swarmkit_set_warnings(swarmkit_vecr_v5_trial)
+swarmkit_enable_sanitizers(swarmkit_vecr_v5_trial)

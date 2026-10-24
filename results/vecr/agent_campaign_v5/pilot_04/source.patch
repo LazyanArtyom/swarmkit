@@ -1,0 +1,494 @@
+diff --git a/apps/cli/output.cpp b/apps/cli/output.cpp
+index 3effeec..a35f07a 100644
+--- a/apps/cli/output.cpp
++++ b/apps/cli/output.cpp
+@@ -98,6 +98,7 @@ std::string_view EdgePhaseName(swarmkit::edge::Phase phase) {
+     using swarmkit::edge::Phase;
+     switch (phase) {
+         case Phase::kMoving: return "moving";
++        case Phase::kDeviating: return "DEVIATING";
+         case Phase::kRecovering: return "recovering";
+         case Phase::kFulfilled: return "fulfilled";
+         case Phase::kInterrupted: return "interrupted";
+diff --git a/apps/vecr_experiment.cpp b/apps/vecr_experiment.cpp
+index 745f0e8..efe29f5 100644
+--- a/apps/vecr_experiment.cpp
++++ b/apps/vecr_experiment.cpp
+@@ -207,6 +207,7 @@ Result Run(Scenario scenario, int seed, const char* method) {
+             const double reentry = std::floor(status.pending_reentry->east_m);
+             static_cast<void>(trial.verifier.RecoveryDispatched(true, trial.time_ms));
+             trial.Leg(100.0, reentry, true);
++            static_cast<void>(trial.verifier.RecoveryReentryCompleted(trial.time_ms));
+             trial.Leg(reentry, 100.0, true);
+         }
+     }
+diff --git a/docs/vecr/METHOD_AND_CORRECTNESS.md b/docs/vecr/METHOD_AND_CORRECTNESS.md
+index 3314437..7dc4282 100644
+--- a/docs/vecr/METHOD_AND_CORRECTNESS.md
++++ b/docs/vecr/METHOD_AND_CORRECTNESS.md
+@@ -44,3 +44,21 @@ The first core matrix used eight coded cases S00, S01, S03, S04, S05, S06, S07 a
+ ## Protocol amendment (v2)
+ 
+ After inspecting v1 results, v2 varies the fault start as `35 + seed % 11` metres while keeping a 25 m camera/metadata outage or 30 m detour. This reduces repeated identical distance outcomes but does not make seeds independent field trials. S01 still draws up to ±0.5 m jitter from the seeded generator. All other thresholds and the core matrix remain as above. V2 writes distinct raw files and manifest SHA-256 hashes. Further changes require v3. Both versions are deliberately simple geometric models, not flight dynamics or ArduPilot SITL.
++
++## v5 recovery execution state
++
++`DEVIATING` exposes bounded corridor departure. `deviation_hysteresis_m` sets
++an inner reset threshold; unknown bounds never become a zero-error departure
++proof. Three outside samples without definite re-entry is the default trigger.
++Onboard recovery remains `RECOVERING` after command ACK, through navigation to
++the selected target and bounded stationary dwell. Only successful continuation
++from that physically verified point changes phase to `MOVING`. Active re-entry
++blocks overlapping repairs; cooldown begins when re-entry completes. During
++midflight departure the targeted point cannot lie ahead of current projected
++progress. A wide camera's accepted off-corridor coverage remains credited.
++
++`last_position_monotonic_ms` is absent before telemetry processing; agent status
++exposes the last frame whose processing and immediate dispatch work have finished.
++It provides an observation barrier for controlled simulation without fixed sleeps.
++Reports emitted during processing can contain the preceding completed timestamp.
++These simulator changes do not qualify live MAVLink recovery.
+diff --git a/include/swarmkit/edge/vecr.h b/include/swarmkit/edge/vecr.h
+index 20024df..a25c1c3 100644
+--- a/include/swarmkit/edge/vecr.h
++++ b/include/swarmkit/edge/vecr.h
+@@ -64,7 +64,7 @@ class IntervalSet {
+ 
+ enum class Obligation { kArrival, kTraversal, kSurvey, kTraversalAndSurvey };
+ enum class RepairPolicy { kTargetedGap, kFullEdgeRestart };
+-enum class Phase { kMoving, kRecovering, kFulfilled, kInterrupted, kUnknown };
++enum class Phase { kMoving, kDeviating, kRecovering, kFulfilled, kInterrupted, kUnknown };
+ enum class EvidenceQuality { kUnknown, kEstimated, kBounded };
+ 
+ struct EdgeRequest {
+@@ -86,6 +86,7 @@ struct EdgeRequest {
+     double recovery_overlap_m{};
+     std::uint32_t max_recovery_attempts{};
+     std::uint32_t sustained_deviation_samples{3};
++    double deviation_hysteresis_m{0.5};
+     std::int64_t recovery_cooldown_ms{1000};
+     std::int64_t timeout_ms{};
+ };
+@@ -162,6 +163,7 @@ struct Status {
+     std::uint32_t recovery_attempts{};
+     std::optional<Point> pending_reentry;
+     std::string reason;
++    std::optional<std::int64_t> last_position_monotonic_ms;
+ };
+ 
+ // Single-writer event processor. The agent owns command arbitration; a pending
+@@ -176,6 +178,9 @@ class EdgeExecutionSupervisor {
+     [[nodiscard]] Status ObservePosition(const PositionObservation& observation);
+     [[nodiscard]] Status ObserveCapture(const CaptureEvidence& evidence);
+     [[nodiscard]] Status RecoveryDispatched(bool accepted, std::int64_t monotonic_ms);
++    // Called by the agent only after bounded stationary re-entry and accepted
++    // continuation to B. Dispatch acknowledgement alone cannot complete recovery.
++    [[nodiscard]] Status RecoveryReentryCompleted(std::int64_t monotonic_ms);
+     [[nodiscard]] Status Interrupt(std::string reason);
+     [[nodiscard]] Status Snapshot() const;
+     [[nodiscard]] bool WasCaptureAccepted(const CaptureEvidence& evidence) const;
+@@ -197,6 +202,7 @@ class EdgeExecutionSupervisor {
+     std::int64_t last_recovery_ms_{-1};
+     std::uint32_t deviation_samples_{};
+     bool can_recover_{};
++    bool recovery_in_progress_{};
+     std::unordered_map<std::string, CaptureEvidence> captures_;
+ };
+ 
+diff --git a/proto/swarmkit/v1/swarmkit.proto b/proto/swarmkit/v1/swarmkit.proto
+index 78b3038..bcd7e5b 100644
+--- a/proto/swarmkit/v1/swarmkit.proto
++++ b/proto/swarmkit/v1/swarmkit.proto
+@@ -660,6 +660,7 @@ enum EdgePhase {
+     EDGE_FULFILLED = 3;
+     EDGE_INTERRUPTED = 4;
+     EDGE_UNKNOWN = 5;
++    EDGE_DEVIATING = 6;
+ }
+ 
+ enum EdgeEvidenceQuality {
+@@ -693,6 +694,7 @@ message EdgeOperation {
+     int64 timeout_ms = 17;
+     float commanded_speed_mps = 18;
+     EdgeRepairPolicy repair_policy = 19;
++    double deviation_hysteresis_m = 20;
+ }
+ 
+ message EdgeReport {
+@@ -714,6 +716,7 @@ message EdgeReport {
+     GeoPoint pending_reentry = 16;
+     ExecutionHandle execution_handle = 18;
+     EdgeEvidenceQuality traversal_quality = 19;
++    optional int64 last_position_monotonic_ms = 20;
+ }
+ 
+ message ExecuteEdgeRequest {
+diff --git a/src/agent/edge_execution_runtime.cpp b/src/agent/edge_execution_runtime.cpp
+index 090e77a..59c65df 100644
+--- a/src/agent/edge_execution_runtime.cpp
++++ b/src/agent/edge_execution_runtime.cpp
+@@ -20,6 +20,8 @@ namespace {
+     switch (phase) {
+         case edge::Phase::kMoving:
+             return swarmkit::v1::EDGE_MOVING;
++        case edge::Phase::kDeviating:
++            return swarmkit::v1::EDGE_DEVIATING;
+         case edge::Phase::kRecovering:
+             return swarmkit::v1::EDGE_RECOVERING;
+         case edge::Phase::kFulfilled:
+@@ -139,6 +141,7 @@ std::optional<edge::EdgeRequest> EdgeExecutionRuntime::Convert(
+     request.max_recovery_attempts = operation.max_recovery_attempts();
+     request.sustained_deviation_samples = operation.sustained_deviation_samples();
+     request.recovery_cooldown_ms = operation.recovery_cooldown_ms();
++    request.deviation_hysteresis_m = operation.deviation_hysteresis_m();
+     request.timeout_ms = operation.timeout_ms();
+     const auto& origin = operation.route(0);
+     for (const auto& point : operation.route()) {
+@@ -163,6 +166,9 @@ swarmkit::v1::EdgeReport EdgeExecutionRuntime::ToReport(const Attempt& attempt,
+     report.set_attempt_id(req.attempt_id);
+     report.set_drone_id(req.drone_id);
+     report.set_phase(ToPhase(status.phase));
++    const auto processed_ms = attempt.last_processed_position_ms.load(std::memory_order_acquire);
++    if (processed_ms >= 0)
++        report.set_last_position_monotonic_ms(processed_ms);
+     report.set_at_b_verified(status.at_b_verified);
+     report.set_traversal_verified(status.traversal_verified);
+     report.set_survey_verified(status.survey_verified);
+@@ -787,7 +793,7 @@ void EdgeExecutionRuntime::DispatchReturnToB(const std::shared_ptr<Attempt>& att
+                       ->CheckAndGrant(attempt->context,
+                                       std::chrono::milliseconds{config_->default_authority_ttl_ms})
+                       .IsOk();
+-    std::optional<edge::Status> interrupted;
++    std::optional<edge::Status> continuation;
+     {
+         std::lock_guard<std::mutex> lock(attempt->mutex);
+         if (attempt->stop.load(std::memory_order_relaxed) ||
+@@ -807,12 +813,13 @@ void EdgeExecutionRuntime::DispatchReturnToB(const std::shared_ptr<Attempt>& att
+                                   .speed_mps = attempt->operation.commanded_speed_mps()}};
+             allowed = backend_->Execute(command).result.IsOk();
+         }
+-        if (!allowed)
+-            interrupted =
+-                attempt->supervisor.Interrupt("cannot safely continue from recovery re-entry to B");
++        continuation = allowed ? attempt->supervisor.RecoveryReentryCompleted(
++                                     providers_.MonotonicTimeNs() / 1'000'000)
++                               : attempt->supervisor.Interrupt(
++                                     "cannot safely continue from recovery re-entry to B");
+     }
+-    if (interrupted)
+-        (void)Publish(*attempt, *interrupted);
++    if (continuation)
++        (void)Publish(*attempt, *continuation);
+ }
+ 
+ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
+@@ -909,7 +916,8 @@ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
+             if (attempt->reentry_target) {
+                 const auto& request = attempt->supervisor.Request();
+                 const bool at_reentry =
+-                    observation.valid && observation.horizontal_error_hard_bound_m &&
++                    updated.phase == edge::Phase::kRecovering && observation.valid &&
++                    observation.safe_to_navigate && observation.horizontal_error_hard_bound_m &&
+                     observation.speed_mps && std::isfinite(*observation.speed_mps) &&
+                     *observation.speed_mps >= 0 && observation.speed_error_hard_bound_mps &&
+                     observation.altitude_m && observation.vertical_error_hard_bound_m &&
+@@ -941,6 +949,11 @@ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
+             DispatchRecovery(attempt, *reentry, observation.monotonic_ms);
+         if (return_to_b)
+             DispatchReturnToB(attempt);
++        {
++            std::lock_guard<std::mutex> lock(attempt->mutex);
++            attempt->last_processed_position_ms.store(observation.monotonic_ms,
++                                                      std::memory_order_release);
++        }
+         if (Terminal(updated.phase))
+             break;
+     }
+diff --git a/src/agent/edge_execution_runtime.h b/src/agent/edge_execution_runtime.h
+index c943612..e572825 100644
+--- a/src/agent/edge_execution_runtime.h
++++ b/src/agent/edge_execution_runtime.h
+@@ -77,6 +77,7 @@ class EdgeExecutionRuntime {
+         std::optional<edge::Point> last_bounded_position;
+         std::optional<double> last_position_hard_bound_m;
+         std::int64_t last_position_ms{-1};
++        std::atomic<std::int64_t> last_processed_position_ms{-1};
+         std::int64_t started_agent_ms{};
+         std::int64_t last_frame_agent_ms{};
+         std::optional<swarmkit::v1::EdgeReport> physical_unknown_report;
+diff --git a/src/client/client.cpp b/src/client/client.cpp
+index 79f8e22..fd61f40 100644
+--- a/src/client/client.cpp
++++ b/src/client/client.cpp
+@@ -1680,6 +1680,7 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
+     report.drone_id = source.drone_id();
+     report.status.phase =
+         source.phase() == swarmkit::v1::EDGE_MOVING        ? edge::Phase::kMoving
++        : source.phase() == swarmkit::v1::EDGE_DEVIATING   ? edge::Phase::kDeviating
+         : source.phase() == swarmkit::v1::EDGE_RECOVERING  ? edge::Phase::kRecovering
+         : source.phase() == swarmkit::v1::EDGE_FULFILLED   ? edge::Phase::kFulfilled
+         : source.phase() == swarmkit::v1::EDGE_INTERRUPTED ? edge::Phase::kInterrupted
+@@ -1701,6 +1702,8 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
+         report.status.traversal_missing.push_back({missing.begin_m(), missing.end_m()});
+     report.status.recovery_attempts = source.recovery_attempts();
+     report.status.reason = source.reason();
++    if (source.has_last_position_monotonic_ms())
++        report.status.last_position_monotonic_ms = source.last_position_monotonic_ms();
+     if (source.has_pending_reentry()) {
+         report.pending_reentry_wgs84 =
+             edge::GeoPoint{source.pending_reentry().lat_deg(), source.pending_reentry().lon_deg()};
+@@ -2934,6 +2937,7 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
+     operation->set_max_recovery_attempts(request.edge.max_recovery_attempts);
+     operation->set_sustained_deviation_samples(request.edge.sustained_deviation_samples);
+     operation->set_recovery_cooldown_ms(request.edge.recovery_cooldown_ms);
++    operation->set_deviation_hysteresis_m(request.edge.deviation_hysteresis_m);
+     operation->set_timeout_ms(request.edge.timeout_ms);
+     operation->set_commanded_speed_mps(request.commanded_speed_mps);
+     swarmkit::v1::ExecuteEdgeReply rep;
+diff --git a/src/core/vecr.cpp b/src/core/vecr.cpp
+index a9599bf..34ee13b 100644
+--- a/src/core/vecr.cpp
++++ b/src/core/vecr.cpp
+@@ -229,6 +229,8 @@ bool EdgeExecutionSupervisor::Valid() const {
+            request_.minimum_recovery_battery_percent >= 0.0 &&
+            request_.minimum_recovery_battery_percent <= 100.0 &&
+            std::isfinite(request_.recovery_overlap_m) && request_.recovery_overlap_m >= 0.0 &&
++           std::isfinite(request_.deviation_hysteresis_m) && request_.deviation_hysteresis_m >= 0 &&
++           request_.deviation_hysteresis_m < request_.corridor_half_width_m &&
+            request_.sustained_deviation_samples > 0 && request_.recovery_cooldown_ms >= 0 &&
+            request_.timeout_ms > 0;
+ }
+@@ -245,7 +247,7 @@ void EdgeExecutionSupervisor::Recompute() {
+     if (Terminal(status_.phase))
+         return;
+     const bool obligation_met =
+-        status_.at_b_verified &&
++        !recovery_in_progress_ && status_.at_b_verified &&
+         (request_.obligation == Obligation::kArrival ||
+          (request_.obligation == Obligation::kTraversal && status_.traversal_verified) ||
+          (request_.obligation == Obligation::kSurvey && status_.survey_verified) ||
+@@ -259,8 +261,8 @@ void EdgeExecutionSupervisor::Recompute() {
+ }
+ 
+ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to_navigate) {
+-    if (Terminal(status_.phase) || status_.pending_reentry || !safe_to_navigate ||
+-        request_.max_recovery_attempts == 0 ||
++    if (Terminal(status_.phase) || status_.pending_reentry || recovery_in_progress_ ||
++        !safe_to_navigate || request_.max_recovery_attempts == 0 ||
+         status_.recovery_attempts >= request_.max_recovery_attempts ||
+         (last_recovery_ms_ >= 0 && now_ms - last_recovery_ms_ < request_.recovery_cooldown_ms))
+         return;
+@@ -272,11 +274,18 @@ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to
+         std::sort(gaps.begin(), gaps.end(),
+                   [](Interval a, Interval b) { return a.begin_m < b.begin_m; });
+     }
+-    if (request_.obligation == Obligation::kArrival || gaps.empty())
++    const bool departed = deviation_samples_ >= request_.sustained_deviation_samples;
++    if (!departed && (request_.obligation == Obligation::kArrival || gaps.empty()))
+         return;
++    // A future unsurveyed tail is not a missed segment. During departure,
++    // re-enter no farther than current progress, even when a wide camera has
++    // already covered the strip. Both policies share this trigger.
++    const double progress = previous_projection_ ? previous_projection_->arclength_m : 0.0;
++    const double gap_start = gaps.empty() ? progress : gaps.front().begin_m;
+     const double s = request_.repair_policy == RepairPolicy::kFullEdgeRestart
+                          ? 0.0
+-                         : std::max(0.0, gaps.front().begin_m - request_.recovery_overlap_m);
++                         : std::max(0.0, (departed ? std::min(progress, gap_start) : gap_start) -
++                                             request_.recovery_overlap_m);
+     status_.pending_reentry = PointAt(request_.route, s);
+     status_.phase = Phase::kRecovering;
+     status_.reason = "re-entry proposed for earliest unverified gap";
+@@ -290,6 +299,7 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+     if (started_ms_ < 0)
+         started_ms_ = observation.monotonic_ms;
+     latest_position_ms_ = observation.monotonic_ms;
++    status_.last_position_monotonic_ms = observation.monotonic_ms;
+     if (observation.monotonic_ms - started_ms_ > request_.timeout_ms) {
+         status_.phase = Phase::kInterrupted;
+         status_.reason = "edge timeout";
+@@ -317,6 +327,8 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+         previous_projection_.reset();
+         status_.at_b_verified = false;
+         arrival_candidate_ms_ = -1;
++        deviation_samples_ = 0;
++        can_recover_ = false;
+         status_.phase = Phase::kUnknown;
+         status_.traversal_quality = EvidenceQuality::kUnknown;
+         status_.reason = "position unavailable or invalid";
+@@ -329,6 +341,8 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+         status_.at_b_verified = false;
+         arrival_candidate_ms_ = -1;
+         status_.phase = Phase::kUnknown;
++        deviation_samples_ = 0;
++        can_recover_ = false;
+         status_.reason = "route projection ambiguous";
+         return Snapshot();
+     }
+@@ -354,10 +368,13 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+     }
+ 
+     const double error = observation.horizontal_error_hard_bound_m.value_or(0.0);
+-    const bool within_sample = projection->cross_track_m + error <= request_.corridor_half_width_m;
+-    if (!within_sample)
++    const bool bounded = observation.horizontal_error_hard_bound_m.has_value();
++    const bool within_sample =
++        bounded && projection->cross_track_m + error <= request_.corridor_half_width_m;
++    if (bounded && !within_sample)
+         ++deviation_samples_;
+-    else
++    else if (!bounded || projection->cross_track_m + error <=
++                             request_.corridor_half_width_m - request_.deviation_hysteresis_m)
+         deviation_samples_ = 0;
+     if (request_.route.points.size() == 2 && previous_ && previous_projection_ && within_sample &&
+         !previous_projection_->ambiguous && previous_->horizontal_error_hard_bound_m &&
+@@ -389,8 +406,17 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+     can_recover_ = observation.safe_to_navigate && observation.battery_percent.has_value() &&
+                    observation.horizontal_error_hard_bound_m.has_value() &&
+                    *observation.horizontal_error_hard_bound_m <= request_.corridor_half_width_m;
+-    if (status_.phase == Phase::kUnknown)
+-        status_.phase = Phase::kMoving;
++    if (!status_.pending_reentry) {
++        status_.phase = !bounded                 ? Phase::kUnknown
++                        : recovery_in_progress_  ? Phase::kRecovering
++                        : deviation_samples_ > 0 ? Phase::kDeviating
++                                                 : Phase::kMoving;
++        status_.reason = !bounded ? "position has no hard bound; arrival and deviation unverified"
++                         : recovery_in_progress_ ? "physical re-entry pending"
++                         : deviation_samples_ > 0
++                             ? "bounded corridor departure detected"
++                             : "following edge; obligation verification pending";
++    }
+     Recompute();
+     if (deviation_samples_ >= request_.sustained_deviation_samples ||
+         (status_.at_b_verified && status_.phase != Phase::kFulfilled)) {
+@@ -432,11 +458,25 @@ Status EdgeExecutionSupervisor::RecoveryDispatched(bool accepted, std::int64_t m
+     deviation_samples_ = 0;
+     status_.at_b_verified = false;  // A repaired edge must finish at B again.
+     arrival_candidate_ms_ = -1;
+-    status_.phase = Phase::kMoving;
++    recovery_in_progress_ = true;
++    status_.phase = Phase::kRecovering;
+     status_.reason = "re-entry command accepted; physical outcome pending";
+     return Snapshot();
+ }
+ 
++Status EdgeExecutionSupervisor::RecoveryReentryCompleted(std::int64_t monotonic_ms) {
++    if (Terminal(status_.phase) || !recovery_in_progress_ || monotonic_ms < last_recovery_ms_)
++        return Snapshot();
++    recovery_in_progress_ = false;
++    last_recovery_ms_ = monotonic_ms;  // Cooldown begins after physical completion.
++    deviation_samples_ = 0;
++    arrival_candidate_ms_ = -1;
++    status_.at_b_verified = false;
++    status_.phase = Phase::kMoving;
++    status_.reason = "physical re-entry verified; continuing to B";
++    return Snapshot();
++}
++
+ Status EdgeExecutionSupervisor::Interrupt(std::string reason) {
+     if (!Terminal(status_.phase)) {
+         status_.phase = Phase::kInterrupted;
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index dd85cc7..9e976a5 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -20,6 +20,7 @@ add_executable(swarmkit_tests
+     test_telemetry_manager.cpp
+     test_telemetry_sink.cpp
+     test_vecr.cpp
++    test_vecr_v5_models.cpp
+     test_vecr_truth_oracle.cpp
+     test_vecr_agent_trial.cpp
+     vecr_agent_trial.cpp
+@@ -61,3 +62,8 @@ target_link_libraries(swarmkit_vecr_agent_trial PRIVATE
+ )
+ swarmkit_set_warnings(swarmkit_vecr_agent_trial)
+ swarmkit_enable_sanitizers(swarmkit_vecr_agent_trial)
++
++add_executable(swarmkit_vecr_v5_trial vecr_v5_trial.cpp)
++target_link_libraries(swarmkit_vecr_v5_trial PRIVATE swarmkit_agent swarmkit_evidence swarmkit_client)
++swarmkit_set_warnings(swarmkit_vecr_v5_trial)
++swarmkit_enable_sanitizers(swarmkit_vecr_v5_trial)
+diff --git a/tests/test_vecr.cpp b/tests/test_vecr.cpp
+index bac4a7f..241ebfd 100644
+--- a/tests/test_vecr.cpp
++++ b/tests/test_vecr.cpp
+@@ -343,3 +343,65 @@ TEST_CASE("VECR declines recovery from unbounded navigation position", "[vecr]")
+     at_b.monotonic_ms = 3200;
+     CHECK(supervisor.ObservePosition(at_b).pending_reentry.has_value());
+ }
++
++TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another repair",
++          "[vecr][v5]") {
++    auto request = Request();
++    request.sustained_deviation_samples = 3;
++    EdgeExecutionSupervisor supervisor(request);
++    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
++    static_cast<void>(supervisor.ObserveCapture(Capture(0, 40, 1000, "prefix")));
++    CHECK(supervisor.ObservePosition(Position(50, 2000, 5)).phase == Phase::kDeviating);
++    CHECK(supervisor.ObservePosition(Position(51, 2100, 5)).phase == Phase::kDeviating);
++    auto proposed = supervisor.ObservePosition(Position(52, 2200, 5));
++    REQUIRE(proposed.pending_reentry);
++    CHECK(proposed.pending_reentry->east_m == 38);
++    CHECK(proposed.phase == Phase::kRecovering);
++    CHECK(supervisor.RecoveryDispatched(true, 2200).phase == Phase::kRecovering);
++    for (int i = 0; i < 10; ++i) {
++        const auto state = supervisor.ObservePosition(Position(45, 4000 + i * 100, 5));
++        CHECK(state.phase == Phase::kRecovering);
++        CHECK_FALSE(state.pending_reentry);
++        CHECK(state.recovery_attempts == 1);
++    }
++    static_cast<void>(supervisor.ObserveCapture(Capture(0, 100, 4900, "full")));
++    static_cast<void>(supervisor.ObservePosition(Position(100, 5000, 0, true)));
++    CHECK(supervisor.ObservePosition(Position(100, 5300, 0, true)).phase == Phase::kRecovering);
++    CHECK(supervisor.RecoveryReentryCompleted(5300).phase == Phase::kMoving);
++    static_cast<void>(supervisor.ObservePosition(Position(100, 5400, 0, true)));
++    CHECK(supervisor.ObservePosition(Position(100, 5600, 0, true)).phase == Phase::kFulfilled);
++}
++
++TEST_CASE("Deviation hysteresis and unknown bounds cannot manufacture consecutive departures",
++          "[vecr][v5]") {
++    auto request = Request();
++    EdgeExecutionSupervisor supervisor(request);
++    static_cast<void>(supervisor.ObservePosition(Position(50, 1000, 4.1)));
++    CHECK(supervisor.ObservePosition(Position(50, 1100, 3.9)).phase == Phase::kDeviating);
++    CHECK(supervisor.ObservePosition(Position(50, 1200, 3.4)).phase == Phase::kMoving);
++    static_cast<void>(supervisor.ObservePosition(Position(50, 1300, 4.2)));
++    auto invalid = Position(50, 1400, 8);
++    invalid.valid = false;
++    CHECK(supervisor.ObservePosition(invalid).phase == Phase::kUnknown);
++    CHECK_FALSE(supervisor.ObservePosition(Position(50, 1500, 4.2)).pending_reentry);
++    auto unbounded = Position(50, 1600, 8);
++    unbounded.horizontal_error_hard_bound_m.reset();
++    CHECK_FALSE(supervisor.ObservePosition(unbounded).pending_reentry);
++    CHECK_FALSE(supervisor.ObservePosition(Position(50, 1700, 4.2)).pending_reentry);
++}
++
++TEST_CASE("Midflight re-entry never targets the unseen future tail and cooldown follows completion",
++          "[vecr][v5]") {
++    auto request = Request();
++    request.sustained_deviation_samples = 1;
++    EdgeExecutionSupervisor supervisor(request);
++    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
++    static_cast<void>(supervisor.ObserveCapture(Capture(0, 80, 1000, "wide")));
++    auto proposed = supervisor.ObservePosition(Position(50, 2000, 6));
++    REQUIRE(proposed.pending_reentry);
++    CHECK(proposed.pending_reentry->east_m == 48);
++    static_cast<void>(supervisor.RecoveryDispatched(true, 2000));
++    static_cast<void>(supervisor.RecoveryReentryCompleted(6000));
++    CHECK_FALSE(supervisor.ObservePosition(Position(50, 6500, 6)).pending_reentry);
++    CHECK(supervisor.ObservePosition(Position(50, 7000, 6)).pending_reentry.has_value());
++}
+diff --git a/tests/vecr_agent_trial_main.cpp b/tests/vecr_agent_trial_main.cpp
+index 6495bc1..818fa5e 100644
+--- a/tests/vecr_agent_trial_main.cpp
++++ b/tests/vecr_agent_trial_main.cpp
+@@ -66,6 +66,7 @@ namespace {
+     switch (phase) {
+         case Phase::kMoving:
+             return "MOVING";
++        case Phase::kDeviating: return "DEVIATING";
+         case Phase::kRecovering:
+             return "RECOVERING";
+         case Phase::kFulfilled:

@@ -229,6 +229,8 @@ bool EdgeExecutionSupervisor::Valid() const {
            request_.minimum_recovery_battery_percent >= 0.0 &&
            request_.minimum_recovery_battery_percent <= 100.0 &&
            std::isfinite(request_.recovery_overlap_m) && request_.recovery_overlap_m >= 0.0 &&
+           std::isfinite(request_.deviation_hysteresis_m) && request_.deviation_hysteresis_m >= 0 &&
+           request_.deviation_hysteresis_m < request_.corridor_half_width_m &&
            request_.sustained_deviation_samples > 0 && request_.recovery_cooldown_ms >= 0 &&
            request_.timeout_ms > 0;
 }
@@ -245,7 +247,7 @@ void EdgeExecutionSupervisor::Recompute() {
     if (Terminal(status_.phase))
         return;
     const bool obligation_met =
-        status_.at_b_verified &&
+        !recovery_in_progress_ && status_.at_b_verified &&
         (request_.obligation == Obligation::kArrival ||
          (request_.obligation == Obligation::kTraversal && status_.traversal_verified) ||
          (request_.obligation == Obligation::kSurvey && status_.survey_verified) ||
@@ -259,8 +261,8 @@ void EdgeExecutionSupervisor::Recompute() {
 }
 
 void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to_navigate) {
-    if (Terminal(status_.phase) || status_.pending_reentry || !safe_to_navigate ||
-        request_.max_recovery_attempts == 0 ||
+    if (Terminal(status_.phase) || status_.pending_reentry || recovery_in_progress_ ||
+        !safe_to_navigate || request_.max_recovery_attempts == 0 ||
         status_.recovery_attempts >= request_.max_recovery_attempts ||
         (last_recovery_ms_ >= 0 && now_ms - last_recovery_ms_ < request_.recovery_cooldown_ms))
         return;
@@ -272,11 +274,18 @@ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to
         std::sort(gaps.begin(), gaps.end(),
                   [](Interval a, Interval b) { return a.begin_m < b.begin_m; });
     }
-    if (request_.obligation == Obligation::kArrival || gaps.empty())
+    const bool departed = deviation_samples_ >= request_.sustained_deviation_samples;
+    if (!departed && (request_.obligation == Obligation::kArrival || gaps.empty()))
         return;
+    // A future unsurveyed tail is not a missed segment. During departure,
+    // re-enter no farther than current progress, even when a wide camera has
+    // already covered the strip. Both policies share this trigger.
+    const double progress = previous_projection_ ? previous_projection_->arclength_m : 0.0;
+    const double gap_start = gaps.empty() ? progress : gaps.front().begin_m;
     const double s = request_.repair_policy == RepairPolicy::kFullEdgeRestart
                          ? 0.0
-                         : std::max(0.0, gaps.front().begin_m - request_.recovery_overlap_m);
+                         : std::max(0.0, (departed ? std::min(progress, gap_start) : gap_start) -
+                                             request_.recovery_overlap_m);
     status_.pending_reentry = PointAt(request_.route, s);
     status_.phase = Phase::kRecovering;
     status_.reason = "re-entry proposed for earliest unverified gap";
@@ -290,6 +299,7 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
     if (started_ms_ < 0)
         started_ms_ = observation.monotonic_ms;
     latest_position_ms_ = observation.monotonic_ms;
+    status_.last_position_monotonic_ms = observation.monotonic_ms;
     if (observation.monotonic_ms - started_ms_ > request_.timeout_ms) {
         status_.phase = Phase::kInterrupted;
         status_.reason = "edge timeout";
@@ -317,6 +327,8 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
         previous_projection_.reset();
         status_.at_b_verified = false;
         arrival_candidate_ms_ = -1;
+        deviation_samples_ = 0;
+        can_recover_ = false;
         status_.phase = Phase::kUnknown;
         status_.traversal_quality = EvidenceQuality::kUnknown;
         status_.reason = "position unavailable or invalid";
@@ -329,6 +341,8 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
         status_.at_b_verified = false;
         arrival_candidate_ms_ = -1;
         status_.phase = Phase::kUnknown;
+        deviation_samples_ = 0;
+        can_recover_ = false;
         status_.reason = "route projection ambiguous";
         return Snapshot();
     }
@@ -354,10 +368,13 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
     }
 
     const double error = observation.horizontal_error_hard_bound_m.value_or(0.0);
-    const bool within_sample = projection->cross_track_m + error <= request_.corridor_half_width_m;
-    if (!within_sample)
+    const bool bounded = observation.horizontal_error_hard_bound_m.has_value();
+    const bool within_sample =
+        bounded && projection->cross_track_m + error <= request_.corridor_half_width_m;
+    if (bounded && !within_sample)
         ++deviation_samples_;
-    else
+    else if (!bounded || projection->cross_track_m + error <=
+                             request_.corridor_half_width_m - request_.deviation_hysteresis_m)
         deviation_samples_ = 0;
     if (request_.route.points.size() == 2 && previous_ && previous_projection_ && within_sample &&
         !previous_projection_->ambiguous && previous_->horizontal_error_hard_bound_m &&
@@ -389,8 +406,17 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
     can_recover_ = observation.safe_to_navigate && observation.battery_percent.has_value() &&
                    observation.horizontal_error_hard_bound_m.has_value() &&
                    *observation.horizontal_error_hard_bound_m <= request_.corridor_half_width_m;
-    if (status_.phase == Phase::kUnknown)
-        status_.phase = Phase::kMoving;
+    if (!status_.pending_reentry) {
+        status_.phase = !bounded                 ? Phase::kUnknown
+                        : recovery_in_progress_  ? Phase::kRecovering
+                        : deviation_samples_ > 0 ? Phase::kDeviating
+                                                 : Phase::kMoving;
+        status_.reason = !bounded ? "position has no hard bound; arrival and deviation unverified"
+                         : recovery_in_progress_ ? "physical re-entry pending"
+                         : deviation_samples_ > 0
+                             ? "bounded corridor departure detected"
+                             : "following edge; obligation verification pending";
+    }
     Recompute();
     if (deviation_samples_ >= request_.sustained_deviation_samples ||
         (status_.at_b_verified && status_.phase != Phase::kFulfilled)) {
@@ -432,8 +458,22 @@ Status EdgeExecutionSupervisor::RecoveryDispatched(bool accepted, std::int64_t m
     deviation_samples_ = 0;
     status_.at_b_verified = false;  // A repaired edge must finish at B again.
     arrival_candidate_ms_ = -1;
-    status_.phase = Phase::kMoving;
+    recovery_in_progress_ = true;
+    status_.phase = Phase::kRecovering;
     status_.reason = "re-entry command accepted; physical outcome pending";
+    return Snapshot();
+}
+
+Status EdgeExecutionSupervisor::RecoveryReentryCompleted(std::int64_t monotonic_ms) {
+    if (Terminal(status_.phase) || !recovery_in_progress_ || monotonic_ms < last_recovery_ms_)
+        return Snapshot();
+    recovery_in_progress_ = false;
+    last_recovery_ms_ = monotonic_ms;  // Cooldown begins after physical completion.
+    deviation_samples_ = 0;
+    arrival_candidate_ms_ = -1;
+    status_.at_b_verified = false;
+    status_.phase = Phase::kMoving;
+    status_.reason = "physical re-entry verified; continuing to B";
     return Snapshot();
 }
 

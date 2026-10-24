@@ -98,6 +98,7 @@ std::string_view EdgePhaseName(swarmkit::edge::Phase phase) {
     using swarmkit::edge::Phase;
     switch (phase) {
         case Phase::kMoving: return "moving";
+        case Phase::kDeviating: return "deviating";
         case Phase::kRecovering: return "recovering";
         case Phase::kFulfilled: return "fulfilled";
         case Phase::kInterrupted: return "interrupted";

@@ -20,6 +20,8 @@ namespace {
     switch (phase) {
         case edge::Phase::kMoving:
             return swarmkit::v1::EDGE_MOVING;
+        case edge::Phase::kDeviating:
+            return swarmkit::v1::EDGE_DEVIATING;
         case edge::Phase::kRecovering:
             return swarmkit::v1::EDGE_RECOVERING;
         case edge::Phase::kFulfilled:
@@ -139,6 +141,7 @@ std::optional<edge::EdgeRequest> EdgeExecutionRuntime::Convert(
     request.max_recovery_attempts = operation.max_recovery_attempts();
     request.sustained_deviation_samples = operation.sustained_deviation_samples();
     request.recovery_cooldown_ms = operation.recovery_cooldown_ms();
+    request.deviation_hysteresis_m = operation.deviation_hysteresis_m();
     request.timeout_ms = operation.timeout_ms();
     const auto& origin = operation.route(0);
     for (const auto& point : operation.route()) {
@@ -163,6 +166,9 @@ swarmkit::v1::EdgeReport EdgeExecutionRuntime::ToReport(const Attempt& attempt,
     report.set_attempt_id(req.attempt_id);
     report.set_drone_id(req.drone_id);
     report.set_phase(ToPhase(status.phase));
+    const auto processed_ms = attempt.last_processed_position_ms.load(std::memory_order_acquire);
+    if (processed_ms >= 0)
+        report.set_last_position_monotonic_ms(processed_ms);
     report.set_at_b_verified(status.at_b_verified);
     report.set_traversal_verified(status.traversal_verified);
     report.set_survey_verified(status.survey_verified);
@@ -787,7 +793,7 @@ void EdgeExecutionRuntime::DispatchReturnToB(const std::shared_ptr<Attempt>& att
                       ->CheckAndGrant(attempt->context,
                                       std::chrono::milliseconds{config_->default_authority_ttl_ms})
                       .IsOk();
-    std::optional<edge::Status> interrupted;
+    std::optional<edge::Status> continuation;
     {
         std::lock_guard<std::mutex> lock(attempt->mutex);
         if (attempt->stop.load(std::memory_order_relaxed) ||
@@ -807,12 +813,13 @@ void EdgeExecutionRuntime::DispatchReturnToB(const std::shared_ptr<Attempt>& att
                                   .speed_mps = attempt->operation.commanded_speed_mps()}};
             allowed = backend_->Execute(command).result.IsOk();
         }
-        if (!allowed)
-            interrupted =
-                attempt->supervisor.Interrupt("cannot safely continue from recovery re-entry to B");
+        continuation = allowed ? attempt->supervisor.RecoveryReentryCompleted(
+                                     providers_.MonotonicTimeNs() / 1'000'000)
+                               : attempt->supervisor.Interrupt(
+                                     "cannot safely continue from recovery re-entry to B");
     }
-    if (interrupted)
-        (void)Publish(*attempt, *interrupted);
+    if (continuation)
+        (void)Publish(*attempt, *continuation);
 }
 
 void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
@@ -909,7 +916,8 @@ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
             if (attempt->reentry_target) {
                 const auto& request = attempt->supervisor.Request();
                 const bool at_reentry =
-                    observation.valid && observation.horizontal_error_hard_bound_m &&
+                    updated.phase == edge::Phase::kRecovering && observation.valid &&
+                    observation.safe_to_navigate && observation.horizontal_error_hard_bound_m &&
                     observation.speed_mps && std::isfinite(*observation.speed_mps) &&
                     *observation.speed_mps >= 0 && observation.speed_error_hard_bound_mps &&
                     observation.altitude_m && observation.vertical_error_hard_bound_m &&
@@ -941,6 +949,11 @@ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
             DispatchRecovery(attempt, *reentry, observation.monotonic_ms);
         if (return_to_b)
             DispatchReturnToB(attempt);
+        {
+            std::lock_guard<std::mutex> lock(attempt->mutex);
+            attempt->last_processed_position_ms.store(observation.monotonic_ms,
+                                                      std::memory_order_release);
+        }
         if (Terminal(updated.phase))
             break;
     }

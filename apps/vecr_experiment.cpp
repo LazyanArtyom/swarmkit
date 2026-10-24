@@ -207,6 +207,7 @@ Result Run(Scenario scenario, int seed, const char* method) {
             const double reentry = std::floor(status.pending_reentry->east_m);
             static_cast<void>(trial.verifier.RecoveryDispatched(true, trial.time_ms));
             trial.Leg(100.0, reentry, true);
+            static_cast<void>(trial.verifier.RecoveryReentryCompleted(trial.time_ms));
             trial.Leg(reentry, 100.0, true);
         }
     }

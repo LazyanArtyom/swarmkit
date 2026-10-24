@@ -77,6 +77,7 @@ class EdgeExecutionRuntime {
         std::optional<edge::Point> last_bounded_position;
         std::optional<double> last_position_hard_bound_m;
         std::int64_t last_position_ms{-1};
+        std::atomic<std::int64_t> last_processed_position_ms{-1};
         std::int64_t started_agent_ms{};
         std::int64_t last_frame_agent_ms{};
         std::optional<swarmkit::v1::EdgeReport> physical_unknown_report;

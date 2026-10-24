@@ -44,3 +44,21 @@ The first core matrix used eight coded cases S00, S01, S03, S04, S05, S06, S07 a
 ## Protocol amendment (v2)
 
 After inspecting v1 results, v2 varies the fault start as `35 + seed % 11` metres while keeping a 25 m camera/metadata outage or 30 m detour. This reduces repeated identical distance outcomes but does not make seeds independent field trials. S01 still draws up to ±0.5 m jitter from the seeded generator. All other thresholds and the core matrix remain as above. V2 writes distinct raw files and manifest SHA-256 hashes. Further changes require v3. Both versions are deliberately simple geometric models, not flight dynamics or ArduPilot SITL.
+
+## v5 recovery execution state
+
+`DEVIATING` exposes bounded corridor departure. `deviation_hysteresis_m` sets
+an inner reset threshold; unknown bounds never become a zero-error departure
+proof. Three outside samples without definite re-entry is the default trigger.
+Onboard recovery remains `RECOVERING` after command ACK, through navigation to
+the selected target and bounded stationary dwell. Only successful continuation
+from that physically verified point changes phase to `MOVING`. Active re-entry
+blocks overlapping repairs; cooldown begins when re-entry completes. During
+midflight departure the targeted point cannot lie ahead of current projected
+progress. A wide camera's accepted off-corridor coverage remains credited.
+
+`last_position_monotonic_ms` is absent before telemetry processing; agent status
+exposes the last frame whose processing and immediate dispatch work have finished.
+It provides an observation barrier for controlled simulation without fixed sleeps.
+Reports emitted during processing can contain the preceding completed timestamp.
+These simulator changes do not qualify live MAVLink recovery.

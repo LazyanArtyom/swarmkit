@@ -64,7 +64,7 @@ class IntervalSet {
 
 enum class Obligation { kArrival, kTraversal, kSurvey, kTraversalAndSurvey };
 enum class RepairPolicy { kTargetedGap, kFullEdgeRestart };
-enum class Phase { kMoving, kRecovering, kFulfilled, kInterrupted, kUnknown };
+enum class Phase { kMoving, kDeviating, kRecovering, kFulfilled, kInterrupted, kUnknown };
 enum class EvidenceQuality { kUnknown, kEstimated, kBounded };
 
 struct EdgeRequest {
@@ -86,6 +86,7 @@ struct EdgeRequest {
     double recovery_overlap_m{};
     std::uint32_t max_recovery_attempts{};
     std::uint32_t sustained_deviation_samples{3};
+    double deviation_hysteresis_m{0.5};
     std::int64_t recovery_cooldown_ms{1000};
     std::int64_t timeout_ms{};
 };
@@ -162,6 +163,7 @@ struct Status {
     std::uint32_t recovery_attempts{};
     std::optional<Point> pending_reentry;
     std::string reason;
+    std::optional<std::int64_t> last_position_monotonic_ms;
 };
 
 // Single-writer event processor. The agent owns command arbitration; a pending
@@ -176,6 +178,9 @@ class EdgeExecutionSupervisor {
     [[nodiscard]] Status ObservePosition(const PositionObservation& observation);
     [[nodiscard]] Status ObserveCapture(const CaptureEvidence& evidence);
     [[nodiscard]] Status RecoveryDispatched(bool accepted, std::int64_t monotonic_ms);
+    // Called by the agent only after bounded stationary re-entry and accepted
+    // continuation to B. Dispatch acknowledgement alone cannot complete recovery.
+    [[nodiscard]] Status RecoveryReentryCompleted(std::int64_t monotonic_ms);
     [[nodiscard]] Status Interrupt(std::string reason);
     [[nodiscard]] Status Snapshot() const;
     [[nodiscard]] bool WasCaptureAccepted(const CaptureEvidence& evidence) const;
@@ -197,6 +202,7 @@ class EdgeExecutionSupervisor {
     std::int64_t last_recovery_ms_{-1};
     std::uint32_t deviation_samples_{};
     bool can_recover_{};
+    bool recovery_in_progress_{};
     std::unordered_map<std::string, CaptureEvidence> captures_;
 };
 

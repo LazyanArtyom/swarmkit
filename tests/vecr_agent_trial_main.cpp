@@ -66,6 +66,7 @@ namespace {
     switch (phase) {
         case Phase::kMoving:
             return "MOVING";
+        case Phase::kDeviating: return "DEVIATING";
         case Phase::kRecovering:
             return "RECOVERING";
         case Phase::kFulfilled:
