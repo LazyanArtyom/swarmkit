@@ -1,0 +1,43 @@
+Filters: [endpoint-bounds]
+Randomness seeded to: 3111757857
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+swarmkit_tests is a Catch2 v3.8.0 host application.
+Run with -? for options
+
+-------------------------------------------------------------------------------
+Traversal credit excludes uncertain along-route endpoints
+-------------------------------------------------------------------------------
+/Users/artyom/Documents/MyProjects/swarmkit/tests/test_vecr.cpp:169
+...............................................................................
+
+/Users/artyom/Documents/MyProjects/swarmkit/tests/test_vecr.cpp:188: FAILED:
+  CHECK_FALSE( status.traversal_verified )
+with expansion:
+  !true
+
+/Users/artyom/Documents/MyProjects/swarmkit/tests/test_vecr.cpp:189: FAILED:
+  CHECK( status.phase != Phase::kFulfilled )
+with expansion:
+  3 != 3
+
+/Users/artyom/Documents/MyProjects/swarmkit/tests/test_vecr.cpp:190: FAILED:
+  REQUIRE( status.traversal_missing.size() == 2 )
+with expansion:
+  0 == 2
+
+-------------------------------------------------------------------------------
+Overlapping position bounds cannot manufacture traversed distance
+-------------------------------------------------------------------------------
+/Users/artyom/Documents/MyProjects/swarmkit/tests/test_vecr.cpp:196
+...............................................................................
+
+/Users/artyom/Documents/MyProjects/swarmkit/tests/test_vecr.cpp:207: FAILED:
+  REQUIRE( status.traversal_missing.size() == 1 )
+with expansion:
+  2 == 1
+
+===============================================================================
+test cases: 2 | 2 failed
+assertions: 5 | 1 passed | 4 failed
+

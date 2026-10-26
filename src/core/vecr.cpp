@@ -90,8 +90,18 @@ std::optional<CaptureEvidence> BuildNadirStripEvidence(const Route& route,
     const double lower_altitude = input.altitude_above_ground_m - input.altitude_error_hard_bound_m;
     if (lower_altitude <= 0.0)
         return std::nullopt;
-    const auto projection = Project(route, input.camera_center);
-    if (!projection || projection->ambiguous)
+    const double length = Length(route);
+    if (length <= 0.0)
+        return std::nullopt;
+    // A camera may be before A or beyond B. Clamping its center onto the
+    // segment would shift its physical footprint and can invent coverage.
+    const double ux = (route.points[1].east_m - route.points[0].east_m) / length;
+    const double uy = (route.points[1].north_m - route.points[0].north_m) / length;
+    const double dx = input.camera_center.east_m - route.points[0].east_m;
+    const double dy = input.camera_center.north_m - route.points[0].north_m;
+    const double along = dx * ux + dy * uy;
+    const double cross = std::abs(dx * uy - dy * ux);
+    if (!std::isfinite(along) || !std::isfinite(cross))
         return std::nullopt;
     const double radians = std::numbers::pi / 180.0;
     const double half_along = lower_altitude * std::tan(input.along_fov_deg * radians / 2.0) -
@@ -99,11 +109,10 @@ std::optional<CaptureEvidence> BuildNadirStripEvidence(const Route& route,
     const double half_cross = lower_altitude * std::tan(input.cross_fov_deg * radians / 2.0) -
                               input.horizontal_error_hard_bound_m;
     if (!std::isfinite(half_along) || !std::isfinite(half_cross) || half_along <= 0.0 ||
-        projection->cross_track_m + required_strip_half_width_m > half_cross + kGeometryToleranceM)
+        cross + required_strip_half_width_m > half_cross + kGeometryToleranceM)
         return std::nullopt;
-    const double length = Length(route);
-    const Interval covered{std::max(0.0, projection->arclength_m - half_along),
-                           std::min(length, projection->arclength_m + half_along)};
+    const Interval covered{std::max(0.0, along - half_along),
+                           std::min(length, along + half_along)};
     if (covered.end_m - covered.begin_m <= kGeometryToleranceM)
         return std::nullopt;
     return CaptureEvidence{.mission_id = input.mission_id,
@@ -393,9 +402,11 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
         if (Distance(previous_->position, observation.position) <=
                 displacement_bound + kGeometryToleranceM &&
             whole_interval_bound <= request_.corridor_half_width_m) {
+            // Only this contracted interval is crossed by every actual path
+            // consistent with both bounded endpoint measurements.
             static_cast<void>(traversal_.Add(
-                {std::min(previous_projection_->arclength_m, projection->arclength_m),
-                 std::max(previous_projection_->arclength_m, projection->arclength_m)}));
+                {previous_projection_->arclength_m + *previous_->horizontal_error_hard_bound_m,
+                 projection->arclength_m - error}));
             status_.traversal_quality = EvidenceQuality::kBounded;
         }
     } else if (within_sample && status_.traversal_quality == EvidenceQuality::kUnknown) {

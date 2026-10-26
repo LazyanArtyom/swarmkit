@@ -383,7 +383,7 @@ def main(out, benchmark):
     )
     ax.invert_yaxis()
     ax.legend()
-    ax.set_title("Agent-backed v5 availability (* deliberately dishonest sensor)")
+    ax.set_title(f"Agent-backed {manifest['protocol']} availability (* deliberately dishonest sensor)")
     save(fig, figs, "01_availability")
     fig, ax = plt.subplots(figsize=(10, 6))
     chosen = [x for x in conditional if x["pairs"] and x["scenario"].startswith("M")]
@@ -541,7 +541,7 @@ def main(out, benchmark):
     ]
     aggregate_by = {(x["population"], x["policy"]): x for x in aggregates}
     lines = [
-        "# VECR v5 digital-simulation results",
+        f"# VECR {manifest['protocol']} digital-simulation results",
         "",
         f"Source revision: `{manifest['source_revision']}`. Binary SHA-256: `{manifest['binary_sha256']}`.",
         f"Executed **{len(rows)}** assigned attempts: {len({r['scenario'] for r in rows if r['scenario'].startswith('M')})} primary scenarios and {len({r['scenario'] for r in rows if r['scenario'].startswith('X')})} sensitivity conditions; exact paired seed counts are in the manifest and per-scenario table. Every attempted run remains in the denominator. Evidence: SDK → local mTLS AgentService → production runtime → SimBackend. No SITL or hardware trials.",

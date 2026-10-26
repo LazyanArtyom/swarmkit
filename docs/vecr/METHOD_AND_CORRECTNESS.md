@@ -16,6 +16,22 @@ For deterministic traversal, both endpoint observations must have **hard** horiz
 
 **Sound survey proposition.** If every accepted conservative footprint lies inside ground that was actually observed at the required quality, the union of accepted footprints lies inside actually observed ground. Thus a remaining required strip of at most the configured tolerance implies modeled survey fulfillment to that tolerance. The sensor inclusion assumption is substantive and unvalidated for a real camera.
 
+The October 26 dissertation audit corrected along-route traversal credit: only
+`[s_hat0 + eps0, s_hat1 - eps1]`, when nonempty, is guaranteed by two uncertain
+endpoint observations on the straight route. Crediting the entire estimated
+interval could report full traversal although an admissible actual path omitted
+both ends. Overlapping endpoint bounds may describe a stationary vehicle and
+cannot create positive traversed length. Two counterexample regressions reproduce
+the prior failure and verify contraction. This may leave conservative boundary
+gaps; they must not be filled merely because the vehicle arrived within a radius.
+The same audit corrected the camera's along-route coordinate: a camera beyond
+an endpoint must retain its signed coordinate when constructing its footprint.
+Only the resulting interval is clipped to the route. Clamping the center itself
+could move an entirely nonoverlapping footprint onto A or B. Eastbound and
+northbound regression counterexamples cover both ends and partial overlap.
+Frozen v5 measurements retain their original source revision. The separate
+v5.1 protocol repeats the full campaign with both corrections.
+
 **No skipped gap.** The interval union never fills an uncovered hole. Fulfillment checks the entire missing length, not maximum observed route coordinate. Later disjoint intervals remain available without advancing the contiguous prefix. An accepted interval remains stored after a separate navigation deviation, unless its original evidence is explicitly withdrawn. This may save repeated surveying; travel savings still include transit to the re-entry point.
 
 ## Recovery and state

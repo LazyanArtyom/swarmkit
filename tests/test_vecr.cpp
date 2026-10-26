@@ -166,6 +166,48 @@ TEST_CASE("VECR rejects kinematically impossible traversal samples", "[vecr]") {
     CHECK(jumped.traversal_missing.front().end_m == 100);
 }
 
+TEST_CASE("Traversal credit excludes uncertain along-route endpoints", "[vecr][endpoint-bounds]") {
+    auto request = Request(Obligation::kTraversal);
+    request.route.points = {{0, 0}, {10, 0}};
+    request.corridor_half_width_m = 10;
+    request.maximum_speed_mps = 10;
+    request.arrival_radius_m = 3;
+    request.max_recovery_attempts = 0;
+    EdgeExecutionSupervisor supervisor(request);
+    auto start = Position(0, 1000);
+    start.horizontal_error_hard_bound_m = 2;
+    auto finish = Position(10, 2000, 0, true);
+    finish.horizontal_error_hard_bound_m = 2;
+    static_cast<void>(supervisor.ObservePosition(start));
+    static_cast<void>(supervisor.ObservePosition(finish));
+    finish.monotonic_ms = 2300;
+    const auto status = supervisor.ObservePosition(finish);
+    // The actual path 2 -> 8 satisfies all declared bounds and arrival, but
+    // never traverses 0..2 or 8..10. Only 2..8 is guaranteed by these samples.
+    CHECK(status.at_b_verified);
+    CHECK_FALSE(status.traversal_verified);
+    CHECK(status.phase != Phase::kFulfilled);
+    REQUIRE(status.traversal_missing.size() == 2);
+    CHECK(status.traversal_missing[0] == Interval{0, 2});
+    CHECK(status.traversal_missing[1] == Interval{8, 10});
+}
+
+TEST_CASE("Overlapping position bounds cannot manufacture traversed distance",
+          "[vecr][endpoint-bounds]") {
+    auto request = Request(Obligation::kTraversal);
+    request.corridor_half_width_m = 10;
+    EdgeExecutionSupervisor supervisor(request);
+    auto before = Position(10, 1000);
+    before.horizontal_error_hard_bound_m = 2;
+    auto after = Position(11, 1100);
+    after.horizontal_error_hard_bound_m = 2;
+    static_cast<void>(supervisor.ObservePosition(before));
+    const auto status = supervisor.ObservePosition(after);
+    // A stationary actual position at 10.5 m explains both measurements.
+    REQUIRE(status.traversal_missing.size() == 1);
+    CHECK(status.traversal_missing.front() == Interval{0, 100});
+}
+
 TEST_CASE("VECR recovery is bounded and failsafe wins", "[vecr]") {
     auto req = Request();
     req.max_recovery_attempts = 1;
@@ -255,6 +297,40 @@ TEST_CASE("VECR stop arrival requires bounded three-dimensional dwell", "[vecr]"
     CHECK_FALSE(supervisor.ObservePosition(Position(0, 3000)).at_b_verified);
     CHECK_FALSE(supervisor.ObservePosition(Position(100, 3200, 0, true)).at_b_verified);
     CHECK(supervisor.ObservePosition(Position(100, 3500, 0, true)).phase == Phase::kFulfilled);
+}
+
+TEST_CASE("Camera footprints beyond an endpoint are not moved onto the route",
+          "[vecr][endpoint-camera]") {
+    NadirCaptureInput input;
+    input.mission_id = "mission";
+    input.mission_revision = 2;
+    input.edge_id = "A-B";
+    input.attempt_id = "attempt-2";
+    input.capture_id = "image-endpoint";
+    input.calibration_id = "calibration";
+    input.monotonic_ms = 1000;
+    input.altitude_above_ground_m = 10;
+    input.along_fov_deg = 20;
+    input.cross_fov_deg = 110;
+    input.capture_succeeded = true;
+    input.image_quality_established = true;
+    input.nadir_route_alignment_established = true;
+    input.flat_ground_established = true;
+    for (const bool northbound : {false, true}) {
+        const Route route{northbound ? std::vector<Point>{{0, 0}, {0, 100}}
+                                     : std::vector<Point>{{0, 0}, {100, 0}}};
+        for (const double center : {-5.0, 105.0}) {
+            input.camera_center = northbound ? Point{0, center} : Point{center, 0};
+            // Along half-width is about 1.763 m: no overlap with the route.
+            CHECK_FALSE(BuildNadirStripEvidence(route, 4, input));
+        }
+        input.camera_center = northbound ? Point{0, -0.5} : Point{-0.5, 0};
+        const auto partial = BuildNadirStripEvidence(route, 4, input);
+        REQUIRE(partial);
+        CHECK(partial->guaranteed_full_strip_interval.begin_m == 0);
+        CHECK(partial->guaranteed_full_strip_interval.end_m > 1.26);
+        CHECK(partial->guaranteed_full_strip_interval.end_m < 1.27);
+    }
 }
 
 TEST_CASE("VECR late survey cannot fulfill from an old arrival", "[vecr]") {

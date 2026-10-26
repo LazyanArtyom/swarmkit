@@ -126,7 +126,7 @@ def main():
             for policy in (["B2", "P"] if seed % 2 else ["P", "B2"]):
                 assignments.append({**cfg, "seed": seed, "policy": policy})
     manifest = dict(
-        protocol="v5",
+        protocol="v5.1",
         mode=a.mode,
         status="RUNNING",
         source_revision=source,
@@ -134,6 +134,7 @@ def main():
         binary_sha256=sha(a.binary),
         runner_sha256=sha(__file__),
         protocol_sha256=sha(ROOT / "docs/vecr/SIMULATION_PROTOCOL_V5.md"),
+        amendment_sha256=sha(ROOT / "docs/vecr/SIMULATION_PROTOCOL_V5_1.md"),
         created_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         host=platform.platform(),
         python=platform.python_version(),
