@@ -11,6 +11,9 @@ The Print button opens the browser's print/save-PDF dialog.
 
 ## What is included
 
+* A restored researcher profile with Artyom Lazyan's institute, department,
+  full E.13.04 specialization and research theme. The department is linked to
+  the institute's official staff listing; original profile information is retained.
 * Sixteen revised chapters: motivation, contribution, architecture, precise
   contracts, conditional proofs, implementation, fair experiments, results,
   failure analysis, sensitivity, performance, provenance and defense questions.
@@ -26,6 +29,10 @@ The Print button opens the browser's print/save-PDF dialog.
   text, accessible figure dialogs and print styles.
 * A separate SITL results structure with **TBD** values and an explicit
   **not yet executed** status. No SITL numbers or outcomes are invented.
+* A sourced literature comparison and candid defense-readiness assessment.
+  Completing the simulator protocol does not establish scientific originality;
+  closer recovery baselines and the precise advance over prior work remain to
+  be substantiated before making a stronger dissertation claim.
 
 The numerical campaign is a flat, one-dimensional full-strip simulator study.
 Real-camera quality, complex terrain, physical flight, cloud deployment and

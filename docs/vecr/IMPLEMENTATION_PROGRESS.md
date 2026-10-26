@@ -1,5 +1,11 @@
 # VECR implementation status — 2026-10-26
 
+The subsequent [literature and defense-readiness assessment](NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md)
+distinguishes the completed v5.1 protocol from an established originality claim.
+It identifies close prior monitoring, bounded-sensing and resume work, and
+recommends stronger comparisons before claiming dissertation readiness. Those
+additional studies have not been executed; historical results remain unchanged.
+
 ## Current: v5.1 corrected-code replication and dissertation reader
 
 The manuscript audit reproduced and fixed uncertain traversal endpoint credit

@@ -1,5 +1,9 @@
 # 01 / Research overview {#overview}
 
+## Researcher and institutional context {#researcher}
+
+{{author_profile}}
+
 ## Abstract
 
 We developed and evaluated **Verified Edge Coverage and Recovery (VECR)** as a reusable, algorithm-independent method in the SwarmKit agent. VECR assigns a physical obligation to a directed graph edge, checks bounded navigation and qualified sensing evidence, preserves verified work, identifies unverified intervals, and executes bounded local recovery. Command acceptance, arrival, route traversal and survey fulfillment have distinct meanings. The external application retains ownership of graph planning and distributed coordination.
@@ -40,6 +44,20 @@ A planner can select A→B, a backend can accept its command, and a vehicle can 
 5. **Physical execution remains local.** The agent performs detection, verification and recovery; the server is not in the correction loop.
 
 Waypoint checks, interval unions, robot recovery and authenticated messaging are established techniques. The defensible research claim is their implemented edge-level contract and its measured behavior against the specified coverage-aware baseline. The study does not establish worldwide priority for every constituent technique or superiority over all coverage planners.
+
+## Literature comparison and originality boundary
+
+A targeted literature review on **26 October 2026** found substantial overlap with earlier work. The implemented method and completed experiments establish a research artifact; **scientific originality still needs a precise comparison**. The following sources constrain the claim.
+
+| Earlier work | Established overlap | Distinction VECR must substantiate |
+|---|---|---|
+| [Zudaire et al., ICRA 2021](https://software.imdea.org/~cesar/papers/zudaire21assumption.pdf) [R4] | UAV assumption monitoring, incomplete photographic coverage and corrective actions | The particular edge-obligation contract and retained evidence semantics |
+| [Arvanitakis et al., 2018](https://pure.coventry.ac.uk/ws/files/13602376/1729881417750785.pdf) [R5] | Guaranteed sensed regions under bounded pose uncertainty, accumulated over time | An additional technical result beyond conservative-set union |
+| [ArduPilot mission rewind](https://ardupilot.org/copter/docs/common-mission-rewind.html) [R6] | Survey resumption behind an interruption point | Evidence-selected missing intervals versus a configured rewind distance |
+| [Fields2Cover, 2023](https://arxiv.org/abs/2210.07838) [R7] | Modular coverage-planning library and comparative evaluation | The execution/acceptance contract and its measured added utility |
+| [Bouman et al., 2023](https://arxiv.org/abs/2302.03164) [R8] | Planning with accumulated sensor coverage and execution constraints | The narrower assigned-edge problem and its applicability |
+
+This is a targeted comparison, not an exhaustive priority search. B2 remains a fair controlled baseline, but the study has **not compared VECR against fixed-rewind or other local resume methods**. The mathematical inclusion argument is useful and conditional; it does not establish a new general theorem. A completed simulator protocol and a dissertation-ready novelty argument are different milestones. The [full assessment](assets/evidence/NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md) records the reasoning and recommended follow-up.
 
 ## Relationship to graph coordination
 
@@ -344,6 +362,12 @@ Reproduction needs the recorded build and Python requirements. Reading the site 
 
 **Limits.** The study measures modeled repair cost and evidence availability. It does not establish physical-camera correctness, universal recovery, better verification accuracy than the shared verifier or fleet-wide efficiency.
 
+## Readiness for defense
+
+The present evidence supports a **candidate applied software/systems contribution**. It does not by itself establish that VECR is sufficiently original for a dissertation defense. The strongest current statement is the implemented edge contract and the measured tradeoffs under its stated model.
+
+Before presenting a stronger originality claim, establish the precise advance over the closest literature, compare practical resume policies under the same conditions, and isolate verification from recovery through justified ablations. A substantive technical result or sufficiently evaluated systems contribution is needed beyond elementary interval bookkeeping. SITL adds a validation level; it cannot establish originality by itself. These are recommended extensions to the completed study, with new versioned protocols if undertaken. The supervisor and examining body assess the full dissertation and publication record.
+
 {{defense_questions}}
 
 ## Defense demonstration
@@ -393,13 +417,18 @@ Assignment counts, realized faults, actual trajectories, accepted evidence, reas
 
 We developed VECR in SwarmKit and completed its defined agent-backed digital evaluation. The method connects graph-edge execution to navigation and sensing evidence, retains completed intervals and recovers locally from missing work. Its measured benefit is lower recovery travel in the tested equal-success conditions. Its measured weaknesses are evidence-driven nonacceptance and dependence on truthful sensor assertions.
 
-The simulator study, statistics, sensitivity analysis, benchmark and independent reconstruction are complete. **ArduPilot SITL is the remaining validation stage in this presentation.** Hardware, real camera calibration, complex terrain, obstacle/geofence-aware recovery, remote/multi-UAV campaigns, OS power-loss experiments and cloud deployment lie outside the completed simulator claim. These boundaries remain relevant after SITL.
+The defined simulator study, statistics, sensitivity analysis, benchmark and independent reconstruction are complete. **ArduPilot SITL remains unexecuted.** The literature review additionally identifies unfinished novelty substantiation and stronger comparative evaluation before a defense-readiness claim. Hardware, real camera calibration, complex terrain, obstacle/geofence-aware recovery, remote/multi-UAV campaigns, OS power-loss experiments and cloud deployment lie outside the completed simulator claim. These boundaries remain relevant after SITL.
 
 ## Primary references and source-to-claim mapping
 
 * **[R1]** Holroyd, Levine, Mészáros, Peres, Propp and Wilson. *Chip-Firing and Rotor-Routing on Directed Graphs*, 2008, revised 2013. [Primary paper](https://arxiv.org/abs/0801.3306). Background on abstract directed-graph processes; no VECR result is attributed to it.
 * **[R2]** MAVLink. *Command Protocol*. [Official documentation](https://mavlink.io/en/services/command.html), accessed 26 October 2026. Command acknowledgement/result protocol; SwarmKit supplies the survey contract.
 * **[R3]** ArduPilot. *SITL Simulator*. [Official documentation](https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html), accessed 26 October 2026. Defines the next evidence level; contains no result for this campaign.
+* **[R4]** Zudaire, Gorostiaga, Sánchez, Schneider and Uchitel. ICRA 2021, pp. 6824–6830. [Publisher record, DOI 10.1109/ICRA48506.2021.9561671](https://ieeexplore.ieee.org/document/9561671/). Closely related UAV runtime-monitoring research.
+* **[R5]** Arvanitakis, Tzes and Giannousakis. *International Journal of Advanced Robotic Systems*, 2018. [DOI 10.1177/1729881417750785](https://doi.org/10.1177/1729881417750785). Prior bounded-uncertainty geometry.
+* **[R6]** ArduPilot. [Mission Rewind on Resume](https://ardupilot.org/copter/docs/common-mission-rewind.html), accessed 26 October 2026. Existing practical resume behavior.
+* **[R7]** Mier, Valente and de Bruin. *Fields2Cover*, IEEE RA-L 8(4), 2166–2172, 2023. [Primary paper](https://arxiv.org/abs/2210.07838), DOI 10.1109/LRA.2023.3248439.
+* **[R8]** Bouman et al. *Adaptive Coverage Path Planning for Efficient Exploration of Unknown Environments*, 2023. [Primary paper](https://arxiv.org/abs/2302.03164).
 * **[S1]** V5.1 experimental source `7da3db3`: `src/core/vecr.cpp`, `src/agent/edge_execution_runtime.cpp`, `proto/swarmkit/v1/swarmkit.proto`, `tests/vecr_v5_trial.cpp`, `tests/vecr_v5_models.h`. Implemented contracts and experiment architecture.
 * **[S2]** `corrected_endpoints_v5_1` manifest, raw CSV/traces and SHA256SUMS. Current scientific numbers; original `final_v5` remains historical.
 * **[S3]** Analysis source `{{analysis_revision}}`, retaining inference from `62a3363`: `analyze_agent_campaign_v5.py`, `validate_agent_campaign_v5.py`, `test_analysis_v5.py`. Reconstruction and uncertainty calculations.

@@ -1,6 +1,17 @@
 {
   "title": "VECR \u00b7 From arrival to verified coverage",
   "edition_date": "2026-10-26",
+  "author": {
+    "name": "Artyom Lazyan",
+    "department": "Models of Computations and Logical Reasoning Department",
+    "institution": "Institute for Informatics and Automation Problems",
+    "academy": "National Academy of Sciences of the Republic of Armenia",
+    "specialization_code": "E.13.04",
+    "specialization": "Mathematical and Software Support of Computing Machines, Complexes, Systems, and Networks",
+    "research_theme": "Multi-user software for mission engineering, execution verification, and management of self-organizing UAV swarms",
+    "department_url": "https://www.iiap.sci.am/department.php?did=2&dt=1&langcode=1",
+    "provenance": "Name, institute and specialization restored from the original reader. Department verified against the institute's official staff listing on 26 October 2026. Research theme is descriptive, not a claim of an approved title change."
+  },
   "experiment": "7da3db33e70114503dfc7c9a45671da2b9335541",
   "analysis": "ee3e321a5cfa4015cbcf0ecddc810545e2e1abe0",
   "copied_evidence": {
@@ -147,6 +158,10 @@
     "assets/figures/07_host_performance.png": {
       "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/07_host_performance.png",
       "sha256": "b299f8d364876f6400ad497ef7dbd68c83c477db7a1e15f149ecd2b305b98157"
+    },
+    "assets/evidence/NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md": {
+      "source": "docs/vecr/NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md",
+      "sha256": "18ac18e411b45e367d47ede267fe575a2e2ec6bfee83fea4e4d0d9ea8ee9a2aa"
     },
     "assets/evidence/FINAL_VALIDATION_V5_1.md": {
       "source": "docs/vecr/FINAL_VALIDATION_V5_1.md",

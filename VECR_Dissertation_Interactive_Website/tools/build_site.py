@@ -321,6 +321,7 @@ def build():
                 "sha256": sha(src),
             }
     for f in [
+        "NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md",
         "FINAL_VALIDATION_V5_1.md",
         "SIMULATION_PROTOCOL_V5_1.md",
         "FINAL_VALIDATION_V5.md",
@@ -390,11 +391,13 @@ def build():
         + json.dumps(data, separators=(",", ":"), ensure_ascii=False)
         + ";\n"
     )
+    author = json.loads((SITE / "source/author.json").read_text())
     (ASSETS / "research-metadata.json").write_text(
         json.dumps(
             {
                 "title": "VECR · From arrival to verified coverage",
                 "edition_date": "2026-10-26",
+                "author": author,
                 "experiment": manifest["source_revision"],
                 "analysis": analysis["source_revision"],
                 "copied_evidence": copied,
@@ -408,6 +411,30 @@ def build():
     )
     diagrams()
     components = {"analysis_revision": analysis["source_revision"]}
+    components["author_profile"] = (
+        '<div class="author-profile"><div class="author-heading">'
+        '<span class="author-monogram" aria-hidden="true">AL</span><div>'
+        '<span class="eyebrow">RESEARCHER</span><p class="author-name">'
+        + esc(author["name"])
+        + "</p></div></div><dl>"
+        + "".join(
+            f"<div><dt>{esc(label)}</dt><dd>{esc(value)}</dd></div>"
+            for label, value in [
+                ("Department", author["department"]),
+                ("Institute", author["institution"]),
+                ("Academy", author["academy"]),
+                (
+                    "Specialization",
+                    author["specialization_code"] + " — " + author["specialization"],
+                ),
+                ("Research theme", author["research_theme"]),
+            ]
+        )
+        + '</dl><p class="source-note">Institutional affiliation: '
+        + f'<a href="{esc(author["department_url"])}">official department staff listing</a>. '
+        + "Name, institute and specialization restored from the original reader. "
+        + "The research theme describes the work; it does not assert a formal title change.</p></div>"
+    )
     comparison = rows(STUDY / "gates_v5_1/replication_comparison.csv")
     components["replication_table"] = table(
         ["Metric", "Paired attempts", "Unequal values", "Maximum absolute difference"],
@@ -678,6 +705,10 @@ def build():
         ("benchmark_SHA256SUMS", "Complete benchmark hash inventory"),
         ("SHA256SUMS", "Complete scientific artifact hash inventory"),
         ("FINAL_VALIDATION_V5_1.md", "Current full validation record"),
+        (
+            "NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md",
+            "Literature comparison and defense-readiness assessment",
+        ),
         ("SIMULATION_PROTOCOL_V5_1.md", "Endpoint-correction replication protocol"),
         ("SIMULATION_PROTOCOL_V5.md", "Full experimental specification"),
         ("replication_comparison.csv", "Original versus corrected raw-row comparison"),
@@ -702,7 +733,11 @@ def build():
         ),
         (
             "Is the baseline fair?",
-            "Both policies share verification, sensor generation, dynamics, faults, thresholds and safety. B2 is coverage-aware and retains accepted images. Its explicitly different choice is full-edge restart at A.",
+            "Both policies share verification, sensor generation, dynamics, faults, thresholds and safety. B2 is coverage-aware and retains accepted images. Its different choice is full-edge restart at A. This controlled comparison does not establish superiority over practical resume policies, which require additional comparisons.",
+        ),
+        (
+            "Does the completed campaign establish scientific novelty?",
+            "No. It establishes behavior in the declared simulator. Related work already covers monitoring, conservative sensing and resumption. The precise contribution beyond that work still needs substantiation; see the literature comparison and assessment.",
         ),
         (
             "What are the strongest quantitative findings?",
