@@ -47,13 +47,18 @@ full-edge restart, with private ground truth and a 21-case capability
 inventory. Results and exact run status are under
 [agent campaign v4](results/vecr/agent_campaign_v4/README.md).
 
-The completed [v5 digital-simulation study](results/vecr/agent_campaign_v5/README.md)
-adds attainable midflight recovery, noisy sensor estimates, independent exact-strip
-truth, 5,280 scientific attempts and 80 separate host benchmarks. See the
-[scientific results](results/vecr/agent_campaign_v5/final_v5/reports/SCIENTIFIC_RESULTS.md)
-and [validation gates and limitations](docs/vecr/FINAL_VALIDATION_V5.md).
-Previous studies remain frozen. V5 is agent-backed simulation; SITL and real
-camera/flight validation remain unfinished.
+Open the [illustrated dissertation reader](VECR_Dissertation_Interactive_Website/index.htm)
+locally for the implemented method, full results, uncertainty, failure analysis,
+recorded trajectory replays and reproducible downloads. It works offline.
+
+The completed [v5/v5.1 digital-simulation studies](results/vecr/agent_campaign_v5/README.md)
+add attainable midflight recovery, noisy sensor estimates, independent exact-strip
+truth, 5,280 scientific attempts and 80 separate host benchmarks per final version.
+V5.1 repeats the same matrix after two endpoint-correctness fixes. See the current
+[scientific results](results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/reports/SCIENTIFIC_RESULTS.md)
+and [validation gates and limitations](docs/vecr/FINAL_VALIDATION_V5_1.md).
+Previous studies remain frozen and are not pooled with the replication. This is
+agent-backed simulation; SITL and real camera/flight validation remain unfinished.
 
 Example (already armed and in a safe guided simulation state):
 

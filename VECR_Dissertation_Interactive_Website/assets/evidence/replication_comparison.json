@@ -1,0 +1,84 @@
+{
+  "previous": {
+    "source_revision": "7896f200ec7fa41bd4f9ca1f293616dbd3896d36",
+    "raw_sha256": "3cb9f0e3680addd953115b3c7a7b6243eb9471d3d4dfe19921769aa0498fb3b2"
+  },
+  "corrected": {
+    "source_revision": "7da3db33e70114503dfc7c9a45671da2b9335541",
+    "raw_sha256": "f1b9eb01ec69750c36b808f6f4a910dfe05736b1c424ad662ab1fda92c887ed1"
+  },
+  "metrics": [
+    {
+      "metric": "distance_m",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "time_ms",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "truth_survey",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "truth_at_b",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "truth_complete",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "reported_complete",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "false_complete",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "false_negative",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "recoveries",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "accepted",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "accepted_uncontained",
+      "paired_attempts": 5280,
+      "changed_attempts": 0,
+      "max_absolute_difference": 0.0
+    },
+    {
+      "metric": "reported_covered_m",
+      "paired_attempts": 5280,
+      "changed_attempts": 606,
+      "max_absolute_difference": 2.842170943040401e-14
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "identity": [
+    "id = (mission, revision, edge, attempt, drone)",
+    "Exact attempt identity"
+  ],
+  "footprint": [
+    "h⁻ = ĥ − εh; a⁻ = h⁻ tan(θa/2) − εp; c⁻ = h⁻ tan(θc/2) − εp<br>I⁻ = [ŝ − a⁻, ŝ + a⁻] ∩ [0,L], only if a⁻ > 0 and d + w ≤ c⁻",
+    "Contracted full-strip interval"
+  ],
+  "coverage": [
+    "V = ⋃ I⁻j; M = [0,L] ∖ V; missing = Σ length(Mi)",
+    "Union, complement and residual"
+  ],
+  "arrival": [
+    "√((distanceXY + εp)² + (|ĥ − hB| + εh)²) ≤ rB<br>v̂ + εv ≤ vB; sampled dwell ≥ 200 ms<br>FULFILLEDsurvey = qualified arrival ∧ missing ≤ allowance",
+    "Separate arrival and survey requirements"
+  ],
+  "traversal": [
+    "Dk = distance(p̂k, route) + εk<br>distance(p(t), route) ≤ (D0 + D1 + Vmax Δt) / 2 ≤ corridor half-width<br>Guaranteed progress: [ŝ0 + ε0, ŝ1 − ε1], if nonempty",
+    "Conservative movement and endpoint bounds"
+  ],
+  "soundness": [
+    "∀j: F⁻j ⊆ Fj ⇒ ⋃ F⁻j ⊆ ⋃ Fj<br>Re ⊆ ⋃ F⁻j ⇒ Re ⊆ ⋃ Fj",
+    "Conditional survey soundness, ideal set model"
+  ]
+}

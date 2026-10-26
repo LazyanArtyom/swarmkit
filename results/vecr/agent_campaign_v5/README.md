@@ -1,4 +1,27 @@
-# VECR v5 — agent-backed digital simulation
+# VECR v5 / v5.1 — agent-backed digital simulation
+
+## Current corrected-code replication: v5.1
+
+The [October 26 amendment](../../../docs/vecr/SIMULATION_PROTOCOL_V5_1.md)
+repeats the complete frozen matrix after correcting uncertain traversal endpoints
+and off-segment camera projection. **5,280 new scientific attempts + 80 new
+serial benchmarks completed**, with zero infrastructure errors. The separate
+engineering pilot completed 78 attempts. Earlier data are not modified or pooled.
+
+* [Current scientific report](corrected_endpoints_v5_1/reports/SCIENTIFIC_RESULTS.md)
+* [All validation gates and limitations](../../../docs/vecr/FINAL_VALIDATION_V5_1.md)
+* [Illustrated offline dissertation](../../../VECR_Dissertation_Interactive_Website/index.htm)
+* [Raw rows](corrected_endpoints_v5_1/per_attempt.csv), [tables](corrected_endpoints_v5_1/tables), [figures](corrected_endpoints_v5_1/figures), [traces](corrected_endpoints_v5_1/trials)
+* [Assignments](corrected_endpoints_v5_1/manifest.json), [analysis identity](corrected_endpoints_v5_1/analysis_manifest.json), [science hashes](corrected_endpoints_v5_1/SHA256SUMS), [benchmark hashes](benchmark_v5_1/SHA256SUMS)
+* [Original-versus-corrected comparison](gates_v5_1/replication_comparison.csv), [regressions and validation logs](gates_v5_1)
+
+Distance/time and completion outcomes match v5 in all corresponding rows.
+Reported coverage lengths differ in 606 rows by at most 2.843 × 10⁻¹⁴ m.
+The three new counterexample regressions demonstrate why the endpoint fixes
+are necessary even though this matrix's outcomes are unchanged. Current results
+support the same conditional benefits and limitations described below.
+
+## Original frozen v5
 
 Protocol: `docs/vecr/SIMULATION_PROTOCOL_V5.md`. B2 and VECR share the production
 agent verifier and safety rules, with different recovery targets. No SITL/hardware.

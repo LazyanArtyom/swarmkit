@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="VECR in SwarmKit: completed agent-backed digital simulation, actual paired results, conditional correctness, recorded recovery and reproducible evidence. SITL results pending.">
+<title>VECR — From arrival to verified coverage · Artyom Lazyan</title>
+<link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="assets/experiment-data.js"></script><script defer src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#manuscript">Skip to dissertation</a>
+<div class="read-progress" id="readProgress" aria-hidden="true"></div>
+<header class="site-header">
+<a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">V<span>↗</span></span><span><strong>VECR</strong><small>THE DISSERTATION ATLAS</small></span></a>
+<nav class="top-nav" aria-label="Quick navigation"><a href="#innovation">The contribution</a><a href="#results">Measured results</a><a href="#replay">Replay</a><a href="#sitl">SITL</a></nav>
+<div class="header-actions"><button id="themeToggle" aria-label="Switch to dark theme" title="Change theme">◐</button><button id="printPage" aria-label="Print or save dissertation as PDF" title="Print / save PDF">Print ↗</button><button id="mobileToc" aria-label="Open chapter navigation" aria-controls="sidebar" aria-expanded="false">Chapters ☰</button></div>
+</header>
+<div class="page-grid" id="top">
+<aside id="sidebar" class="sidebar" aria-label="Dissertation navigation">
+<div class="sidebar-intro"><span class="eyebrow">A RESEARCH RECORD</span><p>Method. Implementation.<br>Measured evidence.</p></div>
+<label class="search-label" for="chapterSearch">Search the dissertation</label><input id="chapterSearch" type="search" placeholder="Search text…" autocomplete="off"><div id="searchResults" class="search-results" hidden aria-live="polite"></div>
+<nav class="chapter-nav" aria-label="Chapters"><a href="#overview"><span>01</span>Research overview</a><a href="#innovation"><span>02</span>The problem and core contribution</a><a href="#architecture"><span>03</span>System architecture</a><a href="#model"><span>04</span>Model, evidence and fulfillment</a><a href="#proofs"><span>05</span>Conditional correctness</a><a href="#implementation"><span>06</span>Implementation and reliability</a><a href="#protocol"><span>07</span>Completed experimental design</a><a href="#results"><span>08</span>Measured results</a><a href="#replay"><span>09</span>Replay the recorded experiment</a><a href="#availability"><span>10</span>Availability, failures and counterexamples</a><a href="#sensitivity"><span>11</span>Sensitivity and robustness</a><a href="#performance"><span>12</span>Host performance</a><a href="#reproducibility"><span>13</span>Reproducibility and audit trail</a><a href="#defense"><span>14</span>Defense: claims and answers</a><a href="#sitl"><span>15</span>ArduPilot SITL validation</a><a href="#conclusion"><span>16</span>Conclusion and references</a></nav>
+<div class="sidebar-bottom"><span class="status-dot"></span> Digital study complete<small>SITL is not yet executed.</small><div class="text-controls"><button id="fontDecrease" aria-label="Decrease reading text size">A−</button><button id="fontIncrease" aria-label="Increase reading text size">A+</button></div></div>
+</aside>
+<main id="manuscript">
+<section class="hero" aria-labelledby="heroTitle"><div class="hero-meta"><span class="status-pill">COMPLETED DIGITAL STUDY</span><span>SWARMKIT / VECR v5.1</span></div><div class="hero-grid"><div><p class="eyebrow">ARTYOM LAZYAN · E.13.04</p><h1 id="heroTitle">From arrival<br>to <em>verified<br>coverage.</em></h1><p class="hero-summary">An onboard method that accounts for the work a UAV actually verifies—and recovers what remains unverified.</p><div class="hero-actions"><a class="button" href="#results">Explore the results <span>↗</span></a><a class="text-link" href="#innovation">Understand the contribution →</a></div></div><div class="hero-figure"><svg viewBox="0 0 520 290" role="img" aria-labelledby="heroDiagramTitle"><title id="heroDiagramTitle">Actual M03 seed 1 paths: full restart and targeted recovery</title><rect x="40" y="143" width="440" height="104" fill="#dce9df" opacity=".6"/><path d="M40 195H480" stroke="#879d91" stroke-dasharray="5 6"/><polyline points="40.11,195.00 40.44,195.00 40.99,195.00 41.76,195.00 42.75,195.00 43.96,195.00 45.39,195.00 47.04,195.00 48.91,195.00 51.00,195.00 53.20,195.00 55.40,195.00 57.60,195.00 59.80,195.00 62.00,195.00 64.20,195.00 66.40,195.00 68.60,195.00 70.80,195.00 73.00,195.00 75.20,195.00 77.40,195.00 79.60,195.00 81.80,195.00 84.00,195.00 86.20,195.00 88.40,195.00 90.60,195.00 92.80,195.00 95.00,195.00 97.20,195.00 99.40,195.00 101.60,195.00 103.80,195.00 106.00,195.00 108.20,195.00 110.40,195.00 112.60,195.00 114.80,195.00 117.00,195.00 119.20,195.00 121.40,195.00 123.60,195.00 125.80,195.00 128.00,195.00 130.20,195.00 132.40,195.00 134.60,195.00 136.80,195.00 139.00,195.00 141.20,195.00 143.40,195.00 145.60,195.00 147.80,195.00 150.00,195.00 152.20,195.00 154.40,195.00 156.60,195.00 158.80,195.00 161.00,195.00 163.20,191.11 165.40,187.24 167.60,183.41 169.80,179.60 172.00,175.81 174.19,172.06 176.39,168.33 178.58,164.63 180.77,160.96 182.96,157.32 185.15,153.71 187.33,150.12 189.51,146.56 191.69,143.04 193.86,139.54 196.03,136.07 198.09,132.62 199.93,129.19 201.55,125.78 202.95,122.40 204.13,119.04 205.09,115.71 205.84,112.41 206.36,109.14 206.67,105.91 206.76,102.71 206.63,99.56 206.29,96.45 205.73,93.39 204.95,90.38 203.97,87.44 202.76,84.57 201.35,81.77 199.74,79.07 197.94,76.50 196.08,74.00 194.25,71.53 192.43,69.10 190.64,66.70 188.86,64.33 187.09,65.88 185.32,67.43 183.56,68.98 181.79,70.53 180.03,72.08 178.26,73.63 176.49,75.18 174.73,76.73 172.96,78.28 171.20,79.83 169.43,81.38 167.66,82.93 165.90,84.48 164.13,86.03 162.37,87.58 160.60,89.13 158.83,90.68 157.07,92.24 155.30,93.79 153.54,95.34 151.77,96.89 150.00,98.44 148.24,99.99 146.47,101.54 144.70,103.09 142.94,104.64 141.17,106.19 139.41,107.74 137.64,109.29 135.87,110.84 134.11,112.39 132.34,113.94 130.58,115.49 128.81,117.04 127.04,118.59 125.28,120.14 123.51,121.69 121.75,123.24 119.98,124.79 118.21,126.34 116.45,127.89 114.68,129.44 112.91,130.99 111.15,132.54 109.38,134.09 107.62,135.64 105.85,137.19 104.08,138.75 102.32,140.30 100.55,141.85 98.79,143.40 97.02,144.95 95.25,146.50 93.49,148.05 91.72,149.60 89.96,151.15 88.19,152.70 86.42,154.25 84.66,155.80 82.89,157.35 81.12,158.90 79.36,160.45 77.59,162.00 75.83,163.55 74.06,165.10 72.29,166.65 70.53,168.20 68.76,169.75 67.00,171.30 65.23,172.85 63.46,174.40 61.70,175.95 59.93,177.50 58.17,179.05 56.40,180.60 54.63,182.15 52.87,183.70 51.10,185.26 49.33,186.81 47.59,188.33 46.01,189.73 44.60,190.97 43.36,192.05 42.31,192.98 41.43,193.75 40.72,194.37 40.19,194.83 39.84,195.14 39.67,195.29 39.65,195.31 39.76,195.31 40.09,195.31 40.64,195.31 41.41,195.31 42.40,195.31 43.61,195.31 45.04,195.31 46.69,195.30 48.56,195.30 50.65,195.30 52.85,195.30 55.05,195.30 57.25,195.30 59.45,195.30 61.65,195.29 63.85,195.29 66.05,195.29 68.25,195.29 70.45,195.29 72.65,195.29 74.85,195.28 77.05,195.28 79.25,195.28 81.45,195.28 83.65,195.28 85.85,195.28 88.05,195.28 90.25,195.27 92.45,195.27 94.65,195.27 96.85,195.27 99.05,195.27 101.25,195.27 103.45,195.26 105.65,195.26 107.85,195.26 110.05,195.26 112.25,195.26 114.45,195.26 116.65,195.26 118.85,195.25 121.05,195.25 123.25,195.25 125.45,195.25 127.65,195.25 129.85,195.25 132.05,195.24 134.25,195.24 136.45,195.24 138.65,195.24 140.85,195.24 143.05,195.24 145.25,195.23 147.45,195.23 149.65,195.23 151.85,195.23 154.05,195.23 156.25,195.23 158.45,195.23 160.65,195.22 162.85,195.22 165.05,195.22 167.25,195.22 169.45,195.22 171.65,195.22 173.85,195.21 176.05,195.21 178.25,195.21 180.45,195.21 182.65,195.21 184.85,195.21 187.05,195.21 189.25,195.20 191.45,195.20 193.65,195.20 195.85,195.20 198.05,195.20 200.25,195.20 202.45,195.19 204.65,195.19 206.85,195.19 209.05,195.19 211.25,195.19 213.45,195.19 215.65,195.19 217.85,195.18 220.05,195.18 222.25,195.18 224.45,195.18 226.65,195.18 228.85,195.18 231.05,195.17 233.25,195.17 235.45,195.17 237.65,195.17 239.85,195.17 242.05,195.17 244.25,195.17 246.45,195.16 248.65,195.16 250.85,195.16 253.05,195.16 255.25,195.16 257.45,195.16 259.65,195.15 261.85,195.15 264.05,195.15 266.25,195.15 268.45,195.15 270.65,195.15 272.85,195.15 275.05,195.14 277.25,195.14 279.45,195.14 281.65,195.14 283.85,195.14 286.05,195.14 288.25,195.13 290.45,195.13 292.65,195.13 294.85,195.13 297.05,195.13 299.25,195.13 301.45,195.13 303.65,195.12 305.85,195.12 308.05,195.12 310.25,195.12 312.45,195.12 314.65,195.12 316.85,195.11 319.05,195.11 321.25,195.11 323.45,195.11 325.65,195.11 327.85,195.11 330.05,195.11 332.25,195.10 334.45,195.10 336.65,195.10 338.85,195.10 341.05,195.10 343.25,195.10 345.45,195.09 347.65,195.09 349.85,195.09 352.05,195.09 354.25,195.09 356.45,195.09 358.65,195.09 360.85,195.08 363.05,195.08 365.25,195.08 367.45,195.08 369.65,195.08 371.85,195.08 374.05,195.07 376.25,195.07 378.45,195.07 380.65,195.07 382.85,195.07 385.05,195.07 387.25,195.07 389.45,195.06 391.65,195.06 393.85,195.06 396.05,195.06 398.25,195.06 400.45,195.06 402.65,195.05 404.85,195.05 407.05,195.05 409.25,195.05 411.45,195.05 413.65,195.05 415.85,195.05 418.05,195.04 420.25,195.04 422.45,195.04 424.65,195.04 426.85,195.04 429.05,195.04 431.25,195.03 433.45,195.03 435.65,195.03 437.85,195.03 440.05,195.03 442.25,195.03 444.45,195.02 446.65,195.02 448.85,195.02 451.05,195.02 453.25,195.02 455.45,195.02 457.65,195.02 459.85,195.01 462.05,195.01 464.25,195.01 466.45,195.01 468.65,195.01 470.80,195.01 472.75,195.01 474.48,195.00 475.99,195.00 477.28,195.00 478.35,195.00 479.20,195.00 479.83,195.00 480.24,195.00 480.42,195.00" fill="none" stroke="#b77133" stroke-width="3" stroke-linejoin="round"/><polyline points="40.11,195.00 40.44,195.00 40.99,195.00 41.76,195.00 42.75,195.00 43.96,195.00 45.39,195.00 47.04,195.00 48.91,195.00 51.00,195.00 53.20,195.00 55.40,195.00 57.60,195.00 59.80,195.00 62.00,195.00 64.20,195.00 66.40,195.00 68.60,195.00 70.80,195.00 73.00,195.00 75.20,195.00 77.40,195.00 79.60,195.00 81.80,195.00 84.00,195.00 86.20,195.00 88.40,195.00 90.60,195.00 92.80,195.00 95.00,195.00 97.20,195.00 99.40,195.00 101.60,195.00 103.80,195.00 106.00,195.00 108.20,195.00 110.40,195.00 112.60,195.00 114.80,195.00 117.00,195.00 119.20,195.00 121.40,195.00 123.60,195.00 125.80,195.00 128.00,195.00 130.20,195.00 132.40,195.00 134.60,195.00 136.80,195.00 139.00,195.00 141.20,195.00 143.40,195.00 145.60,195.00 147.80,195.00 150.00,195.00 152.20,195.00 154.40,195.00 156.60,195.00 158.80,195.00 161.00,195.00 163.20,191.11 165.40,187.24 167.60,183.41 169.80,179.60 172.00,175.81 174.19,172.06 176.39,168.33 178.58,164.63 180.77,160.96 182.96,157.32 185.15,153.71 187.33,150.12 189.51,146.56 191.69,143.04 193.86,139.54 196.03,136.07 198.10,132.67 199.98,129.39 201.65,126.22 203.13,123.17 204.41,120.24 205.49,117.41 206.38,114.71 207.07,112.12 207.56,109.65 207.86,107.29 207.96,105.06 207.87,102.95 207.59,100.96 207.12,99.11 206.46,97.41 205.65,95.86 204.82,94.37 204.02,92.89 203.25,91.43 202.50,89.97 201.78,88.53 201.08,87.10 200.41,85.67 199.75,84.25 199.11,86.74 198.47,89.23 197.83,91.71 197.19,94.20 196.55,96.69 195.91,99.18 195.27,101.66 194.63,104.15 193.99,106.64 193.35,109.13 192.71,111.61 192.07,114.10 191.43,116.59 190.79,119.08 190.15,121.56 189.51,124.05 188.87,126.54 188.23,129.03 187.59,131.51 186.95,134.00 186.31,136.49 185.67,138.98 185.03,141.46 184.39,143.95 183.75,146.44 183.11,148.93 182.47,151.41 181.83,153.90 181.19,156.39 180.55,158.88 179.91,161.36 179.27,163.85 178.62,166.34 177.98,168.83 177.34,171.31 176.70,173.80 176.06,176.29 175.42,178.78 174.78,181.26 174.15,183.74 173.56,186.03 173.03,188.08 172.57,189.88 172.17,191.42 171.84,192.72 171.56,193.77 171.36,194.57 171.22,195.13 171.14,195.43 171.12,195.50 171.23,195.50 171.56,195.50 172.11,195.50 172.88,195.49 173.87,195.49 175.08,195.49 176.51,195.49 178.16,195.49 180.03,195.48 182.12,195.48 184.32,195.48 186.52,195.47 188.72,195.47 190.92,195.46 193.12,195.46 195.32,195.46 197.52,195.45 199.72,195.45 201.92,195.45 204.12,195.44 206.32,195.44 208.52,195.44 210.72,195.43 212.92,195.43 215.12,195.43 217.32,195.42 219.52,195.42 221.72,195.42 223.92,195.41 226.12,195.41 228.32,195.40 230.52,195.40 232.72,195.40 234.92,195.39 237.12,195.39 239.32,195.39 241.52,195.38 243.72,195.38 245.92,195.38 248.12,195.37 250.32,195.37 252.52,195.37 254.72,195.36 256.92,195.36 259.12,195.36 261.32,195.35 263.52,195.35 265.72,195.34 267.92,195.34 270.12,195.34 272.32,195.33 274.52,195.33 276.72,195.33 278.92,195.32 281.12,195.32 283.32,195.32 285.52,195.31 287.72,195.31 289.92,195.31 292.12,195.30 294.32,195.30 296.52,195.30 298.72,195.29 300.92,195.29 303.12,195.28 305.32,195.28 307.52,195.28 309.72,195.27 311.92,195.27 314.12,195.27 316.32,195.26 318.52,195.26 320.72,195.26 322.92,195.25 325.12,195.25 327.32,195.25 329.52,195.24 331.72,195.24 333.92,195.23 336.12,195.23 338.32,195.23 340.52,195.22 342.72,195.22 344.92,195.22 347.12,195.21 349.32,195.21 351.52,195.21 353.72,195.20 355.92,195.20 358.12,195.20 360.32,195.19 362.52,195.19 364.72,195.19 366.92,195.18 369.12,195.18 371.32,195.17 373.52,195.17 375.72,195.17 377.92,195.16 380.12,195.16 382.32,195.16 384.52,195.15 386.72,195.15 388.92,195.15 391.12,195.14 393.32,195.14 395.52,195.14 397.72,195.13 399.92,195.13 402.12,195.13 404.32,195.12 406.52,195.12 408.72,195.11 410.92,195.11 413.12,195.11 415.32,195.10 417.52,195.10 419.72,195.10 421.92,195.09 424.12,195.09 426.32,195.09 428.52,195.08 430.72,195.08 432.92,195.08 435.12,195.07 437.32,195.07 439.52,195.07 441.72,195.06 443.92,195.06 446.12,195.05 448.32,195.05 450.52,195.05 452.72,195.04 454.92,195.04 457.12,195.04 459.32,195.03 461.52,195.03 463.72,195.03 465.92,195.02 468.12,195.02 470.30,195.02 472.31,195.01 474.09,195.01 475.65,195.01 476.99,195.00 478.11,195.00 479.01,195.00 479.70,195.00 480.16,195.00 480.40,195.00 480.44,195.00" fill="none" stroke="#167d6a" stroke-width="3" stroke-linejoin="round"/><circle cx="40" cy="195" r="5" fill="#183c36"/><circle cx="480" cy="195" r="5" fill="#183c36"/><g font-family="Arial,sans-serif" font-size="12" fill="#466359"><text x="40" y="274">A · 0 m</text><text x="442" y="274">B · 40 m</text><text x="40" y="30">Recorded M03 · seed 1</text><text x="40" y="49">Cross-track displacement shown vertically</text></g></svg><div class="hero-legend"><span class="legend-b2">B2 full restart</span><span class="legend-p">VECR targeted recovery</span></div><p>A measured trajectory, not a concept animation.<br><a href="#replay">Replay this paired experiment →</a></p></div></div><div class="hero-stats"><div><strong>5,280</strong><span>scientific attempts</span></div><div><strong>21 + 18</strong><span>primary + sensitivity conditions</span></div><div><strong>80</strong><span>separate host benchmarks</span></div><div><strong>25–28<span>%</span></strong><span>less travel in M03–M05*</span></div></div><p class="hero-footnote">*100/100 true and reported completions per policy in each condition. Conditional simulator results; full uncertainty and unsuccessful outcomes are included below.</p><div class="edition-note"><span>READER EDITION · 26 OCT 2026</span><span>Agent-backed simulation ✓ &nbsp; / &nbsp; SITL not executed</span></div></section>
+<section class="chapter" aria-labelledby="overview"><h2 id="overview">01 / Research overview</h2>
+<h3 id="abstract">Abstract</h3>
+<p>We developed and evaluated <strong>Verified Edge Coverage and Recovery (VECR)</strong> as a reusable, algorithm-independent method in the SwarmKit agent. VECR assigns a physical obligation to a directed graph edge, checks bounded navigation and qualified sensing evidence, preserves verified work, identifies unverified intervals, and executes bounded local recovery. Command acceptance, arrival, route traversal and survey fulfillment have distinct meanings. The external application retains ownership of graph planning and distributed coordination.</p>
+<p>The completed <strong>v5.1 study</strong>, repeated after endpoint corrections, used the production SDK → local mTLS AgentService → agent runtime → SimBackend path. A noisy sensor estimator produced verifier-facing camera metadata; private simulated acquisitions and motion supplied independent ground truth. We executed <strong>4,200 primary attempts</strong> across 21 conditions and <strong>1,080 sensitivity attempts</strong> across 18 conditions, with both policies assigned to every seed. A separate serial benchmark executed 80 attempts. Every final assignment completed without an infrastructure error; unsuccessful missions remained in the analysis. The preceding v5 campaign is preserved separately and is not pooled with this replication.</p>
+<p>Against coverage-aware full-edge restart B2, targeted VECR recovery reduced modeled distance by <strong>25.3–27.8%</strong> in three midflight conditions with 100/100 true and reported completions per policy per condition. Across 4,880 honest-sensor attempts, neither policy falsely reported fulfillment. All 400 deliberate dishonest-sensor controls falsely fulfilled, exposing the trusted sensor boundary. Persistent unavailable or overly uncertain evidence reduced acceptance, even when the actual survey was complete. These findings establish conditional utility and limitations within a flat, one-dimensional full-strip model. ArduPilot SITL has not been executed for this study.</p>
+<h3 id="research-scope-and-evidence-levels">Research scope and evidence levels</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Dissertation table"><table>
+<thead>
+<tr>
+<th>Evidence level</th>
+<th>Status</th>
+<th>What it establishes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Geometric simulation v1/v2</td>
+<td>Frozen historical evidence</td>
+<td>Simplified interval/raster behavior; no production-agent execution</td>
+</tr>
+<tr>
+<td>Agent-backed v3/v4.2</td>
+<td>Frozen historical evidence</td>
+<td>Integration and earlier post-arrival repair findings</td>
+</tr>
+<tr>
+<td>Agent-backed v5</td>
+<td>Frozen completed evidence</td>
+<td>Noisy bounded sensing, actual midflight recovery in SimBackend, fair paired comparison</td>
+</tr>
+<tr>
+<td>Agent-backed v5.1</td>
+<td>Completed corrected-code replication</td>
+<td>Same full matrix after traversal and camera endpoint fixes; current results in this reader</td>
+</tr>
+<tr>
+<td>ArduPilot SITL</td>
+<td>Not yet executed</td>
+<td>Reserved results structure in Chapter 15; no measurements</td>
+</tr>
+<tr>
+<td>Real aircraft and camera imagery</td>
+<td>Outside this simulator claim</td>
+<td>No physical-flight or image-quality result is asserted</td>
+</tr>
+</tbody>
+</table></div>
+<p>This reader documents a completed simulator research contribution, not an awarded degree or airworthiness certification. The wider multi-user mission-engineering context motivates the work. A deployed SwarmOps cloud service, simultaneous swarm performance and radio capacity are outside the evidence established here.</p>
+</section><section class="chapter" aria-labelledby="innovation"><h2 id="innovation">02 / The problem and core contribution</h2>
+<h3 id="four-facts-that-must-remain-separate">Four facts that must remain separate</h3>
+<p>A planner can select A→B, a backend can accept its command, and a vehicle can eventually arrive at B while leaving an intermediate strip unobserved. Conversely, a wide camera can observe the strip during an off-corridor excursion. Navigation deviation is therefore neither necessary nor sufficient evidence of a survey gap. Image acquisition can also fail on an otherwise correct path.</p>
+<figure class="research-figure"><button class="figure-open" data-image="assets/diagrams/contract.svg" data-caption="Conceptual contract · four different claims; the gap schematic is not a measured trial." aria-label="Enlarge: Conceptual contract · four different claims; the gap schematic is not a measured trial."><img loading="lazy" src="assets/diagrams/contract.svg" alt="Conceptual contract · four different claims; the gap schematic is not a measured trial."><span class="enlarge">Enlarge ↗</span></button><figcaption>Conceptual contract · four different claims; the gap schematic is not a measured trial.</figcaption></figure>
+
+<p><strong>The implemented contribution is an edge-obligation execution contract:</strong> the agent binds evidence to the exact mission, revision, edge and attempt; maintains the union of qualified coverage; retains disjoint completed intervals; exposes what remains missing; and recovers locally while respecting authority, evidence and safety constraints. An application consumes factual outcomes without embedding its planner in SwarmKit.</p>
+<h3 id="why-the-contribution-is-useful">Why the contribution is useful</h3>
+<ol>
+<li><strong>Coverage accounting survives a deviation.</strong> Correctly accepted later images remain credited even when a middle interval is missing.</li>
+<li><strong>Recovery is informed by missing work.</strong> VECR chooses a target before the earliest unverified interval, with overlap and a midflight progress cap.</li>
+<li><strong>Arrival cannot substitute for sensing.</strong> A survey obligation additionally needs accepted full-strip evidence.</li>
+<li><strong>Uncertainty has an explicit outcome.</strong> Missing bounds or invalid observations cannot silently become healthy, exact evidence.</li>
+<li><strong>Physical execution remains local.</strong> The agent performs detection, verification and recovery; the server is not in the correction loop.</li>
+</ol>
+<p>Waypoint checks, interval unions, robot recovery and authenticated messaging are established techniques. The defensible research claim is their implemented edge-level contract and its measured behavior against the specified coverage-aware baseline. The study does not establish worldwide priority for every constituent technique or superiority over all coverage planners.</p>
+<h3 id="relationship-to-graph-coordination">Relationship to graph coordination</h3>
+<p>Graph-theoretic traversal concerns vertices, edges and legal abstract transitions. The rotor-router literature studies such discrete models [R1]. The physical execution layer adds evidence for an assigned geographical obligation; it does not change rotor order, implement gossip or prove an arbitrary planner correct after reassignment. <strong>No rotor-router or gossip algorithm was implemented or run in this campaign.</strong> Algorithm independence is demonstrated by the API boundary, not by a multi-planner experimental comparison.</p>
+</section><section class="chapter" aria-labelledby="architecture"><h2 id="architecture">03 / System architecture</h2>
+<h3 id="where-the-work-runs">Where the work runs</h3>
+<figure class="research-figure"><button class="figure-open" data-image="assets/diagrams/architecture.svg" data-caption="Implemented architecture · all physical decisions stay in the agent." aria-label="Enlarge: Implemented architecture · all physical decisions stay in the agent."><img loading="lazy" src="assets/diagrams/architecture.svg" alt="Implemented architecture · all physical decisions stay in the agent."><span class="enlarge">Enlarge ↗</span></button><figcaption>Implemented architecture · all physical decisions stay in the agent.</figcaption></figure>
+
+<p>SwarmKit is a C++23 runtime and SDK with typed control, telemetry, authority, reporting and peer/server communication interfaces. The production agent owns the edge supervisor, sensor qualification, recovery dispatch and attempt journal. The simulator replaces the vehicle backend; it does not replace the agent's verification or recovery state machine. The benchmark process includes the SDK, service, runtime, backend and trace writer.</p>
+<p>The sensor estimator accepts measured telemetry plus calibration and simulated sensor status. It has no simulator-truth input. A private oracle reads actual poses and actual acquired footprints, including failed acquisitions. A separately written Python validator reconstructs strip intervals from rectangle half-space inequalities rather than calling the production interval code.</p>
+<h3 id="existing-general-purpose-interfaces">Existing general-purpose interfaces</h3>
+<p>Control commands, normalized telemetry, health/capability discovery, application peer messages, artifacts and server communication remain available. VECR operates through existing command authority and backend boundaries. Presence of these interfaces is not a result about remote network throughput or simultaneous multi-UAV behavior; those were not measured by v5.</p>
+<p>An external mission client can visualize reports or decide subsequent assignments. This local reader is an explanation and evidence explorer, not a flight-control client or deployed multi-tenant service.</p>
+</section><section class="chapter" aria-labelledby="model"><h2 id="model">04 / Model, evidence and fulfillment</h2>
+<h3 id="directed-edge-and-identity">Directed edge and identity</h3>
+<p>The agent accepts a straight two-point route A→B of length L in a fixed local metric frame. A request carries mission ID, revision, edge ID, attempt ID and drone ID. The route has a movement corridor and a required survey strip. The sensing adapter assumes flat terrain, rectangular nadir optics and route-aligned camera axes. Bent or multi-point routes are rejected because dispatch currently follows a single GOTO to B.</p>
+<div class="equation" role="group" aria-label="Exact attempt identity"><div>id = (mission, revision, edge, attempt, drone)</div><small>Exact attempt identity</small></div>
+
+<p>An obligation selects arrival, bounded traversal, survey, or traversal-and-survey. The primary v5.1 comparison uses <strong>survey</strong>. Survey completion needs qualified stopped arrival and accepted sensor evidence; it does not require every flight segment to have stayed inside the navigation corridor.</p>
+<h3 id="conservative-sensing-intervals">Conservative sensing intervals</h3>
+<p>For measured altitude ĥ, vertical hard bound εh, horizontal hard bound εp, and calibrated along/cross FOV θa/θc, the adapter contracts the footprint using h− = ĥ − εh. A capture is usable only when acquisition, quality, alignment and flat-ground conditions are established and the remaining width covers the entire required strip.</p>
+<div class="equation" role="group" aria-label="Contracted full-strip interval"><div>h⁻ = ĥ − εh; a⁻ = h⁻ tan(θa/2) − εp; c⁻ = h⁻ tan(θc/2) − εp<br>I⁻ = [ŝ − a⁻, ŝ + a⁻] ∩ [0,L], only if a⁻ > 0 and d + w ≤ c⁻</div><small>Contracted full-strip interval</small></div>
+
+<p>Here ŝ is the signed along-route position, d is perpendicular cross-track distance, and w is required strip half-width. The footprint interval is clipped to [0,L]; the camera center is never shifted onto an endpoint. The audit reproduced a false-coverage case caused by the previous clamped-center calculation, and v5.1 fixes it. The runtime checks identity, freshness, allowed sensor client, calibration and kinematic consistency against bounded telemetry. A camera command ACK supplies none of these facts. The default horizontal bound is 0.3 m; ideal zero-error camera centers are not used in the main campaign.</p>
+<h3 id="coverage-union-and-missing-work">Coverage union and missing work</h3>
+<div class="equation" role="group" aria-label="Union, complement and residual"><div>V = ⋃ I⁻j; M = [0,L] ∖ V; missing = Σ length(Mi)</div><small>Union, complement and residual</small></div>
+
+<p>V is the accepted interval union and M its complement. Coverage is the sum of union lengths, not the furthest observed coordinate. Later disjoint intervals stay stored. The core uses a <strong>10⁻⁶ m geometric tolerance</strong> for merging and endpoint comparisons, distinct from allowed missing length. The mathematical statement uses ideal sets; implementation precision is finite and sub-tolerance holes can be merged. This tolerance is not physical sensor accuracy.</p>
+<h3 id="stopped-arrival-and-survey-fulfillment">Stopped arrival and survey fulfillment</h3>
+<div class="equation" role="group" aria-label="Separate arrival and survey requirements"><div>√((distanceXY + εp)² + (|ĥ − hB| + εh)²) ≤ rB<br>v̂ + εv ≤ vB; sampled dwell ≥ 200 ms<br>FULFILLEDsurvey = qualified arrival ∧ missing ≤ allowance</div><small>Separate arrival and survey requirements</small></div>
+
+<p>The radius check is three-dimensional: horizontal distance plus its hard bound and vertical offset plus its hard bound must fit inside the configured radius. Horizontal speed plus its bound must satisfy the stopping threshold. Qualifying observations span at least 200 ms. A later away, invalid or ambiguous observation revokes pending arrival qualification. An ACK or backend goal-reached report does not establish this predicate. Sampled dwell is not a proof of continuously stationary motion between arbitrary telemetry samples.</p>
+<h3 id="bounded-traversal-is-separate">Bounded traversal is separate</h3>
+<p>For endpoint route-distance bounds D0,D1, physical speed bound Vmax and sample interval Δt, distance-to-route continuity gives a sufficient condition for corridor conformance.</p>
+<div class="equation" role="group" aria-label="Conservative movement and endpoint bounds"><div>Dk = distance(p̂k, route) + εk<br>distance(p(t), route) ≤ (D0 + D1 + Vmax Δt) / 2 ≤ corridor half-width<br>Guaranteed progress: [ŝ0 + ε0, ŝ1 − ε1], if nonempty</div><small>Conservative movement and endpoint bounds</small></div>
+
+<p>The code also rejects kinematically impossible endpoint displacement. Guaranteed forward progress excludes uncertain endpoint positions: only [ŝ0+ε0, ŝ1−ε1] is credited when nonempty. The website audit exposed and corrected earlier crediting of the entire estimated endpoint interval. Counterexample regressions demonstrate the defect and fix. V5.1 repeated the full survey-policy campaign after both corrections; original v5 observations remain at their recorded source revision.</p>
+</section><section class="chapter" aria-labelledby="proofs"><h2 id="proofs">05 / Conditional correctness</h2>
+<h3 id="assumptions">Assumptions</h3>
+<p>The conclusions require fixed edge/frame/attempt identity; truthful acquisition and quality assertions; calibrated geometry; valid deterministic error bounds; accepted timestamps; and correct interval bookkeeping. A reported GNSS accuracy estimate is not a hard bound unless its declared semantics justify that interpretation. Authentication establishes the sender's identity, not the truth of its physical assertions.</p>
+<h3 id="proposition-1-conditional-survey-soundness">Proposition 1 — Conditional survey soundness</h3>
+<p>Let F⁻j be the accepted full-strip region of capture j and Fj its actual region acquired at required quality. Assume F⁻j ⊆ Fj for every accepted capture. If the accepted union covers the required strip Re, then Re lies inside the actual observed union.</p>
+<div class="equation" role="group" aria-label="Conditional survey soundness, ideal set model"><div>∀j: F⁻j ⊆ Fj ⇒ ⋃ F⁻j ⊆ ⋃ Fj<br>Re ⊆ ⋃ F⁻j ⇒ Re ⊆ ⋃ Fj</div><small>Conditional survey soundness, ideal set model</small></div>
+
+<p><strong>Proof.</strong> Inclusion is preserved by union. Re ⊆ ∪F⁻j and ∪F⁻j ⊆ ∪Fj imply Re ⊆ ∪Fj. Stopped arrival is checked separately. A nonzero missing-length allowance limits the conclusion accordingly. Floating-point comparison tolerances qualify correspondence between the ideal sets and code. This is an elementary conditional argument, not a claim to have discovered a new set-theoretic theorem.</p>
+<p>The substantive obligation is establishing conservative input evidence. Honest trials checked this assumption against each corresponding actual acquisition. M14/M15 violate it and show false completion. Their results demonstrate why the premise matters.</p>
+<h3 id="proposition-2-gaps-are-not-replaced-by-a-progress-maximum">Proposition 2 — Gaps are not replaced by a progress maximum</h3>
+<p>The supervisor stores sorted, merged intervals and recomputes missing work over the whole route. A disjoint capture beyond a resolvable hole cannot remove it. Earlier valid evidence remains available after a navigation deviation. Interval-union and agent regressions exercise this property. Numerical holes below the merging tolerance are subject to the precision limitation stated above.</p>
+<h3 id="proposition-3-ack-cannot-complete-recovery">Proposition 3 — ACK cannot complete recovery</h3>
+<p>Accepted re-entry dispatch sets recovery in progress. Further departure samples cannot issue an overlapping repair. The runtime requires bounded stationary re-entry and an accepted continuation command before it calls <code>RecoveryReentryCompleted</code>. Until then, the supervisor cannot return to moving merely because a command was acknowledged. Safety or invalid evidence can interrupt this sequence. Independent trajectories reconstructed 4,246 completed re-entry dwells.</p>
+<h3 id="mission-level-consequence">Mission-level consequence</h3>
+<p>If an external application obtains a sound fulfilled result for every required edge, taking the union gives coverage of the union of required strips, subject to the same assumptions and tolerances. This does not prove every edge will be assigned, recovery always succeeds, a destroyed UAV's evidence survives, or an arbitrary planner retains its invariants after reassignment. Persistent wind, motor failure and unavailable evidence provide concrete unsuccessful outcomes.</p>
+</section><section class="chapter" aria-labelledby="implementation"><h2 id="implementation">06 / Implementation and reliability</h2>
+<h3 id="canonical-public-contract">Canonical public contract</h3>
+<p>These are implemented interfaces in <code>proto/swarmkit/v1/swarmkit.proto</code>.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Dissertation table"><table>
+<thead>
+<tr>
+<th>Operation/type</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ExecuteEdge</code> / <code>EdgeOperation</code></td>
+<td>Submit a typed obligation with identity, route, limits and repair policy</td>
+</tr>
+<tr>
+<td><code>GetEdgeStatus</code> / <code>EdgeReport</code></td>
+<td>Retrieve phase, reason, physical predicates, missing intervals and repair count</td>
+</tr>
+<tr>
+<td><code>SubmitEdgeCapture</code></td>
+<td>Submit qualified sensor metadata; the agent derives the interval</td>
+</tr>
+<tr>
+<td><code>CancelEdge</code></td>
+<td>Interrupt the software attempt through the agent</td>
+</tr>
+<tr>
+<td><code>EDGE_REPAIR_FULL_EDGE_RESTART</code></td>
+<td>Coverage-aware B2 target at A</td>
+</tr>
+<tr>
+<td><code>EDGE_REPAIR_TARGETED_GAP</code></td>
+<td>VECR target before the earliest gap, with overlap/progress cap</td>
+</tr>
+</tbody>
+</table></div>
+<figure class="research-figure"><button class="figure-open" data-image="assets/diagrams/states.svg" data-caption="State semantics · ACK and completed physical re-entry remain distinct." aria-label="Enlarge: State semantics · ACK and completed physical re-entry remain distinct."><img loading="lazy" src="assets/diagrams/states.svg" alt="State semantics · ACK and completed physical re-entry remain distinct."><span class="enlarge">Enlarge ↗</span></button><figcaption>State semantics · ACK and completed physical re-entry remain distinct.</figcaption></figure>
+
+<p>The phases are <strong>MOVING, DEVIATING, RECOVERING, FULFILLED, INTERRUPTED and UNKNOWN</strong>. Earlier reader labels such as EDGE_VERIFIED and TRACKING are not the canonical report enum.</p>
+<h3 id="reliability-corrections">Reliability corrections</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Dissertation table"><table>
+<thead>
+<tr>
+<th>Defect or ambiguity</th>
+<th>Implemented behavior</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Arrival inferred from ACK or an endpoint hit</td>
+<td>Bounded 3D stopped arrival, dwell, freshness and revocation</td>
+<td>Core and agent regressions</td>
+</tr>
+<tr>
+<td>Multi-point route dispatched as one endpoint command</td>
+<td>Agent rejects unsupported route shape</td>
+<td>Route acceptance regressions</td>
+</tr>
+<tr>
+<td>Camera ACK or unbounded pose counted as survey</td>
+<td>Qualified metadata, calibration/freshness/identity checks</td>
+<td>Sensor and runtime regressions</td>
+</tr>
+<tr>
+<td>Recovery ACK changed phase before physical return</td>
+<td>RECOVERING persists through re-entry and continuation</td>
+<td>v5 regressions and reconstructed dwells</td>
+</tr>
+<tr>
+<td>Repeated departure overwrote active recovery</td>
+<td>Active repair guard; completion-based cooldown</td>
+<td>v5 regressions</td>
+</tr>
+<tr>
+<td>Absent bounds became exact departure evidence</td>
+<td>Unknown bounds reset the count; spatial hysteresis</td>
+<td>v5 regressions</td>
+</tr>
+<tr>
+<td>Future unseen tail targeted ahead of current progress</td>
+<td>Midflight target capped at projected progress</td>
+<td>Target-selection regression and commands</td>
+</tr>
+<tr>
+<td>Estimated endpoints overstated guaranteed traversal</td>
+<td>Interval contracted by endpoint uncertainty</td>
+<td>October 26 before/after counterexamples</td>
+</tr>
+<tr>
+<td>Off-segment camera center shifted its footprint onto A or B</td>
+<td>Signed axial center; clip only the resulting footprint</td>
+<td>Eastbound/northbound, both endpoints and partial-overlap regressions</td>
+</tr>
+</tbody>
+</table></div>
+<p>The three-sample departure trigger tracks failure of the bounded corridor-conformance test. An uncertainty envelope crossing the boundary does not itself prove the actual vehicle is outside. Midflight experimental gates additionally check the actual excursion from private truth.</p>
+<h3 id="safety-durability-and-resource-limits">Safety, durability and resource limits</h3>
+<p>Recovery is enabled only for SimBackend and requires authority, suitable mode, battery, navigation bounds and health. Live MAVLink recovery remains disabled pending qualified feasibility/geofence behavior. A timeout marks the attempt interrupted; the report alone does not prove physical stop.</p>
+<p>The attempt journal is fsynced before dispatch. A durable terminal outcome can be retrieved after restart; an ambiguous outcome remains UNKNOWN and cannot be redispatched with the same identity. This is duplicate suppression while history is retained, not exactly-once physical execution. Corrupt, full, locked or unwritable journals fail closed. Limits include 4,096 in-memory attempts, 4,096 capture identities per attempt and a 64 MiB journal without compaction. Persistent storage must be retained.</p>
+</section><section class="chapter" aria-labelledby="protocol"><h2 id="protocol">07 / Completed experimental design</h2>
+<h3 id="fair-b2-versus-vecr">Fair B2 versus VECR</h3>
+<figure class="research-figure"><button class="figure-open" data-image="assets/diagrams/comparison.svg" data-caption="Schematic recovery comparison · identical shared contracts, different re-entry targets." aria-label="Enlarge: Schematic recovery comparison · identical shared contracts, different re-entry targets."><img loading="lazy" src="assets/diagrams/comparison.svg" alt="Schematic recovery comparison · identical shared contracts, different re-entry targets."><span class="enlarge">Enlarge ↗</span></button><figcaption>Schematic recovery comparison · identical shared contracts, different re-entry targets.</figcaption></figure>
+
+<p>B2 already knows which survey evidence is accepted. It shares the verifier, sensor, dynamics, schedules, thresholds, safety, deadline and repair budget with VECR. B2 targets A; VECR targets before the earliest missing interval. Both retain valid earlier captures. The comparison estimates recovery target selection, not the benefit of adding verification to an uninformed baseline.</p>
+<h3 id="assignment-and-operating-conditions">Assignment and operating conditions</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Dissertation table"><table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Frozen v5.1 setting (unchanged from v5)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Primary</td>
+<td>M00–M20 × 100 paired seeds (1–100) × 2 policies = 4,200 attempts</td>
+</tr>
+<tr>
+<td>Sensitivity</td>
+<td>X00–X17 × 30 paired seeds (1–30) × 2 policies = 1,080 attempts</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>Both methods on every seed, order balanced by seed</td>
+</tr>
+<tr>
+<td>Default route / speed / acceleration</td>
+<td>40 m / 2 m/s / 2 m/s²</td>
+</tr>
+<tr>
+<td>Strip and corridor</td>
+<td>4 m half-width</td>
+</tr>
+<tr>
+<td>Telemetry / private truth</td>
+<td>100 ms / 20 ms integration</td>
+</tr>
+<tr>
+<td>Captures / metadata delay</td>
+<td>0.5 s / 0.2 s default</td>
+</tr>
+<tr>
+<td>Bounds</td>
+<td>0.3 m horizontal, 0.05001 m altitude, 0.03001 m/s speed</td>
+</tr>
+<tr>
+<td>Departure / hysteresis / cooldown</td>
+<td>3 samples / 0.5 m / 1 s after completed re-entry</td>
+</tr>
+<tr>
+<td>Dwell / recovery budget</td>
+<td>200 ms / 2 attempts</td>
+</tr>
+<tr>
+<td>Deadline</td>
+<td>90 s; 80 m sensitivity condition uses 180 s</td>
+</tr>
+<tr>
+<td>Actual optics</td>
+<td>0–2% wider than fixed conservative calibration</td>
+</tr>
+</tbody>
+</table></div>
+<p>Noise includes nonzero bias and bounded error. It depends on seed and absolute simulation tick, never policy. Spatial/time-scheduled faults can expose policies differently because their paths differ; this is recorded rather than forced to have identical post-treatment exposure. Sampled timeout cases terminate at 90.2 s.</p>
+<h3 id="independent-truth-and-resolution">Independent truth and resolution</h3>
+<figure class="research-figure"><button class="figure-open" data-image="assets/diagrams/evidence.svg" data-caption="Observation separation · noisy estimates and private acquisition truth follow different paths." aria-label="Enlarge: Observation separation · noisy estimates and private acquisition truth follow different paths."><img loading="lazy" src="assets/diagrams/evidence.svg" alt="Observation separation · noisy estimates and private acquisition truth follow different paths."><span class="enlarge">Enlarge ↗</span></button><figcaption>Observation separation · noisy estimates and private acquisition truth follow different paths.</figcaption></figure>
+
+<p>The primary oracle intersects each actual rectangle with both strip boundaries and unions the resulting full-strip intervals. It does not mosaic partial-width images. Independent Python reconstruction checks geometry, acquisition success, union, distance, stopped arrival, every accepted footprint and completed re-entry dwell.</p>
+<p>All-cell and cell-center rasters at <strong>0.1, 0.25, 0.5 and 1 m</strong> are secondary sensitivity measures. No final trial changed completion classification across these resolutions. A regression with a 0.01 m hole demonstrates why cell-center sampling can nevertheless miss smaller holes. Exact union means interval geometry rather than raster sampling; numerical tolerances still apply.</p>
+<h3 id="statistical-protocol">Statistical protocol</h3>
+<p>Per-scenario effects use paired seed differences, 10,000 bootstrap resamples and RNG 20261024. Precision, recall, acceptance and false-completion intervals use Wilson 95%. Undefined denominators stay undefined. Matched-success costs require both methods to truly complete and report fulfillment. All-assigned outcomes accompany them.</p>
+<p>Seed IDs recur across conditions. Aggregate paired intervals resample <strong>100 whole seed clusters</strong>, retaining all 19 honest primary conditions. Pooled IID binomial intervals were removed in a documented correction. These intervals describe the chosen synthetic variation, not populations of real aircraft, terrain or weather. No multiple-comparison significance claim or favorable-seed filtering was used.</p>
+</section><section class="chapter" aria-labelledby="results"><h2 id="results">08 / Measured results</h2>
+<h3 id="equal-success-midflight-comparison">Equal-success midflight comparison</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Recorded distance, equally successful pairs"><table><caption>Recorded distance, equally successful pairs</caption><thead><tr><th scope="col">Condition</th><th scope="col">Pairs</th><th scope="col">B2 mean</th><th scope="col">VECR mean</th><th scope="col">VECR − B2 [95% CI]</th><th scope="col">Reduction</th></tr></thead><tbody><tr><td><strong>M03</strong> · Departure before B</td><td>100</td><td>79.561 m</td><td>57.764 m</td><td>-21.798 [-21.821, -21.773] m</td><td>27.4%</td></tr><tr><td><strong>M04</strong> · Strip remains visible</td><td>100</td><td>79.561 m</td><td>57.418 m</td><td>-22.143 [-22.185, -22.101] m</td><td>27.8%</td></tr><tr><td><strong>M05</strong> · Hidden strip gap</td><td>100</td><td>79.561 m</td><td>59.440 m</td><td>-20.121 [-20.153, -20.092] m</td><td>25.3%</td></tr></tbody></table></div>
+
+<p>Each row has <strong>100 matched true-and-reported successes</strong> per policy. Distance includes recovery and return to B. Corresponding time differences are −9.943 s [−9.961, −9.925], −10.113 s [−10.147, −10.080] and −9.248 s [−9.264, −9.232], with paired 95% bootstrap intervals.</p>
+<figure class="research-figure"><button class="figure-open" data-image="assets/figures/02_matched_success_distance.svg" data-caption="Figure 2 · Distance on pairs with both true and reported success. The M03–M05 comparisons each contain 100 pairs." aria-label="Enlarge: Figure 2 · Distance on pairs with both true and reported success. The M03–M05 comparisons each contain 100 pairs."><img loading="lazy" src="assets/figures/02_matched_success_distance.svg" alt="Figure 2 · Distance on pairs with both true and reported success. The M03–M05 comparisons each contain 100 pairs."><span class="enlarge">Enlarge ↗</span></button><figcaption>Figure 2 · Distance on pairs with both true and reported success. The M03–M05 comparisons each contain 100 pairs.</figcaption></figure>
+
+<h3 id="every-primary-and-sensitivity-condition">Every primary and sensitivity condition</h3>
+<p>The explorer is generated from frozen CSV tables. <strong>True completion</strong> means actual full-strip survey plus stopped arrival at B. <strong>Reported</strong> means FULFILLED. Primary rows contain 100 attempts per policy; sensitivity rows contain 30. The two dishonest-sensor controls remain visible and labeled.</p>
+<div class="explorer"><div class="explorer-controls"><label>Population<select id="scenarioGroup"><option value="all">All 39 conditions</option><option value="primary">21 primary conditions</option><option value="sensitivity">18 sensitivity conditions</option><option value="controls">Dishonest-sensor controls</option></select></label><label>Find a condition<input id="scenarioSearch" type="search" placeholder="e.g. M17, wind, bound"></label><span id="scenarioCount" role="status">39 conditions</span></div><div class="table-scroll" tabindex="0" role="region" aria-label="Every experimental condition"><table id="scenarioTable"><caption>Within paired columns: B2 / VECR. Distance in metres. CI: paired 95%.</caption><thead><tr><th scope="col">Condition</th><th scope="col">N each</th><th scope="col">True complete</th><th scope="col">Reported</th><th scope="col">False reports</th><th scope="col">All-assigned mean m</th><th scope="col">Matched-success Δ m [CI]</th></tr></thead><tbody><tr data-scenario="M00" data-group="primary"><td><button class="case-button" data-case="M00">M00 ↗</button><span class="case-name">Nominal</span></td><td>100</td><td>100 / 100</td><td>100 / 100</td><td>0 / 0</td><td>40.04 / 40.04</td><td>0.000 [0.000, 0.000]</td></tr><tr data-scenario="M01" data-group="primary"><td><button class="case-button" data-case="M01">M01 ↗</button><span class="case-name">Short gust</span></td><td>100</td><td>100 / 100</td><td>100 / 100</td><td>0 / 0</td><td>40.36 / 40.36</td><td>0.000 [0.000, 0.000]</td></tr><tr data-scenario="M02" data-group="primary"><td><button class="case-button" data-case="M02">M02 ↗</button><span class="case-name">Sustained wind</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>108.86 / 101.46</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M03" data-group="primary"><td><button class="case-button" data-case="M03">M03 ↗</button><span class="case-name">Early departure</span></td><td>100</td><td>100 / 100</td><td>100 / 100</td><td>0 / 0</td><td>79.56 / 57.76</td><td>-21.798 [-21.821, -21.773]</td></tr><tr data-scenario="M04" data-group="primary"><td><button class="case-button" data-case="M04">M04 ↗</button><span class="case-name">Visible strip departure</span></td><td>100</td><td>100 / 100</td><td>100 / 100</td><td>0 / 0</td><td>79.56 / 57.42</td><td>-22.143 [-22.185, -22.101]</td></tr><tr data-scenario="M05" data-group="primary"><td><button class="case-button" data-case="M05">M05 ↗</button><span class="case-name">Hidden strip departure</span></td><td>100</td><td>100 / 100</td><td>100 / 100</td><td>0 / 0</td><td>79.56 / 59.44</td><td>-20.121 [-20.153, -20.092]</td></tr><tr data-scenario="M06" data-group="primary"><td><button class="case-button" data-case="M06">M06 ↗</button><span class="case-name">Biased + delayed</span></td><td>100</td><td>100 / 100</td><td>100 / 100</td><td>0 / 0</td><td>40.04 / 40.04</td><td>0.000 [0.000, 0.000]</td></tr><tr data-scenario="M07" data-group="primary"><td><button class="case-button" data-case="M07">M07 ↗</button><span class="case-name">Missing metadata</span></td><td>100</td><td>100 / 100</td><td>100 / 100</td><td>0 / 0</td><td>120.20 / 94.27</td><td>-25.929 [-25.963, -25.897]</td></tr><tr data-scenario="M08" data-group="primary"><td><button class="case-button" data-case="M08">M08 ↗</button><span class="case-name">GNSS outage</span></td><td>100</td><td>0 / 100</td><td>0 / 0</td><td>0 / 0</td><td>171.08 / 139.06</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M09" data-group="primary"><td><button class="case-button" data-case="M09">M09 ↗</button><span class="case-name">Invalid estimator</span></td><td>100</td><td>0 / 100</td><td>0 / 0</td><td>0 / 0</td><td>171.08 / 139.06</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M10" data-group="primary"><td><button class="case-button" data-case="M10">M10 ↗</button><span class="case-name">Unbounded pose</span></td><td>100</td><td>100 / 100</td><td>0 / 0</td><td>0 / 0</td><td>40.04 / 40.04</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M11" data-group="primary"><td><button class="case-button" data-case="M11">M11 ↗</button><span class="case-name">Stale captures</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>171.08 / 171.08</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M12" data-group="primary"><td><button class="case-button" data-case="M12">M12 ↗</button><span class="case-name">Wrong calibration</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>171.08 / 171.08</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M13" data-group="primary"><td><button class="case-button" data-case="M13">M13 ↗</button><span class="case-name">Declared yaw offset</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>171.08 / 171.08</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M14" data-group="primary"><td><button class="case-button" data-case="M14">M14 ↗</button><span class="case-name">False frame success*</span><span class="control-tag">Dishonest control</span></td><td>100</td><td>0 / 0</td><td>100 / 100</td><td>100 / 100</td><td>40.04 / 40.04</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M15" data-group="primary"><td><button class="case-button" data-case="M15">M15 ↗</button><span class="case-name">Undeclared yaw offset*</span><span class="control-tag">Dishonest control</span></td><td>100</td><td>0 / 0</td><td>100 / 100</td><td>100 / 100</td><td>40.04 / 40.04</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M16" data-group="primary"><td><button class="case-button" data-case="M16">M16 ↗</button><span class="case-name">Command rejected</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>16.35 / 16.35</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M17" data-group="primary"><td><button class="case-button" data-case="M17">M17 ↗</button><span class="case-name">Motor failure</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>16.68 / 16.68</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M18" data-group="primary"><td><button class="case-button" data-case="M18">M18 ↗</button><span class="case-name">No recovery budget</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>47.52 / 47.52</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M19" data-group="primary"><td><button class="case-button" data-case="M19">M19 ↗</button><span class="case-name">Low battery</span></td><td>100</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>13.00 / 13.00</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="M20" data-group="primary"><td><button class="case-button" data-case="M20">M20 ↗</button><span class="case-name">Sparse captures</span></td><td>100</td><td>0 / 94</td><td>0 / 94</td><td>0 / 0</td><td>171.08 / 117.66</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="X00" data-group="sensitivity"><td><button class="case-button" data-case="X00">X00 ↗</button><span class="case-name">Sensitivity: length</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>57.57 / 37.17</td><td>-20.407 [-20.457, -20.356]</td></tr><tr data-scenario="X01" data-group="sensitivity"><td><button class="case-button" data-case="X01">X01 ↗</button><span class="case-name">Sensitivity: length</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>119.91 / 99.85</td><td>-20.068 [-20.116, -20.018]</td></tr><tr data-scenario="X02" data-group="sensitivity"><td><button class="case-button" data-case="X02">X02 ↗</button><span class="case-name">Sensitivity: along</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 61.12</td><td>-18.432 [-18.485, -18.378]</td></tr><tr data-scenario="X03" data-group="sensitivity"><td><button class="case-button" data-case="X03">X03 ↗</button><span class="case-name">Sensitivity: along</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 57.73</td><td>-21.825 [-21.872, -21.779]</td></tr><tr data-scenario="X04" data-group="sensitivity"><td><button class="case-button" data-case="X04">X04 ↗</button><span class="case-name">Sensitivity: period</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 59.39</td><td>-20.163 [-20.215, -20.111]</td></tr><tr data-scenario="X05" data-group="sensitivity"><td><button class="case-button" data-case="X05">X05 ↗</button><span class="case-name">Sensitivity: period</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 59.39</td><td>-20.163 [-20.215, -20.110]</td></tr><tr data-scenario="X06" data-group="sensitivity"><td><button class="case-button" data-case="X06">X06 ↗</button><span class="case-name">Sensitivity: bound</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.77 / 59.42</td><td>-20.353 [-20.370, -20.336]</td></tr><tr data-scenario="X07" data-group="sensitivity"><td><button class="case-button" data-case="X07">X07 ↗</button><span class="case-name">Sensitivity: bound</span></td><td>30</td><td>30 / 30</td><td>0 / 0</td><td>0 / 0</td><td>158.79 / 158.79</td><td>Undefined · 0 pairs</td></tr><tr data-scenario="X08" data-group="sensitivity"><td><button class="case-button" data-case="X08">X08 ↗</button><span class="case-name">Sensitivity: wind</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>77.66 / 56.68</td><td>-20.988 [-21.040, -20.934]</td></tr><tr data-scenario="X09" data-group="sensitivity"><td><button class="case-button" data-case="X09">X09 ↗</button><span class="case-name">Sensitivity: wind</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>83.80 / 64.80</td><td>-18.994 [-19.039, -18.950]</td></tr><tr data-scenario="X10" data-group="sensitivity"><td><button class="case-button" data-case="X10">X10 ↗</button><span class="case-name">Sensitivity: attempts</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 59.39</td><td>-20.163 [-20.214, -20.112]</td></tr><tr data-scenario="X11" data-group="sensitivity"><td><button class="case-button" data-case="X11">X11 ↗</button><span class="case-name">Sensitivity: attempts</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 59.39</td><td>-20.163 [-20.215, -20.111]</td></tr><tr data-scenario="X12" data-group="sensitivity"><td><button class="case-button" data-case="X12">X12 ↗</button><span class="case-name">Sensitivity: cross</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 59.39</td><td>-20.163 [-20.214, -20.109]</td></tr><tr data-scenario="X13" data-group="sensitivity"><td><button class="case-button" data-case="X13">X13 ↗</button><span class="case-name">Sensitivity: cross</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>79.55 / 57.43</td><td>-22.126 [-22.207, -22.046]</td></tr><tr data-scenario="X14" data-group="sensitivity"><td><button class="case-button" data-case="X14">X14 ↗</button><span class="case-name">Sensitivity: gap</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>120.20 / 114.22</td><td>-5.985 [-6.047, -5.924]</td></tr><tr data-scenario="X15" data-group="sensitivity"><td><button class="case-button" data-case="X15">X15 ↗</button><span class="case-name">Sensitivity: gap</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>120.20 / 74.27</td><td>-45.930 [-45.991, -45.870]</td></tr><tr data-scenario="X16" data-group="sensitivity"><td><button class="case-button" data-case="X16">X16 ↗</button><span class="case-name">Sensitivity: gap</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>120.20 / 102.24</td><td>-17.959 [-18.022, -17.896]</td></tr><tr data-scenario="X17" data-group="sensitivity"><td><button class="case-button" data-case="X17">X17 ↗</button><span class="case-name">Sensitivity: gap</span></td><td>30</td><td>30 / 30</td><td>30 / 30</td><td>0 / 0</td><td>120.20 / 90.24</td><td>-29.957 [-30.014, -29.900]</td></tr></tbody></table></div><section id="caseDetails" class="case-details" aria-live="polite"><h4>Inspect a condition</h4><p>Select its code for full configuration, precision, recall, acceptance and uncertainty.</p></section></div>
+
+<h3 id="fixed-mixture-aggregate">Fixed-mixture aggregate</h3>
+<p>Across 19 honest primary conditions, mean VECR−B2 distance is <strong>−11.307 m [−11.430, −11.157]</strong>, and time is <strong>−3.715 s [−3.780, −3.636]</strong>. Reported acceptance differs by <strong>+4.947 percentage points [4.684, 5.158]</strong>. These combine successful and unsuccessful work with this exact weighting. They are not fleet energy savings or cost per certified mission.</p>
+</section><section class="chapter" aria-labelledby="replay"><h2 id="replay">09 / Replay the recorded experiment</h2>
+<p>This replays <strong>seed 1</strong> from positive, negative and trust-boundary conditions. It reads logged states and commands; no hypothetical percentage sequence is used. Both policies share the time axis. Displayed 100 ms trace samples are distinct from the 20 ms truth used by the validator. Display values are rounded; hovering over missing intervals shows their exact recorded text, also preserved in the downloaded logs. The controls have no connection to a live vehicle.</p>
+<div class="trace-explorer"><div class="trace-toolbar"><label>Recorded condition<select id="replayCase"><option value="M03">M03 · Early departure</option><option value="M04">M04 · Visible strip departure</option><option value="M05">M05 · Hidden strip departure</option><option value="M08">M08 · GNSS outage</option><option value="M14">M14 · False frame success*</option><option value="M17">M17 · Motor failure</option></select></label><button id="playReplay" class="button">Play replay</button><button id="resetReplay" class="button secondary">Reset</button><label>Speed<select id="replaySpeed"><option value="1">1×</option><option value="4" selected>4×</option><option value="10">10×</option></select></label></div><div class="trace-legend"><span class="legend-b2">B2 · full restart</span><span class="legend-p">VECR · targeted</span><span>Faint line: complete recorded path · ×: accepted target</span></div><svg id="replayPlot" viewBox="0 0 880 370" role="img" aria-labelledby="replayTitle replayDesc"><title id="replayTitle">Recorded physical trajectories</title><desc id="replayDesc">Use the time slider to compare B2 and VECR at the same simulation time.</desc><g id="replayDrawing"></g></svg><label class="time-control">Simulation time <output id="replayTime">0.0 s</output><input id="replaySlider" type="range" min="100" max="40000" step="100" value="100" aria-label="Replay simulation time"></label><div id="replayMetrics" class="replay-metrics" aria-live="off"></div><div class="trace-events"><h4>Recorded event timeline</h4><p>Click an event to inspect that time. Only phase, command and fault events are shown here; complete logs are in the download.</p><div id="eventList"></div></div><noscript><p>Replay controls require JavaScript. The original trajectory figure and downloadable traces remain available.</p></noscript></div>
+
+<p>The accepted-coverage bar is the agent's union. The separate truth bar is independently observed full-strip coverage. They disagree in the dishonest-sensor case. A target marker records the last accepted GOTO; it does not prove arrival. Final phases remain the actual recorded outcome, including INTERRUPTED. Playback starts only when requested.</p>
+<figure class="research-figure"><button class="figure-open" data-image="assets/figures/03_positive_negative_trajectories.svg" data-caption="Figure 3 · Actual positive and unsuccessful recovery trajectories from the frozen campaign." aria-label="Enlarge: Figure 3 · Actual positive and unsuccessful recovery trajectories from the frozen campaign."><img loading="lazy" src="assets/figures/03_positive_negative_trajectories.svg" alt="Figure 3 · Actual positive and unsuccessful recovery trajectories from the frozen campaign."><span class="enlarge">Enlarge ↗</span></button><figcaption>Figure 3 · Actual positive and unsuccessful recovery trajectories from the frozen campaign.</figcaption></figure>
+
+</section><section class="chapter" aria-labelledby="availability"><h2 id="availability">10 / Availability, failures and counterexamples</h2>
+<h3 id="honest-primary-outcomes">Honest primary outcomes</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Honest primary population; different recall denominators"><table><caption>Honest primary population; different recall denominators</caption><thead><tr><th scope="col">Policy</th><th scope="col">N</th><th scope="col">True survey</th><th scope="col">True + stopped B</th><th scope="col">Reported</th><th scope="col">False reports</th><th scope="col">Unaccepted true</th><th scope="col">Recall</th></tr></thead><tbody><tr><td>B2</td><td>1900</td><td>1300</td><td>800</td><td>700</td><td>0</td><td>100</td><td>87.50%</td></tr><tr><td>VECR</td><td>1900</td><td>1300</td><td>1094</td><td>794</td><td>0</td><td>300</td><td>72.58%</td></tr></tbody></table></div>
+
+<p>Both methods achieved 1,300 true surveys. B2 achieved 800 with stopped arrival, of which 700 were accepted. VECR achieved 1,094, of which 794 were accepted. Conditional recall is <strong>87.50% for B2 and 72.58% for VECR</strong>, despite VECR accepting more missions. The denominators differ: in GNSS/estimator-invalid conditions VECR returned to B while B2 was still repairing. Neither could certify persistent missing evidence.</p>
+<figure class="research-figure"><button class="figure-open" data-image="assets/figures/01_availability.svg" data-caption="Figure 1 · All primary conditions: actual completion and reported fulfillment. Negative controls remain included." aria-label="Enlarge: Figure 1 · All primary conditions: actual completion and reported fulfillment. Negative controls remain included."><img loading="lazy" src="assets/figures/01_availability.svg" alt="Figure 1 · All primary conditions: actual completion and reported fulfillment. Negative controls remain included."><span class="enlarge">Enlarge ↗</span></button><figcaption>Figure 1 · All primary conditions: actual completion and reported fulfillment. Negative controls remain included.</figcaption></figure>
+
+<h3 id="unsuccessful-outcomes">Unsuccessful outcomes</h3>
+<ul>
+<li><strong>M02 sustained wind:</strong> recovery actually began before B; neither policy completed the survey or reported fulfillment.</li>
+<li><strong>M08/M09 GNSS/estimator invalidity:</strong> repeated movement did not restore bounded evidence in the fault region; both reported zero fulfillment.</li>
+<li><strong>M10 unbounded pose:</strong> both physically completed; neither certified completion.</li>
+<li><strong>M11/M12 stale or wrong calibration:</strong> sensor records were rejected; the deadline constrained recovery.</li>
+<li><strong>M16/M17 command refusal or motor failure:</strong> actual negative interventions occurred; neither policy fulfilled.</li>
+<li><strong>M18/M19 exhausted budget or low battery:</strong> the required unsuccessful outcomes occurred.</li>
+<li><strong>M20 sparse captures:</strong> VECR accepted 94/100 versus B2 0/100; paired difference +0.94 [0.89, 0.98]. No equally successful pairs exist for conditional cost estimation.</li>
+</ul>
+<p>Final phases were <strong>2,914 FULFILLED and 2,366 INTERRUPTED</strong>. FULFILLED includes the false control outcomes below. No final row was UNKNOWN, but transient UNKNOWN states are retained. Absence of final UNKNOWN does not imply uncertainty never occurred.</p>
+<h3 id="trusted-sensor-counterexamples">Trusted-sensor counterexamples</h3>
+<p>M14 falsely asserted acquisition success; M15 concealed a 45° ground-footprint yaw offset. Together they produced <strong>400 false fulfillment reports in 400 attempts</strong> across both methods. This deliberately failed physical outcome demonstrates the trust boundary. Encryption and conservative geometry cannot establish a dishonest assertion's truth.</p>
+<p>Across <strong>4,880 honest-sensor attempts</strong>, there were zero observed false fulfillments and zero uncontained accepted footprints among <strong>256,395 accepted captures</strong>. This is conditional model evidence, not zero-risk proof or a verification-accuracy advantage over B2. For 0/100 failures in one condition, the Wilson 95% upper bound is still about 3.7%; reused seeds across conditions cannot become thousands of unrelated physical trials.</p>
+</section><section class="chapter" aria-labelledby="sensitivity"><h2 id="sensitivity">11 / Sensitivity and robustness</h2>
+<p>Eighteen one-factor conditions vary route length, along-track footprint, capture period, horizontal uncertainty, wind, recovery count, cross-track footprint and gap location/length. Exact assignments are below. No favorable subset replaced the frozen matrix.</p>
+<figure class="research-figure"><button class="figure-open" data-image="assets/figures/04_sensitivity.svg" data-caption="Figure 4 · Sensitivity to route, sensor, uncertainty and recovery parameters; fixed one-factor assignments." aria-label="Enlarge: Figure 4 · Sensitivity to route, sensor, uncertainty and recovery parameters; fixed one-factor assignments."><img loading="lazy" src="assets/figures/04_sensitivity.svg" alt="Figure 4 · Sensitivity to route, sensor, uncertainty and recovery parameters; fixed one-factor assignments."><span class="enlarge">Enlarge ↗</span></button><figcaption>Figure 4 · Sensitivity to route, sensor, uncertainty and recovery parameters; fixed one-factor assignments.</figcaption></figure>
+
+<p>All 540 sensitivity attempts per method truly completed. Each method accepted <strong>510/540</strong>, with <strong>30 unaccepted true completions</strong> and zero false fulfillment. All misses occurred in X07, the <strong>1 m horizontal-bound</strong> condition. A conservative footprint becomes unavailable when uncertainty consumes its usable width. The soundness rule was not relaxed to raise acceptance.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Frozen sensitivity settings"><table><caption>Frozen sensitivity settings</caption><thead><tr><th scope="col">ID</th><th scope="col">Factor</th><th scope="col">L m</th><th scope="col">Along half m</th><th scope="col">Cross half m</th><th scope="col">Capture s</th><th scope="col">Bound m</th><th scope="col">Wind m/s</th><th scope="col">Repairs</th><th scope="col">Gap m</th><th scope="col">Pairs</th></tr></thead><tbody><tr><td>X00</td><td>length</td><td>20</td><td>2</td><td>5</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X01</td><td>length</td><td>80</td><td>2</td><td>5</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X02</td><td>along</td><td>40</td><td>1</td><td>5</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X03</td><td>along</td><td>40</td><td>3</td><td>5</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X04</td><td>period</td><td>40</td><td>2</td><td>5</td><td>0.2</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X05</td><td>period</td><td>40</td><td>2</td><td>5</td><td>1</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X06</td><td>bound</td><td>40</td><td>2</td><td>5</td><td>0.5</td><td>0.1</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X07</td><td>bound</td><td>40</td><td>2</td><td>5</td><td>0.5</td><td>1</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X08</td><td>wind</td><td>40</td><td>2</td><td>5</td><td>0.5</td><td>0.3</td><td>2</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X09</td><td>wind</td><td>40</td><td>2</td><td>5</td><td>0.5</td><td>0.3</td><td>4</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X10</td><td>attempts</td><td>40</td><td>2</td><td>5</td><td>0.5</td><td>0.3</td><td>3</td><td>1</td><td>16–24</td><td>30</td></tr><tr><td>X11</td><td>attempts</td><td>40</td><td>2</td><td>5</td><td>0.5</td><td>0.3</td><td>3</td><td>3</td><td>16–24</td><td>30</td></tr><tr><td>X12</td><td>cross</td><td>40</td><td>2</td><td>5</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X13</td><td>cross</td><td>40</td><td>2</td><td>14</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>16–24</td><td>30</td></tr><tr><td>X14</td><td>gap</td><td>40</td><td>2</td><td>7</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>6–10</td><td>30</td></tr><tr><td>X15</td><td>gap</td><td>40</td><td>2</td><td>7</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>26–34</td><td>30</td></tr><tr><td>X16</td><td>gap</td><td>40</td><td>2</td><td>7</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>12–28</td><td>30</td></tr><tr><td>X17</td><td>gap</td><td>40</td><td>2</td><td>7</td><td>0.5</td><td>0.3</td><td>3</td><td>2</td><td>18–22</td><td>30</td></tr></tbody></table></div>
+
+<h3 id="resolution-and-useful-evidence">Resolution and useful evidence</h3>
+<figure class="research-figure"><button class="figure-open" data-image="assets/figures/05_raster_sensitivity.svg" data-caption="Figure 5 · Exact full-strip union versus secondary raster scoring; numerical approximation is separate from sensor validity." aria-label="Enlarge: Figure 5 · Exact full-strip union versus secondary raster scoring; numerical approximation is separate from sensor validity."><img loading="lazy" src="assets/figures/05_raster_sensitivity.svg" alt="Figure 5 · Exact full-strip union versus secondary raster scoring; numerical approximation is separate from sensor validity."><span class="enlarge">Enlarge ↗</span></button><figcaption>Figure 5 · Exact full-strip union versus secondary raster scoring; numerical approximation is separate from sensor validity.</figcaption></figure>
+
+<figure class="research-figure"><button class="figure-open" data-image="assets/figures/06_truth_and_verified_coverage.svg" data-caption="Figure 6 · Independent actual coverage and agent-accepted coverage, including evidence-limited outcomes." aria-label="Enlarge: Figure 6 · Independent actual coverage and agent-accepted coverage, including evidence-limited outcomes."><img loading="lazy" src="assets/figures/06_truth_and_verified_coverage.svg" alt="Figure 6 · Independent actual coverage and agent-accepted coverage, including evidence-limited outcomes."><span class="enlarge">Enlarge ↗</span></button><figcaption>Figure 6 · Independent actual coverage and agent-accepted coverage, including evidence-limited outcomes.</figcaption></figure>
+
+<p>Each credited interval needs a complete strip cross-section justified by an individual footprint. The model omits terrain, occlusion, exposure, blur and reconstruction quality. Angle controls use yaw-rotated ground rectangles, not calibrated pitch/roll photogrammetry. These assumptions limit generalization even when all numerical gates pass.</p>
+</section><section class="chapter" aria-labelledby="performance"><h2 id="performance">12 / Host performance</h2>
+<p>After the science campaign, the same release executable ran <strong>80 serial processes</strong>: M00/M03/M05/M08 × 10 paired seeds (20001–20010) × two methods. Four-worker scientific timings were not repurposed as the isolated benchmark.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Instrumented macOS host measurements"><table><caption>Instrumented macOS host measurements</caption><thead><tr><th scope="col">Metric</th><th scope="col">Median across 80 trials</th><th scope="col">p95 across trials</th><th scope="col">Unit</th></tr></thead><tbody><tr><td>Whole-process CPU</td><td>0.091</td><td>0.195</td><td>s</td></tr><tr><td>Peak process RSS</td><td>22.312</td><td>23.438</td><td>MiB</td></tr><tr><td>Per-trial capture RPC p95</td><td>117.354</td><td>155.531</td><td>µs</td></tr><tr><td>Captures / accelerated wall second</td><td>939.346</td><td>1,002.092</td><td>1/s</td></tr><tr><td>Reports / accelerated wall second</td><td>188.751</td><td>235.413</td><td>1/s</td></tr></tbody></table></div>
+
+<figure class="research-figure"><button class="figure-open" data-image="assets/figures/07_host_performance.svg" data-caption="Figure 7 · Separate serial benchmark of the complete instrumented process on the recorded macOS host." aria-label="Enlarge: Figure 7 · Separate serial benchmark of the complete instrumented process on the recorded macOS host."><img loading="lazy" src="assets/figures/07_host_performance.svg" alt="Figure 7 · Separate serial benchmark of the complete instrumented process on the recorded macOS host."><span class="enlarge">Enlarge ↗</span></button><figcaption>Figure 7 · Separate serial benchmark of the complete instrumented process on the recorded macOS host.</figcaption></figure>
+
+<p>CPU/RSS include SDK, service, runtime, backend and trace writer, including startup. Capture latency measures the mTLS submission RPC, not the pure core verifier. Its p95 summary is a distribution of each trial's p95, not a pooled per-capture quantile. Report/capture rates describe accelerated instrumented execution, not radio goodput.</p>
+<p>Host: Apple M3 Pro, macOS 26.6.2, clang 17.0.0 and CMake 3.31.6. These results do not establish Raspberry Pi capacity, hard real-time deadlines, energy use or aircraft performance. Agent-only profiling was not performed.</p>
+</section><section class="chapter" aria-labelledby="reproducibility"><h2 id="reproducibility">13 / Reproducibility and audit trail</h2>
+<h3 id="executed-validation-gates">Executed validation gates</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Current v5.1 engineering and scientific validation gates"><table><caption>Current v5.1 engineering and scientific validation gates</caption><thead><tr><th scope="col">Gate</th><th scope="col">Outcome</th><th scope="col">Observed evidence</th></tr></thead><tbody><tr><td>Release / UBSan</td><td>Pass</td><td>2/2 CTest targets each after both endpoint fixes</td></tr><tr><td>New endpoint regressions</td><td>Pass</td><td>3 cases; 20 assertions; defects reproduced before fixes</td></tr><tr><td>SDK installation / external consumer</td><td>Pass</td><td>Installed target compiled and linked</td></tr><tr><td>Analysis regressions</td><td>Pass</td><td>2 tests, including seed-cluster dependence</td></tr><tr><td>Independent reconstruction</td><td>Pass</td><td>5,280 attempts; 453,524 delivered captures; 4,246 re-entry dwells</td></tr><tr><td>Honest-sensor containment</td><td>Pass</td><td>256,395 accepted captures; zero uncontained footprints</td></tr><tr><td>Serial benchmark reconstruction</td><td>Pass</td><td>80 attempts; 6,531 delivered captures; 80 re-entry dwells</td></tr><tr><td>Current artifact integrity</td><td>Pass</td><td>47,559 science + 727 benchmark SHA-256 entries</td></tr><tr><td>Historical preservation</td><td>Pass</td><td>No previous research results changed</td></tr><tr><td>Historical v5 revalidation</td><td>Pass</td><td>Full frozen v5 validator rerun; see local audit log</td></tr><tr><td>Corrected-code replication</td><td>Pass</td><td>78 engineering trials, 5,280 new science attempts and 80 serial benchmarks; no infrastructure errors</td></tr></tbody></table></div>
+<p class="source-note">Logs: <a href="validation/release_ctest.txt">release</a> · <a href="validation/ubsan_ctest.txt">UBSan</a> · <a href="validation/endpoint_bounds_before.txt">traversal defect reproduced</a> · <a href="validation/camera_endpoints_before.txt">camera defect reproduced</a> · <a href="validation/endpoints_after.txt">both fixes</a> · <a href="validation/corrected_v5_1_validation.txt">v5.1 independent reconstruction</a> · <a href="validation/benchmark_v5_1_validation.txt">benchmark integrity</a> · <a href="validation/frozen_v5_revalidation.txt">historical v5 revalidation</a>.</p>
+
+<p>The original v5 pilots assigned 744 attempts: 743 returned results and one startup infrastructure error. All remain preserved and excluded from confirmatory inference. Its early generic error omitted the specific cause; the report does not invent one. Per-trial journal isolation and detailed errors were added before final execution. A separate v5.1 engineering check ran <strong>78/78 attempts</strong>, with seed 10004 in every condition, before the corrected confirmatory campaign; independent reconstruction checked 6,764 delivered captures and 69 re-entry dwells.</p>
+<p>All <strong>330 missed true completions in v4.2</strong> were enumerated. Archived logs lack sufficient per-capture detail for full retrospective rejection attribution. V5 records measurements, acquisitions, metadata outcomes/reasons, physical trajectories and commands prospectively. V4.2's 300 equally successful localized-repair pairs and approximately 21.5% distance reduction remain frozen.</p>
+<h3 id="sources-and-artifact-identity">Sources and artifact identity</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Independent experimental and analysis identities"><table><caption>Independent experimental and analysis identities</caption><thead><tr><th scope="col">Artifact / revision</th><th scope="col">Exact identifier</th></tr></thead><tbody><tr><td>Experimental source</td><td><code class="hash">7da3db33e70114503dfc7c9a45671da2b9335541</code></td></tr><tr><td>Analysis source</td><td><code class="hash">ee3e321a5cfa4015cbcf0ecddc810545e2e1abe0</code></td></tr><tr><td>Release binary SHA-256</td><td><code class="hash">6d607d7369ef1faa05ee919da935f9710ff2ab10a2cdf1895a8d1e884264c901</code></td></tr><tr><td>Assignments SHA-256</td><td><code class="hash">68644d690b86c610b87d9c27502870064f3ab73dfa8b6165736229e437d17f01</code></td></tr><tr><td>Raw per-attempt SHA-256</td><td><code class="hash">f1b9eb01ec69750c36b808f6f4a910dfe05736b1c424ad662ab1fda92c887ed1</code></td></tr><tr><td>SHA256SUMS file SHA-256</td><td><code class="hash">2993d9f95fcdd712bdb7983f1ec0c10025d75c08c220e2525dac773e02ad5635</code></td></tr></tbody></table></div>
+
+<p>Historical v5 analysis corrections changed a time-unit label to seconds and replaced inappropriate pooled IID uncertainty with seed-cluster intervals. That superseded analysis is retained. <strong>47,523 original raw files were compared; zero changed.</strong> No v5 trial was rerun, excluded or edited for those analysis corrections. V5.1 reuses the corrected inference rules and records new trials after the code fixes.</p>
+<p>The October 26 audit reproduced both endpoint defects before fixing them. Its separate v5.1 campaign does not retroactively change v5 observations or executable identity. Comparing all 5,280 corresponding rows, <strong>distance, elapsed time, true/reported completion, false-completion counts and repair counts are unchanged</strong>. Final reported coverage lengths differ in 606 attempts by at most <strong>2.85 × 10⁻¹⁴ m</strong>, a floating-point rounding-scale change. These observations do not make the defects harmless: the independent endpoint counterexamples previously failed and now pass. The original reader is archived; this edition is the current narrative.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Original v5 versus corrected v5.1; exact numerical comparison, no pooling"><table><caption>Original v5 versus corrected v5.1; exact numerical comparison, no pooling</caption><thead><tr><th scope="col">Metric</th><th scope="col">Paired attempts</th><th scope="col">Unequal values</th><th scope="col">Maximum absolute difference</th></tr></thead><tbody><tr><td>distance_m</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>time_ms</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>truth_survey</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>truth_at_b</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>truth_complete</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>reported_complete</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>false_complete</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>false_negative</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>recoveries</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>accepted</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>accepted_uncontained</td><td>5280</td><td>0</td><td>0</td></tr><tr><td>reported_covered_m</td><td>5280</td><td>606</td><td>2.84e-14</td></tr></tbody></table></div>
+
+<div class="download-grid"><a href="assets/evidence/per_attempt.csv" download><span>↓</span><div><strong>5,280 raw attempt rows</strong><small>per_attempt.csv</small></div></a><a href="assets/evidence/per_scenario.csv" download><span>↓</span><div><strong>Per-condition statistics and Wilson intervals</strong><small>per_scenario.csv</small></div></a><a href="assets/evidence/paired_effects.csv" download><span>↓</span><div><strong>Paired effects and confidence intervals</strong><small>paired_effects.csv</small></div></a><a href="assets/evidence/paired_primary_cluster_effects.csv" download><span>↓</span><div><strong>Whole-seed-cluster aggregate intervals</strong><small>paired_primary_cluster_effects.csv</small></div></a><a href="assets/evidence/scenario_matrix.csv" download><span>↓</span><div><strong>All experimental settings</strong><small>scenario_matrix.csv</small></div></a><a href="assets/evidence/unsuccessful_attempts.csv" download><span>↓</span><div><strong>Every unsuccessful attempt</strong><small>unsuccessful_attempts.csv</small></div></a><a href="assets/evidence/capture_rejections.csv" download><span>↓</span><div><strong>Sensor rejection inventory</strong><small>capture_rejections.csv</small></div></a><a href="assets/evidence/isolated_host_performance.csv" download><span>↓</span><div><strong>All 80 serial process measurements</strong><small>isolated_host_performance.csv</small></div></a><a href="assets/evidence/representative-traces.zip" download><span>↓</span><div><strong>Lossless logs for the 12 replayed attempts</strong><small>representative-traces.zip</small></div></a><a href="assets/evidence/manifest.json" download><span>↓</span><div><strong>Frozen assignments and environment identity</strong><small>manifest.json</small></div></a><a href="assets/evidence/analysis_manifest.json" download><span>↓</span><div><strong>Analysis source, software and bootstrap identity</strong><small>analysis_manifest.json</small></div></a><a href="assets/evidence/benchmark_manifest.json" download><span>↓</span><div><strong>Separate serial benchmark assignments</strong><small>benchmark_manifest.json</small></div></a><a href="assets/evidence/benchmark_SHA256SUMS" download><span>↓</span><div><strong>Complete benchmark hash inventory</strong><small>benchmark_SHA256SUMS</small></div></a><a href="assets/evidence/SHA256SUMS" download><span>↓</span><div><strong>Complete scientific artifact hash inventory</strong><small>SHA256SUMS</small></div></a><a href="assets/evidence/FINAL_VALIDATION_V5_1.md" download><span>↓</span><div><strong>Current full validation record</strong><small>FINAL_VALIDATION_V5_1.md</small></div></a><a href="assets/evidence/SIMULATION_PROTOCOL_V5_1.md" download><span>↓</span><div><strong>Endpoint-correction replication protocol</strong><small>SIMULATION_PROTOCOL_V5_1.md</small></div></a><a href="assets/evidence/SIMULATION_PROTOCOL_V5.md" download><span>↓</span><div><strong>Full experimental specification</strong><small>SIMULATION_PROTOCOL_V5.md</small></div></a><a href="assets/evidence/replication_comparison.csv" download><span>↓</span><div><strong>Original versus corrected raw-row comparison</strong><small>replication_comparison.csv</small></div></a><a href="assets/evidence/V5_ANALYSIS_NOTES.md" download><span>↓</span><div><strong>Historical v5 analysis corrections</strong><small>V5_ANALYSIS_NOTES.md</small></div></a></div>
+<p class="source-note">Full raw trace collection: <a href="../results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/">repository-local v5.1 directory</a>. This link needs the surrounding repository; bundled downloads above travel with the website.</p>
+
+<h3 id="reproduce-in-a-new-directory">Reproduce in a new directory</h3>
+<p>For the current results, build experimental source <strong><code>7da3db33e70114503dfc7c9a45671da2b9335541</code></strong> with the recorded release environment and protocol amendment. Generate analysis using <strong><code>ee3e321a5cfa4015cbcf0ecddc810545e2e1abe0</code></strong>. That later analysis revision changes the report's version-specific validation link and adds the raw-row comparison utility; it does not change inference. The first report and its analysis manifest are preserved in <code>gates_v5_1/initial_analysis_reference</code>. Original v5 used experimental source <code>7896f20</code>, corrected analysis <code>62a3363</code> and publication <code>456381c</code>; its outputs remain separate. Historical directories must not be overwritten.</p>
+<pre><code class="language-bash">python scripts/vecr/run_agent_campaign_v5.py --mode final --output results/new-science --workers 4
+python scripts/vecr/run_agent_campaign_v5.py --mode benchmark --output results/new-benchmark --workers 1
+python scripts/vecr/analyze_agent_campaign_v5.py --output results/new-science --benchmark results/new-benchmark
+python scripts/vecr/validate_agent_campaign_v5.py --output results/new-science
+</code></pre>
+<p>Reproduction needs the recorded build and Python requirements. Reading the site needs no server, installation or internet. It bundles tables, original figures and representative traces. The full per-attempt trace collection stays in the repository's frozen research directory, identified by SHA-256 inventory.</p>
+</section><section class="chapter" aria-labelledby="defense"><h2 id="defense">14 / Defense: claims and answers</h2>
+<h3 id="supported-statements">Supported statements</h3>
+<p><strong>Method.</strong> We implemented an onboard contract distinguishing qualified arrival, bounded traversal, accepted survey and local recovery, with exact attempt identity and explicit unavailable evidence.</p>
+<p><strong>Correctness.</strong> Conservative truthful footprints support conditional survey soundness. Geometry/state regressions exercise the code; independent reconstruction checks assumptions in the simulator.</p>
+<p><strong>Measured utility.</strong> In M03–M05, targeted recovery reduced travel by 25.3–27.8% against coverage-aware full restart, with 100/100 true and reported completions per method in each condition. Failed and unaccepted work is reported alongside this conditional result.</p>
+<p><strong>Limits.</strong> The study measures modeled repair cost and evidence availability. It does not establish physical-camera correctness, universal recovery, better verification accuracy than the shared verifier or fleet-wide efficiency.</p>
+<div class="questions"><details><summary>What is the core innovation?</summary><p>An implemented edge-obligation contract combining qualified arrival, conservative full-strip accounting, retained partial work, exact attempt identity and bounded onboard recovery. The experiment isolates recovery target selection against a coverage-aware baseline.</p></details><details><summary>Did you invent graph traversal or gossip?</summary><p>No. The graph planner and communication policy remain external. The project implements neither rotor-router nor gossip; algorithm-neutral APIs do not prove arbitrary planner compatibility.</p></details><details><summary>Is the baseline fair?</summary><p>Both policies share verification, sensor generation, dynamics, faults, thresholds and safety. B2 is coverage-aware and retains accepted images. Its explicitly different choice is full-edge restart at A.</p></details><details><summary>What are the strongest quantitative findings?</summary><p>M03–M05 each have 100 true and reported successes under both policies. VECR uses 25.3–27.8% less modeled travel, with paired intervals in Chapter 8. This is conditional on those synthetic conditions.</p></details><details><summary>Why is VECR recall lower?</summary><p>It actually returned to B in more uncertain-sensor trials, enlarging its true-completion denominator. Persistent missing evidence still prevented certification. Reported totals are 794 VECR versus 700 B2 across honest primary cases, while recall is 72.58% versus 87.50%.</p></details><details><summary>Does zero false fulfillment prove safety?</summary><p>No. It is conditional on the declared model and truthful bounded sensor evidence. All 400 deliberately dishonest controls falsely fulfilled. A sensor authentication boundary cannot verify physical truth.</p></details><details><summary>Where does correction run?</summary><p>Inside the production SwarmKit agent. The SDK requests an operation; the agent evaluates observations and commands the backend. A cloud service is not required for that local loop.</p></details><details><summary>Is every negative outcome a bug?</summary><p>No. Sustained wind, command refusal, motor failure, insufficient evidence and low battery are real negative outcomes in the model. Protective uncertainty predicates were not relaxed to improve acceptance.</p></details><details><summary>Is this real camera or flight validation?</summary><p>No. The camera model is a flat, full-strip geometric abstraction. Simulator measurements, SITL and real hardware are distinct evidence levels. The SITL chapter currently has no executed trials.</p></details><details><summary>What happened to earlier evidence?</summary><p>All historical research stays frozen. This reader presents the new v5.1 replication after both endpoint fixes. Original v5 data and analysis remain separately identified; the datasets are not pooled.</p></details></div>
+
+<h3 id="defense-demonstration">Defense demonstration</h3>
+<p>Start with the contract and explain why arrival leaves an intermediate sensing obligation unresolved. Show the onboard architecture. Replay M03 for both policies, M04 for off-corridor evidence retention, M17 for failed recovery and M14 for dishonest evidence. Present equal-success confidence intervals together with availability. Finish with provenance and the explicitly unexecuted SITL section.</p>
+<p>The replay uses seed 1 consistently, not a seed selected for a favorable outcome. Numerical claims use the full paired populations, not illustrative individual runs.</p>
+</section><section class="chapter" aria-labelledby="sitl"><h2 id="sitl">15 / ArduPilot SITL validation</h2>
+<div class="pending-panel"><strong>Not yet executed · measurement cells are TBD</strong><p>This is the prepared results structure for the next stage. No VECR ArduPilot trials, effects, pass status or confidence intervals are implied. Digital-simulation measurements are not copied into these cells.</p></div>
+
+<h3 id="experimental-record">Experimental record</h3>
+<p>ArduPilot SITL runs autopilot software against simulated dynamics [R3], adding autopilot mode/command/telemetry behavior beyond SimBackend. The stage needs independent truth, declared observation bounds and qualified recovery feasibility; live MAVLink recovery currently remains disabled.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Dissertation table"><table>
+<thead>
+<tr>
+<th>Record</th>
+<th>SITL value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Executed trial count</td>
+<td>TBD — not executed</td>
+</tr>
+<tr>
+<td>ArduPilot version / commit</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>SwarmKit source / binary SHA-256</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Vehicle model, parameters and environment</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Frozen assignments and paired seeds</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Independent truth and sensor assumptions</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Safety/geofence recovery qualification</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Raw logs, manifest and SHA-256</td>
+<td>TBD</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="baseline-and-vecr-measurements">Baseline and VECR measurements</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Dissertation table"><table>
+<thead>
+<tr>
+<th>Measurement</th>
+<th>B2</th>
+<th>VECR</th>
+<th>Paired difference / 95% CI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>True survey + stopped B</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Reported fulfillment</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>False fulfillment</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Unaccepted true completion / recall</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Matched-success distance</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Matched-success completion time</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>All-assigned distance and time</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>Failed / refused recovery</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+<tr>
+<td>CPU / peak RSS / RPC latency</td>
+<td>TBD</td>
+<td>TBD</td>
+<td>TBD</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="analysis-structure">Analysis structure</h3>
+<p>Assignment counts, realized faults, actual trajectories, accepted evidence, reasons and uncertainty have separate records. A positive effect is not a validation prerequisite. Failed experiments retain their outputs; a fix requires a new versioned run. Conclusions can be added only after measured evidence supports them. SITL cannot establish real-camera image quality or field airworthiness.</p>
+</section><section class="chapter" aria-labelledby="conclusion"><h2 id="conclusion">16 / Conclusion and references</h2>
+<p>We developed VECR in SwarmKit and completed its defined agent-backed digital evaluation. The method connects graph-edge execution to navigation and sensing evidence, retains completed intervals and recovers locally from missing work. Its measured benefit is lower recovery travel in the tested equal-success conditions. Its measured weaknesses are evidence-driven nonacceptance and dependence on truthful sensor assertions.</p>
+<p>The simulator study, statistics, sensitivity analysis, benchmark and independent reconstruction are complete. <strong>ArduPilot SITL is the remaining validation stage in this presentation.</strong> Hardware, real camera calibration, complex terrain, obstacle/geofence-aware recovery, remote/multi-UAV campaigns, OS power-loss experiments and cloud deployment lie outside the completed simulator claim. These boundaries remain relevant after SITL.</p>
+<h3 id="primary-references-and-source-to-claim-mapping">Primary references and source-to-claim mapping</h3>
+<ul>
+<li><strong>[R1]</strong> Holroyd, Levine, Mészáros, Peres, Propp and Wilson. <em>Chip-Firing and Rotor-Routing on Directed Graphs</em>, 2008, revised 2013. <a href="https://arxiv.org/abs/0801.3306">Primary paper</a>. Background on abstract directed-graph processes; no VECR result is attributed to it.</li>
+<li><strong>[R2]</strong> MAVLink. <em>Command Protocol</em>. <a href="https://mavlink.io/en/services/command.html">Official documentation</a>, accessed 26 October 2026. Command acknowledgement/result protocol; SwarmKit supplies the survey contract.</li>
+<li><strong>[R3]</strong> ArduPilot. <em>SITL Simulator</em>. <a href="https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html">Official documentation</a>, accessed 26 October 2026. Defines the next evidence level; contains no result for this campaign.</li>
+<li><strong>[S1]</strong> V5.1 experimental source <code>7da3db3</code>: <code>src/core/vecr.cpp</code>, <code>src/agent/edge_execution_runtime.cpp</code>, <code>proto/swarmkit/v1/swarmkit.proto</code>, <code>tests/vecr_v5_trial.cpp</code>, <code>tests/vecr_v5_models.h</code>. Implemented contracts and experiment architecture.</li>
+<li><strong>[S2]</strong> <code>corrected_endpoints_v5_1</code> manifest, raw CSV/traces and SHA256SUMS. Current scientific numbers; original <code>final_v5</code> remains historical.</li>
+<li><strong>[S3]</strong> Analysis source <code>ee3e321a5cfa4015cbcf0ecddc810545e2e1abe0</code>, retaining inference from <code>62a3363</code>: <code>analyze_agent_campaign_v5.py</code>, <code>validate_agent_campaign_v5.py</code>, <code>test_analysis_v5.py</code>. Reconstruction and uncertainty calculations.</li>
+<li><strong>[S4]</strong> <code>FINAL_VALIDATION_V5_1.md</code>, both protocol documents, historical <code>V5_ANALYSIS_NOTES.md</code> and gate logs. Scope, replication and corrections.</li>
+<li><strong>[S5]</strong> Endpoint before/after regressions and reader-validation records under this site's <code>validation/</code>.</li>
+</ul>
+<h3 id="notation">Notation</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Dissertation table"><table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A, B, L</td>
+<td>Edge origin, destination and length</td>
+</tr>
+<tr>
+<td>ŝ, d, w</td>
+<td>Along-route estimate, cross-track distance, strip/corridor half-width</td>
+</tr>
+<tr>
+<td>εp, εh, εv</td>
+<td>Hard horizontal, altitude and speed bounds</td>
+</tr>
+<tr>
+<td>V, M</td>
+<td>Accepted coverage union and missing intervals</td>
+</tr>
+<tr>
+<td>F⁻j, Fj</td>
+<td>Conservative accepted and actual acquired footprints</td>
+</tr>
+<tr>
+<td>rB, vB, τ</td>
+<td>Arrival radius, speed threshold and sampled dwell</td>
+</tr>
+<tr>
+<td>B2, P</td>
+<td>Full-edge restart and targeted-gap VECR</td>
+</tr>
+<tr>
+<td>TP / FP / FN</td>
+<td>True reported / false reported / true completion unaccepted</td>
+</tr>
+</tbody>
+</table></div>
+<p class="end-mark">Completed digital-simulation study · reproducible, source-linked and explicit about its limits.</p></section>
+<footer><a class="brand" href="#top">VECR / SwarmKit</a><p>Completed digital evidence · explicit assumptions · reproducible records</p><a href="#reproducibility">Evidence & downloads ↑</a></footer>
+</main>
+</div>
+<dialog id="figureDialog" aria-labelledby="figureCaption"><div class="dialog-toolbar"><p id="figureCaption"></p><button id="closeFigure" aria-label="Close enlarged figure">Close ×</button></div><img id="figureImage" alt=""></dialog>
+<div id="toast" class="toast" role="status"></div>
+</body></html>

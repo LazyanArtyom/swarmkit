@@ -1,4 +1,24 @@
-# VECR implementation status — 2026-10-24
+# VECR implementation status — 2026-10-26
+
+## Current: v5.1 corrected-code replication and dissertation reader
+
+The manuscript audit reproduced and fixed uncertain traversal endpoint credit
+and off-segment camera-center clamping. Three new regression cases (20 assertions),
+the complete release/UBSan suites and installed-SDK consumer build pass. A new
+78-attempt engineering pilot preceded **5,280 new scientific attempts and 80
+new serial benchmarks**, all without infrastructure errors. Independent
+reconstruction checked 453,524 delivered captures and 4,246 re-entry dwells.
+The same matrix and inference were retained; distance and completion outcomes
+match v5. Reported coverage differs only at floating-point rounding scale.
+
+Source: `7da3db3`; analysis: `ee3e321a5`. See
+[every gate and limitation](FINAL_VALIDATION_V5_1.md) and the
+[offline dissertation reader](../../VECR_Dissertation_Interactive_Website/index.htm).
+The reader contains measured statistics, intervals, figures, raw-record replays,
+failure analysis and reproducible downloads. Previous results and the supplied
+website are preserved. SITL has explicit TBD cells and has not been executed.
+
+## Frozen v5
 
 The v5 digital-simulation campaign is complete: 5,280 paired-policy attempts
 across 21 primary scenarios and 18 sensitivity conditions, plus 80 separate

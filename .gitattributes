@@ -1,2 +1,3 @@
 # Preserve byte-for-byte hashes of frozen experimental artifacts on every platform.
 results/vecr/agent_campaign_v5/** -text
+VECR_Dissertation_Interactive_Website/** -text

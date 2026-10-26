@@ -1,0 +1,5 @@
+Filters: [endpoint-bounds],[endpoint-camera]
+Randomness seeded to: 3868956298
+===============================================================================
+All tests passed (20 assertions in 3 test cases)
+

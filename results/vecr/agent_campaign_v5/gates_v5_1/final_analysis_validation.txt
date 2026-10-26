@@ -1,0 +1,6 @@
+mkdir -p failed for path /Users/artyom/.matplotlib: [Errno 1] Operation not permitted: '/Users/artyom/.matplotlib'
+Matplotlib created a temporary cache directory at /var/folders/fw/k6ct7p5d10l66sp80g2jshf00000gn/T/matplotlib-n8ugnzzb because there was an issue with the default path (/Users/artyom/.matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+Matplotlib is building the font cache; this may take a moment.
+VALID: 5280 attempts, 453524 delivered captures, 4246 physical re-entry dwells; independent truth reconstruction and soundness checks passed
+VALID: 80 attempts, 6531 delivered captures, 80 physical re-entry dwells; independent truth reconstruction and soundness checks passed
+VALID: 5280 attempts, 453524 delivered captures, 4246 physical re-entry dwells; independent truth reconstruction and soundness checks passed
