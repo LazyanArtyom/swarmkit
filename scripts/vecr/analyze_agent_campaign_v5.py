@@ -624,7 +624,7 @@ def main(out, benchmark):
         "",
         "## Validation and remaining scope",
         "",
-        f"Independent reconstruction passed for {gates['attempts']} attempts, {gates['delivered_captures']} delivered captures and {gates['physical_reentries']} physical re-entry dwells. Release/UBSan/install gates are recorded separately in `docs/vecr/FINAL_VALIDATION_V5.md`.",
+        f"Independent reconstruction passed for {gates['attempts']} attempts, {gates['delivered_captures']} delivered captures and {gates['physical_reentries']} physical re-entry dwells. Release/UBSan/install gates are recorded separately in `docs/vecr/FINAL_VALIDATION_{manifest['protocol'].upper().replace('.', '_')}.md`.",
         "",
         "The original v4.2 300 matched localized-repair pairs and approximately 21.5% distance reduction remain frozen at their original revisions. The v5 availability inventory enumerates all 330 v4.2 missed completions; old logs cannot retrospectively identify every missing rejection reason.",
         "",
