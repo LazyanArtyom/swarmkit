@@ -81,3 +81,15 @@ history to declare fulfillment after the attempt deadline or with a stale endpoi
 
 ArduPilot Copter-4.7.2 compiled natively after initializing its pinned littlefs and
 lwip dependencies. Compilation is preparation, not SITL experimental evidence.
+
+### Confirmatory assignment correction
+
+The initial final runner exposed 3,960 assignments in its progress counter. An
+implementation text replacement had changed the intended default 30 seeds to 20.
+The manifest records those 20 exactly; the 22-condition/nine-policy protocol still
+requires 30. No comparative final statistics were inspected for this decision.
+Preserve `confirmatory/` as a protocol-deviation run and do not pool it with the
+new full `confirmatory_v6_1/` campaign. Fix the default and require exactly 5,940
+assignments and seeds 30001–30030 before final dispatch. Repeat the complete
+planned design using the unchanged physics/policy binary. The overlapping seeds
+are repeated observations, not additional independent samples.

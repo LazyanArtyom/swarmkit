@@ -104,7 +104,7 @@ def main():
     for cfg in configurations(a.mode):
         if a.only and cfg["scenario"] not in a.only.split(","):
             continue
-        count = a.seeds or 20
+        count = a.seeds or 30
         if a.mode == "pilot":
             count = a.seeds or 2
         if a.mode == "reuse":
@@ -130,6 +130,15 @@ def main():
                             "client-kind": client_kind,
                         }
                     )
+    if a.mode == "final" and (
+        len(assignments) != 5940
+        or a.only
+        or a.policies.split(",") != POLICIES
+        or {x["seed"] for x in assignments} != set(range(30001, 30031))
+    ):
+        raise RuntimeError(
+            "confirmatory assignments must match 22 x 30 x 9 preregistration"
+        )
     manifest = dict(
         protocol="v6",
         mode=a.mode,
