@@ -208,5 +208,112 @@ TEST_CASE("Simulator and MAVLink stop waits for in-flight callbacks",
     }
 }
 
+TEST_CASE("MAVLink goto reapplies speed after GUIDED position initialization",
+          "[agent][backend][mavlink][v6]") {
+    bool fallback = false, refuse_after = false;
+    SECTION("accepted reposition resets speed") {}
+    SECTION("unsupported reposition falls back to a position setpoint") {
+        fallback = true;
+    }
+    SECTION("speed refusal after dispatch stays an explicit failure") {
+        refuse_after = true;
+    }
+    const auto address = AvailableLoopbackUdpAddress();
+    REQUIRE(address.has_value());
+    MavlinkBackendConfig cfg;
+    cfg.bind_addr = *address;
+    cfg.command_ack_timeout_ms = 500;
+    auto backend = MakeMavlinkBackend(cfg);
+    REQUIRE(backend.has_value());
+    REQUIRE((*backend)->Start().IsOk());
+    struct SocketOwner {
+        int fd{socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)};
+        ~SocketOwner() {
+            if (fd >= 0)
+                close(fd);
+        }
+    } peer;
+    REQUIRE(peer.fd >= 0);
+    timeval timeout{0, 20000};
+    REQUIRE(setsockopt(peer.fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0);
+    sockaddr_in destination{};
+    destination.sin_family = AF_INET;
+    destination.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    destination.sin_port =
+        htons(static_cast<std::uint16_t>(std::stoi(address->substr(address->rfind(':') + 1))));
+    float simulated_speed = 7;
+    bool navigation_received = false;
+    int speed_after_count = 0;
+    auto send = [&](mavlink_message_t& msg) {
+        std::array<std::uint8_t, MAVLINK_MAX_PACKET_LEN> bytes{};
+        const auto n = mavlink_msg_to_send_buffer(bytes.data(), &msg);
+        return sendto(peer.fd, bytes.data(), n, 0, reinterpret_cast<sockaddr*>(&destination),
+                      sizeof(destination));
+    };
+    std::jthread vehicle([&](std::stop_token stop) {
+        mavlink_message_t rx{}, msg{};
+        mavlink_status_t parse{}, result{};
+        while (!stop.stop_requested()) {
+            mavlink_message_t hb{};
+            mavlink_msg_heartbeat_pack(1, 1, &hb, MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_ARDUPILOTMEGA,
+                                       MAV_MODE_FLAG_SAFETY_ARMED, 4, MAV_STATE_ACTIVE);
+            send(hb);
+            std::array<std::uint8_t, 2048> bytes{};
+            const auto n = recv(peer.fd, bytes.data(), bytes.size(), 0);
+            for (ssize_t i = 0; i < n; ++i) {
+                if (mavlink_frame_char_buffer(&rx, &parse, bytes[static_cast<std::size_t>(i)], &msg,
+                                              &result) != MAVLINK_FRAMING_OK)
+                    continue;
+                if (msg.msgid == MAVLINK_MSG_ID_SET_POSITION_TARGET_GLOBAL_INT) {
+                    navigation_received = true;
+                    simulated_speed = 7;  // Real ArduPilot submode initialization resets this.
+                }
+                if (msg.msgid != MAVLINK_MSG_ID_COMMAND_LONG)
+                    continue;
+                mavlink_command_long_t cmd{};
+                mavlink_msg_command_long_decode(&msg, &cmd);
+                auto ack_result = MAV_RESULT_ACCEPTED;
+                if (cmd.command == MAV_CMD_DO_REPOSITION) {
+                    if (fallback)
+                        ack_result = MAV_RESULT_UNSUPPORTED;
+                    else {
+                        navigation_received = true;
+                        simulated_speed = 7;
+                    }
+                }
+                if (cmd.command == MAV_CMD_DO_CHANGE_SPEED) {
+                    if (navigation_received)
+                        ++speed_after_count;
+                    if (navigation_received && refuse_after)
+                        ack_result = MAV_RESULT_DENIED;
+                    else
+                        simulated_speed = cmd.param2;
+                }
+                mavlink_message_t ack{};
+                mavlink_msg_command_ack_pack(1, 1, &ack, cmd.command, ack_result, 0, 0, msg.sysid,
+                                             msg.compid);
+                send(ack);
+            }
+        }
+    });
+    commands::CommandEnvelope envelope;
+    envelope.context.drone_id = cfg.drone_id;
+    envelope.command = commands::NavCmd{
+        commands::CmdGoto{.lat_deg = 40, .lon_deg = 44.0002, .alt_m = 10, .speed_mps = 2}};
+    const auto outcome = (*backend)->Execute(envelope);
+    vehicle.request_stop();
+    vehicle.join();
+    REQUIRE(navigation_received);
+    CHECK(speed_after_count == 1);
+    if (refuse_after) {
+        CHECK_FALSE(outcome.IsOk());
+        CHECK(outcome.dispatch_state == core::BackendDispatchState::kFailed);
+        CHECK(outcome.result.message.find("vehicle may still be moving") != std::string::npos);
+    } else {
+        CHECK(outcome.IsOk());
+        CHECK(simulated_speed == 2);
+    }
+}
+
 }  // namespace
 }  // namespace swarmkit::agent

@@ -35,15 +35,15 @@ agent runtime, SDK serialization, CLI, protobuf, v5 trial/runner and truth model
    wait, and tests of soundness boundaries, timing, failures and resource limits.
 3. Freeze source, executable, full assignments and protocol before a new digital
    campaign. Independently reconstruct every run; paired uncertainty and failures.
-4. Two external client strategies through the same public execution API.
+4. Direct and routed external client entry paths through the same execution API.
 5. Genuine ArduPilot SITL tests with independent simulator truth; preserve
    unsuccessful qualification attempts and distinguish synthetic camera evidence.
 6. Update literature comparison and dissertation reader to actual evidence;
    explicitly state equivalences, negative results and unsupported claims.
 
-## Status
+## Initial status at audit
 
-Audit complete. Implementation and experiments pending.
+Audit complete. Implementation and experiments pending at that checkpoint; subsequent progress is recorded below.
 
 ### Engineering progress
 
@@ -93,3 +93,34 @@ new full `confirmatory_v6_1/` campaign. Fix the default and require exactly 5,94
 assignments and seeds 30001–30030 before final dispatch. Repeat the complete
 planned design using the unchanged physics/policy binary. The overlapping seeds
 are repeated observations, not additional independent samples.
+
+### Completed digital validation and resumed SITL work — 28 October
+
+Primary confirmatory_v6_1 completed all 5,940 assignments with no infrastructure
+failures. Independent reconstruction checked 516,751 captures and 3,984 re-entry
+dwells. The 200 client trials matched in all 100 direct/routed pairs. The observed
+result does not favor the derived E target over the strong GW comparator: equal
+completion, frequently greater travel. Full comparisons and paired intervals are
+retained; the dissertation now describes that limitation.
+
+SITL pilot_01: 12 assigned, one native-accuracy attempt executed, 11 infrastructure
+failures. Diagnosed overlapping TCP/auxiliary simulator ports, missing simulated
+receiver input, unsuccessful one-shot takeoff and Python monotonic versus libc++
+steady-clock epoch mismatch on macOS. Kept all logs. Fixed isolated port blocks,
+explicit simulated receiver input, bounded takeoff ACK retries and a cross-language
+clock probe; arming checks remain enabled. MAVLink binary streams are now correctly
+named `.raw` (pilot_01 `.tlog` contains raw packets without tlog timestamp headers).
+
+SITL pilot_02: two nominal synthetic-bound flights, independently reconstructed.
+Pilot_03: all 12 assignments executed and independently reconstructed, including
+native accuracy refusal, delayed evidence, actual re-entry, backend recovery refusal
+and LAND override. Reconstruction checked 394 accepted captures and two sampled
+re-entry dwells. Neither run is the final qualification.
+
+Nominal flights exposed a production defect: setting speed before GUIDED position
+submode initialization allowed ArduPilot to reset it. Peak modeled speed was
+6.508 m/s despite a 2 m/s request in pilot_02. Reapply requested speed after target
+dispatch. Regression emulates the submode reset for both reposition ACK and fallback
+setpoint, plus post-dispatch speed refusal (explicit FAILED, vehicle may still move).
+V6 regression suite now passes 104 assertions in five cases. Pilot_04 uses the
+corrected backend; each runner now freezes its executable before assignments.

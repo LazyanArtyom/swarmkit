@@ -43,6 +43,20 @@ namespace {
            mode == "LAND" || mode == "QRTL" || mode == "QLAND" || mode == "FAILSAFE";
 }
 
+// The ardupilot-sitl identity is supplied only by the isolated test adapter,
+// never by the production MAVLink backend. Native MAVLink recovery stays disabled.
+[[nodiscard]] bool SimulatorRecoveryReady(const AgentConfig& config,
+                                          const core::BackendCapabilities& capabilities,
+                                          const BackendHealth& health) {
+    const bool simulator_mode =
+        (capabilities.backend_name == "sim" &&
+         (health.mode == "SIM_GOTO" || health.mode == "SIM_HOLD")) ||
+        (capabilities.backend_name == "ardupilot-sitl" && health.mode == "GUIDED");
+    return config.vecr_sim_recovery_enabled && simulator_mode && health.ready &&
+           health.failsafe == false && health.gps_ok == true && health.ekf_ok == true &&
+           health.armed == true;
+}
+
 [[nodiscard]] bool ValidGeo(const swarmkit::v1::GeoPoint& point) {
     return std::isfinite(point.lat_deg()) && std::isfinite(point.lon_deg()) &&
            std::isfinite(point.alt_m()) && point.lat_deg() >= -85.0 && point.lat_deg() <= 85.0 &&
@@ -759,10 +773,7 @@ void EdgeExecutionRuntime::DispatchRecovery(const std::shared_ptr<Attempt>& atte
                                             edge::Point target, std::int64_t now_ms) {
     const auto capabilities = backend_->GetCapabilities();
     const auto health = backend_->GetHealth();
-    bool allowed = config_->vecr_sim_recovery_enabled && capabilities.backend_name == "sim" &&
-                   health.ready && health.failsafe == false && health.gps_ok == true &&
-                   health.ekf_ok == true && health.armed == true &&
-                   (health.mode == "SIM_GOTO" || health.mode == "SIM_HOLD");
+    bool allowed = SimulatorRecoveryReady(*config_, capabilities, health);
     {
         std::lock_guard<std::mutex> lock(attempt->mutex);
         allowed = allowed && !attempt->stop.load(std::memory_order_relaxed) &&
@@ -811,9 +822,7 @@ void EdgeExecutionRuntime::DispatchRecovery(const std::shared_ptr<Attempt>& atte
 
 void EdgeExecutionRuntime::DispatchReturnToB(const std::shared_ptr<Attempt>& attempt) {
     const auto health = backend_->GetHealth();
-    bool allowed = health.ready && health.failsafe == false && health.gps_ok == true &&
-                   health.ekf_ok == true && health.armed == true &&
-                   (health.mode == "SIM_GOTO" || health.mode == "SIM_HOLD");
+    bool allowed = SimulatorRecoveryReady(*config_, backend_->GetCapabilities(), health);
     {
         std::lock_guard<std::mutex> lock(attempt->mutex);
         allowed = allowed && !attempt->stop.load(std::memory_order_relaxed) &&

@@ -516,7 +516,8 @@ class MavlinkBackend final : public IDroneBackend {
             static_cast<float>(go_to.lat_deg), static_cast<float>(go_to.lon_deg),
             static_cast<float>(go_to.alt_m));
         if (!reposition_result.IsUnsupported()) {
-            return reposition_result.ToCoreResult();
+            const auto result = reposition_result.ToCoreResult();
+            return result.IsOk() ? ApplySpeedAfterNavigation(go_to.speed_mps, result) : result;
         }
 
         core::Logger::WarnFmt(
@@ -695,7 +696,25 @@ class MavlinkBackend final : public IDroneBackend {
             static_cast<std::int32_t>(std::llround(lon_deg * mav::kDegE7)),
             static_cast<float>(alt_m), 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, yaw_deg.value_or(0.0F),
             0.0F);
-        return SendUnverifiedMavlinkMessage(message);
+        const auto result = SendUnverifiedMavlinkMessage(message);
+        return result.IsOk() ? ApplySpeedAfterNavigation(speed_mps, result) : result;
+    }
+
+    [[nodiscard]] core::Result ApplySpeedAfterNavigation(float speed_mps,
+                                                         const core::Result& navigation) {
+        // ArduPilot initializes a new GUIDED submode when accepting a position
+        // target; that initialization resets a speed set before the target.
+        // Reapply after navigation. ACK still does not establish achieved speed.
+        if (speed_mps > 0.0F) {
+            const auto speed = SendSetSpeed(speed_mps);
+            if (!speed.IsOk()) {
+                return core::Result::Failed(
+                    "navigation dispatched but requested speed was not "
+                    "confirmed; vehicle may still be moving: " +
+                    speed.message);
+            }
+        }
+        return navigation;
     }
 
     [[nodiscard]] core::Result SendMavlinkMessage(const mavlink_message_t& message) {

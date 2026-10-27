@@ -3154,6 +3154,7 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
     cfg.security.cert_chain_path = cert.server_cert_chain_path;
     cfg.security.private_key_path = cert.server_private_key_path;
     cfg.vecr_sensor_client_id = "test-client";
+    cfg.vecr_sim_recovery_enabled = true;
     cfg.vecr_sensor_calibration_id = "history-camera";
     auto clock = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000);
     auto providers = agent::internal::RuntimeProviders::System();
@@ -3168,10 +3169,10 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
     health.failsafe = false;
     health.gps_ok = true;
     health.ekf_ok = true;
-    health.mode = "SIM_GOTO";
+    health.mode = "GUIDED";
     harness.Backend().SetHealth(health);
     core::BackendCapabilities capabilities;
-    capabilities.backend_name = "recording";
+    capabilities.backend_name = "mavlink";
     capabilities.supported_commands = {"goto"};
     harness.Backend().SetCapabilities(capabilities);
     Client client = MakeClient(harness.Address());
@@ -3187,6 +3188,7 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
     req.edge.arrival_radius_m = 2;
     req.edge.arrival_max_speed_mps = 0.5;
     req.edge.maximum_speed_mps = 5;
+    req.edge.max_recovery_attempts = 2;
     req.edge.maximum_capture_age_ms = 3000;
     req.edge.timeout_ms = 10000;
     req.wgs84_origin = {40, 44};
@@ -3197,11 +3199,11 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
     REQUIRE(dispatch.ok);
     REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
                                    kWaitTimeout));
-    auto emit = [&](double east, std::int64_t ms) {
+    auto emit = [&](double east, std::int64_t ms, double north = 0) {
         clock->store(ms * 1'000'000);
         core::TelemetryFrame f;
         f.drone_id = "drone-1";
-        const auto geo = edge::LocalToWgs84(40, 44, {east, 0});
+        const auto geo = edge::LocalToWgs84(40, 44, {east, north});
         f.lat_deg = geo.lat_deg;
         f.lon_deg = geo.lon_deg;
         f.position_frame = core::CoordinateFrame::kWgs84;
@@ -3209,6 +3211,8 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
         f.estimator_state = core::EstimatorState::kHealthy;
         f.armed = true;
         f.rel_alt_m = 10;
+        f.battery_percent = 90;
+        f.validity.battery = true;
         f.validity.position = f.validity.estimator = f.validity.velocity = true;
         f.validity.armed = f.validity.failsafe = f.validity.relative_altitude = true;
         const core::UncertaintyDescriptor d{
@@ -3241,6 +3245,14 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
     old.capture_id = "expired";
     emit(25, 4200);
     CHECK_FALSE(client.SubmitEdgeCapture("drone-1", old).ok);
+    emit(25, 4300, 6);
+    emit(25, 4400, 6);
+    emit(25, 4500, 6);
+    const auto stopped = client.GetEdgeStatus("drone-1", req.edge.attempt_id);
+    REQUIRE(stopped.status);
+    CHECK(stopped.status->status.phase == edge::Phase::kInterrupted);
+    CHECK(harness.Backend().ExecuteCallCount() ==
+          1);  // Native MAVLink not enabled by simulator flag.
 }
 
 }  // namespace swarmkit::client
