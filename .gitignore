@@ -56,3 +56,7 @@ Thumbs.db
 .claude/
 CLAUDE.md
 memory/
+
+# Frozen v6 research logs are evidence, including unsuccessful pilots.
+!results/vecr/agent_campaign_v6/**/*.log
+!results/vecr/sitl_v6/**/*.log

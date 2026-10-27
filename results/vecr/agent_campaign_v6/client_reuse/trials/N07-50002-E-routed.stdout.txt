@@ -1,0 +1,4 @@
+[2026-10-27 20:45:27.942] [info] SwarmClient: registered drone 'drone-1' at 127.0.0.1:64551
+[2026-10-27 20:45:27.946] [info] rpc=SubscribeReports corr=reports-1793119527943-109215071616666077467801695621553217292-3 agent=v6-agent drone=drone-1 client=test-client result=connected
+N07 50002 E FULFILLED true=1 distance=59.3756 midflight=1 uncontained=0
+[2026-10-27 20:45:28.132] [info] rpc=SubscribeReports corr=reports-1793119527943-109215071616666077467801695621553217292-3 agent=v6-agent drone=drone-1 client=test-client result=disconnected

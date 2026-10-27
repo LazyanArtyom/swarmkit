@@ -1,0 +1,3 @@
+[2026-10-27 20:45:15.164] [info] rpc=SubscribeReports corr=reports-1793119515160-1243756671449694114511228117923942974113-3 agent=v6-agent drone=drone-1 client=test-client result=connected
+N00 50010 GW FULFILLED true=1 distance=40.0396 midflight=0 uncontained=0
+[2026-10-27 20:45:15.346] [info] rpc=SubscribeReports corr=reports-1793119515160-1243756671449694114511228117923942974113-3 agent=v6-agent drone=drone-1 client=test-client result=disconnected
