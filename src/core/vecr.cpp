@@ -111,8 +111,7 @@ std::optional<CaptureEvidence> BuildNadirStripEvidence(const Route& route,
     if (!std::isfinite(half_along) || !std::isfinite(half_cross) || half_along <= 0.0 ||
         cross + required_strip_half_width_m > half_cross + kGeometryToleranceM)
         return std::nullopt;
-    const Interval covered{std::max(0.0, along - half_along),
-                           std::min(length, along + half_along)};
+    const Interval covered{std::max(0.0, along - half_along), std::min(length, along + half_along)};
     if (covered.end_m - covered.begin_m <= kGeometryToleranceM)
         return std::nullopt;
     return CaptureEvidence{.mission_id = input.mission_id,
@@ -212,6 +211,31 @@ double IntervalSet::PrefixMeters() const {
                : 0.0;
 }
 
+std::optional<SurveyReentryPlan> PlanSurveyReentry(double gap, double progress, double length,
+                                                   double arrival, double speed,
+                                                   const RecoverySensingEnvelope& e) {
+    if (!std::isfinite(gap) || !std::isfinite(progress) || !std::isfinite(length) ||
+        !std::isfinite(arrival) || !std::isfinite(speed) ||
+        !std::isfinite(e.minimum_half_footprint_m) || !std::isfinite(e.maximum_position_error_m) ||
+        length <= 0 || gap < 0 || gap > length || progress < 0 || progress > length ||
+        arrival <= 0 || speed <= 0 || e.maximum_position_error_m < 0 ||
+        e.minimum_half_footprint_m <= e.maximum_position_error_m ||
+        e.maximum_capture_interval_ms <= 0 || e.maximum_capture_interval_ms > 10000)
+        return std::nullopt;
+    const double motion = speed * static_cast<double>(e.maximum_capture_interval_ms) / 1000.0;
+    const double margin =
+        arrival + motion + 2 * e.maximum_position_error_m - e.minimum_half_footprint_m;
+    if (!std::isfinite(motion) || !std::isfinite(margin))
+        return std::nullopt;
+    const double upper = gap - margin;
+    return SurveyReentryPlan{
+        .target_m = std::clamp(std::min(progress, upper), 0.0, length),
+        .required_backtrack_from_gap_m = margin,
+        .first_capture_bound_feasible = upper >= 0,
+        .consecutive_coverage_bound_feasible =
+            motion + 4 * e.maximum_position_error_m <= 2 * e.minimum_half_footprint_m};
+}
+
 EdgeExecutionSupervisor::EdgeExecutionSupervisor(EdgeRequest request)
     : request_(std::move(request)),
       length_m_(Length(request_.route)),
@@ -227,7 +251,20 @@ bool EdgeExecutionSupervisor::Valid() const {
            !request_.edge_id.empty() && !request_.attempt_id.empty() &&
            !request_.drone_id.empty() && length_m_ > 0.0 &&
            (request_.repair_policy == RepairPolicy::kTargetedGap ||
-            request_.repair_policy == RepairPolicy::kFullEdgeRestart) &&
+            request_.repair_policy == RepairPolicy::kFullEdgeRestart ||
+            request_.repair_policy == RepairPolicy::kDeparturePoint ||
+            request_.repair_policy == RepairPolicy::kFixedRewind ||
+            request_.repair_policy == RepairPolicy::kEvidenceAware) &&
+           request_.maximum_capture_age_ms >= 0 && request_.maximum_capture_age_ms <= 10000 &&
+           request_.endpoint_evidence_wait_ms >= 0 &&
+           request_.endpoint_evidence_wait_ms <= request_.maximum_capture_age_ms &&
+           (!request_.recovery_sensing ||
+            PlanSurveyReentry(0, 0, length_m_, request_.arrival_radius_m,
+                              request_.maximum_speed_mps, *request_.recovery_sensing)
+                .has_value()) &&
+           (request_.repair_policy != RepairPolicy::kEvidenceAware ||
+            (request_.obligation == Obligation::kSurvey &&
+             request_.recovery_sensing.has_value())) &&
            std::isfinite(request_.corridor_half_width_m) && request_.corridor_half_width_m > 0.0 &&
            std::isfinite(request_.arrival_radius_m) && request_.arrival_radius_m > 0.0 &&
            std::isfinite(request_.arrival_max_speed_mps) && request_.arrival_max_speed_mps >= 0.0 &&
@@ -291,13 +328,42 @@ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to
     // already covered the strip. Both policies share this trigger.
     const double progress = previous_projection_ ? previous_projection_->arclength_m : 0.0;
     const double gap_start = gaps.empty() ? progress : gaps.front().begin_m;
-    const double s = request_.repair_policy == RepairPolicy::kFullEdgeRestart
-                         ? 0.0
-                         : std::max(0.0, (departed ? std::min(progress, gap_start) : gap_start) -
-                                             request_.recovery_overlap_m);
+    if (!departed && status_.at_b_verified && request_.endpoint_evidence_wait_ms > 0) {
+        if (endpoint_wait_started_ms_ < 0)
+            endpoint_wait_started_ms_ = now_ms;
+        if (now_ms - endpoint_wait_started_ms_ < request_.endpoint_evidence_wait_ms) {
+            status_.reason = "stationary endpoint evidence wait; coverage still unverified";
+            return;
+        }
+    }
+    double s = std::max(
+        0.0, (departed ? std::min(progress, gap_start) : gap_start) - request_.recovery_overlap_m);
+    status_.reason = "earliest-gap recovery proposed";
+    if (request_.repair_policy == RepairPolicy::kFullEdgeRestart) {
+        s = 0;
+        status_.reason = "full-edge restart proposed";
+    } else if (request_.repair_policy == RepairPolicy::kDeparturePoint ||
+               request_.repair_policy == RepairPolicy::kFixedRewind) {
+        // If no departure was observed, the interruption/resume point is current progress.
+        const double resume = departure_progress_m_.value_or(progress);
+        s = std::max(0.0, resume - (request_.repair_policy == RepairPolicy::kFixedRewind
+                                        ? request_.recovery_overlap_m
+                                        : 0.0));
+        status_.reason = "departure/resume-point recovery proposed";
+    } else if (request_.repair_policy == RepairPolicy::kEvidenceAware) {
+        const auto plan =
+            PlanSurveyReentry(gap_start, progress, length_m_, request_.arrival_radius_m,
+                              request_.maximum_speed_mps, *request_.recovery_sensing);
+        if (!plan)
+            return;
+        s = plan->target_m;
+        status_.reason =
+            plan->first_capture_bound_feasible && plan->consecutive_coverage_bound_feasible
+                ? "conditional sensing-envelope recovery proposed"
+                : "sensing envelope cannot guarantee closure; conservative retry";
+    }
     status_.pending_reentry = PointAt(request_.route, s);
     status_.phase = Phase::kRecovering;
-    status_.reason = "re-entry proposed for earliest unverified gap";
 }
 
 Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& observation) {
@@ -367,6 +433,8 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
         std::hypot(endpoint_distance + *observation.horizontal_error_hard_bound_m,
                    std::abs(*observation.altitude_m - request_.target_altitude_m) +
                        *observation.vertical_error_hard_bound_m) <= request_.arrival_radius_m;
+    if (!qualified_at_b)
+        endpoint_wait_started_ms_ = -1;
     if (qualified_at_b) {
         if (arrival_candidate_ms_ < 0)
             arrival_candidate_ms_ = observation.monotonic_ms;
@@ -380,10 +448,13 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
     const bool bounded = observation.horizontal_error_hard_bound_m.has_value();
     const bool within_sample =
         bounded && projection->cross_track_m + error <= request_.corridor_half_width_m;
-    if (bounded && !within_sample)
+    if (bounded && !within_sample) {
+        if (deviation_samples_ == 0)
+            departure_progress_m_ =
+                previous_projection_ ? previous_projection_->arclength_m : projection->arclength_m;
         ++deviation_samples_;
-    else if (!bounded || projection->cross_track_m + error <=
-                             request_.corridor_half_width_m - request_.deviation_hysteresis_m)
+    } else if (!bounded || projection->cross_track_m + error <=
+                               request_.corridor_half_width_m - request_.deviation_hysteresis_m)
         deviation_samples_ = 0;
     if (request_.route.points.size() == 2 && previous_ && previous_projection_ && within_sample &&
         !previous_projection_->ambiguous && previous_->horizontal_error_hard_bound_m &&
@@ -444,6 +515,7 @@ Status EdgeExecutionSupervisor::ObserveCapture(const CaptureEvidence& evidence) 
         !evidence.capture_succeeded || !evidence.full_strip_quality_established ||
         started_ms_ < 0 || evidence.monotonic_ms < started_ms_ ||
         evidence.monotonic_ms > latest_position_ms_ + kArrivalEvidenceFreshnessMs ||
+        latest_position_ms_ - evidence.monotonic_ms > request_.maximum_capture_age_ms ||
         captures_.size() >= 4096 || captures_.contains(evidence.capture_id))
         return Snapshot();
     if (status_.at_b_verified &&
@@ -469,6 +541,7 @@ Status EdgeExecutionSupervisor::RecoveryDispatched(bool accepted, std::int64_t m
     deviation_samples_ = 0;
     status_.at_b_verified = false;  // A repaired edge must finish at B again.
     arrival_candidate_ms_ = -1;
+    endpoint_wait_started_ms_ = -1;
     recovery_in_progress_ = true;
     status_.phase = Phase::kRecovering;
     status_.reason = "re-entry command accepted; physical outcome pending";
@@ -479,6 +552,7 @@ Status EdgeExecutionSupervisor::RecoveryReentryCompleted(std::int64_t monotonic_
     if (Terminal(status_.phase) || !recovery_in_progress_ || monotonic_ms < last_recovery_ms_)
         return Snapshot();
     recovery_in_progress_ = false;
+    departure_progress_m_.reset();
     last_recovery_ms_ = monotonic_ms;  // Cooldown begins after physical completion.
     deviation_samples_ = 0;
     arrival_candidate_ms_ = -1;

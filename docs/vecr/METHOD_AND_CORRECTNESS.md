@@ -78,3 +78,20 @@ exposes the last frame whose processing and immediate dispatch work have finishe
 It provides an observation barrier for controlled simulation without fixed sleeps.
 Reports emitted during processing can contain the preceding completed timestamp.
 These simulator changes do not qualify live MAVLink recovery.
+
+## v6 acquisition history and recovery extension
+
+The current agent keeps up to 2,048 bounded position observations for capture
+consistency at acquisition time. Requests declare `maximum_capture_age_ms` (0–10 s);
+unknown motion between different timestamps requires a positive hard speed bound.
+Late capture delivery does not move its acquisition timestamp. The agent rejects
+captures after the edge deadline and cannot fulfill with stale endpoint evidence.
+Historical v5/v5.1 artifacts retain their original software semantics and results.
+
+The public repair policy now also includes departure-point, fixed-rewind and
+`evidence-aware` recovery. The latter requires an explicit sensing envelope and
+survey obligation. All policies can use a bounded stationary endpoint evidence
+wait. These assumptions select a target; only accepted observations establish
+coverage. See [the derivation and limits](RECOVERY_MODEL_V6.md) and the separately
+versioned [v6 protocol](SIMULATION_PROTOCOL_V6.md). No new result is implied by the
+existence of the policy or its restricted travel-minimum calculation.

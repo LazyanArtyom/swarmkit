@@ -127,8 +127,15 @@ int RunEdge(client::Client& client, int argc, char** argv) {
         request.edge.repair_policy = edge::RepairPolicy::kTargetedGap;
     else if (repair == "full-edge-restart")
         request.edge.repair_policy = edge::RepairPolicy::kFullEdgeRestart;
+    else if (repair == "departure-point")
+        request.edge.repair_policy = edge::RepairPolicy::kDeparturePoint;
+    else if (repair == "fixed-rewind")
+        request.edge.repair_policy = edge::RepairPolicy::kFixedRewind;
+    else if (repair == "evidence-aware")
+        request.edge.repair_policy = edge::RepairPolicy::kEvidenceAware;
     else {
-        std::cerr << "--repair-policy must be targeted-gap|full-edge-restart\n";
+        std::cerr << "--repair-policy must be "
+                     "targeted-gap|full-edge-restart|departure-point|fixed-rewind|evidence-aware\n";
         return EXIT_FAILURE;
     }
     request.edge.corridor_half_width_m = *corridor;
@@ -136,6 +143,37 @@ int RunEdge(client::Client& client, int argc, char** argv) {
     request.edge.arrival_max_speed_mps = 0.5;
     request.edge.maximum_missing_m = 0;
     request.edge.maximum_speed_mps = 0;  // Unknown until a hard physical bound is established.
+    const auto hard_speed = ParseDoubleArg(
+        common::GetOptionValue(argc, argv, "--hard-speed-bound", "0"), "--hard-speed-bound");
+    const auto overlap = ParseDoubleArg(
+        common::GetOptionValue(argc, argv, "--recovery-overlap", "2"), "--recovery-overlap");
+    const auto age = ParseIntArg(common::GetOptionValue(argc, argv, "--capture-age-ms", "500"),
+                                 "--capture-age-ms");
+    const auto wait = ParseIntArg(common::GetOptionValue(argc, argv, "--evidence-wait-ms", "0"),
+                                  "--evidence-wait-ms");
+    const auto retries = ParseIntArg(common::GetOptionValue(argc, argv, "--recovery-attempts", "0"),
+                                     "--recovery-attempts");
+    if (!hard_speed || !overlap || !age || !wait || !retries || *retries < 0)
+        return EXIT_FAILURE;
+    request.edge.maximum_speed_mps = *hard_speed;
+    request.edge.recovery_overlap_m = *overlap;
+    request.edge.maximum_capture_age_ms = *age;
+    request.edge.endpoint_evidence_wait_ms = *wait;
+    request.edge.max_recovery_attempts = static_cast<std::uint32_t>(*retries);
+    if (repair == "evidence-aware") {
+        const auto half =
+            ParseDoubleArg(common::GetOptionValue(argc, argv, "--sensing-min-half-footprint", ""),
+                           "--sensing-min-half-footprint");
+        const auto error =
+            ParseDoubleArg(common::GetOptionValue(argc, argv, "--sensing-max-position-error", ""),
+                           "--sensing-max-position-error");
+        const auto interval =
+            ParseIntArg(common::GetOptionValue(argc, argv, "--sensing-max-capture-interval-ms", ""),
+                        "--sensing-max-capture-interval-ms");
+        if (!half || !error || !interval)
+            return EXIT_FAILURE;
+        request.edge.recovery_sensing = edge::RecoverySensingEnvelope{*half, *error, *interval};
+    }
     request.edge.sustained_deviation_samples = 3;
     request.edge.recovery_cooldown_ms = 1000;
     request.edge.timeout_ms = *timeout;

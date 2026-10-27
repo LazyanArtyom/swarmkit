@@ -1422,9 +1422,8 @@ TEST_CASE("Normalized telemetry producer identity survives subscribers and recon
         [&] {
             harness.Backend().EmitTelemetry("drone-1", backend_frame);
             std::lock_guard<std::mutex> lock(frames_mutex);
-            return reconnected_frame.has_value() &&
-                   reconnected_frame->frame.telemetry_sequence >
-                       first_seen.frame.telemetry_sequence;
+            return reconnected_frame.has_value() && reconnected_frame->frame.telemetry_sequence >
+                                                        first_seen.frame.telemetry_sequence;
         },
         kWaitTimeout));
     {
@@ -1947,6 +1946,7 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     CHECK(std::abs(partial.status->status.survey_missing.front().begin_m - 40) < 1e-6);
     CHECK(std::abs(partial.status->status.survey_missing.front().end_m - 70) < 1e-6);
     const EdgeResult completed = capture("middle", 40, 70);
+    INFO(completed.message);
     REQUIRE(completed.ok);
     REQUIRE(completed.status);
     CHECK(completed.status->status.survey_verified);
@@ -2258,7 +2258,9 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
                                       std::chrono::steady_clock::now().time_since_epoch())
                                       .count()));
     };
-    REQUIRE(capture("left", 0, 40).ok);
+    const auto left_capture = capture("left", 0, 40);
+    INFO(left_capture.message);
+    REQUIRE(left_capture.ok);
     REQUIRE(capture("right", 70, 100).ok);
     const auto endpoint = edge::LocalToWgs84(40, 44, {100, 0});
     frame.lat_deg = endpoint.lat_deg;
@@ -3139,4 +3141,106 @@ TEST_CASE("Client reports backend command failure and telemetry counters",
 }
 
 }  // namespace
+}  // namespace swarmkit::client
+
+namespace swarmkit::client {
+TEST_CASE("V6 agent validates delayed capture against bounded acquisition history",
+          "[client][integration][vecr][v6]") {
+    const auto cert = testsupport::MakeDevMtlsPaths();
+    agent::AgentConfig cfg;
+    cfg.agent_id = "v6-history-test";
+    cfg.bind_addr = "127.0.0.1:0";
+    cfg.security.root_ca_cert_path = cert.root_ca_cert_path;
+    cfg.security.cert_chain_path = cert.server_cert_chain_path;
+    cfg.security.private_key_path = cert.server_private_key_path;
+    cfg.vecr_sensor_client_id = "test-client";
+    cfg.vecr_sensor_calibration_id = "history-camera";
+    auto clock = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000);
+    auto providers = agent::internal::RuntimeProviders::System();
+    providers.monotonic_time_ns = [clock] { return clock->load(); };
+    testsupport::AgentServerHarness harness(cfg, providers);
+    agent::BackendHealth health;
+    health.ready = true;
+    health.last_heartbeat_unix_ms = 1;
+    health.last_telemetry_unix_ms = 1;
+    health.armed = true;
+    health.landed = false;
+    health.failsafe = false;
+    health.gps_ok = true;
+    health.ekf_ok = true;
+    health.mode = "SIM_GOTO";
+    harness.Backend().SetHealth(health);
+    core::BackendCapabilities capabilities;
+    capabilities.backend_name = "recording";
+    capabilities.supported_commands = {"goto"};
+    harness.Backend().SetCapabilities(capabilities);
+    Client client = MakeClient(harness.Address());
+    EdgeOperationRequest req;
+    req.edge.mission_id = "history";
+    req.edge.mission_revision = 6;
+    req.edge.edge_id = "edge";
+    req.edge.attempt_id = "history-attempt";
+    req.edge.drone_id = "drone-1";
+    req.edge.route.points = {{0, 0}, {100, 0}};
+    req.edge.obligation = edge::Obligation::kSurvey;
+    req.edge.corridor_half_width_m = 4;
+    req.edge.arrival_radius_m = 2;
+    req.edge.arrival_max_speed_mps = 0.5;
+    req.edge.maximum_speed_mps = 5;
+    req.edge.maximum_capture_age_ms = 3000;
+    req.edge.timeout_ms = 10000;
+    req.wgs84_origin = {40, 44};
+    req.altitude_m = 10;
+    req.commanded_speed_mps = 2;
+    const auto dispatch = client.ExecuteEdge(req);
+    INFO(dispatch.message);
+    REQUIRE(dispatch.ok);
+    REQUIRE(testsupport::WaitUntil([&] { return harness.Backend().HasTelemetryStream("drone-1"); },
+                                   kWaitTimeout));
+    auto emit = [&](double east, std::int64_t ms) {
+        clock->store(ms * 1'000'000);
+        core::TelemetryFrame f;
+        f.drone_id = "drone-1";
+        const auto geo = edge::LocalToWgs84(40, 44, {east, 0});
+        f.lat_deg = geo.lat_deg;
+        f.lon_deg = geo.lon_deg;
+        f.position_frame = core::CoordinateFrame::kWgs84;
+        f.velocity_frame = core::CoordinateFrame::kLocalNed;
+        f.estimator_state = core::EstimatorState::kHealthy;
+        f.armed = true;
+        f.rel_alt_m = 10;
+        f.validity.position = f.validity.estimator = f.validity.velocity = true;
+        f.validity.armed = f.validity.failsafe = f.validity.relative_altitude = true;
+        const core::UncertaintyDescriptor d{
+            .semantics = core::UncertaintySemantics::kDeterministicHardBound,
+            .source = "test.exact"};
+        f.accuracy.horizontal_position = core::UncertaintyEstimate{.value = 0, .descriptor = d};
+        f.accuracy.vertical_position = core::UncertaintyEstimate{.value = 0, .descriptor = d};
+        f.accuracy.horizontal_velocity = core::UncertaintyEstimate{.value = 0, .descriptor = d};
+        harness.Backend().EmitTelemetry("drone-1", f);
+        REQUIRE(testsupport::WaitUntil(
+            [&] {
+                const auto s = client.GetEdgeStatus("drone-1", req.edge.attempt_id);
+                return s.status && s.status->status.last_position_monotonic_ms == ms;
+            },
+            kWaitTimeout));
+    };
+    emit(10, 1100);
+    auto old = SyntheticNadirCapture("history", 6, "edge", "history-attempt", "old",
+                                     "history-camera", 10, 2, 1100);
+    emit(20, 3100);  // Latest pose is two seconds and ten metres away.
+    const auto accepted = client.SubmitEdgeCapture("drone-1", old);
+    INFO(accepted.message);
+    REQUIRE(accepted.ok);
+    REQUIRE(accepted.status);
+    CHECK(accepted.status->status.survey_covered_m > 3.9);
+    auto impossible = old;
+    impossible.capture_id = "wrong-at-acquisition";
+    impossible.camera_center.east_m = 20;
+    CHECK_FALSE(client.SubmitEdgeCapture("drone-1", impossible).ok);
+    old.capture_id = "expired";
+    emit(25, 4200);
+    CHECK_FALSE(client.SubmitEdgeCapture("drone-1", old).ok);
+}
+
 }  // namespace swarmkit::client

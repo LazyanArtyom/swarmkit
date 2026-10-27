@@ -481,3 +481,96 @@ TEST_CASE("Midflight re-entry never targets the unseen future tail and cooldown 
     CHECK_FALSE(supervisor.ObservePosition(Position(50, 6500, 6)).pending_reentry);
     CHECK(supervisor.ObservePosition(Position(50, 7000, 6)).pending_reentry.has_value());
 }
+
+TEST_CASE("V6 departure, rewind and gap policies preserve distinct semantics", "[vecr][v6]") {
+    for (auto policy :
+         {RepairPolicy::kDeparturePoint, RepairPolicy::kFixedRewind, RepairPolicy::kTargetedGap}) {
+        auto req = Request();
+        req.repair_policy = policy;
+        EdgeExecutionSupervisor s(req);
+        (void)s.ObservePosition(Position(60, 1000));
+        (void)s.ObserveCapture(Capture(0, 35, 1000, "prefix"));
+        (void)s.ObservePosition(Position(61, 1100, 6));
+        (void)s.ObservePosition(Position(62, 1200, 6));
+        const auto status = s.ObservePosition(Position(63, 1300, 6));
+        REQUIRE(status.pending_reentry);
+        CHECK(std::abs(status.pending_reentry->east_m -
+                       (policy == RepairPolicy::kDeparturePoint ? 60
+                        : policy == RepairPolicy::kFixedRewind  ? 58
+                                                                : 33)) < 1e-9);
+        CHECK_FALSE(status.survey_verified);
+    }
+}
+
+TEST_CASE("V6 robust target is maximal for the declared first-capture bound", "[vecr][v6]") {
+    for (double error : {0.0, 0.3, 1.0}) {
+        const RecoverySensingEnvelope e{3.0, error, 500};
+        const auto p = PlanSurveyReentry(40, 70, 100, 2, 4, e);
+        REQUIRE(p);
+        CHECK(p->first_capture_bound_feasible);
+        const double worst_left = p->target_m + 2 + 4 * 0.5 + 2 * error - 3;
+        CHECK(std::abs(worst_left - 40) < 1e-9);
+        CHECK(worst_left + 0.001 > 40);
+        // Exhaust the independent interval extremes, including opposite estimator error.
+        for (double arrival : {-2.0, 2.0})
+            for (double motion : {0.0, 2.0})
+                for (double measurement : {-error, error})
+                    CHECK(p->target_m + arrival + motion + measurement - (3 - error) <= 40 + 1e-9);
+    }
+    const auto boundary = PlanSurveyReentry(0, 70, 100, 2, 4, {3, 1, 500});
+    REQUIRE(boundary);
+    CHECK_FALSE(boundary->first_capture_bound_feasible);
+    CHECK(boundary->target_m == 0);
+    CHECK_FALSE(PlanSurveyReentry(40, 70, 100, 2, 0, {3, 1, 500}));
+    CHECK_FALSE(PlanSurveyReentry(40, 70, 100, 2, 4, {1, 1, 500}));
+}
+
+TEST_CASE("V6 endpoint wait accepts late evidence but never delays departure or timeout",
+          "[vecr][v6]") {
+    auto req = Request();
+    req.maximum_capture_age_ms = 3000;
+    req.endpoint_evidence_wait_ms = 1500;
+    req.repair_policy = RepairPolicy::kEvidenceAware;
+    req.recovery_sensing = RecoverySensingEnvelope{3, 0.3, 500};
+    SECTION("late evidence resolves the obligation without a repair") {
+        EdgeExecutionSupervisor s(req);
+        (void)s.ObservePosition(Position(0, 1000));
+        (void)s.ObservePosition(Position(100, 2000, 0, true));
+        auto status = s.ObservePosition(Position(100, 2300, 0, true));
+        CHECK(status.at_b_verified);
+        CHECK_FALSE(status.pending_reentry);
+        CHECK(status.phase != Phase::kFulfilled);
+        status = s.ObserveCapture(Capture(0, 100, 1500, "delayed"));
+        CHECK(status.phase == Phase::kFulfilled);
+        CHECK(status.recovery_attempts == 0);
+    }
+    SECTION("waiting expires with missing evidence") {
+        EdgeExecutionSupervisor s(req);
+        (void)s.ObservePosition(Position(0, 1000));
+        (void)s.ObservePosition(Position(100, 2000, 0, true));
+        (void)s.ObservePosition(Position(100, 2300, 0, true));
+        CHECK_FALSE(s.ObservePosition(Position(100, 3799, 0, true)).pending_reentry);
+        CHECK(s.ObservePosition(Position(100, 3800, 0, true)).pending_reentry);
+    }
+    SECTION("departure does not wait") {
+        EdgeExecutionSupervisor s(req);
+        (void)s.ObservePosition(Position(40, 1000, 6));
+        (void)s.ObservePosition(Position(40, 1100, 6));
+        CHECK(s.ObservePosition(Position(40, 1200, 6)).pending_reentry);
+    }
+    SECTION("deadline is independent of evidence wait") {
+        req.timeout_ms = 1400;
+        EdgeExecutionSupervisor s(req);
+        (void)s.ObservePosition(Position(0, 1000));
+        (void)s.ObservePosition(Position(100, 2000, 0, true));
+        (void)s.ObservePosition(Position(100, 2300, 0, true));
+        CHECK(s.ObservePosition(Position(100, 2500, 0, true)).phase == Phase::kInterrupted);
+    }
+    SECTION("expired capture cannot establish coverage") {
+        req.max_recovery_attempts = 0;
+        EdgeExecutionSupervisor s(req);
+        (void)s.ObservePosition(Position(0, 1000));
+        (void)s.ObservePosition(Position(100, 5000, 0, true));
+        CHECK_FALSE(s.ObserveCapture(Capture(0, 100, 1000, "expired")).survey_verified);
+    }
+}

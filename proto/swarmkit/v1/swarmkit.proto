@@ -651,6 +651,15 @@ enum EdgeObligation {
 enum EdgeRepairPolicy {
     EDGE_REPAIR_TARGETED_GAP = 0;
     EDGE_REPAIR_FULL_EDGE_RESTART = 1;
+    EDGE_REPAIR_DEPARTURE_POINT = 2;
+    EDGE_REPAIR_FIXED_REWIND = 3;
+    EDGE_REPAIR_EVIDENCE_AWARE = 4;
+}
+
+message RecoverySensingEnvelope {
+    double minimum_half_footprint_m = 1;
+    double maximum_position_error_m = 2;
+    int64 maximum_capture_interval_ms = 3;
 }
 
 enum EdgePhase {
@@ -695,6 +704,9 @@ message EdgeOperation {
     float commanded_speed_mps = 18;
     EdgeRepairPolicy repair_policy = 19;
     double deviation_hysteresis_m = 20;
+    int64 maximum_capture_age_ms = 21;
+    int64 endpoint_evidence_wait_ms = 22;
+    RecoverySensingEnvelope recovery_sensing = 23;
 }
 
 message EdgeReport {

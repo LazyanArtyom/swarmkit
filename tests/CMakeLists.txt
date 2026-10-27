@@ -67,3 +67,8 @@ add_executable(swarmkit_vecr_v5_trial vecr_v5_trial.cpp)
 target_link_libraries(swarmkit_vecr_v5_trial PRIVATE swarmkit_agent swarmkit_evidence swarmkit_client)
 swarmkit_set_warnings(swarmkit_vecr_v5_trial)
 swarmkit_enable_sanitizers(swarmkit_vecr_v5_trial)
+
+add_executable(swarmkit_vecr_v6_trial vecr_v6_trial.cpp)
+target_link_libraries(swarmkit_vecr_v6_trial PRIVATE swarmkit_agent swarmkit_evidence swarmkit_client)
+swarmkit_set_warnings(swarmkit_vecr_v6_trial)
+swarmkit_enable_sanitizers(swarmkit_vecr_v6_trial)

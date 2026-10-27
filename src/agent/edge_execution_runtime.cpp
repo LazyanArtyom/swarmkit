@@ -125,12 +125,33 @@ std::optional<edge::EdgeRequest> EdgeExecutionRuntime::Convert(
         : operation.obligation() == swarmkit::v1::EDGE_SURVEY
             ? edge::Obligation::kSurvey
             : edge::Obligation::kTraversalAndSurvey;
-    if (operation.repair_policy() != swarmkit::v1::EDGE_REPAIR_TARGETED_GAP &&
-        operation.repair_policy() != swarmkit::v1::EDGE_REPAIR_FULL_EDGE_RESTART)
-        return std::nullopt;
-    request.repair_policy = operation.repair_policy() == swarmkit::v1::EDGE_REPAIR_FULL_EDGE_RESTART
-                                ? edge::RepairPolicy::kFullEdgeRestart
-                                : edge::RepairPolicy::kTargetedGap;
+    switch (operation.repair_policy()) {
+        case swarmkit::v1::EDGE_REPAIR_TARGETED_GAP:
+            request.repair_policy = edge::RepairPolicy::kTargetedGap;
+            break;
+        case swarmkit::v1::EDGE_REPAIR_FULL_EDGE_RESTART:
+            request.repair_policy = edge::RepairPolicy::kFullEdgeRestart;
+            break;
+        case swarmkit::v1::EDGE_REPAIR_DEPARTURE_POINT:
+            request.repair_policy = edge::RepairPolicy::kDeparturePoint;
+            break;
+        case swarmkit::v1::EDGE_REPAIR_FIXED_REWIND:
+            request.repair_policy = edge::RepairPolicy::kFixedRewind;
+            break;
+        case swarmkit::v1::EDGE_REPAIR_EVIDENCE_AWARE:
+            request.repair_policy = edge::RepairPolicy::kEvidenceAware;
+            break;
+        default:
+            return std::nullopt;
+    }
+    request.maximum_capture_age_ms = operation.maximum_capture_age_ms();
+    request.endpoint_evidence_wait_ms = operation.endpoint_evidence_wait_ms();
+    if (operation.has_recovery_sensing()) {
+        const auto& e = operation.recovery_sensing();
+        request.recovery_sensing = edge::RecoverySensingEnvelope{e.minimum_half_footprint_m(),
+                                                                 e.maximum_position_error_m(),
+                                                                 e.maximum_capture_interval_ms()};
+    }
     request.corridor_half_width_m = operation.corridor_half_width_m();
     request.arrival_radius_m = operation.arrival_radius_m();
     request.arrival_max_speed_mps = operation.arrival_max_speed_mps();
@@ -480,23 +501,36 @@ core::Result EdgeExecutionRuntime::SubmitCapture(
             .image_quality_established = capture.image_quality_established(),
             .nadir_route_alignment_established = capture.nadir_route_alignment_established(),
             .flat_ground_established = capture.flat_ground_established()};
-        if (!attempt->last_bounded_position || !attempt->last_position_hard_bound_m ||
-            input.monotonic_ms < attempt->last_position_ms - 500 ||
-            input.monotonic_ms > attempt->last_position_ms + 500)
+        const auto now_ms = providers_.MonotonicTimeNs() / 1'000'000;
+        if (now_ms - attempt->started_agent_ms > requested.timeout_ms)
+            return core::Result::Rejected("capture arrived after edge deadline");
+        if (before.at_b_verified && (!before.last_position_monotonic_ms ||
+                                     now_ms - *before.last_position_monotonic_ms > 1000))
+            return core::Result::Rejected("endpoint pose is stale at capture delivery");
+        const auto age = now_ms - input.monotonic_ms;
+        if (age < 0 || age > requested.maximum_capture_age_ms)
+            return core::Result::Rejected("capture outside declared acquisition-age limit");
+        const edge::PositionObservation* nearby = nullptr;
+        for (const auto& pose : attempt->pose_history) {
+            if (std::abs(pose.monotonic_ms - input.monotonic_ms) <= 500 &&
+                (!nearby || std::abs(pose.monotonic_ms - input.monotonic_ms) <=
+                                std::abs(nearby->monotonic_ms - input.monotonic_ms)))
+                nearby = &pose;
+        }
+        if (!nearby)
             return core::Result::Rejected("capture has no nearby bounded vehicle pose");
-        const double elapsed_s = std::abs(input.monotonic_ms - attempt->last_position_ms) / 1000.0;
-        const double possible_displacement_m = *attempt->last_position_hard_bound_m +
+        const double elapsed_s = std::abs(input.monotonic_ms - nearby->monotonic_ms) / 1000.0;
+        if (elapsed_s > 0 && requested.maximum_speed_mps <= 0)
+            return core::Result::Rejected("capture alignment requires a hard speed bound");
+        const double possible_displacement_m = *nearby->horizontal_error_hard_bound_m +
                                                input.horizontal_error_hard_bound_m +
                                                requested.maximum_speed_mps * elapsed_s;
         if (!std::isfinite(possible_displacement_m) ||
-            std::hypot(input.camera_center.east_m - attempt->last_bounded_position->east_m,
-                       input.camera_center.north_m - attempt->last_bounded_position->north_m) >
+            std::hypot(input.camera_center.east_m - nearby->position.east_m,
+                       input.camera_center.north_m - nearby->position.north_m) >
                 possible_displacement_m + 1e-6)
             return core::Result::Rejected(
-                "capture pose inconsistent with vehicle telemetry: capture_east=" +
-                std::to_string(input.camera_center.east_m) +
-                " vehicle_east=" + std::to_string(attempt->last_bounded_position->east_m) +
-                " dt_ms=" + std::to_string(input.monotonic_ms - attempt->last_position_ms));
+                "capture pose inconsistent with acquisition-time telemetry");
         const auto evidence =
             edge::BuildNadirStripEvidence(requested.route, requested.corridor_half_width_m, input);
         if (!evidence)
@@ -896,16 +930,19 @@ void EdgeExecutionRuntime::Work(const std::shared_ptr<Attempt>& attempt) {
                           ? attempt->supervisor.Interrupt("autopilot safety mode active")
                           : attempt->supervisor.ObservePosition(observation);
             attempt->last_battery_percent = observation.battery_percent;
-            if (observation.valid && observation.horizontal_error_hard_bound_m &&
+            if (observation.valid && std::isfinite(observation.position.east_m) &&
+                std::isfinite(observation.position.north_m) &&
+                observation.horizontal_error_hard_bound_m &&
                 std::isfinite(*observation.horizontal_error_hard_bound_m) &&
                 *observation.horizontal_error_hard_bound_m >= 0) {
-                attempt->last_bounded_position = observation.position;
-                attempt->last_position_hard_bound_m = observation.horizontal_error_hard_bound_m;
-                attempt->last_position_ms = observation.monotonic_ms;
-            } else {
-                attempt->last_bounded_position.reset();
-                attempt->last_position_hard_bound_m.reset();
+                attempt->pose_history.push_back(observation);
             }
+            // Resource exhaustion drops oldest evidence; it never invents a pose.
+            while (!attempt->pose_history.empty() &&
+                   (attempt->pose_history.size() > 2048 ||
+                    observation.monotonic_ms - attempt->pose_history.front().monotonic_ms >
+                        attempt->supervisor.Request().maximum_capture_age_ms + 500))
+                attempt->pose_history.pop_front();
             publish = updated.phase != attempt->last_reported_phase ||
                       updated.at_b_verified != attempt->last_reported_arrival;
             if (publish) {
