@@ -40,6 +40,10 @@ In rotor-router dynamics, each vertex maintains a cyclic order of outgoing edges
 
 The distinction matters in a real survey. A logical transition $e=(u,v)$ can be selected correctly, yet the vehicle can miss imagery between the physical endpoints. A repair flight may traverse a section twice even when the planner's abstract walk visits the directed edge once. Rotor-router's graph guarantee remains a graph guarantee; VECR evaluates the physical obligation attached to each attempted edge.
 
+An abstract rotor state contains a chip position and an outgoing-edge pointer at each vertex. Its update is discrete and deterministic once the graph, cyclic orders and initial state are fixed. A physical UAV also has a continuously changing pose, velocity, health and sensor configuration. An abstract transition can be logically instantaneous while its execution takes time and can be interrupted. The useful connection is a **refinement rule**: a planner may regard a selected edge as physically discharged only when the corresponding versioned attempt satisfies the requested acceptance predicate. An interrupted or unknown outcome leaves a decision for the external planner: retry, reassign, defer or stop. SwarmKit does not silently make that graph decision.
+
+An edge and its reverse are separate obligations. Camera pointing, illumination, restricted airspace or a one-way survey requirement can make $u\to v$ different from $v\to u$ even when they connect the same endpoints. This campaign deliberately narrows richer mission geometry to straight directed routes in a local metric frame. That permits independent interval scoring and controlled comparison; it does not prove correctness for curved terrain corridors or arbitrary survey polygons.
+
 ## Gossip and dissemination are separate concerns
 
 Earlier [Knödel-graph gossip research](https://doi.org/10.1109/CSITechnol.2017.8312126) concerns information dissemination topology. A gossip algorithm can spread a verified edge result or missing-work report to peers. It does not determine whether the camera actually observed a strip. SwarmKit supplies generic message and peer APIs; it does not implement a rotor-router or gossip policy. A network partition can prevent remote recipients from learning an onboard result even while the local agent continues its verification and recovery.
@@ -54,6 +58,8 @@ Earlier [Knödel-graph gossip research](https://doi.org/10.1109/CSITechnol.2017.
 ## Earlier platform publications
 
 The [multi-user UAV swarm simulation platform](https://doi.org/10.1134/S0361768823090086) and [mission-preparation study](https://doi.org/10.1134/S0361768824700397) establish a platform research line. The [2025 multi-user software-system paper](https://doi.org/10.1109/ICECET63943.2025.11472550) is another part of that lineage. The previously supplied dissertation draft also lists a 2026 simulation-driven monitoring paper and a SwarmKit architecture paper; their bibliographic details are retained as author-supplied records pending formal publisher verification. Their results are not counted in the current VECR digital campaign.
+
+Together these works address mathematical swarm coordination, mission authoring, preflight simulation, software infrastructure and execution monitoring. VECR occupies the remaining interface between a graph plan and a physical survey. A coordinator informed only that the vehicle reached a vertex can incorrectly credit an edge whose middle was never acquired. A coordinator receiving exact attempt identity, accepted intervals, remaining gaps and a terminal reason has enough information to make an explicit next decision. The current trials test that local contract. They do not measure the benefit of any particular graph-level reassignment strategy.
 
 This dissertation's specific addition is the *physical edge acceptance layer*: the planner may change, and the communication algorithm may change, while the agent applies the same exact attempt identity, bounded evidence, gap accounting, and local recovery. The two SDK-path experiment tests reuse of this layer; it does not experimentally demonstrate a complete rotor-router deployment.
 
@@ -128,11 +134,19 @@ SwarmOps addresses the human-facing task: select a geographic area, author a dir
 
 An operator workflow runs from workspace access and map-based mission editing to graph validation, preflight simulation, approved dispatch, onboard execution, event inspection and artifact review. The planned graph and imagery obligation must refer to an immutable mission revision. A later edit to an edge geometry cannot silently reinterpret captures accepted for the earlier revision. Command authority on a vehicle also remains a separate concern from a platform user's editing role.
 
+A mission manifest needs to preserve the graph, directed edge IDs, route geometry, observation strip or terrain region, selected vehicle identities, observation policy, coordinate reference frame and revision. An approval should bind to that exact revision. If two users concurrently edit a route, the workspace needs a conflict rule before deployment; a hidden last-write-wins edit would make the edge's physical meaning ambiguous. The previous SwarmOps material described workspaces and collaborative engineering as part of the platform vision. This VECR campaign verifies neither simultaneous editing nor a particular conflict-resolution implementation, so those remain platform requirements rather than experimental findings.
+
+For an operator, the live display should separate four layers: **planned graph transition**, **measured flight track**, **accepted surveyed intervals**, and **unverified intervals**. The first is an intention, the second is telemetry with its own freshness and uncertainty, and the third is the agent's qualified evidence state. A red corridor alert alone cannot mean that the ground strip is missing; a green arrival marker alone cannot mean that it is covered. The distinction is also useful in post-mission review: an event timeline can show when the agent detected a deviation, waited for delayed captures, selected a re-entry target, observed sampled re-entry dwell and finally reported fulfillment or interruption.
+
 Geographical display coordinates and execution coordinates must be linked explicitly. A map screenshot is not a metric survey model. The current experiments use a local straight-edge frame and rectangular ground-footprint oracle; a field deployment would need checked georeferencing, terrain and camera calibration, and a defined transformation from map geometry to the agent's local frame.
+
+The control path needs two authorization levels. A workspace permission may let an operator approve a mission revision; it does not automatically grant a live vehicle command. SwarmKit's per-vehicle authority arbitration governs command access separately. A later cloud gateway would have to preserve both identities and an audit trail when translating mission-level actions into vehicle requests. No cloud-side permission model or adversarial multi-user test is part of the present evidence.
 
 ## Intended cloud architecture, outside the measured result
 
 The wider programme describes a multi-user mission workspace, authorization, versioned mission store, telemetry gateway, event log, artifact store, and post-mission analysis. These are architectural targets and earlier research context. The current VECR result does not claim a deployed multi-tenant SaaS service or bounded latency under hundreds of concurrent drones. Even if a cloud service is unavailable, the experiment's local verification/recovery loop runs in the agent. Remote monitoring would require later synchronization and conflict handling to present an accurate view.
+
+That architecture has three different data flows. The **control plane** carries authorized mission requests and cancellations. The **telemetry/event plane** carries bounded-rate state and typed execution reports. The **artifact plane** carries larger images, logs and derived products. Keeping them conceptually separate prevents an image transfer from being mistaken for a real-time control guarantee. A cloud outage also affects the flows differently: it may stop new assignments or remote visibility while an already authorized onboard attempt continues until its local deadline or safety rule ends it. This is a design implication of the agent boundary, not a measured outage result in the v7 campaign.
 
 # 07 / Model, evidence and fulfillment {#model}
 
@@ -200,6 +214,20 @@ The supervisor maintains sorted, non-overlapping intervals and recomputes missin
 
 Dispatching a re-entry command sets phase `RECOVERING`. The runtime requires qualified stationary re-entry dwell at the target before transitioning back to `MOVING`. A backend command acknowledgement alone cannot complete recovery.
 
+## Graph-to-physical composition, with a narrow guarantee
+
+Suppose an external coordinator assigns a finite set of directed survey edges, and suppose it advances its own edge-completion state only when it receives a `FULFILLED` outcome for the exact assigned mission revision and attempt. Under the footprint-containment assumptions of Proposition 1, every such accepted edge has its declared survey strip included in actually acquired ground footprints. If the coordinator later establishes that every required edge has such an accepted outcome, the union of those edge strips has been acquired under the same assumptions. This is a conditional composition of per-edge evidence, not a new theorem about rotor-router recurrence, delivery of every assignment, airworthiness, or image usability.
+
+The composition can fail if the coordinator treats `Command ACK` or `GOAL_REACHED` as edge fulfillment, accepts a stale report for a new revision, loses an incomplete report across a network partition, or relies on dishonest sensor metadata. The current digital experiment exercises the local identity/evidence/recovery layer and a two-path SDK reuse check. It does not execute a full distributed rotor-router controller or prove swarm-wide eventual knowledge. A future integration test must check the coordinator's exact update rule and message semantics.
+
+## Why there is no unconditional recovery guarantee
+
+The earliest-gap target is a bounded local decision: it identifies where the agent should return under the current accepted interval state. Success additionally requires a navigable route, available energy, working motors, accepted commands, a functioning sensor, valid bounds, time before the deadline, and a recovery budget. Any one of those can fail. The method therefore promises a **truthful local outcome under its assumptions**, not completion of every assigned edge. The fail-closed conditions in N10–N16 and N21 are intended to make those failures visible rather than inflate the completion rate.
+
+## Computational representation
+
+Accepted coverage is represented as sorted non-overlapping intervals along one edge. Insertion merges overlaps; the first complement interval gives the earliest gap. This avoids storing every image pixel in the supervisor. The number of interval operations depends on the number of accepted captures or retained disjoint intervals, not on a global multi-agent graph. It is a practical onboard representation for the straight-strip model. Complex polygonal footprints or changing terrain would require a different spatial representation and a new containment argument.
+
 # 09 / Implementation and reliability {#implementation}
 
 ## Canonical public contract
@@ -240,11 +268,17 @@ VECR is evaluated against B2, a coverage-aware full-restart baseline. Both metho
 
 The only difference is the recovery target: VECR targets the earliest unverified gap $g$ with bounded wait, while B2 returns to route origin A.
 
+B2 is deliberately coverage-aware. It receives the same accepted captures, gap state and sensor model as VECR and keeps earlier verified work. Its full-edge restart is a defensible conservative repair action, not a straw-man controller that equates waypoint arrival with survey success. This makes the distance comparison about **where to return** after a gap, while the correctness comparison tests the same shared verifier. It also explains why many no-gap or fail-closed conditions have equal outcomes. Equality in these rows is an informative result, not a failed experiment to omit.
+
+The paired seed controls the disturbance and sensor-noise realization for the two methods. Each condition has 30 paired seeds; pointwise confidence intervals resample the pairs. Those intervals express uncertainty over the chosen seed distribution and simulator model. They do not quantify uncertainty about terrain, camera calibration, unmodeled aircraft dynamics or another mission geography. Multiple conditions are displayed as a family of exploratory pointwise comparisons; no familywise multiplicity claim is made.
+
 ## Independent evidence and truth paths
 
 {{diagram:evidence}}
 
 Simulator ground truth (20 ms private state) is strictly isolated from the agent's sensor estimator. Telemetry noise includes pseudorandom walk and bounded biases. Python reconstruction runs independently of C++ libraries.
+
+The independent checker reads recorded actual positions and actual rectangular acquisitions. It reconstructs full-strip coverage without asking the production verifier which intervals it accepted. This independence makes a false fulfillment detectable when the agent's report says success but the oracle finds a gap. It does not make the simulator a real-world truth source: the oracle is only as realistic as the simulated vehicle, terrain and camera model. The dishonest controls intentionally break the trusted-metadata assumption to demonstrate that boundary.
 
 ## 22-Condition experimental matrix (1,320 attempts)
 
@@ -294,7 +328,7 @@ The interactive replay tool renders recorded physical trajectories at 100 ms res
 - **N03:** Intermediate metadata gap triggering localized re-entry.
 - **N04:** Multiple disjoint gaps resolved sequentially.
 - **N07:** Wind gust causing physical departure followed by bounded re-entry.
-- **N11:** Command rejection causing immediate fail-closed termination.
+- **N11:** Command rejection ending the recorded attempt without fulfillment.
 - **N19:** Dishonest camera metadata exposing the sensor trust boundary.
 
 # 13 / Evidence availability and limits {#availability}
@@ -388,6 +422,10 @@ A targeted literature review clarifies VECR's boundaries relative to prior resea
 | [Leucker et al., 2020](https://link.springer.com/article/10.1007/s11219-019-09493-y) | Out-of-order stream verification | Bounded endpoint waiting for asynchronous camera metadata arrival |
 
 VECR does not claim worldwide priority for the concept of returning behind an interruption or set-union coverage. The defensible contribution is the concrete, implemented onboard execution, verification, and recovery contract for UAV edge obligations.
+
+The prior-art boundary is deliberate. **Waypoint navigation** solves movement toward a target; a waypoint acceptance radius is not a terrain-observation predicate. **Coverage path planning** computes routes intended to cover an area, often before a flight; a planned path does not certify that all required images were actually acquired. **Mission rewind or resume** can revisit a fixed distance after interruption; a fixed distance is not selected from accepted survey evidence. **Runtime verification** can monitor temporal or geometric assumptions, including out-of-order observations, but the particular edge-obligation lifecycle and physical re-entry still need an implementation. VECR combines the local pieces into an onboard execution contract and tests them end to end against an independent oracle.
+
+The theoretical originality is similarly bounded. The containment proof is a simple set-inclusion argument once each accepted footprint is a guaranteed subset of the true acquisition. The hard part is maintaining the premises across capture identity, time, geometry, uncertainty, state transitions, recovery commands and safety. The dissertation can defend this as an applied method with a conditional guarantee and a reproducible systems validation. It should not claim invention of interval unions, robust corridors, earliest-point heuristics, or a globally optimal recovery planner. The negative controls are as important as the positive results because they show exactly where the guarantee stops.
 
 ## Dissertation contribution in one statement
 

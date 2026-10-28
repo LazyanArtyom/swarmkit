@@ -59,6 +59,13 @@ def validate():
         text,
         re.I,
     )
+    assert not re.search(
+        r"provably fails closed|proving that the earliest-gap|fixed-wing and multicopter|100% correct interruption|continuous dwell of at least 200 ms",
+        text,
+        re.I,
+    ), "unsupported scientific claim"
+    for stale_command in ("run_digital_campaign.py", "validate_digital_campaign.py", "run_client_reuse.py"):
+        assert stale_command not in text, stale_command
     assert "1,320" in text and "22" in text
     for topic in ("rotor-router", "gossip", "SwarmOps", "multi-user", "mission revision", "sensor trust boundary"):
         assert topic.lower() in text.lower(), topic

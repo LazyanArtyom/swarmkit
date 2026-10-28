@@ -488,11 +488,11 @@ def build():
     gates = [
         ["Release CTest suite", "Pass", "3/3 targets passed in 22.2 s (swarmkit_tests, vecr_baseline_contract)"],
         ["UBSan CTest suite", "Pass", "3/3 targets passed in 24.2 s under undefined-behavior sanitizers"],
-        ["Digital primary independent reconstruction", "Pass", "1,320 attempts, 108,790 delivered captures, 720 physical re-entry dwells verified"],
+        ["Digital primary independent reconstruction", "Pass", "1,320 attempts, 108,790 delivered captures, 720 sampled physical re-entry dwells verified"],
         ["Honest-sensor footprint containment", "Pass", "Zero uncontained footprints across all accepted honest acquisitions"],
         ["Client reuse invariance", "Pass", "100 trials, 50 matched direct vs routed pairs; 0 metric differences"],
         ["ArduPilot SITL independent reconstruction", "Pass", "12 flights, 509 accepted captures, 2 sampled re-entry dwells verified"],
-        ["Fail-closed safety interventions", "Pass", "100% correct interruption on command refusal, motor failure, low battery, and deadline"],
+        ["Fail-closed safety interventions", "Pass", "Selected command-refusal, motor-failure, low-battery and deadline runs made no false fulfillment report"],
     ]
     components["gates"] = table(["Verification gate", "Status", "Verified evidence"], gates, "Current scientific and engineering validation gates")
 
@@ -550,23 +550,23 @@ def build():
     questions = [
         (
             "What is the core contribution of this work?",
-            "VECR contributes a concrete, reusable onboard execution, verification and recovery contract for assigned UAV graph edges. The agent binds exact attempt identity, maintains conservative full-strip interval unions, guarantees stopped 3D arrival with physical dwell, and recovers unverified work via earliest-gap targeting with bounded evidence waiting. External applications own graph selection and coordination; SwarmKit owns physical execution and evidence qualification.",
+            "VECR contributes a reusable onboard execution, verification and recovery contract for assigned UAV graph edges. The agent binds exact attempt identity, maintains conservative full-strip interval unions, checks bounded stopped 3D arrival with sampled dwell, and recovers unverified work via earliest-gap targeting with bounded evidence waiting. External applications own graph selection and coordination; SwarmKit owns physical execution and evidence qualification.",
         ),
         (
             "Why is returning to a gap or an interruption point not claimed as a worldwide first invention?",
-            "Returning behind an interruption is established in prior systems such as ArduPilot Mission Rewind and robotic coverage literature (Zudaire 2021, Nykolaychuk 2015). VECR's contribution is not the abstract concept of returning, but the unified onboard contract combining conservative acquisition-time footprint contraction, sorted interval unions, exact attempt identity, and bounded re-entry dwell with explicit fail-closed guarantees.",
+            "Returning behind an interruption is established in systems such as ArduPilot Mission Rewind and related robotic coverage work. VECR's contribution is the implemented onboard contract combining conservative acquisition-time footprint contraction, interval unions, exact attempt identity, bounded re-entry checks, safety limits and explicit terminal outcomes. The formal survey guarantee is conditional on truthful, bounded evidence.",
         ),
         (
             "Does the work involve continuum manipulators, elastic observers, or Cosserat models?",
-            "No. The reviewer comments mentioning continuum robotics, visual-elastic observers, and tendon actuation represented a subject-matter mismatch. SwarmKit is strictly a UAV edge-execution and recovery runtime operating in straight local metric segments with fixed-wing and multicopter kinematics.",
+            "No. Comments mentioning continuum robotics, visual-elastic observers and tendon actuation were a subject-matter mismatch. This measured study uses multirotor UAV execution of straight local metric segments; it does not validate fixed-wing flight.",
         ),
         (
             "Why is B2 (full-edge restart) used as the comparison baseline?",
-            "B2 serves as a rigorously fair, coverage-aware research comparator. It shares the exact same verifier, sensor models, flight dynamics, retry budgets, timeouts, and safety mechanisms as VECR, but executes a full restart from vertex A when unverified gaps remain. This directly isolates and measures the precise efficiency gained by localized earliest-gap re-entry versus naive re-execution.",
+            "B2 is a coverage-aware research comparator. It shares the same verifier, sensor model, flight dynamics, repair budget, timeout and safety settings as VECR, but returns to A when a repair is required. The paired simulator conditions isolate the measured travel difference attributable to the target rule under those conditions.",
         ),
         (
             "What is the operational failure envelope of the system?",
-            "VECR operates soundly when horizontal localization uncertainty is bounded within the camera footprint margin (demonstrated up to 0.9 m nominal). When uncertainty exceeds usable optical width (e.g. at 1.2 m), or when sensors permanently fail (N10), motor fails (N12), battery drops below reserve (N13), or commands are rejected (N11), VECR provably fails closed without false fulfillment.",
+            "Conditional soundness requires truthful acquisition metadata, valid hard error bounds, calibrated geometry, exact attempt identity and correct interval bookkeeping. N05–N06 test a 0.3–0.9 m changing-bound setting. N10–N16 and N21 record fail-closed outcomes for selected sensor, vehicle, command, budget and deadline faults. Those finite tests are not a proof for every possible failure or uncertainty magnitude.",
         ),
         (
             "Does zero false fulfillment prove physical real-world safety?",
@@ -574,11 +574,11 @@ def build():
         ),
         (
             "How does the method generalize beyond 40-metre straight edges?",
-            "The campaign evaluated 20 m (N17), 40 m (nominal), and 80 m (N18) edges, proving that the earliest-gap re-entry rule scales directly with edge length, saving up to 29.92 m of travel on 80 m routes. In addition, client reuse tests confirmed identical execution across direct and routed SDK client architectures.",
+            "The campaign tested 20 m (N17), 40 m and 80 m (N18) straight edges and observed a 29.92 m mean travel saving against B2 in N18. Three lengths do not prove scale invariance. The separate client-reuse campaign found identical metrics for direct and routed SDK paths; curved routes, terrain and other graph algorithms need further tests.",
         ),
         (
             "What did the ArduPilot SITL qualification demonstrate?",
-            "SITL verified that SwarmKit's production MAVLink backend correctly commands real ArduPilot Copter 4.7.2 autopilot processes, executing physical re-entry dwells, obeying operator LAND overrides, and enforcing fail-closed nonacceptance when raw uncalibrated MAVLink telemetry lacks hard uncertainty bounds.",
+            "The 12-flight SITL qualification connected the production MAVLink backend to native ArduPilot Copter 4.7.2 processes. It recorded two sampled re-entry dwells, selected command-refusal and LAND-override outcomes, and nonacceptance of raw MAVLink telemetry without declared hard bounds. Accepted survey claims used synthetic bounded sensing; real image quality was not tested.",
         ),
     ]
     components["defense_questions"] = (
@@ -600,6 +600,31 @@ def build():
     )
 
     source = (SITE / "source/dissertation.md").read_text()
+
+    def inline_math(match):
+        # This reader is fully offline. Render the small inline notation used
+        # by the manuscript as Unicode rather than exposing raw TeX delimiters.
+        value = match.group(1)
+        for old, new in (
+            (r"\hat{h}", "ĥ"),
+            (r"\varepsilon", "ε"),
+            (r"\theta", "θ"),
+            (r"\bigcup", "⋃"),
+            (r"\setminus", "∖"),
+            (r"\subseteq", "⊆"),
+            (r"\Delta", "Δ"),
+            (r"\min", "min"),
+            (r"\le", "≤"),
+            (r"\to", "→"),
+            (r"\%", "%"),
+            ("^{-6}", "⁻⁶"),
+            ("^-", "⁻"),
+        ):
+            value = value.replace(old, new)
+        value = re.sub(r"\\text\{([^}]+)\}", r"\1", value)
+        return f'<span class="inline-math">{esc(value)}</span>'
+
+    source = re.sub(r"\$([^$\n]+)\$", inline_math, source)
 
     def expand(m):
         key = m.group(1)
