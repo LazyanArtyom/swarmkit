@@ -1,0 +1,16 @@
+{
+  "attempts": 200,
+  "paired_client_assignments": 100,
+  "compared_fields": [
+    "phase",
+    "truth_complete",
+    "reported_complete",
+    "false_complete",
+    "distance_m",
+    "time_ms",
+    "recoveries",
+    "reported_covered_m"
+  ],
+  "differences": [],
+  "scope": "direct Client versus routed SwarmClient; same onboard agent, not a multi-planner theorem"
+}

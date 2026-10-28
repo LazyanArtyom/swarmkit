@@ -17,22 +17,25 @@ The Print button opens the browser's print/save-PDF dialog.
 * Sixteen revised chapters: motivation, contribution, architecture, precise
   contracts, conditional proofs, implementation, fair experiments, results,
   failure analysis, sensitivity, performance, provenance and defense questions.
-* Every primary and sensitivity condition, with paired effects and uncertainty.
+* All 22 v6 conditions and nine policies (5,940 primary attempts), paired confidence
+  intervals, 200 client-reuse trials and the separately preserved v5.1 study.
 * Twelve real recorded attempts: seed 1 for six conditions under B2 and VECR,
   including failed recovery and dishonest-sensor outcomes. Replay starts only
   when requested. No fictional completion percentages are animated.
-* Seven original experimental figures in SVG/PDF/PNG, five new vector method
+* Historical and current experimental figures in SVG/PDF/PNG, six vector method
   diagrams, and readable offline equations.
 * Local CSV/manifest downloads and lossless representative raw traces. The full
   research trace directory is linked separately and needs the surrounding repo.
 * Responsive light/dark themes, search, keyboard navigation, larger reading
   text, accessible figure dialogs and print styles.
-* A separate SITL results structure with **TBD** values and an explicit
-  **not yet executed** status. No SITL numbers or outcomes are invented.
+* A separate 24-flight ArduPilot SITL qualification with independently recorded
+  simulator truth. Native accuracy controls and synthetic bounded sensing are
+  distinguished. Only future calibrated-image and physical-aircraft work is TBD.
 * A sourced literature comparison and candid defense-readiness assessment.
-  Completing the simulator protocol does not establish scientific originality;
-  closer recovery baselines and the precise advance over prior work remain to
-  be substantiated before making a stronger dissertation claim.
+  The closer recovery baselines are now measured: the conservative E rule does
+  not improve completion over the strong GW comparator and often travels farther.
+  The narrow systems contribution and conditional result do not establish global
+  algorithmic superiority, worldwide priority or degree acceptance.
 
 The numerical campaign is a flat, one-dimensional full-strip simulator study.
 Real-camera quality, complex terrain, physical flight, cloud deployment and
@@ -81,3 +84,7 @@ uncertain traversal endpoints were overcredited, and off-segment camera centers
 could be clamped onto the route. Both have recorded before/after regressions.
 The corrected full campaign is versioned separately; earlier results were not
 rewritten. See the protocol and final validation records for exact revisions.
+
+The complete v5.1 reader is additionally preserved in
+`source/archive/v5_1_reader_2026-10-28.tar.gz`. V6 raw trials and statistics are
+separate; neither that reader archive nor the historical research was rewritten.

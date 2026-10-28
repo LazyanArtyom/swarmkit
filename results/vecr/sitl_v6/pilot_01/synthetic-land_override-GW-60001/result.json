@@ -1,0 +1,8 @@
+{
+  "navigation": "synthetic",
+  "fault": "land_override",
+  "policy": "GW",
+  "seed": 60001,
+  "run_id": "synthetic-land_override-GW-60001",
+  "infrastructure_error": "SITL trial startup/execution deadline"
+}

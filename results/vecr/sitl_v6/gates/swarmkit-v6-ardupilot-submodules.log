@@ -1,0 +1,31 @@
+Submodule 'modules/DroneCAN/DSDL' (https://github.com/DroneCAN/DSDL.git) registered for path 'modules/DroneCAN/DSDL'
+Submodule 'modules/DroneCAN/dronecan_dsdlc' (https://github.com/DroneCAN/dronecan_dsdlc) registered for path 'modules/DroneCAN/dronecan_dsdlc'
+Submodule 'modules/DroneCAN/libcanard' (https://github.com/DroneCAN/libcanard) registered for path 'modules/DroneCAN/libcanard'
+Submodule 'modules/DroneCAN/pydronecan' (https://github.com/DroneCAN/pydronecan) registered for path 'modules/DroneCAN/pydronecan'
+Submodule 'gtest' (https://github.com/ArduPilot/googletest) registered for path 'modules/gtest'
+Submodule 'modules/mavlink' (https://github.com/ArduPilot/mavlink) registered for path 'modules/mavlink'
+Submodule 'modules/waf' (https://github.com/ArduPilot/waf.git) registered for path 'modules/waf'
+Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/DroneCAN/DSDL'...
+Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/DroneCAN/dronecan_dsdlc'...
+Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/DroneCAN/libcanard'...
+Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/DroneCAN/pydronecan'...
+Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/gtest'...
+Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/mavlink'...
+Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/waf'...
+From https://github.com/DroneCAN/DSDL
+ * branch            04e0e818b06c180eb1720fcdf16484d0f12895ee -> FETCH_HEAD
+Submodule path 'modules/DroneCAN/DSDL': checked out '04e0e818b06c180eb1720fcdf16484d0f12895ee'
+From https://github.com/DroneCAN/dronecan_dsdlc
+ * branch            de47a8972b7d8c59e50c3acfab5754db29798caa -> FETCH_HEAD
+Submodule path 'modules/DroneCAN/dronecan_dsdlc': checked out 'de47a8972b7d8c59e50c3acfab5754db29798caa'
+Submodule path 'modules/DroneCAN/libcanard': checked out '601ed35467e0ac38819df17cd7c918de19f62d58'
+From https://github.com/DroneCAN/pydronecan
+ * branch            08cda37aaf2958657399606653b99ceb5a6beae0 -> FETCH_HEAD
+Submodule path 'modules/DroneCAN/pydronecan': checked out '08cda37aaf2958657399606653b99ceb5a6beae0'
+From https://github.com/ArduPilot/googletest
+ * branch            c5fed93f941865a0e912e9baf46ded713506590a -> FETCH_HEAD
+Submodule path 'modules/gtest': checked out 'c5fed93f941865a0e912e9baf46ded713506590a'
+From https://github.com/ArduPilot/mavlink
+ * branch            288b907c384a892c8519bfe271682424b1e1a3a0 -> FETCH_HEAD
+Submodule path 'modules/mavlink': checked out '288b907c384a892c8519bfe271682424b1e1a3a0'
+Submodule path 'modules/waf': checked out '35eadbb64e2052099a853b571e507c33032b392c'

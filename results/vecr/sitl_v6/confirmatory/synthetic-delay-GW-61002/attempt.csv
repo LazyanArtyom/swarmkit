@@ -1,0 +1,2 @@
+policy,fault,navigation,start_ms,end_ms,phase,reported_complete,covered_m,recoveries,pending_captures
+GW,delay,synthetic_bounded,5009011366,5009024408,FULFILLED,1,20.000000000081123,0,11

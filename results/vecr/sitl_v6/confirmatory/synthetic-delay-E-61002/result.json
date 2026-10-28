@@ -1,0 +1,15 @@
+{
+  "navigation": "synthetic_bounded",
+  "fault": "delay",
+  "policy": "E",
+  "seed": 61002,
+  "run_id": "synthetic-delay-E-61002",
+  "infrastructure_error": "",
+  "start_ms": "5009011745",
+  "end_ms": "5009024774",
+  "phase": "FULFILLED",
+  "reported_complete": "1",
+  "covered_m": "20.000000000081123",
+  "recoveries": "0",
+  "pending_captures": "11"
+}

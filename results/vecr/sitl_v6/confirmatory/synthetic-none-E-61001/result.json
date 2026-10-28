@@ -1,0 +1,15 @@
+{
+  "navigation": "synthetic_bounded",
+  "fault": "none",
+  "policy": "E",
+  "seed": 61001,
+  "run_id": "synthetic-none-E-61001",
+  "infrastructure_error": "",
+  "start_ms": "5008948191",
+  "end_ms": "5008960290",
+  "phase": "FULFILLED",
+  "reported_complete": "1",
+  "covered_m": "20.000000000081123",
+  "recoveries": "0",
+  "pending_captures": "0"
+}

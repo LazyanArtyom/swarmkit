@@ -1,0 +1,8 @@
+{
+  "navigation": "raw",
+  "fault": "none",
+  "policy": "E",
+  "seed": 60001,
+  "run_id": "raw-none-E-60001",
+  "infrastructure_error": "ArduPilot exited at startup"
+}

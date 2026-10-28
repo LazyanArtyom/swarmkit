@@ -1,9 +1,12 @@
 {
   "static": "PASS",
   "chapters": 16,
-  "policy_rows": 78,
+  "historical_policy_rows": 78,
+  "v6_policy_rows": 198,
+  "v6_attempts": 5940,
+  "sitl_attempts": 24,
   "replayed_attempts": 12,
-  "copied_artifacts_verified": 143,
+  "copied_artifacts_verified": 171,
   "external_runtime_resources": 0,
   "browser": "PASS",
   "viewports": [

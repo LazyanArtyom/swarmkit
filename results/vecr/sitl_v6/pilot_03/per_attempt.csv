@@ -1,0 +1,13 @@
+covered_m,end_ms,fault,infrastructure_error,navigation,pending_captures,phase,policy,recoveries,reported_complete,run_id,seed,start_ms
+0,5008124157,none,,raw_mavlink,0,INTERRUPTED,E,0,0,raw-none-E-60001,60001,5008099124
+0,5008124226,none,,raw_mavlink,0,INTERRUPTED,GW,0,0,raw-none-GW-60001,60001,5008099127
+20,5008182168,none,,synthetic_bounded,0,FULFILLED,GW,0,1,synthetic-none-GW-60001,60001,5008175330
+20,5008182298,none,,synthetic_bounded,0,FULFILLED,E,0,1,synthetic-none-E-60001,60001,5008175522
+20,5008241303,delay,,synthetic_bounded,11,FULFILLED,E,0,1,synthetic-delay-E-60001,60001,5008233491
+20,5008241459,delay,,synthetic_bounded,10,FULFILLED,GW,0,1,synthetic-delay-GW-60001,60001,5008233440
+20,5008323853,multi_gap,,synthetic_bounded,0,FULFILLED,GW,1,1,synthetic-multi_gap-GW-60001,60001,5008292457
+20,5008326411,multi_gap,,synthetic_bounded,0,FULFILLED,E,1,1,synthetic-multi_gap-E-60001,60001,5008292658
+9.9171,5008384882,command_rejected,,synthetic_bounded,0,INTERRUPTED,GW,0,0,synthetic-command_rejected-GW-60001,60001,5008375055
+10.743,5008387321,command_rejected,,synthetic_bounded,0,INTERRUPTED,E,0,0,synthetic-command_rejected-E-60001,60001,5008377566
+20,5008441877,land_override,,synthetic_bounded,0,INTERRUPTED,GW,0,0,synthetic-land_override-GW-60001,60001,5008436010
+20,5008444412,land_override,,synthetic_bounded,0,INTERRUPTED,E,0,0,synthetic-land_override-E-60001,60001,5008438551

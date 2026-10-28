@@ -1,0 +1,33 @@
+{
+  "protocol": "v6-sitl",
+  "mode": "pilot",
+  "status": "COMPLETE",
+  "assignments": [
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "GW",
+      "seed": 60001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "E",
+      "seed": 60001
+    }
+  ],
+  "source_revision": "ce09d3b47d54959eb86101c251d9f2c3ea62be40",
+  "source_patch_sha256": "3cdf76314372d87650dc584c7ca0b777c63f9bb4bd2c556de58150f519708e93",
+  "agent_binary_sha256": "5fb28f7ddc4d7702d48963c3fcfff5feec154721317e4accc9d610392e8d7540",
+  "ardupilot_revision": "fb773567896014da007bca58358704d4a0d8516f",
+  "ardupilot_binary_sha256": "d07af53d9a2a5fb0c980cbab41057ff4273195ffb32d16cfcc6b7e8e1ff68efd",
+  "runner_sha256": "42db5eccd7daa6eff90b134a5fa072b4c7637715a11f1b7f3d965a26e315fd92",
+  "workers": 2,
+  "clock_domain": "CLOCK_MONOTONIC_RAW",
+  "clock_probe_ms": [
+    5007932976.894583,
+    5007933608,
+    5007933608.81575
+  ],
+  "completed_rows": 2
+}

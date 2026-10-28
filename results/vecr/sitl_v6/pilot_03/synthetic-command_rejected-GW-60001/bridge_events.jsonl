@@ -1,0 +1,87 @@
+{"time_ms": 5008324968.049583, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008325853.598166, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Barometer 1 calibration complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008325853.598166, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Barometer 2 calibration complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008326377.907208, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "ArduPilot Ready", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008326377.907208, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "AHRS: DCM active", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008326675.609416, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "RC7: SaveWaypoint LOW", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008327939.929874, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008328384.133541, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 initialised", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008328384.133541, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 initialised", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008328384.133541, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "AHRS: EKF3 active", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008329727.901626, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 tilt alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008329727.901626, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 tilt alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008329827.8545, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 MAG0 initial yaw alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008329827.8545, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 MAG0 initial yaw alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008330937.564626, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008333734.5825405, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "GPS 1: probing for u-blox at 230400 baud", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008333753.62075, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "GPS 1: detected u-blox", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008333942.304915, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008336944.99775, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008337985.6985, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008337985.6985, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008337985.6985, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: AHRS: waiting for home", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008339947.418125, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008339992.900125, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008339992.900125, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008339992.900125, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: AHRS: waiting for home", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008341992.321041, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008341992.321041, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008341992.321041, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: AHRS: waiting for home", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008342954.625125, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008343955.155291, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 origin set", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008343981.7284155, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Field Elevation Set: 100m", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008344000.367416, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008344000.367416, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008344000.367416, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008344141.868834, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 origin set", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008345951.303708, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008345996.688833, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008345996.688833, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008345996.688833, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008348000.490042, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008348000.490042, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008348961.195708, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008350005.746916, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008350005.746916, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008351958.86, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008352005.663458, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008352005.663458, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008354009.754291, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008354009.754291, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008354386.25375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "PreArm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008354960.50575, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008356012.545041, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008356012.545041, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008357963.420458, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008358016.534583, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008358016.534583, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008360022.362291, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008360022.362291, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008360963.985791, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008362025.867001, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008362025.867001, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008363966.274625, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008364030.6328745, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008364030.6328745, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008365352.07875, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 is using GPS", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008365554.4383745, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 is using GPS", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008366035.545416, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008366035.545416, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008366968.779666, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008366991.666375, "message": {"mavpackettype": "COMMAND_ACK", "command": 22, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008369970.697582, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008371725.93275, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 MAG0 in-flight yaw alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008371725.93275, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 MAG0 in-flight yaw alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 5008372976.794166, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008374994.7895, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008374994.7895, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008374994.7895, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008374994.7895, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008374994.7895, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008374994.7895, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008375076.5182905, "message": {"mavpackettype": "COMMAND_ACK", "command": 178, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008375084.968416, "message": {"mavpackettype": "COMMAND_ACK", "command": 192, "result": 3, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008375594.7995825, "message": {"mavpackettype": "COMMAND_ACK", "command": 178, "result": 0, "progress": 0, "result_param2": 0, "target_system": 245, "target_component": 191}}
+{"time_ms": 5008375977.268708, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008378980.493708, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 5008381987.2115, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}

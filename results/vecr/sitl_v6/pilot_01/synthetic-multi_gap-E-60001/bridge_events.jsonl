@@ -1,0 +1,218 @@
+{"time_ms": 711176988.661291, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711178115.8946661, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Calibrating barometer", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711179722.541458, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Barometer 1 calibration complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711179722.541458, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Barometer 2 calibration complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711179975.7615, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711180246.798125, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "ArduPilot Ready", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711180246.798125, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "AHRS: DCM active", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711182252.392791, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 initialised", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711182252.392791, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 initialised", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711182260.064125, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "AHRS: EKF3 active", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711182961.296291, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711183597.175375, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 tilt alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711183604.700625, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 tilt alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711183684.833541, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 MAG0 initial yaw alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711183692.4489161, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 MAG0 initial yaw alignment complete", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711185966.447708, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711187544.34575, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "GPS 1: probing for u-blox at 230400 baud", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711187561.115416, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "GPS 1: detected u-blox", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711188965.567375, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711191819.389125, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711191819.389125, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711191819.389125, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711191819.389125, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: AHRS: waiting for home", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711191969.1852909, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711193814.216916, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711193814.216916, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711193814.216916, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711193814.216916, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: AHRS: waiting for home", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711194970.862875, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711195815.71025, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711195815.71025, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711195815.71025, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711195815.71025, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: AHRS: waiting for home", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711197756.326625, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 origin set", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711197823.421875, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711197823.421875, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711197823.421875, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711197823.421875, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711197844.475416, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Field Elevation Set: 100m", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711197957.314166, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 origin set", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711197972.538083, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711199820.3341249, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711199820.3341249, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711199820.3341249, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Gyros inconsistent", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711199820.3341249, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711200976.209, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711201827.7883329, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711201827.7883329, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711201827.7883329, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711203828.723375, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711203828.723375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711203828.723375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711203976.70375, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711205831.385375, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711205831.385375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711205831.385375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711206248.539708, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "PreArm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711206248.539708, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "PreArm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711206987.879125, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711207835.1666659, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711207835.1666659, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711207835.1666659, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711209845.3223331, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711209845.3223331, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711209845.3223331, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711209989.932583, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711211842.588, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711211842.588, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711211842.588, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711212988.1392499, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711213844.36225, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711213844.36225, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711213844.36225, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711215855.2828751, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711215855.2828751, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711215855.2828751, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711215992.479583, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711217853.699708, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711217853.699708, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711217853.699708, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: Need Position Estimate", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711219000.2197499, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711219365.9569999, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU1 is using GPS", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711219365.9569999, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "EKF3 IMU0 is using GPS", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711219855.505291, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711219855.505291, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711221856.252, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711221856.252, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711222009.135083, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711223861.9235829, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711223861.9235829, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711225003.9447911, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711225866.030708, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711225866.030708, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711227870.822375, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711227870.822375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711228007.914166, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711229873.3965, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711229873.3965, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711231016.468375, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711231874.837, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711231874.837, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711233877.132375, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711233877.132375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711234020.331791, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711235878.919416, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711235878.919416, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711237026.804041, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711237264.815833, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "PreArm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711237879.836041, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711237879.836041, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711239881.8744581, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711239881.8744581, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711240031.516875, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711241883.00925, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711241883.00925, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711243034.7904999, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711243883.6431249, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711243883.6431249, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711245891.431416, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711245891.431416, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711246034.621416, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711247886.2302079, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711247886.2302079, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711249040.848166, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711249889.22225, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711249889.22225, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711251894.5170829, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711251894.5170829, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711252042.426875, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711253903.985166, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711253903.985166, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711255047.119666, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711255901.82375, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711255901.82375, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711257909.107291, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711257909.107291, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711258046.180166, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711259916.573041, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711259916.573041, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711261047.98175, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711261918.691708, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711261918.691708, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711263924.880875, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711263924.880875, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711264049.593375, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711265931.918583, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711265931.918583, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711267052.332, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711267934.5800409, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711267934.5800409, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711268277.380541, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "PreArm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711269935.747916, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711269935.747916, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711270054.744666, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711271940.2435, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711271940.2435, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711273058.541, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711273950.63825, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711273950.63825, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711275944.9265, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711275944.9265, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711276060.097125, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711277946.185583, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711277946.185583, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711279066.2199581, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711279947.614541, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711279947.614541, "message": {"mavpackettype": "STATUSTEXT", "severity": 2, "text": "Arm: RC not found", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711280898.836916, "message": {"mavpackettype": "STATUSTEXT", "severity": 7, "text": "RCInput: decoding UDP (Pulses)", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711281175.96875, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "RC7: SaveWaypoint LOW", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711281950.2594581, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711281950.2594581, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711282043.504583, "message": {"mavpackettype": "COMMAND_ACK", "command": 22, "result": 4, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711282064.022166, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711285066.879833, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711288077.1376661, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711291071.6879159, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711291877.7703329, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Disarming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711292046.459875, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711292046.459875, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711294078.773041, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711297077.67625, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711300079.56725, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711301980.4333329, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Disarming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711302044.6154159, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711302044.6154159, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711303086.366541, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711306095.9146249, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711309104.801125, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711311990.11925, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Disarming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711312059.639958, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711312059.639958, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711312107.91575, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711315113.897583, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711318121.042, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711321118.1637911, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711321986.4692501, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Disarming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711322056.82075, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711322056.82075, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711324120.436791, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711327123.926875, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711330135.849916, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711332098.111083, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Disarming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711333065.370708, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711333065.370708, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711333132.60225, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711336135.941791, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711339145.958375, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711342143.82725, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711342999.458583, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Disarming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711343069.126791, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711343069.126791, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711345151.688583, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711348153.796708, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711351155.875833, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711353097.9995, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Disarming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711354065.938458, "message": {"mavpackettype": "COMMAND_ACK", "command": 400, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}
+{"time_ms": 711354065.938458, "message": {"mavpackettype": "STATUSTEXT", "severity": 6, "text": "Arming motors", "id": 0, "chunk_seq": 0}}
+{"time_ms": 711354168.580166, "message": {"mavpackettype": "COMMAND_ACK", "command": 511, "result": 0, "progress": 0, "result_param2": 0, "target_system": 255, "target_component": 190}}

@@ -1,0 +1,11 @@
+Waf: Entering directory `/private/tmp/swarmkit-ardupilot-v6/build/sitl'
+Embedding file locations.txt:Tools/autotest/locations.txt
+Embedding file models/Callisto.json:Tools/autotest/models/Callisto.json
+Embedding file models/freestyle.json:Tools/autotest/models/freestyle.json
+Embedding file models/plane-3d.parm:Tools/autotest/models/plane-3d.parm
+Embedding file models/plane.parm:Tools/autotest/models/plane.parm
+Embedding file models/skywalker_2013.json:Tools/autotest/models/skywalker_2013.json
+Embedding file models/xplane_heli.json:Tools/autotest/models/xplane_heli.json
+Embedding file models/xplane_plane.json:Tools/autotest/models/xplane_plane.json
+Waf: Leaving directory `/private/tmp/swarmkit-ardupilot-v6/build/sitl'
+source not found: 'modules/littlefs/lfs.c' in bld(source=['modules/littlefs/lfs.c', 'modules/littlefs/lfs_util.c', 'modules/littlefs/bd/lfs_filebd.c'], target='littlefs', meths=['process_rule', 'process_source', 'apply_link', 'process_use', 'propagate_uselib_vars', 'apply_incpaths', 'set_macosx_deployment_target'], features=['c', 'cstlib'], path=/private/tmp/swarmkit-ardupilot-v6, idx=1, tg_idx_count=1, _name='littlefs', defines=['LFS_NO_DEBUG', 'LFS_NO_WARN', 'LFS_NO_ERROR', 'LFS_NO_ASSERT'], cflags=['-Wno-format-security', '-Wno-format', '-Wno-format-extra-args', '-Wno-shadow', '-Wno-unused-function', '-Wno-missing-declarations'], typ='stlib', posted=True) in /private/tmp/swarmkit-ardupilot-v6

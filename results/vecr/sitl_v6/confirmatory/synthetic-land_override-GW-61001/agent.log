@@ -1,0 +1,4 @@
+[2026-10-28 01:53:39.760] [info] MavlinkBackend: listening on 127.0.0.1:52097 target_sys=1 target_comp=1
+[2026-10-28 01:53:40.497] [warning] MavlinkBackend: MAV_CMD_DO_REPOSITION unsupported for drone=drone-1, falling back to SET_POSITION_TARGET_GLOBAL_INT
+[2026-10-28 01:53:44.978] [warning] CommandArbiter: authority of 'test-client' on drone 'drone-1' expired
+INTERRUPTED autopilot safety mode active

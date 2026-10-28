@@ -1,0 +1,4 @@
+[2026-10-28 01:44:40.647] [info] MavlinkBackend: listening on 127.0.0.1:64459 target_sys=1 target_comp=1
+[2026-10-28 01:44:41.307] [warning] MavlinkBackend: MAV_CMD_DO_REPOSITION unsupported for drone=drone-1, falling back to SET_POSITION_TARGET_GLOBAL_INT
+[2026-10-28 01:44:45.786] [warning] CommandArbiter: authority of 'test-client' on drone 'drone-1' expired
+FULFILLED edge obligation verified

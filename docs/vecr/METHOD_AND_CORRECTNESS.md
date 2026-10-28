@@ -95,3 +95,15 @@ wait. These assumptions select a target; only accepted observations establish
 coverage. See [the derivation and limits](RECOVERY_MODEL_V6.md) and the separately
 versioned [v6 protocol](SIMULATION_PROTOCOL_V6.md). No new result is implied by the
 existence of the policy or its restricted travel-minimum calculation.
+
+
+## Completed v6 evidence
+
+The [v6 validation report](FINAL_VALIDATION_V6.md) records the 5,940 primary
+trials and 200 client-reuse trials. E does not improve completion over the strong
+GW comparator in this matrix and often travels farther. Bounded waiting helps
+delayed metadata but wastes time when captures were never acquired. These findings
+limit the claim; the conditional constraint is not an empirical dominance theorem.
+See the [updated literature assessment](NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md).
+ArduPilot qualification is separately versioned; native MAVLink accuracy is never
+reclassified as a hard bound and production recovery remains disabled.

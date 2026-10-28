@@ -1,0 +1,48 @@
+[Errno 61] Connection refused sleeping
+[Errno 61] Connection refused sleeping
+[Errno 61] Connection refused sleeping
+[Errno 61] Connection refused sleeping
+1 / 24 {'navigation': 'raw_mavlink', 'fault': 'none', 'policy': 'E', 'seed': 61001, 'run_id': 'raw-none-E-61001', 'infrastructure_error': '', 'start_ms': '5008872000', 'end_ms': '5008897009', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '0', 'recoveries': '0', 'pending_captures': '0'}
+2 / 24 {'navigation': 'raw_mavlink', 'fault': 'none', 'policy': 'GW', 'seed': 61002, 'run_id': 'raw-none-GW-61002', 'infrastructure_error': '', 'start_ms': '5008872006', 'end_ms': '5008897040', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '0', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+[Errno 61] Connection refused sleeping
+3 / 24 {'navigation': 'raw_mavlink', 'fault': 'none', 'policy': 'E', 'seed': 61002, 'run_id': 'raw-none-E-61002', 'infrastructure_error': '', 'start_ms': '5008872001', 'end_ms': '5008897078', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '0', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+4 / 24 {'navigation': 'raw_mavlink', 'fault': 'none', 'policy': 'GW', 'seed': 61001, 'run_id': 'raw-none-GW-61001', 'infrastructure_error': '', 'start_ms': '5008872004', 'end_ms': '5008897113', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '0', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+5 / 24 {'navigation': 'synthetic_bounded', 'fault': 'none', 'policy': 'E', 'seed': 61002, 'run_id': 'synthetic-none-E-61002', 'infrastructure_error': '', 'start_ms': '5008948241', 'end_ms': '5008960265', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+6 / 24 {'navigation': 'synthetic_bounded', 'fault': 'none', 'policy': 'GW', 'seed': 61001, 'run_id': 'synthetic-none-GW-61001', 'infrastructure_error': '', 'start_ms': '5008948201', 'end_ms': '5008960264', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+7 / 24 {'navigation': 'synthetic_bounded', 'fault': 'none', 'policy': 'E', 'seed': 61001, 'run_id': 'synthetic-none-E-61001', 'infrastructure_error': '', 'start_ms': '5008948191', 'end_ms': '5008960290', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+8 / 24 {'navigation': 'synthetic_bounded', 'fault': 'none', 'policy': 'GW', 'seed': 61002, 'run_id': 'synthetic-none-GW-61002', 'infrastructure_error': '', 'start_ms': '5008948151', 'end_ms': '5008960583', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+9 / 24 {'navigation': 'synthetic_bounded', 'fault': 'delay', 'policy': 'GW', 'seed': 61002, 'run_id': 'synthetic-delay-GW-61002', 'infrastructure_error': '', 'start_ms': '5009011366', 'end_ms': '5009024408', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '11'}
+[Errno 61] Connection refused sleeping
+10 / 24 {'navigation': 'synthetic_bounded', 'fault': 'delay', 'policy': 'GW', 'seed': 61001, 'run_id': 'synthetic-delay-GW-61001', 'infrastructure_error': '', 'start_ms': '5009011369', 'end_ms': '5009024446', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '10'}
+[Errno 61] Connection refused sleeping
+11 / 24 {'navigation': 'synthetic_bounded', 'fault': 'delay', 'policy': 'E', 'seed': 61002, 'run_id': 'synthetic-delay-E-61002', 'infrastructure_error': '', 'start_ms': '5009011745', 'end_ms': '5009024774', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '11'}
+[Errno 61] Connection refused sleeping
+12 / 24 {'navigation': 'synthetic_bounded', 'fault': 'delay', 'policy': 'E', 'seed': 61001, 'run_id': 'synthetic-delay-E-61001', 'infrastructure_error': '', 'start_ms': '5009011471', 'end_ms': '5009024817', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '0', 'pending_captures': '11'}
+[Errno 61] Connection refused sleeping
+13 / 24 {'navigation': 'synthetic_bounded', 'fault': 'multi_gap', 'policy': 'GW', 'seed': 61002, 'run_id': 'synthetic-multi_gap-GW-61002', 'infrastructure_error': '', 'start_ms': '5009075625', 'end_ms': '5009112040', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '1', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+14 / 24 {'navigation': 'synthetic_bounded', 'fault': 'multi_gap', 'policy': 'GW', 'seed': 61001, 'run_id': 'synthetic-multi_gap-GW-61001', 'infrastructure_error': '', 'start_ms': '5009075571', 'end_ms': '5009112197', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '1', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+15 / 24 {'navigation': 'synthetic_bounded', 'fault': 'multi_gap', 'policy': 'E', 'seed': 61002, 'run_id': 'synthetic-multi_gap-E-61002', 'infrastructure_error': '', 'start_ms': '5009075948', 'end_ms': '5009115088', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '1', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+16 / 24 {'navigation': 'synthetic_bounded', 'fault': 'multi_gap', 'policy': 'E', 'seed': 61001, 'run_id': 'synthetic-multi_gap-E-61001', 'infrastructure_error': '', 'start_ms': '5009075923', 'end_ms': '5009115279', 'phase': 'FULFILLED', 'reported_complete': '1', 'covered_m': '20.000000000081123', 'recoveries': '1', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+17 / 24 {'navigation': 'synthetic_bounded', 'fault': 'command_rejected', 'policy': 'GW', 'seed': 61001, 'run_id': 'synthetic-command_rejected-GW-61001', 'infrastructure_error': '', 'start_ms': '5009163238', 'end_ms': '5009178264', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '10.000815731356518', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+18 / 24 {'navigation': 'synthetic_bounded', 'fault': 'command_rejected', 'policy': 'GW', 'seed': 61002, 'run_id': 'synthetic-command_rejected-GW-61002', 'infrastructure_error': '', 'start_ms': '5009163364', 'end_ms': '5009178401', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '10.050589033088176', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+19 / 24 {'navigation': 'synthetic_bounded', 'fault': 'command_rejected', 'policy': 'E', 'seed': 61002, 'run_id': 'synthetic-command_rejected-E-61002', 'infrastructure_error': '', 'start_ms': '5009166463', 'end_ms': '5009181545', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '10.526298696244272', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+20 / 24 {'navigation': 'synthetic_bounded', 'fault': 'command_rejected', 'policy': 'E', 'seed': 61001, 'run_id': 'synthetic-command_rejected-E-61001', 'infrastructure_error': '', 'start_ms': '5009166318', 'end_ms': '5009181599', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '9.8398305991219353', 'recoveries': '0', 'pending_captures': '0'}
+[Errno 61] Connection refused sleeping
+21 / 24 {'navigation': 'synthetic_bounded', 'fault': 'land_override', 'policy': 'GW', 'seed': 61001, 'run_id': 'synthetic-land_override-GW-61001', 'infrastructure_error': '', 'start_ms': '5009229487', 'end_ms': '5009235394', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '10.097627451423973', 'recoveries': '0', 'pending_captures': '0'}
+22 / 24 {'navigation': 'synthetic_bounded', 'fault': 'land_override', 'policy': 'GW', 'seed': 61002, 'run_id': 'synthetic-land_override-GW-61002', 'infrastructure_error': '', 'start_ms': '5009229595', 'end_ms': '5009235409', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '10.093334948292316', 'recoveries': '0', 'pending_captures': '0'}
+23 / 24 {'navigation': 'synthetic_bounded', 'fault': 'land_override', 'policy': 'E', 'seed': 61001, 'run_id': 'synthetic-land_override-E-61001', 'infrastructure_error': '', 'start_ms': '5009232741', 'end_ms': '5009238596', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '10.28628130368037', 'recoveries': '0', 'pending_captures': '0'}
+24 / 24 {'navigation': 'synthetic_bounded', 'fault': 'land_override', 'policy': 'E', 'seed': 61002, 'run_id': 'synthetic-land_override-E-61002', 'infrastructure_error': '', 'start_ms': '5009232806', 'end_ms': '5009238658', 'phase': 'INTERRUPTED', 'reported_complete': '0', 'covered_m': '10.173714120932804', 'recoveries': '0', 'pending_captures': '0'}

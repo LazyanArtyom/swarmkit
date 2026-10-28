@@ -1,0 +1,32 @@
+{
+  "navigation": "synthetic",
+  "fault": "multi_gap",
+  "policy": "GW",
+  "seed": 61002,
+  "ardupilot_command": [
+    "/private/tmp/swarmkit-ardupilot-v6/build/sitl/bin/arducopter",
+    "--model",
+    "+",
+    "--home",
+    "40,44,100,0",
+    "--speedup",
+    "1",
+    "--wipe",
+    "--defaults",
+    "/Users/artyom/Documents/MyProjects/swarmkit/results/vecr/sitl_v6/confirmatory/synthetic-multi_gap-GW-61002/defaults.parm",
+    "--serial0",
+    "tcp:24260",
+    "--base-port",
+    "24260",
+    "--instance",
+    "113",
+    "--rc-in-port",
+    "24272",
+    "--sim-port-in",
+    "24273",
+    "--sim-port-out",
+    "24274",
+    "--irlock-port",
+    "24275"
+  ]
+}

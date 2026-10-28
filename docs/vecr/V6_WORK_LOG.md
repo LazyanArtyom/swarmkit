@@ -124,3 +124,13 @@ dispatch. Regression emulates the submode reset for both reposition ACK and fall
 setpoint, plus post-dispatch speed refusal (explicit FAILED, vehicle may still move).
 V6 regression suite now passes 104 assertions in five cases. Pilot_04 uses the
 corrected backend; each runner now freezes its executable before assignments.
+
+### Completed qualification
+
+Pilot_04 passed all twelve reconstructions after the speed fix. The frozen final
+SITL campaign at df65c61f57fade8ba88f877329ffd31d0ecbe175 completed 24/24
+assignments: 12 fulfilled and 12 intended negative outcomes, zero infrastructure
+errors. Independent checks verified 1,058 accepted footprints and four sampled
+re-entry dwells. The assumed upstream SIM_STATE age and continuous dwell remain
+unproven; positive sensing is explicitly synthetic. The full report preserves
+all 62 assigned SITL records (51 executed attempts and 11 infrastructure failures).

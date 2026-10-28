@@ -1,0 +1,2 @@
+policy,fault,navigation,start_ms,end_ms,phase,reported_complete,covered_m,recoveries,pending_captures
+E,land_override,synthetic_bounded,5009232741,5009238596,INTERRUPTED,0,10.28628130368037,0,0

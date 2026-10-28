@@ -1,0 +1,15 @@
+{
+  "navigation": "synthetic_bounded",
+  "fault": "command_rejected",
+  "policy": "GW",
+  "seed": 61001,
+  "run_id": "synthetic-command_rejected-GW-61001",
+  "infrastructure_error": "",
+  "start_ms": "5009163238",
+  "end_ms": "5009178264",
+  "phase": "INTERRUPTED",
+  "reported_complete": "0",
+  "covered_m": "10.000815731356518",
+  "recoveries": "0",
+  "pending_captures": "0"
+}

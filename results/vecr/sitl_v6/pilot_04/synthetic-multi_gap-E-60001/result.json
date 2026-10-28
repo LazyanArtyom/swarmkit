@@ -1,0 +1,15 @@
+{
+  "navigation": "synthetic_bounded",
+  "fault": "multi_gap",
+  "policy": "E",
+  "seed": 60001,
+  "run_id": "synthetic-multi_gap-E-60001",
+  "infrastructure_error": "",
+  "start_ms": "5008703330",
+  "end_ms": "5008742388",
+  "phase": "FULFILLED",
+  "reported_complete": "1",
+  "covered_m": "20.000000000081123",
+  "recoveries": "1",
+  "pending_captures": "0"
+}

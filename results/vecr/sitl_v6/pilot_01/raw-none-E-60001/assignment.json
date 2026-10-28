@@ -1,0 +1,22 @@
+{
+  "navigation": "raw",
+  "fault": "none",
+  "policy": "E",
+  "seed": 60001,
+  "ardupilot_command": [
+    "/private/tmp/swarmkit-ardupilot-v6/build/sitl/bin/arducopter",
+    "--model",
+    "+",
+    "--home",
+    "40,44,100,0",
+    "--speedup",
+    "1",
+    "--wipe",
+    "--defaults",
+    "/Users/artyom/Documents/MyProjects/swarmkit/results/vecr/sitl_v6/pilot_01/raw-none-E-60001/defaults.parm",
+    "--serial0",
+    "tcp:54207",
+    "--base-port",
+    "54208"
+  ]
+}

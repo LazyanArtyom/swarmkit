@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 
 import markdown
+from v6_reader import components as v6_components
 
 SITE = Path(__file__).resolve().parents[1]
 ROOT = SITE.parent
@@ -134,7 +135,7 @@ def diagrams():
         360,
         72,
         "SimBackend in this experiment",
-        "MAVLink backend exists; SITL unexecuted",
+        "SITL qualification reported separately",
     )
     svg(
         "architecture",
@@ -733,7 +734,7 @@ def build():
         ),
         (
             "Is the baseline fair?",
-            "Both policies share verification, sensor generation, dynamics, faults, thresholds and safety. B2 is coverage-aware and retains accepted images. Its different choice is full-edge restart at A. This controlled comparison does not establish superiority over practical resume policies, which require additional comparisons.",
+            "The v6 comparison uses nine policies with the same verifier, observations, faults and safety. It adds departure resumption, fixed rewind, simple gap targets and waiting ablations. GW is a strong comparator: E adds travel without extra completions in this matrix. These are controlled simulator implementations, not complete third-party systems.",
         ),
         (
             "Does the completed campaign establish scientific novelty?",
@@ -741,15 +742,15 @@ def build():
         ),
         (
             "What are the strongest quantitative findings?",
-            "M03–M05 each have 100 true and reported successes under both policies. VECR uses 25.3–27.8% less modeled travel, with paired intervals in Chapter 8. This is conditional on those synthetic conditions.",
+            "In v6, waiting saves 6.227 m under delayed evidence; E and GW are identical there. In multiple gaps, E adds 6.240 m versus GW, with no completion gain. Gap-aware policies complete 30/30 where resume/rewind report 0/30. Historical v5.1 findings remain separately labeled.",
         ),
         (
-            "Why is VECR recall lower?",
+            "Why was historical v5.1 recall lower?",
             "It actually returned to B in more uncertain-sensor trials, enlarging its true-completion denominator. Persistent missing evidence still prevented certification. Reported totals are 794 VECR versus 700 B2 across honest primary cases, while recall is 72.58% versus 87.50%.",
         ),
         (
             "Does zero false fulfillment prove safety?",
-            "No. It is conditional on the declared model and truthful bounded sensor evidence. All 400 deliberately dishonest controls falsely fulfilled. A sensor authentication boundary cannot verify physical truth.",
+            "No. Zero false fulfillment in the 5,400 honest v6 attempts is conditional on truthful bounded sensor evidence and this model. Dishonest controls expose that boundary; authentication cannot verify physical truth. The historical v5.1 dishonest controls are a separate dataset.",
         ),
         (
             "Where does correction run?",
@@ -761,11 +762,11 @@ def build():
         ),
         (
             "Is this real camera or flight validation?",
-            "No. The camera model is a flat, full-strip geometric abstraction. Simulator measurements, SITL and real hardware are distinct evidence levels. The SITL chapter currently has no executed trials.",
+            "The primary campaign uses SimBackend. Chapter 15 separately reports ArduPilot SITL with native-accuracy negative controls and explicitly synthetic bounded navigation/camera observations. No real camera or physical aircraft claim follows.",
         ),
         (
             "What happened to earlier evidence?",
-            "All historical research stays frozen. This reader presents the new v5.1 replication after both endpoint fixes. Original v5 data and analysis remain separately identified; the datasets are not pooled.",
+            "All historical research stays frozen. The current nine-policy campaign is v6; v5.1 is retained as historical evidence with its own figures and replay. Pilots and the 20-seed protocol-deviation run remain separate and are not pooled.",
         ),
     ]
     components["defense_questions"] = (
@@ -783,6 +784,14 @@ def build():
     components["trace_explorer"] = (
         f"""<div class="trace-explorer"><div class="trace-toolbar"><label>Recorded condition<select id="replayCase">{options}</select></label><button id="playReplay" class="button">Play replay</button><button id="resetReplay" class="button secondary">Reset</button><label>Speed<select id="replaySpeed"><option value="1">1×</option><option value="4" selected>4×</option><option value="10">10×</option></select></label></div><div class="trace-legend"><span class="legend-b2">B2 · full restart</span><span class="legend-p">VECR · targeted</span><span>Faint line: complete recorded path · ×: accepted target</span></div><svg id="replayPlot" viewBox="0 0 880 370" role="img" aria-labelledby="replayTitle replayDesc"><title id="replayTitle">Recorded physical trajectories</title><desc id="replayDesc">Use the time slider to compare B2 and VECR at the same simulation time.</desc><g id="replayDrawing"></g></svg><label class="time-control">Simulation time <output id="replayTime">0.0 s</output><input id="replaySlider" type="range" min="100" max="40000" step="100" value="100" aria-label="Replay simulation time"></label><div id="replayMetrics" class="replay-metrics" aria-live="off"></div><div class="trace-events"><h4>Recorded event timeline</h4><p>Click an event to inspect that time. Only phase, command and fault events are shown here; complete logs are in the download.</p><div id="eventList"></div></div><noscript><p>Replay controls require JavaScript. The original trajectory figure and downloadable traces remain available.</p></noscript></div>"""
     )
+    current, new_copies = v6_components(SITE, ROOT, table, image_figure)
+    components.update(current)
+    metadata_path = ASSETS / "research-metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["edition_date"] = "2026-10-28"
+    metadata["current_experiment"] = "ce09d3b47d54959eb86101c251d9f2c3ea62be40"
+    metadata["copied_evidence"].update(new_copies)
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
     source = (SITE / "source/dissertation.md").read_text()
 
     def expand(m):

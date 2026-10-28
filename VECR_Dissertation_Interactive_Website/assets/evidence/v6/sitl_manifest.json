@@ -1,0 +1,167 @@
+{
+  "protocol": "v6-sitl",
+  "mode": "final",
+  "status": "COMPLETE",
+  "assignments": [
+    {
+      "navigation": "raw",
+      "fault": "none",
+      "policy": "GW",
+      "seed": 61001
+    },
+    {
+      "navigation": "raw",
+      "fault": "none",
+      "policy": "GW",
+      "seed": 61002
+    },
+    {
+      "navigation": "raw",
+      "fault": "none",
+      "policy": "E",
+      "seed": 61001
+    },
+    {
+      "navigation": "raw",
+      "fault": "none",
+      "policy": "E",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "GW",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "GW",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "E",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "E",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "delay",
+      "policy": "GW",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "delay",
+      "policy": "GW",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "delay",
+      "policy": "E",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "delay",
+      "policy": "E",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "multi_gap",
+      "policy": "GW",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "multi_gap",
+      "policy": "GW",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "multi_gap",
+      "policy": "E",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "multi_gap",
+      "policy": "E",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "command_rejected",
+      "policy": "GW",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "command_rejected",
+      "policy": "GW",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "command_rejected",
+      "policy": "E",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "command_rejected",
+      "policy": "E",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "land_override",
+      "policy": "GW",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "land_override",
+      "policy": "GW",
+      "seed": 61002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "land_override",
+      "policy": "E",
+      "seed": 61001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "land_override",
+      "policy": "E",
+      "seed": 61002
+    }
+  ],
+  "source_revision": "df65c61f57fade8ba88f877329ffd31d0ecbe175",
+  "source_patch_sha256": "cca03524cc1268437f9daa508ec093dd879acd1414f871b55818d9a4edcafd03",
+  "agent_binary_sha256": "1f3be471f9fb3aa78db63329947cd9bea0154d0b19fa2d5f156e32666bc25409",
+  "ardupilot_revision": "fb773567896014da007bca58358704d4a0d8516f",
+  "ardupilot_binary_sha256": "d07af53d9a2a5fb0c980cbab41057ff4273195ffb32d16cfcc6b7e8e1ff68efd",
+  "runner_sha256": "5a9744d33b4b3544307f2d5c4924adc2aca182b64a9f0b1ff876bb4892255ca1",
+  "frozen_binary_path": "/private/tmp/swarmkit-v6-sitl-confirmatory-frozen",
+  "dirty_experimental_source": "",
+  "workers": 4,
+  "clock_domain": "CLOCK_MONOTONIC_RAW",
+  "clock_probe_ms": [
+    5008818954.781958,
+    5008819574,
+    5008819575.7825
+  ],
+  "completed_rows": 24
+}

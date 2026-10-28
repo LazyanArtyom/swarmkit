@@ -1,6 +1,6 @@
 {
   "title": "VECR \u00b7 From arrival to verified coverage",
-  "edition_date": "2026-10-26",
+  "edition_date": "2026-10-28",
   "author": {
     "name": "Artyom Lazyan",
     "department": "Models of Computations and Logical Reasoning Department",
@@ -586,6 +586,119 @@
     "representative-traces.zip!/trials/M17-00001-P/trajectory.csv.gz": {
       "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/trajectory.csv.gz",
       "sha256": "28781b4ab828c5574e0143dea6d48dbe71744a11153b22b73dbdaf40615aecee"
+    },
+    "assets/evidence/v6/manifest.json": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/manifest.json",
+      "sha256": "7ca757ba54ec9c4a28adefaabbf05af2dccf75f73420bde6082a942088ef44c0"
+    },
+    "assets/evidence/v6/per_attempt.csv": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/per_attempt.csv",
+      "sha256": "5c67d8b7bc8ff1f4b868ef32e041d8873ed2299ddc08d98053ca6ed25b8e32f7"
+    },
+    "assets/evidence/v6/SHA256SUMS": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/SHA256SUMS",
+      "sha256": "be8876095a537a3e37370449f6016265842f6f47f6d94849f0ddf6aec0472329"
+    },
+    "assets/evidence/v6/summary.json": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/summary.json",
+      "sha256": "17906b55cb8567732519c4a8298e2ee16ce1aa681ae26ab3361b96efaddf10f1"
+    },
+    "assets/evidence/v6/condition_summary.csv": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/condition_summary.csv",
+      "sha256": "ffa6098b2fc8c9b5843fe6a4e77be120ae6e50a126b3e460566e53e364cdf38d"
+    },
+    "assets/evidence/v6/paired_comparisons.csv": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_comparisons.csv",
+      "sha256": "38da7311ae526b7478b31e13476ebef81a1309487d8686bf6d4e6fcc2fdd2bfc"
+    },
+    "assets/evidence/v6/RESULTS.md": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/RESULTS.md",
+      "sha256": "41345c43c5f796ecc030319e8d56f5ac0169c4bf51552290094b02a9f653dae4"
+    },
+    "assets/evidence/v6/FINAL_VALIDATION_V6.md": {
+      "source": "docs/vecr/FINAL_VALIDATION_V6.md",
+      "sha256": "d33e8df8ac60b98afdee61e59037f623480e8b537ba8b5affed83d9e1c0d0c6b"
+    },
+    "assets/evidence/v6/RECOVERY_MODEL_V6.md": {
+      "source": "docs/vecr/RECOVERY_MODEL_V6.md",
+      "sha256": "e5d5874e8b830537e265eeae2af3fc5f833bc17bda9319dd38915e8a2763695e"
+    },
+    "assets/evidence/v6/SIMULATION_PROTOCOL_V6.md": {
+      "source": "docs/vecr/SIMULATION_PROTOCOL_V6.md",
+      "sha256": "df9be781f4520a55ad79e75ee58e91a20a41ef15b60056284a7b8a0212de99a0"
+    },
+    "assets/evidence/v6/NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md": {
+      "source": "docs/vecr/NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md",
+      "sha256": "3b49b5b7b7af2f8f85aaaec1ebeeab6531198f87c77c3fd0ac9ccbc9b0c6c7ae"
+    },
+    "assets/evidence/v6/SITL_PROTOCOL_V6.md": {
+      "source": "docs/vecr/SITL_PROTOCOL_V6.md",
+      "sha256": "3f1fd621b16ecb090ccb40c6bb8ec57c2d7fda4bff21cb41f928d909cda4bce5"
+    },
+    "assets/evidence/v6/SITL_VALIDATION_V6.md": {
+      "source": "docs/vecr/SITL_VALIDATION_V6.md",
+      "sha256": "5dbaef990f18a9a352b9e55695239422a3add30c43f53d5b334d59ae90a9d9b9"
+    },
+    "assets/evidence/v6/client_reuse.json": {
+      "source": "results/vecr/agent_campaign_v6/client_reuse/reuse_comparison.json",
+      "sha256": "b0589feb5d7647efe5594a6fad42118c9886fe4043e7b74f884ca07d9b1ef44a"
+    },
+    "assets/evidence/v6/completion_matrix.svg": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/completion_matrix.svg",
+      "sha256": "6c62d0da27137a61716e7ef0f5f65c38876436f8a310504a32a30e63678f00e5"
+    },
+    "assets/evidence/v6/completion_matrix.png": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/completion_matrix.png",
+      "sha256": "12c2b355a59ade5dbdcb90264d142bac586a7e6fc60d364bee5ffafbd79eac2a"
+    },
+    "assets/evidence/v6/completion_matrix.pdf": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/completion_matrix.pdf",
+      "sha256": "f33de0a9aa916ae01bab11ec5e5a00e7ee912849c8ad8cb98b5289b43c63d141"
+    },
+    "assets/evidence/v6/paired_distance.svg": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_distance.svg",
+      "sha256": "76ecf4996a38de45ed6f5ee8fb94d0dfa55502cf4f4b5338633db0fb1ff4cd44"
+    },
+    "assets/evidence/v6/paired_distance.png": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_distance.png",
+      "sha256": "39132f204f2f690637b34182adbce70eecfcf1aff2a247aac0d1eb9704574dc3"
+    },
+    "assets/evidence/v6/paired_distance.pdf": {
+      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_distance.pdf",
+      "sha256": "cda19f730beba31f6ae61f097a050101b71479f133ae9f7ec69a09c041c2c73a"
+    },
+    "assets/evidence/v6/representative-traces.zip": {
+      "source": "selected unmodified v6 primary trial files",
+      "sha256": "accc05c98421bef015473d4872eb09c2a881b1ba5631bcc4b8950bfc168fa5e2"
+    },
+    "assets/evidence/v6/sitl_reconstructed.csv": {
+      "source": "results/vecr/sitl_v6/confirmatory/analysis/reconstructed.csv",
+      "sha256": "959cb6feeca130863f35221a28d8291c00d8f526e4c30ac37944bf3633ef1b2e"
+    },
+    "assets/evidence/v6/sitl_validation.json": {
+      "source": "results/vecr/sitl_v6/confirmatory/analysis/validation.json",
+      "sha256": "94b45fba9db885131b83fb24446fc40fcb55a65a3a2625a965f16e70939be2ee"
+    },
+    "assets/evidence/v6/sitl_manifest.json": {
+      "source": "results/vecr/sitl_v6/confirmatory/manifest.json",
+      "sha256": "1ef11905883c355f49c56c4ccc8a1a8100a367859720bcfa00ee2df2ea57d82c"
+    },
+    "assets/evidence/v6/sitl_condition_summary.csv": {
+      "source": "results/vecr/sitl_v6/confirmatory/analysis/condition_summary.csv",
+      "sha256": "88ec9536da0f543fae959fa651212ef212232690b029be2804406c1c1fd94e6c"
+    },
+    "assets/evidence/v6/sitl_traces.svg": {
+      "source": "results/vecr/sitl_v6/confirmatory/analysis/sitl_traces.svg",
+      "sha256": "44c81a5ca9ee716831363048f747fd4526020c5833e7c0496b0126c290b55197"
+    },
+    "assets/evidence/v6/sitl_traces.pdf": {
+      "source": "results/vecr/sitl_v6/confirmatory/analysis/sitl_traces.pdf",
+      "sha256": "13449f8a070231f98cca19466dd0949ec8d1d368b06c4874b5e69395a517e34d"
+    },
+    "assets/evidence/v6/sitl_traces.png": {
+      "source": "results/vecr/sitl_v6/confirmatory/analysis/sitl_traces.png",
+      "sha256": "612bea6ad6c784bfb628369b37b30be8732825e95a10355d2baa9bfc635d0901"
     }
-  }
+  },
+  "current_experiment": "ce09d3b47d54959eb86101c251d9f2c3ea62be40"
 }

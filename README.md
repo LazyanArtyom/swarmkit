@@ -54,11 +54,23 @@ recorded trajectory replays and reproducible downloads. It works offline.
 The completed [v5/v5.1 digital-simulation studies](results/vecr/agent_campaign_v5/README.md)
 add attainable midflight recovery, noisy sensor estimates, independent exact-strip
 truth, 5,280 scientific attempts and 80 separate host benchmarks per final version.
-V5.1 repeats the same matrix after two endpoint-correctness fixes. See the current
+V5.1 repeats the same matrix after two endpoint-correctness fixes. See its historical
 [scientific results](results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/reports/SCIENTIFIC_RESULTS.md)
 and [validation gates and limitations](docs/vecr/FINAL_VALIDATION_V5_1.md).
 Previous studies remain frozen and are not pooled with the replication. This is
-agent-backed simulation; SITL and real camera/flight validation remain unfinished.
+agent-backed simulation; it is distinct from the subsequent SITL qualification.
+
+The current [v6 research](results/vecr/agent_campaign_v6/README.md) adds nine fair
+recovery comparators, bounded acquisition-time evidence history, a conditional
+sensing-envelope rule and 5,940 frozen primary attempts. The strongest simple
+baseline matches the derived rule's completion and often travels less; the
+[validation report](docs/vecr/FINAL_VALIDATION_V6.md) includes that negative finding,
+paired intervals, failed attempts and 200 client-reuse trials.
+[ArduPilot SITL v6](results/vecr/sitl_v6/README.md) is a separate qualification
+with native-accuracy negative controls and explicitly synthetic bounded navigation
+and camera observations. Native MAVLink recovery remains disabled; calibrated real
+images and physical aircraft are unvalidated. See the updated
+[literature and contribution assessment](docs/vecr/NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md).
 
 Example (already armed and in a safe guided simulation state):
 

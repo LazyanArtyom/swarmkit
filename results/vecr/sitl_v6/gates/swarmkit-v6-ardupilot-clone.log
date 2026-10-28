@@ -1,0 +1,19 @@
+Cloning into '/private/tmp/swarmkit-ardupilot-v6'...
+Note: switching to 'fb773567896014da007bca58358704d4a0d8516f'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Updating files:  47% (3685/7785)Updating files:  48% (3737/7785)Updating files:  49% (3815/7785)Updating files:  50% (3893/7785)Updating files:  51% (3971/7785)Updating files:  52% (4049/7785)Updating files:  53% (4127/7785)Updating files:  54% (4204/7785)Updating files:  55% (4282/7785)Updating files:  56% (4360/7785)Updating files:  57% (4438/7785)Updating files:  58% (4516/7785)Updating files:  59% (4594/7785)Updating files:  60% (4671/7785)Updating files:  61% (4749/7785)Updating files:  62% (4827/7785)Updating files:  63% (4905/7785)Updating files:  64% (4983/7785)Updating files:  65% (5061/7785)Updating files:  66% (5139/7785)Updating files:  67% (5216/7785)Updating files:  68% (5294/7785)Updating files:  69% (5372/7785)Updating files:  70% (5450/7785)Updating files:  71% (5528/7785)Updating files:  72% (5606/7785)Updating files:  73% (5684/7785)Updating files:  74% (5761/7785)Updating files:  75% (5839/7785)Updating files:  76% (5917/7785)Updating files:  77% (5995/7785)Updating files:  78% (6073/7785)Updating files:  79% (6151/7785)Updating files:  80% (6228/7785)Updating files:  81% (6306/7785)Updating files:  82% (6384/7785)Updating files:  82% (6435/7785)Updating files:  83% (6462/7785)Updating files:  84% (6540/7785)Updating files:  85% (6618/7785)Updating files:  86% (6696/7785)Updating files:  87% (6773/7785)Updating files:  88% (6851/7785)Updating files:  89% (6929/7785)Updating files:  90% (7007/7785)Updating files:  91% (7085/7785)Updating files:  92% (7163/7785)Updating files:  93% (7241/7785)Updating files:  94% (7318/7785)Updating files:  95% (7396/7785)Updating files:  96% (7474/7785)Updating files:  97% (7552/7785)Updating files:  98% (7630/7785)Updating files:  99% (7708/7785)Updating files: 100% (7785/7785)Updating files: 100% (7785/7785), done.

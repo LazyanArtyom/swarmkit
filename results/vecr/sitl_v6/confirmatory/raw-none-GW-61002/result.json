@@ -1,0 +1,15 @@
+{
+  "navigation": "raw_mavlink",
+  "fault": "none",
+  "policy": "GW",
+  "seed": 61002,
+  "run_id": "raw-none-GW-61002",
+  "infrastructure_error": "",
+  "start_ms": "5008872006",
+  "end_ms": "5008897040",
+  "phase": "INTERRUPTED",
+  "reported_complete": "0",
+  "covered_m": "0",
+  "recoveries": "0",
+  "pending_captures": "0"
+}

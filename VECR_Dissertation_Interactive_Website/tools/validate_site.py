@@ -60,7 +60,17 @@ def validate():
         text,
         re.I,
     )
-    assert "Not yet executed" in text and "TBD" in text
+    assert "TBD — not executed" in text and "5,940" in text
+    assert "E has no completion advantage" in text
+    v6_path = SITE / "assets/evidence/v6"
+    with (v6_path / "per_attempt.csv").open() as f:
+        v6_raw = list(csv.DictReader(f))
+    assert len(v6_raw) == 5940 and not any(r["infrastructure_error"] for r in v6_raw)
+    assert sum(int(r["false_complete"]) for r in v6_raw if r["scenario"] not in ["N19", "N20"]) == 0
+    with (v6_path / "condition_summary.csv").open() as f:
+        assert len(list(csv.DictReader(f))) == 198
+    sitl_validation = json.loads((v6_path / "sitl_validation.json").read_text())
+    assert sitl_validation["passes"] == 24 and not sitl_validation["errors"]
     assert not re.search(r"\{\{[^}]+\}\}", text), "unexpanded component"
     metadata = json.loads((SITE / "assets/research-metadata.json").read_text())
     with zipfile.ZipFile(SITE / "assets/evidence/representative-traces.zip") as zipped:
@@ -86,7 +96,10 @@ def validate():
     result = {
         "static": "PASS",
         "chapters": 16,
-        "policy_rows": 78,
+        "historical_policy_rows": 78,
+        "v6_policy_rows": 198,
+        "v6_attempts": 5940,
+        "sitl_attempts": 24,
         "replayed_attempts": 12,
         "copied_artifacts_verified": len(metadata["copied_evidence"]),
         "external_runtime_resources": 0,
@@ -118,7 +131,7 @@ def browser_checks(data, result):
         assert page.locator(".chapter").count() == 16
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.screenshot(path=str(screenshots / "desktop.png"))
-        for name in ["contract", "architecture", "states", "comparison", "evidence"]:
+        for name in ["contract", "architecture", "states", "comparison", "evidence", "recovery_v6"]:
             diagram = page.locator(f'img[src="assets/diagrams/{name}.svg"]')
             diagram.scroll_into_view_if_needed()
             diagram.evaluate("el => el.decode()")

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" role="img" aria-labelledby="title desc">
+<title id="title">Evidence-conditioned recovery: history, target and wait</title><desc id="desc">Conceptual illustration. Retain accepted intervals, find the earliest missing coordinate, compute the conditional target, and wait only at a currently verified endpoint. No future observation is credited.</desc>
+<defs><marker id="tip" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#536d65" stroke-width="1.5"/></marker></defs>
+<rect width="880" height="420" rx="16" fill="#f8faf7"/>
+<g font-family="Arial,sans-serif" fill="#183c36">
+<text x="32" y="34" font-size="14" letter-spacing="1.5">V6 METHOD · CONCEPTUAL, NOT EXPERIMENTAL DATA</text>
+<text x="32" y="73" font-size="18" font-weight="600">1. Retain what the evidence establishes</text>
+<path d="M60 112H820" stroke="#d7e0db" stroke-width="14"/>
+<path d="M60 112H364 M460 112H630 M700 112H820" stroke="#247b66" stroke-width="14"/>
+<path d="M364 112H460 M630 112H700" stroke="#bc783b" stroke-width="14" stroke-dasharray="4 6"/>
+<text x="60" y="143" font-size="13">A</text><text x="350" y="143" font-size="13">g: earliest gap</text><text x="803" y="143" font-size="13">B</text>
+<text x="32" y="185" font-size="18" font-weight="600">2. Choose a target under explicit future-sensing assumptions</text>
+<rect x="32" y="204" width="816" height="82" rx="10" fill="#e3eee7" stroke="#b4c8bd"/>
+<text x="55" y="235" font-size="22">q* = min(p, g − a − vT − 2e + H)</text>
+<text x="55" y="263" font-size="14">If q* is negative: retry at A, with no guaranteed closure. Actual captures decide success.</text>
+<text x="32" y="326" font-size="18" font-weight="600">3. Wait at verified B when metadata may still arrive</text>
+<rect x="32" y="344" width="240" height="48" rx="9" fill="#fff" stroke="#b4c8bd"/>
+<text x="152" y="373" font-size="14" text-anchor="middle">Acquired observation</text>
+<path d="M278 368H326" stroke="#536d65" stroke-width="2" marker-end="url(#tip)"/>
+<rect x="336" y="344" width="220" height="48" rx="9" fill="#fff1dd" stroke="#cda775"/>
+<text x="446" y="373" font-size="14" text-anchor="middle">Delivery + validity checks</text>
+<path d="M564 368H610" stroke="#536d65" stroke-width="2" marker-end="url(#tip)"/>
+<rect x="620" y="344" width="228" height="48" rx="9" fill="#d7ece1" stroke="#b4c8bd"/>
+<text x="734" y="373" font-size="14" text-anchor="middle">Only then update coverage</text>
+</g></svg>
