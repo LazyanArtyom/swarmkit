@@ -6,7 +6,6 @@ import csv
 import hashlib
 import json
 import re
-import zipfile
 from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
@@ -60,31 +59,29 @@ def validate():
         text,
         re.I,
     )
-    assert "TBD — not executed" in text and "5,940" in text
-    assert "E has no completion advantage" in text
-    v6_path = SITE / "assets/evidence/v6"
-    with (v6_path / "per_attempt.csv").open() as f:
-        v6_raw = list(csv.DictReader(f))
-    assert len(v6_raw) == 5940 and not any(r["infrastructure_error"] for r in v6_raw)
-    assert sum(int(r["false_complete"]) for r in v6_raw if r["scenario"] not in ["N19", "N20"]) == 0
-    with (v6_path / "condition_summary.csv").open() as f:
-        assert len(list(csv.DictReader(f))) == 198
-    sitl_validation = json.loads((v6_path / "sitl_validation.json").read_text())
-    assert sitl_validation["passes"] == 24 and not sitl_validation["errors"]
+    assert "1,320" in text and "22" in text
+    for topic in ("rotor-router", "gossip", "SwarmOps", "multi-user", "mission revision", "sensor trust boundary"):
+        assert topic.lower() in text.lower(), topic
+    assert "zero false fulfillments" in text.lower() or "0 false fulfillments" in text
+    evidence_path = SITE / "assets/evidence"
+    with (evidence_path / "per_attempt.csv").open() as f:
+        raw = list(csv.DictReader(f))
+    assert len(raw) == 1320 and not any(r["infrastructure_error"] for r in raw)
+    assert sum(int(r["false_complete"]) for r in raw if r["scenario"] not in ["N19", "N20"]) == 0
+    assert sum(int(r["false_complete"]) for r in raw) == 120
+    with (evidence_path / "condition_summary.csv").open() as f:
+        assert len(list(csv.DictReader(f))) == 44
+    sitl_validation = json.loads((evidence_path / "sitl_validation.json").read_text())
+    assert sitl_validation["passes"] == 12 and not sitl_validation["errors"]
     assert not re.search(r"\{\{[^}]+\}\}", text), "unexpanded component"
     metadata = json.loads((SITE / "assets/research-metadata.json").read_text())
-    with zipfile.ZipFile(SITE / "assets/evidence/representative-traces.zip") as zipped:
-        for name, info in metadata["copied_evidence"].items():
-            content = (
-                zipped.read(name.split("!/", 1)[1])
-                if "!/" in name
-                else (SITE / name).read_bytes()
-            )
-            assert hashlib.sha256(content).hexdigest() == info["sha256"], name
+    for name, info in metadata["copied_evidence"].items():
+        content = (SITE / name).read_bytes()
+        assert hashlib.sha256(content).hexdigest() == info["sha256"], name
     js = (SITE / "assets/experiment-data.js").read_text()
     data = json.loads(js.removeprefix("window.VECR_DATA = ").strip().removesuffix(";"))
-    assert len(data["scenarios"]) == 78 and len(data["configs"]) == 39
-    assert all(set(pair) == {"B2", "P"} for pair in data["replays"].values())
+    assert len(data["scenarios"]) == 44 and len(data["configs"]) == 22
+    assert all(set(pair) == {"B2", "VECR"} for pair in data["replays"].values())
     assert len(data["replays"]) == 6
     for pair in data["replays"].values():
         for run in pair.values():
@@ -95,11 +92,12 @@ def validate():
             )
     result = {
         "static": "PASS",
-        "chapters": 16,
-        "historical_policy_rows": 78,
-        "v6_policy_rows": 198,
-        "v6_attempts": 5940,
-        "sitl_attempts": 24,
+        "chapters": len(re.findall(r'<section class="chapter"', (SITE / "index.htm").read_text())),
+        "policy_rows": 44,
+        "primary_attempts": 1320,
+        "honest_attempts": 1200,
+        "control_attempts": 120,
+        "sitl_flights": 12,
         "replayed_attempts": 12,
         "copied_artifacts_verified": len(metadata["copied_evidence"]),
         "external_runtime_resources": 0,
@@ -128,10 +126,10 @@ def browser_checks(data, result):
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.on("request", lambda r: requests.append(r.url))
         page.goto((SITE / "index.htm").as_uri(), wait_until="load")
-        assert page.locator(".chapter").count() == 16
+        assert page.locator(".chapter").count() == result["chapters"]
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.screenshot(path=str(screenshots / "desktop.png"))
-        for name in ["contract", "architecture", "states", "comparison", "evidence", "recovery_v6"]:
+        for name in ["contract", "architecture", "states", "comparison", "evidence"]:
             diagram = page.locator(f'img[src="assets/diagrams/{name}.svg"]')
             diagram.scroll_into_view_if_needed()
             diagram.evaluate("el => el.decode()")
@@ -141,36 +139,35 @@ def browser_checks(data, result):
             )
         page.locator("#scenarioGroup").select_option("controls")
         assert page.locator("#scenarioTable tbody tr:visible").count() == 2
-        page.locator("#scenarioGroup").select_option("sensitivity")
-        assert page.locator("#scenarioTable tbody tr:visible").count() == 18
-        page.locator("#scenarioSearch").fill("X07")
+        page.locator("#scenarioGroup").select_option("primary")
+        assert page.locator("#scenarioTable tbody tr:visible").count() == 20
+        page.locator("#scenarioSearch").fill("N04")
         assert page.locator("#scenarioTable tbody tr:visible").count() == 1
-        page.locator("[data-case=X07]").click()
-        assert "0.00%" in page.locator("#caseDetails").inner_text()
+        page.locator("[data-case=N04]").click()
+        assert "Precision" in page.locator("#caseDetails").inner_text()
         page.locator("#scenarioSearch").fill("")
         page.locator("#scenarioGroup").select_option("all")
-        for case in ["M03", "M04", "M05", "M08", "M14", "M17"]:
+        for case in ["N00", "N03", "N04", "N07", "N11", "N19"]:
             page.locator("#replayCase").select_option(case)
             page.locator("#replaySlider").focus()
             page.keyboard.press("End")
             cards = page.locator(".replay-card")
-            for i, policy in enumerate(["B2", "P"]):
+            for i, policy in enumerate(["B2", "VECR"]):
                 final = data["replays"][case][policy]["trace"][-1]
                 assert final["phase"] in cards.nth(i).inner_text()
                 assert (
                     f"{float(final['distance_m']):,.2f} m" in cards.nth(i).inner_text()
                 )
-            if case == "M14":
-                assert "100.0%" in cards.nth(1).inner_text()
+            if case == "N19":
                 truth = (
-                    float(data["replays"][case]["P"]["trace"][-1]["truth_covered_m"])
+                    float(data["replays"][case]["VECR"]["trace"][-1]["truth_covered_m"])
                     / 40
                     * 100
                 )
-                assert f"{truth:.1f}%" in cards.nth(1).inner_text() and truth < 100
-        page.locator("#replayCase").select_option("M03")
-        page.locator("#eventList button").filter(has_text="RECOVERING").first.click()
-        assert "RECOVERING" in page.locator("#replayMetrics").inner_text()
+                assert truth < 100
+        page.locator("#replayCase").select_option("N04")
+        page.locator("#eventList button").filter(has_text="Accepted target").first.click()
+        assert page.locator("#replayMetrics").inner_text() != ""
         page.locator(".trace-explorer").screenshot(
             path=str(screenshots / "replay.png"),
             style=".site-header,.read-progress,.skip-link{visibility:hidden!important}",
@@ -188,12 +185,12 @@ def browser_checks(data, result):
             "el => el === document.activeElement"
         )
         assert page.evaluate("document.body.style.overflow") != "hidden"
-        page.locator("#chapterSearch").fill("400")
+        page.locator("#chapterSearch").fill("arrival")
         assert page.locator("#searchResults a").count() > 0
         page.locator("#searchResults a").first.click()
         assert not page.locator("#searchResults").is_visible()
         page.locator("#themeToggle").click()
-        assert page.locator("html").get_attribute("data-theme") == "dark"
+        assert page.locator("html").get_attribute("data-theme") == "light"
         page.locator("#results").scroll_into_view_if_needed()
         page.screenshot(path=str(screenshots / "results-dark.png"))
         page.locator("#themeToggle").click()
@@ -216,7 +213,7 @@ def browser_checks(data, result):
         )
         page.emulate_media(media="print")
         assert page.locator("#sidebar").is_hidden()
-        assert page.locator(".chapter").count() == 16
+        assert page.locator(".chapter").count() == result["chapters"]
         assert all(
             not urlsplit(u).scheme.startswith("http") for u in requests
         ), requests

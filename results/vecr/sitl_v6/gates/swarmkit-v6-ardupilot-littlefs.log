@@ -1,5 +1,0 @@
-Submodule 'modules/littlefs' (https://github.com/ArduPilot/littlefs.git) registered for path 'modules/littlefs'
-Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/littlefs'...
-From https://github.com/ArduPilot/littlefs
- * branch            34be692aafaaf4319a18e415b08aa4332697408b -> FETCH_HEAD
-Submodule path 'modules/littlefs': checked out '34be692aafaaf4319a18e415b08aa4332697408b'

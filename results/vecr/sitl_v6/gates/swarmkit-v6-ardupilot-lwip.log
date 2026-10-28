@@ -1,5 +1,0 @@
-Submodule 'modules/lwip' (https://github.com/ArduPilot/lwip.git) registered for path 'modules/lwip'
-Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/lwip'...
-From https://github.com/ArduPilot/lwip
- * branch            a6bf350c679ed8ba042ad58bf81cc540d61bb605 -> FETCH_HEAD
-Submodule path 'modules/lwip': checked out 'a6bf350c679ed8ba042ad58bf81cc540d61bb605'

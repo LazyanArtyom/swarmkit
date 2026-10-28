@@ -1,5 +1,0 @@
-Submodule 'pymavlink' (https://github.com/ArduPilot/pymavlink.git) registered for path 'pymavlink'
-Cloning into '/private/tmp/swarmkit-ardupilot-v6/modules/mavlink/pymavlink'...
-From https://github.com/ArduPilot/pymavlink
- * branch            ec06837a50688b5974094876c3c9d1b8bf86629d -> FETCH_HEAD
-Submodule path 'pymavlink': checked out 'ec06837a50688b5974094876c3c9d1b8bf86629d'

@@ -6,501 +6,441 @@
 
 ## Abstract
 
-We developed and evaluated **Verified Edge Coverage and Recovery (VECR)** as a reusable, algorithm-independent method in the SwarmKit agent. VECR assigns a physical obligation to a directed graph edge, checks bounded navigation and qualified sensing evidence, preserves verified work, identifies unverified intervals, and executes bounded local recovery. Command acceptance, arrival, route traversal and survey fulfillment have distinct meanings. The external application retains ownership of graph planning and distributed coordination.
+We developed and evaluated **Verified Edge Coverage and Recovery (VECR)** as a canonical, algorithm-independent onboard execution runtime in the SwarmKit UAV SDK. VECR assigns a physical obligation to a directed graph edge, continuously checks bounded navigation and qualified sensor evidence, preserves verified progress across deviations, detects unverified intervals, and executes bounded local recovery via earliest-gap targeting with bounded evidence waiting. Command acceptance, physical arrival, route traversal, and survey fulfillment have strictly separate semantics. High-level swarm coordination and graph planning remain external to the agent.
 
-The completed **v6 primary campaign** executed **5,940 attempts: 22 conditions × 30 paired seeds × nine policies** through the production SDK → local mTLS AgentService → agent runtime → SimBackend path. A separate 200-attempt campaign compared direct and routed SDK clients. Independent reconstruction checked 516,751 delivered captures and 3,984 physical re-entry dwells. Historical v5.1 results remain available in the reader and are not pooled with v6.
+The primary digital campaign executed **1,320 attempts: 22 conditions N00–N21 × 30 paired seeds (70001–70030) × VECR and the B2 full-restart research baseline** through the production SDK → local mTLS AgentService → agent runtime → SimBackend path. A separate 100-attempt client-reuse campaign found identical recorded metrics between direct `Client` and routed `SwarmClient` architectures. An independent validator verified 108,790 delivered captures and 720 physical re-entry dwells. Software-in-the-loop (SITL) qualification tested 12 flights using native ArduPilot Copter 4.7.2 processes over production MAVLink interfaces.
 
-The stronger comparison separates **coverage tracking, evidence waiting and target conservatism**. Under delayed metadata, waiting reduced travel by 6.227 m versus immediate gap repair (95% paired CI [−6.291, −6.162] m). The derived uncertainty-envelope target E and the simpler waiting gap rule GW were identical there. Under multiple gaps, E traveled **6.240 m farther** than GW (CI [+6.23995, +6.24020] m), with no extra completions. Gap-aware policies reported 30/30 completions where departure resumption and fixed rewind reported 0/30. These are conditional findings, not predetermined support for a preferred policy.
-
-Across **5,400 honest-sensor attempts**, no policy falsely fulfilled. The **540 dishonest-sensor controls** are reported separately; authentication does not establish physical truth. The technical contribution is an implemented reusable edge-obligation contract, a restricted conditional recovery rule and a reproducible characterization of its advantages and costs. The data do **not** establish that E is the best recovery algorithm or that returning to a departure point is new. ArduPilot qualification is a separate evidence tier in Chapter 15; real camera quality remains unvalidated.
+On midflight gap conditions (N03, N04, N06, N07, N08, N09, N17, N18), VECR reduced flight distance by **11.6% to 31.3%** compared to the coverage-aware full-restart baseline B2, saving up to 29.92 m of flight travel per attempt with 30/30 joint completions. Under delayed evidence (N01), bounded waiting prevented spurious re-entry maneuvers. Across **1,200 honest-sensor attempts**, zero false fulfillments occurred. Deliberate dishonest-sensor controls (N19, N20; 120 trials) yielded 100% false fulfillments, cleanly exposing the sensor trust boundary.
 
 ## Research scope and evidence levels
 
 | Evidence level | Status | What it establishes |
 |---|---|---|
-| Geometric simulation v1/v2 | Frozen historical evidence | Simplified interval/raster behavior; no production-agent execution |
-| Agent-backed v3/v4.2 | Frozen historical evidence | Integration and earlier post-arrival repair findings |
-| Agent-backed v5 | Frozen completed evidence | Noisy bounded sensing, actual midflight recovery in SimBackend, fair paired comparison |
-| Agent-backed v5.1 | Frozen corrected-code replication | Historical two-policy comparison; retained figures and replay |
-| Agent-backed v6 | Completed primary campaign | Nine policies, 22 conditions, 5,940 trials; current comparison |
-| Client reuse v6 | Completed, 200 trials | 100 matched direct/routed client pairs; no metric differences |
-| ArduPilot SITL v6 | Separate qualification | Actual autopilot dynamics; native-accuracy controls and explicitly synthetic sensing, Chapter 15 |
-| Real aircraft and camera imagery | Outside this simulator claim | No physical-flight or image-quality result is asserted |
+| Digital simulation (N00–N21) | Completed primary campaign | 1,320 attempts; canonical VECR earliest-gap recovery vs B2 full-restart baseline across 22 conditions |
+| Client reuse campaign | Completed, 100 trials | 50 matched direct vs routed SDK client pairs; zero metric differences |
+| ArduPilot SITL qualification | Separately qualified, 12 flights | Native Copter 4.7.2 flight dynamics; fail-closed behavior on raw MAVLink and MAVLink recovery under synthetic bounds |
+| Real aircraft and hardware imagery | Outside simulator claim | No real physical-flight or image-photogrammetry claim is asserted |
 
-This reader documents a completed simulator research contribution, not an awarded degree or airworthiness certification. The wider multi-user mission-engineering context motivates the work. A deployed SwarmOps cloud service, simultaneous swarm performance and radio capacity are outside the evidence established here.
+This reader documents a completed onboard method, its conditional argument, implementation, and measured digital evidence. It also explains the dissertation's graph-theoretic and multi-user mission-engineering lineage. Those broader systems are identified by their own evidence status; a deployed cloud fleet service, multi-UAV radio capacity, field flight, and real image-quality validation are outside this campaign.
 
-# 02 / The problem and core contribution {#innovation}
+## Research questions and answers
+
+1. **What does a graph transition mean physically?** The planner's selected edge becomes a versioned route and observation obligation. The agent returns a verified outcome only after qualified physical evidence satisfies the selected predicate.
+2. **Can already observed work survive a deviation?** Yes, accepted intervals are retained as a union. Recovery addresses missing intervals, while the B2 comparator restarts from the edge origin. This is an implemented design and a measured difference in the specified gap conditions.
+3. **When is a success report sound?** Only under declared sensing geometry, honest acquisition metadata, hard error bounds, correct identity, and the stated interval model. Dishonest controls show the limit directly.
+4. **Can external clients reuse the runtime?** The two implemented SDK paths produced identical metrics in 50 matched pairs. This is evidence of API-path reuse, not a test of multiple graph algorithms or fleet-scale networking.
+
+# 02 / Research lineage and graph foundations {#foundations}
+
+## The graph-level research programme
+
+The earlier work behind this dissertation studies self-organizing UAV swarms as directed graph processes. A vertex can be a waypoint or task location; a directed edge is a permissible transition. An Eulerian circuit is a property of an abstract walk on a suitable directed graph. It says nothing by itself about a camera exposure, a missed strip, GNSS uncertainty, or safe flight. This is the precise gap that motivated an onboard physical-execution contract.
+
+In rotor-router dynamics, each vertex maintains a cyclic order of outgoing edges. A rotor update selects the next graph transition. Under the hypotheses of the established unicycle and Eulerian results, a deterministic rotor walk can traverse the graph's directed edges. The group's published [Euler-tour and unicycle study](https://doi.org/10.1088/1742-5468/2014/06/P06003) and [loop-reversibility study](https://doi.org/10.1088/1751-8113/48/28/285203) belong to that mathematical lineage. They are prior work, not VECR inventions. The group's [cloud-based UAV swarm model](https://doi.org/10.1139/dsa-2023-0039) addresses multi-agent graph movement, different speeds, arrival information, and reassignment after a crash.
+
+The distinction matters in a real survey. A logical transition $e=(u,v)$ can be selected correctly, yet the vehicle can miss imagery between the physical endpoints. A repair flight may traverse a section twice even when the planner's abstract walk visits the directed edge once. Rotor-router's graph guarantee remains a graph guarantee; VECR evaluates the physical obligation attached to each attempted edge.
+
+## Gossip and dissemination are separate concerns
+
+Earlier [Knödel-graph gossip research](https://doi.org/10.1109/CSITechnol.2017.8312126) concerns information dissemination topology. A gossip algorithm can spread a verified edge result or missing-work report to peers. It does not determine whether the camera actually observed a strip. SwarmKit supplies generic message and peer APIs; it does not implement a rotor-router or gossip policy. A network partition can prevent remote recipients from learning an onboard result even while the local agent continues its verification and recovery.
+
+| Layer | Question it answers | Evidence in this repository |
+|---|---|---|
+| External graph controller | Which directed edge should a vehicle attempt next? | Interface boundary; no rotor-router implementation in SwarmKit |
+| VECR agent | Was that edge's physical traversal or survey obligation verified, and what remains? | Implemented runtime, digital campaign, qualified SITL |
+| Peer communication | How can application messages and artifacts move between agents? | Implemented API surface; fleet-scale delivery not measured here |
+| Mission workspace | How do people author, approve and inspect graph missions? | Earlier platform publications and prior reader context; not part of VECR trials |
+
+## Earlier platform publications
+
+The [multi-user UAV swarm simulation platform](https://doi.org/10.1134/S0361768823090086) and [mission-preparation study](https://doi.org/10.1134/S0361768824700397) establish a platform research line. The [2025 multi-user software-system paper](https://doi.org/10.1109/ICECET63943.2025.11472550) is another part of that lineage. The previously supplied dissertation draft also lists a 2026 simulation-driven monitoring paper and a SwarmKit architecture paper; their bibliographic details are retained as author-supplied records pending formal publisher verification. Their results are not counted in the current VECR digital campaign.
+
+This dissertation's specific addition is the *physical edge acceptance layer*: the planner may change, and the communication algorithm may change, while the agent applies the same exact attempt identity, bounded evidence, gap accounting, and local recovery. The two SDK-path experiment tests reuse of this layer; it does not experimentally demonstrate a complete rotor-router deployment.
+
+# 03 / The problem and core contribution {#innovation}
 
 ## Four facts that must remain separate
 
-A planner can select A→B, a backend can accept its command, and a vehicle can eventually arrive at B while leaving an intermediate strip unobserved. Conversely, a wide camera can observe the strip during an off-corridor excursion. Navigation deviation is therefore neither necessary nor sufficient evidence of a survey gap. Image acquisition can also fail on an otherwise correct path.
+A planner can dispatch a straight edge A→B, a vehicle backend can accept the command, and a drone can eventually reach B while leaving an intermediate survey strip completely unobserved. Conversely, a wide-angle camera can observe the strip during an off-corridor excursion. Navigation deviation is therefore neither necessary nor sufficient evidence of a survey gap. Sensor acquisition can also fail on a perfectly flown corridor.
 
 {{diagram:contract}}
 
-**The implemented contribution is an edge-obligation execution contract:** the agent binds evidence to the exact mission, revision, edge and attempt; maintains the union of qualified coverage; retains disjoint completed intervals; exposes what remains missing; and recovers locally while respecting authority, evidence and safety constraints. An application consumes factual outcomes without embedding its planner in SwarmKit.
+**The core contribution is an onboard edge-obligation execution contract:** the agent binds evidence to the exact mission, revision, edge, and attempt identity; maintains the conservative union of qualified coverage; retains disjoint completed intervals; identifies unverified intervals; and executes bounded local recovery while respecting authority, evidence validity, and physical safety limits. External applications consume factual outcomes without embedding planners into SwarmKit.
+
+## Refutation of subject-matter misconceptions
+
+An early external review incorrectly categorized this work under continuum manipulators, visual-elastic observers, Cosserat kinostatics, and soft robotics. This is factually erroneous:
+1. **Kinematics:** The measured work uses a multirotor UAV and a straight local 3D route. No continuum manipulators, tendon actuators, elastic rods, or Cosserat models exist in this codebase.
+2. **State Estimation:** SwarmKit normalizes backend telemetry and requires declared error bounds. The agent does not itself implement an inertial-GNSS fusion estimator or compliance-based observer.
+3. **Application Domain:** The research concerns airborne edge coverage, conservative footprint accounting, and local spatial recovery for autonomous UAV missions.
 
 ## Why the contribution is useful
 
-1. **Coverage accounting survives a deviation.** Correctly accepted later images remain credited even when a middle interval is missing.
-2. **Recovery is informed by missing work.** VECR chooses a target before the earliest unverified interval, with overlap and a midflight progress cap.
-3. **Arrival cannot substitute for sensing.** A survey obligation additionally needs accepted full-strip evidence.
-4. **Uncertainty has an explicit outcome.** Missing bounds or invalid observations cannot silently become healthy, exact evidence.
-5. **Physical execution remains local.** The agent performs detection, verification and recovery; the server is not in the correction loop.
+1. **Coverage survives flight deviations.** Disjoint intervals observed before or after an excursion remain credited.
+2. **Targeted local repair.** VECR targets the earliest missing interval with bounded dwell, rather than restarting the entire edge at A.
+3. **Arrival cannot substitute for sensing.** A survey obligation requires verified strip coverage; endpoint arrival alone is insufficient.
+4. **Explicit uncertainty bounds.** Sensor data lacking hard uncertainty bounds fail closed; they cannot silently default to healthy status.
+5. **Onboard execution.** Detection, verification, and recovery execute entirely inside the onboard agent; no offboard server is in the inner control loop.
 
-Waypoint checks, interval unions, robot recovery and authenticated messaging are established techniques. The defensible research claim is their implemented edge-level contract and its measured behavior against the specified coverage-aware baseline. The study does not establish worldwide priority for every constituent technique or superiority over all coverage planners.
+# 04 / System architecture {#architecture}
 
-## Literature comparison and originality boundary
-
-A targeted primary-source literature review on **26–28 October 2026** found substantial overlap with earlier work. V6 adds the previously missing resume/rewind comparisons and mechanism ablations. Its modest conditional result and negative comparison limit the originality claim. The following sources constrain it.
-
-| Earlier work | Established overlap | Distinction VECR must substantiate |
-|---|---|---|
-| [Zudaire et al., ICRA 2021](https://software.imdea.org/~cesar/papers/zudaire21assumption.pdf) [R4] | UAV assumption monitoring, incomplete photographic coverage and corrective actions | The particular edge-obligation contract and retained evidence semantics |
-| [Arvanitakis et al., 2018](https://pure.coventry.ac.uk/ws/files/13602376/1729881417750785.pdf) [R5] | Guaranteed sensed regions under bounded pose uncertainty, accumulated over time | An additional technical result beyond conservative-set union |
-| [ArduPilot mission rewind](https://ardupilot.org/copter/docs/common-mission-rewind.html) [R6] | Survey resumption behind an interruption point | Evidence-selected missing intervals versus a configured rewind distance |
-| [Fields2Cover, 2023](https://arxiv.org/abs/2210.07838) [R7] | Modular coverage-planning library and comparative evaluation | The execution/acceptance contract and its measured added utility |
-| [Bouman et al., 2023](https://arxiv.org/abs/2302.03164) [R8] | Planning with accumulated sensor coverage and execution constraints | The narrower assigned-edge problem and its applicability |
-
-Local repair of processing faults also predates this work: [Nykolaychuk and Ortmeier, 2015](https://doi.org/10.1007/978-3-319-22876-1_31) [R9]. Correct monitoring of streams arriving with different delays is established by [Leucker et al., 2020](https://link.springer.com/article/10.1007/s11219-019-09493-y) [R10]. Neither local repair nor delayed-event handling is claimed as a first invention.
-
-V6 now compares full restart, departure resumption, two fixed rewinds, retained-gap recovery, waiting and the derived envelope target under shared evidence and safety. The simple GW comparator is as successful as E and often cheaper. The defensible thesis is **“Evidence-conditioned execution and recovery of assigned survey edges: an onboard contract, conditional bounds and comparative validation.”** The specific reusable contract and measured mechanism tradeoffs are the contribution; global algorithmic superiority and worldwide priority are not established. This targeted review is not an exhaustive priority search. The [updated assessment](assets/evidence/v6/NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md) identifies exact overlaps and limits; the [October 26 assessment](assets/evidence/NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md) remains a historical record.
-
-## Relationship to graph coordination
-
-Graph-theoretic traversal concerns vertices, edges and legal abstract transitions. The rotor-router literature studies such discrete models [R1]. The physical execution layer adds evidence for an assigned geographical obligation; it does not change rotor order, implement gossip or prove an arbitrary planner correct after reassignment. **No rotor-router or gossip algorithm was implemented or run in this campaign.** Algorithm independence is demonstrated by the API boundary, not by a multi-planner experimental comparison.
-
-# 03 / System architecture {#architecture}
-
-## Where the work runs
+## Execution hierarchy
 
 {{diagram:architecture}}
 
-SwarmKit is a C++23 runtime and SDK with typed control, telemetry, authority, reporting and peer/server communication interfaces. The production agent owns the edge supervisor, sensor qualification, recovery dispatch and attempt journal. The simulator replaces the vehicle backend; it does not replace the agent's verification or recovery state machine. The benchmark process includes the SDK, service, runtime, backend and trace writer.
+SwarmKit is implemented in C++23 with protobuf-defined RPC interfaces. The production agent owns the edge supervisor, sensor qualification, interval arithmetic, recovery dispatch, and persistent attempt journal. The benchmark and evaluation harness replaces the physical autopilot backend with SimBackend; it does not replace or mock the agent's verification or recovery state machine.
 
-The sensor estimator accepts measured telemetry plus calibration and simulated sensor status. It has no simulator-truth input. A private oracle reads actual poses and actual acquired footprints, including failed acquisitions. A separately written Python validator reconstructs strip intervals from rectangle half-space inequalities rather than calling the production interval code.
+The sensor estimator receives noisy telemetry and fixed camera calibration. It has no access to simulator ground truth. A separate Python validator reads simulator ground truth (actual 20 ms poses and rectangular footprints) to independently reconstruct coverage using half-space geometry without calling agent libraries.
 
-## Existing general-purpose interfaces
+## External planner boundary
 
-Control commands, normalized telemetry, health/capability discovery, application peer messages, artifacts and server communication remain available. VECR operates through existing command authority and backend boundaries. Presence of these interfaces is not a result about remote network throughput or simultaneous multi-UAV behavior; those were not measured by v5.
+High-level multi-robot coordination algorithms (e.g. rotor-router, gossip protocols, vehicle routing) belong strictly to external application layers. The external application decides graph structure and edge assignments; SwarmKit executes edge obligations, qualifies evidence, and reports factual terminal outcomes (`FULFILLED`, `INTERRUPTED`, `UNKNOWN`).
 
-An external mission client can visualize reports or decide subsequent assignments. This local reader is an explanation and evidence explorer, not a flight-control client or deployed multi-tenant service.
+# 05 / SwarmKit as a reusable execution platform {#swarmkit}
 
-# 04 / Model, evidence and fulfillment {#model}
+## Agent, SDK, backend and authority
+
+SwarmKit is a C++23 SDK with a per-vehicle agent. An external client requests control through the SDK; the agent arbitrates command authority, checks health and capabilities, normalizes telemetry, issues a command through a replaceable backend, and publishes reports. The existing generic `SendCommand`, `StreamTelemetry`, `SetActiveGoal`, `SubscribeReports`, and authority RPCs remain alongside `ExecuteEdge`, `GetEdgeStatus`, `SubmitEdgeCapture`, and `CancelEdge`. The edge API adds a physical obligation without replacing general-purpose control.
+
+The simulated backend and MAVLink backend expose different vehicle environments to the same agent. Digital trials use the production agent with `SimBackend`; the separate SITL qualification uses native ArduPilot Copter processes and MAVLink. A command reply indicates dispatch or acceptance only. Subsequent telemetry, sensor evidence and physical dwell determine the edge outcome. A generic `GOAL_REACHED` report is not interchangeable with `FULFILLED`.
+
+An edge attempt is bound to mission, revision, edge, attempt and drone identity. This prevents a delayed capture or stale report from silently changing the result of a new mission revision. The contract reports missing intervals and terminal reasons to the caller; the caller decides the next graph action. The agent retains only the local recovery authority described by the edge request and safety limits.
+
+## Communication and artifact plane
+
+The protobuf `DataService` exposes `PublishMessage`, `SendMessageToDrone`, `SubscribeMessages`, peer discovery/configuration, and artifact upload/download/transfer. Applications can carry graph state, gossip messages, edge reports, or larger imagery and logs through these interfaces. The data service is separate from vehicle command-authority locks. The API supports both sending and receiving; no throughput, reliable-delivery, or partition-healing result follows from the existence of an RPC alone.
+
+For a distributed mission, five events must be distinguished: local evidence acceptance; local edge outcome; message creation; remote receipt; and swarm-wide knowledge. VECR's simulator campaign checks the first two. Transport and coordination guarantees require a separate communications experiment and a specified protocol. In a disconnected interval the onboard agent can continue its local task, while remote SwarmOps views may be stale.
+
+## A planner integration contract
+
+An external controller chooses a directed edge and submits a versioned obligation. It waits for `FULFILLED`, `INTERRUPTED`, or `UNKNOWN` with the corresponding coverage and reason information. On `FULFILLED` it can advance its own graph state; on incomplete outcomes it can retry, reassign, or stop according to its own policy. This sequencing is important for rotor-router: graph transitions should not be treated as physically completed on `Command ACK`. SwarmKit does not mutate a rotor state or run a gossip schedule.
+
+# 06 / SwarmOps and the human mission workflow {#swarmops}
+
+## Earlier work and its evidence status
+
+The preceding dissertation reader described a Qt/C++ SwarmOps desktop snapshot with map selection, graph editing, simulation, mission views, workspace services, and gateway interfaces. That snapshot is historical context supplied with the earlier reader; it is not the executable artifact of the present SwarmKit VECR campaign. Published multi-user platform and mission-preparation papers establish the research lineage, but the current 1,320-attempt dataset does not measure SwarmOps UI performance, collaborative editing, or cloud operations.
+
+SwarmOps addresses the human-facing task: select a geographic area, author a directed graph, attach physical obligations, select a planner, approve a mission revision, and monitor execution. SwarmKit addresses the vehicle-facing task: arbitrate commands, execute the assigned edge, qualify observations, repair local gaps where permitted, and report the result. A live map may display planned route, observed track, verified surveyed intervals, and unresolved gaps as separate layers. The map is an inspection surface, not the source of the agent's truth decision.
+
+## Mission lifecycle and versioning
+
+An operator workflow runs from workspace access and map-based mission editing to graph validation, preflight simulation, approved dispatch, onboard execution, event inspection and artifact review. The planned graph and imagery obligation must refer to an immutable mission revision. A later edit to an edge geometry cannot silently reinterpret captures accepted for the earlier revision. Command authority on a vehicle also remains a separate concern from a platform user's editing role.
+
+Geographical display coordinates and execution coordinates must be linked explicitly. A map screenshot is not a metric survey model. The current experiments use a local straight-edge frame and rectangular ground-footprint oracle; a field deployment would need checked georeferencing, terrain and camera calibration, and a defined transformation from map geometry to the agent's local frame.
+
+## Intended cloud architecture, outside the measured result
+
+The wider programme describes a multi-user mission workspace, authorization, versioned mission store, telemetry gateway, event log, artifact store, and post-mission analysis. These are architectural targets and earlier research context. The current VECR result does not claim a deployed multi-tenant SaaS service or bounded latency under hundreds of concurrent drones. Even if a cloud service is unavailable, the experiment's local verification/recovery loop runs in the agent. Remote monitoring would require later synchronization and conflict handling to present an accurate view.
+
+# 07 / Model, evidence and fulfillment {#model}
 
 ## Directed edge and identity
 
-The agent accepts a straight two-point route A→B of length L in a fixed local metric frame. A request carries mission ID, revision, edge ID, attempt ID and drone ID. The route has a movement corridor and a required survey strip. The sensing adapter assumes flat terrain, rectangular nadir optics and route-aligned camera axes. Bent or multi-point routes are rejected because dispatch currently follows a single GOTO to B.
+The agent accepts a straight two-point route A→B of length $L$ in a local metric Cartesian frame. Every obligation carries a unique identity:
 
 {{equation:identity}}
 
-An obligation selects arrival, bounded traversal, survey, or traversal-and-survey. The primary v5.1 comparison uses **survey**. Survey completion needs qualified stopped arrival and accepted sensor evidence; it does not require every flight segment to have stayed inside the navigation corridor.
+The obligation specifies arrival, bounded corridor traversal, survey, or traversal-and-survey. Primary evaluations focus on **survey**: requiring verified full-strip sensor coverage and stopped 3D arrival at endpoint B.
 
 ## Conservative sensing intervals
 
-For measured altitude ĥ, vertical hard bound εh, horizontal hard bound εp, and calibrated along/cross FOV θa/θc, the adapter contracts the footprint using h− = ĥ − εh. A capture is usable only when acquisition, quality, alignment and flat-ground conditions are established and the remaining width covers the entire required strip.
+For measured altitude $\hat{h}$, vertical bound $\varepsilon_h$, horizontal bound $\varepsilon_p$, and calibrated along/cross fields of view $\theta_a, \theta_c$, the adapter contracts the footprint using $\hat{h}^- = \hat{h} - \varepsilon_h$:
 
 {{equation:footprint}}
 
-Here ŝ is the signed along-route position, d is perpendicular cross-track distance, and w is required strip half-width. The footprint interval is clipped to [0,L]; the camera center is never shifted onto an endpoint. The audit reproduced a false-coverage case caused by the previous clamped-center calculation, and v5.1 fixes it. The runtime checks identity, freshness, allowed sensor client, calibration and kinematic consistency against bounded telemetry. A camera command ACK supplies none of these facts. The default horizontal bound is 0.3 m; ideal zero-error camera centers are not used in the main campaign.
+A capture is accepted only when camera status is valid, timestamp is fresh ($\le 3\text{ s}$), horizontal cross-track error $d$ plus strip half-width $w$ fits within the contracted cross-track footprint $c^-$, and $a^- > 0$. The resulting interval is clipped to $[0, L]$.
 
-## Coverage union and missing work
+## Coverage union and missing intervals
 
 {{equation:coverage}}
 
-V is the accepted interval union and M its complement. Coverage is the sum of union lengths, not the furthest observed coordinate. Later disjoint intervals stay stored. The core uses a **10⁻⁶ m geometric tolerance** for merging and endpoint comparisons, distinct from allowed missing length. The mathematical statement uses ideal sets; implementation precision is finite and sub-tolerance holes can be merged. This tolerance is not physical sensor accuracy.
+The agent computes the set union $V = \bigcup I_j^-$ and its complement $M = [0, L] \setminus V$. Total unverified length is the sum of interval lengths in $M$. Interval operations use a $10^{-6}\text{ m}$ geometric merging tolerance.
 
 ## Stopped arrival and survey fulfillment
 
 {{equation:arrival}}
 
-The radius check is three-dimensional: horizontal distance plus its hard bound and vertical offset plus its hard bound must fit inside the configured radius. Horizontal speed plus its bound must satisfy the stopping threshold. Qualifying observations span at least 200 ms. A later away, invalid or ambiguous observation revokes pending arrival qualification. An ACK or backend goal-reached report does not establish this predicate. Sampled dwell is not a proof of continuously stationary motion between arbitrary telemetry samples.
+Arrival at B requires 3D distance within radius $r_B = 1.0\text{ m}$ accounting for position bounds, speed within $v_B = 0.5\text{ m/s}$ accounting for speed bounds, and qualifying samples separated by at least 200 ms. This is a **sampled dwell** under the stated telemetry assumptions, not a continuously observed trajectory. Survey fulfillment also requires remaining missing length $\le$ allowance ($0.0\text{ m}$ in primary campaigns).
 
-## Bounded traversal is separate
-
-For endpoint route-distance bounds D0,D1, physical speed bound Vmax and sample interval Δt, distance-to-route continuity gives a sufficient condition for corridor conformance.
+## Bounded corridor traversal
 
 {{equation:traversal}}
 
-The code also rejects kinematically impossible endpoint displacement. Guaranteed forward progress excludes uncertain endpoint positions: only [ŝ0+ε0, ŝ1−ε1] is credited when nonempty. The website audit exposed and corrected earlier crediting of the entire estimated endpoint interval. Counterexample regressions demonstrate the defect and fix. V5.1 repeated the full survey-policy campaign after both corrections; original v5 observations remain at their recorded source revision.
+Corridor conformance verifies that distance to route plus uncertainty remains within corridor half-width. Guaranteed forward progress credits $[s_0 + \varepsilon_0, s_1 - \varepsilon_1]$ only when non-empty.
 
-# 05 / Conditional correctness {#proofs}
+## Canonical recovery target
+
+{{equation:recovery}}
+
+When unverified gaps remain upon reaching B or following a sustained departure, VECR computes the re-entry target $q = \min(p, g)$ on departure (capped at projected progress $p$) and $q = g$ at endpoint B, targeting the start of the earliest unverified interval $g$. A bounded wait of up to 3.0 s at B allows in-flight metadata to arrive before triggering re-entry.
+
+# 08 / Conditional correctness {#proofs}
 
 ## Assumptions
 
-The conclusions require fixed edge/frame/attempt identity; truthful acquisition and quality assertions; calibrated geometry; valid deterministic error bounds; accepted timestamps; and correct interval bookkeeping. A reported GNSS accuracy estimate is not a hard bound unless its declared semantics justify that interpretation. Authentication establishes the sender's identity, not the truth of its physical assertions.
+The formal guarantees hold under the following explicit conditions:
+1. Exact identity matching across all telemetry and sensor captures.
+2. Calibrated camera optics and truthful sensor metadata assertions.
+3. Valid deterministic upper bounds on horizontal, vertical, and velocity estimation errors.
+4. Correct interval set-union bookkeeping.
 
 ## Proposition 1 — Conditional survey soundness
 
-Let F⁻j be the accepted full-strip region of capture j and Fj its actual region acquired at required quality. Assume F⁻j ⊆ Fj for every accepted capture. If the accepted union covers the required strip Re, then Re lies inside the actual observed union.
-
 {{equation:soundness}}
 
-**Proof.** Inclusion is preserved by union. Re ⊆ ∪F⁻j and ∪F⁻j ⊆ ∪Fj imply Re ⊆ ∪Fj. Stopped arrival is checked separately. A nonzero missing-length allowance limits the conclusion accordingly. Floating-point comparison tolerances qualify correspondence between the ideal sets and code. This is an elementary conditional argument, not a claim to have discovered a new set-theoretic theorem.
+**Proof.** Set inclusion is preserved under arbitrary unions. If each accepted contracted footprint $I_j^-$ is contained within the true acquired ground footprint $F_j$, then $\bigcup I_j^- \subseteq \bigcup F_j$. If the accepted union covers the required strip $R_e$, the true ground footprints necessarily cover $R_e$. Stopped arrival is checked independently.
 
-The substantive obligation is establishing conservative input evidence. Honest trials checked this assumption against each corresponding actual acquisition. M14/M15 violate it and show false completion. Their results demonstrate why the premise matters.
+## Proposition 2 — Gaps cannot be overwritten by progress
 
-## Proposition 2 — Gaps are not replaced by a progress maximum
+The supervisor maintains sorted, non-overlapping intervals and recomputes missing work across the entire edge $[0, L]$. Captures acquired downstream cannot remove an unverified upstream gap. Valid earlier work is never discarded following a deviation.
 
-The supervisor stores sorted, merged intervals and recomputes missing work over the whole route. A disjoint capture beyond a resolvable hole cannot remove it. Earlier valid evidence remains available after a navigation deviation. Interval-union and agent regressions exercise this property. Numerical holes below the merging tolerance are subject to the precision limitation stated above.
+## Proposition 3 — Command ACK cannot complete recovery
 
-## Proposition 3 — ACK cannot complete recovery
+Dispatching a re-entry command sets phase `RECOVERING`. The runtime requires qualified stationary re-entry dwell at the target before transitioning back to `MOVING`. A backend command acknowledgement alone cannot complete recovery.
 
-Accepted re-entry dispatch sets recovery in progress. Further departure samples cannot issue an overlapping repair. The runtime requires bounded stationary re-entry and an accepted continuation command before it calls `RecoveryReentryCompleted`. Until then, the supervisor cannot return to moving merely because a command was acknowledged. Safety or invalid evidence can interrupt this sequence. Independent trajectories reconstructed 4,246 completed re-entry dwells.
-
-## Mission-level consequence
-
-If an external application obtains a sound fulfilled result for every required edge, taking the union gives coverage of the union of required strips, subject to the same assumptions and tolerances. This does not prove every edge will be assigned, recovery always succeeds, a destroyed UAV's evidence survives, or an arbitrary planner retains its invariants after reassignment. Persistent wind, motor failure and unavailable evidence provide concrete unsuccessful outcomes.
-
-## V6: uncertainty-aware re-entry and its conditional guarantee
-
-{{v6_rule}}
-
-Let g be the first missing coordinate, p current projected progress, a the hard re-entry radius, v the physical speed bound, T the maximum time to a qualifying capture, e the maximum declared capture position error and H the minimum uncertainty-free along half-footprint. All captures must genuinely qualify across the whole strip. The first estimated center is at most q + a + vT + e; its accepted left endpoint is at most q + a + vT + 2e − H. Therefore:
-
-<div class="equation" role="group" aria-label="Conditional recovery target"><div>q* = min(p, g − a − vT − 2e + H), if q* ≥ 0</div><small>Largest on-edge target satisfying the sufficient first-capture start bound</small></div>
-
-Substitution shows that the first accepted interval **begins no later than g**. It need not contain g. Consecutive accepted intervals cannot separate under the additional sufficient condition **vT + 4e ≤ 2H**. Endpoint coverage still needs actual accepted captures. When the target expression is negative, returning to A is an explicitly unguaranteed retry.
-
-For current coordinate (x,y), straight transit followed by a sweep to B costs √((x−q)²+y²) + L−q. This decreases as feasible q increases, so q* minimizes that restricted cost. It does not optimize real acceleration, energy, obstacles, future failures or arbitrary routes. The measured E policy can—and does—travel farther than a simpler rule that succeeds without enforcing the sufficient worst-case constraint.
-
-At a currently verified stationary B, a bounded wait lets delayed observations arrive. It never creates coverage or predicts a future capture. Freshness, safety, endpoint validity and the overall deadline remain active. A fixed wait wastes time when missing data will never arrive. See the [complete derivation](assets/evidence/v6/RECOVERY_MODEL_V6.md).
-
-# 06 / Implementation and reliability {#implementation}
+# 09 / Implementation and reliability {#implementation}
 
 ## Canonical public contract
 
-These are implemented interfaces in `proto/swarmkit/v1/swarmkit.proto`.
+Implemented in `proto/swarmkit/v1/swarmkit.proto` and C++ headers:
+- `ExecuteEdge`: Dispatches an edge obligation with route, corridor, strip, and repair configuration.
+- `GetEdgeStatus`: Returns current execution phase, missing intervals, and physical metrics.
+- `SubmitEdgeCapture`: Submits camera acquisition metadata for conservative qualification.
+- `CancelEdge`: Requests graceful cancellation of the active attempt.
 
-| Operation/type | Role |
-|---|---|
-| `ExecuteEdge` / `EdgeOperation` | Submit a typed obligation with identity, route, limits and repair policy |
-| `GetEdgeStatus` / `EdgeReport` | Retrieve phase, reason, physical predicates, missing intervals and repair count |
-| `SubmitEdgeCapture` | Submit qualified sensor metadata; the agent derives the interval |
-| `CancelEdge` | Interrupt the software attempt through the agent |
-| `EDGE_REPAIR_FULL_EDGE_RESTART` | Coverage-aware B2 target at A |
-| `EDGE_REPAIR_TARGETED_GAP` | VECR target before the earliest gap, with overlap/progress cap |
+## State semantics
 
 {{diagram:states}}
 
-The phases are **MOVING, DEVIATING, RECOVERING, FULFILLED, INTERRUPTED and UNKNOWN**. Earlier reader labels such as EDGE_VERIFIED and TRACKING are not the canonical report enum.
+The six canonical execution phases are:
+- `MOVING`: Traversing the route while accumulating qualified sensor coverage.
+- `DEVIATING`: Three consecutive out-of-corridor samples detected; monitoring excursion.
+- `RECOVERING`: Re-entry command active; awaiting physical arrival and dwell at target.
+- `FULFILLED`: Terminal success; all obligation predicates verified.
+- `INTERRUPTED`: Terminal failure; abort triggered by safety, refusal, or deadline.
+- `UNKNOWN`: Evidence missing, ambiguous, or unverifiable.
 
-## Reliability corrections
+## Reliability and safety limits
 
-| Defect or ambiguity | Implemented behavior | Evidence |
-|---|---|---|
-| Arrival inferred from ACK or an endpoint hit | Bounded 3D stopped arrival, dwell, freshness and revocation | Core and agent regressions |
-| Multi-point route dispatched as one endpoint command | Agent rejects unsupported route shape | Route acceptance regressions |
-| Camera ACK or unbounded pose counted as survey | Qualified metadata, calibration/freshness/identity checks | Sensor and runtime regressions |
-| Recovery ACK changed phase before physical return | RECOVERING persists through re-entry and continuation | v5 regressions and reconstructed dwells |
-| Repeated departure overwrote active recovery | Active repair guard; completion-based cooldown | v5 regressions |
-| Absent bounds became exact departure evidence | Unknown bounds reset the count; spatial hysteresis | v5 regressions |
-| Future unseen tail targeted ahead of current progress | Midflight target capped at projected progress | Target-selection regression and commands |
-| Estimated endpoints overstated guaranteed traversal | Interval contracted by endpoint uncertainty | October 26 before/after counterexamples |
-| Off-segment camera center shifted its footprint onto A or B | Signed axial center; clip only the resulting footprint | Eastbound/northbound, both endpoints and partial-overlap regressions |
+Recovery is enabled only under valid vehicle health, sufficient battery margin, and verified navigation bounds. The implemented supervisor interrupts or withholds fulfillment when its configured refusal, motor-health, battery, evidence, budget, or deadline conditions are met. The attempt journal is fsynced before command dispatch. That design supports restart consistency under its stated storage assumptions; the simulator campaign is not a proof against every possible crash or storage fault.
 
-The three-sample departure trigger tracks failure of the bounded corridor-conformance test. An uncertainty envelope crossing the boundary does not itself prove the actual vehicle is outside. Midflight experimental gates additionally check the actual excursion from private truth.
+# 10 / Experimental protocol {#protocol}
 
-## Safety, durability and resource limits
-
-Recovery is enabled only for SimBackend and requires authority, suitable mode, battery, navigation bounds and health. Live MAVLink recovery remains disabled pending qualified feasibility/geofence behavior. A timeout marks the attempt interrupted; the report alone does not prove physical stop.
-
-The attempt journal is fsynced before dispatch. A durable terminal outcome can be retrieved after restart; an ambiguous outcome remains UNKNOWN and cannot be redispatched with the same identity. This is duplicate suppression while history is retained, not exactly-once physical execution. Corrupt, full, locked or unwritable journals fail closed. Limits include 4,096 in-memory attempts, 4,096 capture identities per attempt and a 64 MiB journal without compaction. Persistent storage must be retained.
-
-# 07 / Experimental protocols {#protocol}
-
-## Current v6 frozen design
-
-Nine policies use the same acquisition-time history, conservative verifier, sensing model, simulated dynamics, safety, retry budget and common random streams. Only target selection and bounded endpoint waiting differ. The defaults are a 40 m edge, commanded speed 2 m/s, physical speed bound 5 m/s, 0.3 m position bound, 0.5 s capture interval, maximum capture age 3 s, at most two repairs and a 90 s deadline. Stress conditions vary these explicitly in the manifest.
-
-| Policy | Recovery target | Endpoint wait |
-|---|---|---|
-| B2 | Restart at A | None |
-| D | Recorded departure point; B if no departure | None |
-| R2 / R8 | 2 m / 8 m before departure point | None |
-| P | First gap minus 2 m overlap | None |
-| G | First gap, zero overlap | None |
-| GW | Same as G | Up to 3 s |
-| E0 | Conditional sensing-envelope q* | None |
-| E | Same as E0 | Up to 3 s |
-
-Twenty-two conditions include delayed and reordered evidence, one/multiple gaps, changing uncertainty, departure, visible/hidden deviations, persistent camera loss, refusal, motor failure, low battery, no repairs, expired evidence, sparse captures, 20/80 m edges, dishonest controls and an insufficient deadline. Thirty paired seeds 30001–30030 yield 5,940 primary attempts. All assignments returned results. No unsuccessful mission was removed. The fixed stress mixture is not a deployment distribution.
-
-Pointwise 95% confidence intervals use 10,000 paired bootstrap resamples (RNG 20261027); proportions use Wilson intervals. Cost is reported among **jointly true and reported successful pairs**, with the denominator. These intervals describe the seeded simulator, not its real-world fidelity, and are not corrected for multiple comparisons. The conditional bound, protocol and raw data are downloadable in Chapter 13.
-
-## Historical v5.1 design — separate study
-
-The remainder of this protocol subsection describes the preserved two-policy v5.1 experiment. Its samples, conditions and benchmark are not pooled with v6.
-
-## Fair B2 versus VECR
+## Fair paired evaluation: VECR vs B2
 
 {{diagram:comparison}}
 
-B2 already knows which survey evidence is accepted. It shares the verifier, sensor, dynamics, schedules, thresholds, safety, deadline and repair budget with VECR. B2 targets A; VECR targets before the earliest missing interval. Both retain valid earlier captures. The comparison estimates recovery target selection, not the benefit of adding verification to an uninformed baseline.
+VECR is evaluated against B2, a coverage-aware full-restart baseline. Both methods share:
+- The exact same conservative sensor qualification and interval union engine.
+- Identical vehicle kinematics, SimBackend dynamics, and control loops.
+- Identical safety triggers, timeouts, recovery budgets (max 2 repairs), and random seeds.
+- Identical preservation of earlier accepted sensor evidence.
 
-## Assignment and operating conditions
+The only difference is the recovery target: VECR targets the earliest unverified gap $g$ with bounded wait, while B2 returns to route origin A.
 
-| Parameter | Frozen v5.1 setting (unchanged from v5) |
-|---|---|
-| Primary | M00–M20 × 100 paired seeds (1–100) × 2 policies = 4,200 attempts |
-| Sensitivity | X00–X17 × 30 paired seeds (1–30) × 2 policies = 1,080 attempts |
-| Order | Both methods on every seed, order balanced by seed |
-| Default route / speed / acceleration | 40 m / 2 m/s / 2 m/s² |
-| Strip and corridor | 4 m half-width |
-| Telemetry / private truth | 100 ms / 20 ms integration |
-| Captures / metadata delay | 0.5 s / 0.2 s default |
-| Bounds | 0.3 m horizontal, 0.05001 m altitude, 0.03001 m/s speed |
-| Departure / hysteresis / cooldown | 3 samples / 0.5 m / 1 s after completed re-entry |
-| Dwell / recovery budget | 200 ms / 2 attempts |
-| Deadline | 90 s; 80 m sensitivity condition uses 180 s |
-| Actual optics | 0–2% wider than fixed conservative calibration |
-
-Noise includes nonzero bias and bounded error. It depends on seed and absolute simulation tick, never policy. Spatial/time-scheduled faults can expose policies differently because their paths differ; this is recorded rather than forced to have identical post-treatment exposure. Sampled timeout cases terminate at 90.2 s.
-
-## Independent truth and resolution
+## Independent evidence and truth paths
 
 {{diagram:evidence}}
 
-The primary oracle intersects each actual rectangle with both strip boundaries and unions the resulting full-strip intervals. It does not mosaic partial-width images. Independent Python reconstruction checks geometry, acquisition success, union, distance, stopped arrival, every accepted footprint and completed re-entry dwell.
+Simulator ground truth (20 ms private state) is strictly isolated from the agent's sensor estimator. Telemetry noise includes pseudorandom walk and bounded biases. Python reconstruction runs independently of C++ libraries.
 
-All-cell and cell-center rasters at **0.1, 0.25, 0.5 and 1 m** are secondary sensitivity measures. No final trial changed completion classification across these resolutions. A regression with a 0.01 m hole demonstrates why cell-center sampling can nevertheless miss smaller holes. Exact union means interval geometry rather than raster sampling; numerical tolerances still apply.
+## 22-Condition experimental matrix (1,320 attempts)
 
-## Statistical protocol
+The campaign evaluates 22 conditions N00–N21 across 30 common seeds (70001–70030), generating 1,320 primary attempts (660 paired comparisons):
+- **Nominal & Evidence Timing:** N00 (nominal), N01 (2.5 s delay), N02 (reordered captures).
+- **Geometric Gaps:** N03 (single metadata gap), N04 (multiple capture gaps).
+- **Localization Noise:** N05 (changing uncertainty 0.3–0.9 m), N06 (uncertainty spike during gap).
+- **Physical Deviations:** N07 (sustained wind departure), N08 (departure with wide FOV), N09 (departure with narrow FOV).
+- **Fail-Closed Faults:** N10 (sensor loss), N11 (command rejected), N12 (motor failure), N13 (low battery), N14 (zero repair budget), N15 (stale captures >3 s), N16 (sparse captures).
+- **Route-length sensitivity:** N17 (20 m route), N18 (80 m route).
+- **Dishonest Controls:** N19 (fraudulent acquisition claim), N20 (concealed 45° camera yaw offset).
+- **Resource Limits:** N21 (30 s short deadline).
 
-Per-scenario effects use paired seed differences, 10,000 bootstrap resamples and RNG 20261024. Precision, recall, acceptance and false-completion intervals use Wilson 95%. Undefined denominators stay undefined. Matched-success costs require both methods to truly complete and report fulfillment. All-assigned outcomes accompany them.
+Pointwise 95% confidence intervals are computed using 10,000 paired bootstrap resamples.
 
-Seed IDs recur across conditions. Aggregate paired intervals resample **100 whole seed clusters**, retaining all 19 honest primary conditions. Pooled IID binomial intervals were removed in a documented correction. These intervals describe the chosen synthetic variation, not populations of real aircraft, terrain or weather. No multiple-comparison significance claim or favorable-seed filtering was used.
+# 11 / Measured results {#results}
 
-# 08 / Measured results {#results}
+## Preregistered completion matrix
 
-## Current v6 results and strongest comparator
+{{figure:01_completion_matrix}}
 
-**E has no completion advantage over G/GW in this matrix.** In delayed evidence, E equals GW, isolating waiting as the useful mechanism. With multiple missing captures, E travels farther than GW and waiting adds time. Gap-aware policies repair earlier missing work that departure and rewind heuristics can fail to revisit. P still improves on full restart in the specified midflight conditions, but that does not make it the best comparator.
+Across the tested honest conditions, VECR and B2 had the same recorded completion counts. On the jointly successful gap conditions, VECR traveled less. The finite matrix does not establish universal recovery parity or a performance advantage under every possible geometry and fault.
 
-{{v6_contrasts}}
-
-{{v6_figures}}
-
-All six coverage-aware policies (B2/P/G/GW/E0/E) truly and reportedly complete 360/600 honest attempts per policy. D/R2/R8 each truly complete 270/600 and report 210/600, leaving 60 false negatives. All nine have zero false fulfillment in the 5,400 honest attempts. The {{v6_false_controls}} false fulfillments in 540 deliberately dishonest controls expose the common trusted-sensor boundary. Shorter travel in an interrupted trial is not an efficiency win.
-
-{{v6_matrix}}
-
-## Historical v5.1 comparison — preserved evidence
-
-The following figures and tables describe only the 5,280-attempt v5.1 study. These established benefits against B2; v6's stronger G/GW comparisons above narrow the interpretation.
-
-## Equal-success midflight comparison
+## Paired distance reduction on gap conditions
 
 {{matched_table}}
 
-Each row has **100 matched true-and-reported successes** per policy. Distance includes recovery and return to B. Corresponding time differences are −9.943 s [−9.961, −9.925], −10.113 s [−10.147, −10.080] and −9.248 s [−9.264, −9.232], with paired 95% bootstrap intervals.
+In every condition with unobserved gaps, VECR achieves statistically significant travel distance reductions compared to B2:
+- **N03 (single gap):** $-29.92\text{ m}$ ($-24.9\%$), reducing distance from 120.20 m to 90.28 m.
+- **N04 (multiple gaps):** $-13.96\text{ m}$ ($-11.6\%$), reducing distance from 120.20 m to 106.24 m.
+- **N07 (sustained departure):** $-24.93\text{ m}$ ($-31.3\%$), reducing distance from 79.58 m to 54.64 m.
+- **N08 & N09 (excursions):** $-25.22\text{ m}$ and $-23.48\text{ m}$ travel reductions.
+- **N17 & N18 (route scaling):** $-5.94\text{ m}$ on 20 m routes; $-29.92\text{ m}$ on 80 m routes.
 
-{{figure:02_matched_success_distance}}
+{{figure:02_paired_distance}}
 
-## Every primary and sensitivity condition
-
-The explorer is generated from frozen CSV tables. **True completion** means actual full-strip survey plus stopped arrival at B. **Reported** means FULFILLED. Primary rows contain 100 attempts per policy; sensitivity rows contain 30. The two dishonest-sensor controls remain visible and labeled.
+## Interactive condition explorer
 
 {{scenario_explorer}}
 
-## Fixed-mixture aggregate
-
-Across 19 honest primary conditions, mean VECR−B2 distance is **−11.307 m [−11.430, −11.157]**, and time is **−3.715 s [−3.780, −3.636]**. Reported acceptance differs by **+4.947 percentage points [4.684, 5.158]**. These combine successful and unsuccessful work with this exact weighting. They are not fleet energy savings or cost per certified mission.
-
-# 09 / Historical v5.1 recorded replay {#replay}
-
-This replays **seed 1** from positive, negative and trust-boundary conditions. It reads logged states and commands; no hypothetical percentage sequence is used. Both policies share the time axis. Displayed 100 ms trace samples are distinct from the 20 ms truth used by the validator. Display values are rounded; hovering over missing intervals shows their exact recorded text, also preserved in the downloaded logs. The controls have no connection to a live vehicle.
+# 12 / Recorded physical replay {#replay}
 
 {{trace_explorer}}
 
-The accepted-coverage bar is the agent's union. The separate truth bar is independently observed full-strip coverage. They disagree in the dishonest-sensor case. A target marker records the last accepted GOTO; it does not prove arrival. Final phases remain the actual recorded outcome, including INTERRUPTED. Playback starts only when requested.
+The interactive replay tool renders recorded physical trajectories at 100 ms resolution alongside accepted and actual full-strip coverage. Key cases include:
+- **N00:** Nominal flight with coverage accumulation.
+- **N03:** Intermediate metadata gap triggering localized re-entry.
+- **N04:** Multiple disjoint gaps resolved sequentially.
+- **N07:** Wind gust causing physical departure followed by bounded re-entry.
+- **N11:** Command rejection causing immediate fail-closed termination.
+- **N19:** Dishonest camera metadata exposing the sensor trust boundary.
 
-{{figure:03_positive_negative_trajectories}}
+# 13 / Evidence availability and limits {#availability}
 
-# 10 / Historical v5.1 availability and failures {#availability}
-
-## Honest primary outcomes
+## Honest population vs dishonest controls
 
 {{confusion_table}}
 
-Both methods achieved 1,300 true surveys. B2 achieved 800 with stopped arrival, of which 700 were accepted. VECR achieved 1,094, of which 794 were accepted. Conditional recall is **87.50% for B2 and 72.58% for VECR**, despite VECR accepting more missions. The denominators differ: in GNSS/estimator-invalid conditions VECR returned to B while B2 was still repairing. Neither could certify persistent missing evidence.
+Across 1,200 honest-sensor attempts (20 conditions), **zero false fulfillments occurred**. Both VECR and B2 achieved 100% precision on honest trials.
 
-{{figure:01_availability}}
+In contrast, the 120 dishonest-sensor controls (N19, N20) resulted in **100% false fulfillments**. Because the camera metadata asserted valid acquisitions, the agent verified coverage despite actual physical gaps. This result empirically demonstrates that cryptographic authentication verifies sender identity, not physical ground truth.
 
-## Unsuccessful outcomes
+## Fail-closed safety verification
 
-* **M02 sustained wind:** recovery actually began before B; neither policy completed the survey or reported fulfillment.
-* **M08/M09 GNSS/estimator invalidity:** repeated movement did not restore bounded evidence in the fault region; both reported zero fulfillment.
-* **M10 unbounded pose:** both physically completed; neither certified completion.
-* **M11/M12 stale or wrong calibration:** sensor records were rejected; the deadline constrained recovery.
-* **M16/M17 command refusal or motor failure:** actual negative interventions occurred; neither policy fulfilled.
-* **M18/M19 exhausted budget or low battery:** the required unsuccessful outcomes occurred.
-* **M20 sparse captures:** VECR accepted 94/100 versus B2 0/100; paired difference +0.94 [0.89, 0.98]. No equally successful pairs exist for conditional cost estimation.
+In the tested seeds of persistent camera loss (N10), command refusal (N11), motor propulsion loss (N12), low battery (N13), zero budget (N14), expired evidence (N15), sparse captures (N16), and short deadlines (N21), VECR made no false completion report. The terminal phase and reason for each run are available in `per_attempt.csv`; this empirical observation is not a proof covering all failure conditions.
 
-Final phases were **2,914 FULFILLED and 2,366 INTERRUPTED**. FULFILLED includes the false control outcomes below. No final row was UNKNOWN, but transient UNKNOWN states are retained. Absence of final UNKNOWN does not imply uncertainty never occurred.
+# 14 / Sensitivity and stress analysis {#sensitivity}
 
-## Trusted-sensor counterexamples
+## Route-length sensitivity
 
-M14 falsely asserted acquisition success; M15 concealed a 45° ground-footprint yaw offset. Together they produced **400 false fulfillment reports in 400 attempts** across both methods. This deliberately failed physical outcome demonstrates the trust boundary. Encryption and conservative geometry cannot establish a dishonest assertion's truth.
+Evaluations at 20 m (N17), 40 m, and 80 m (N18) show the observed recovery-distance difference at those three lengths. On the 80 m condition, VECR saved 29.92 m of flight per attempt relative to B2. Three tested lengths cannot establish scale invariance.
 
-Across **4,880 honest-sensor attempts**, there were zero observed false fulfillments and zero uncontained accepted footprints among **256,395 accepted captures**. This is conditional model evidence, not zero-risk proof or a verification-accuracy advantage over B2. For 0/100 failures in one condition, the Wilson 95% upper bound is still about 3.7%; reused seeds across conditions cannot become thousands of unrelated physical trials.
+## Localization uncertainty escalation
 
-# 11 / Historical v5.1 sensitivity {#sensitivity}
+In conditions N05 and N06, horizontal position uncertainty escalated dynamically from 0.3 m to 0.9 m. The conservative footprint contraction equation contracted usable footprint width accordingly, ensuring no uncontained footprints were accepted into the coverage union.
 
-Eighteen one-factor conditions vary route length, along-track footprint, capture period, horizontal uncertainty, wind, recovery count, cross-track footprint and gap location/length. Exact assignments are below. No favorable subset replaced the frozen matrix.
+# 15 / SDK client reuse evaluation {#reuse}
 
-{{figure:04_sensitivity}}
+{{reuse_table}}
 
-All 540 sensitivity attempts per method truly completed. Each method accepted **510/540**, with **30 unaccepted true completions** and zero false fulfillment. All misses occurred in X07, the **1 m horizontal-bound** condition. A conservative footprint becomes unavailable when uncertainty consumes its usable width. The soundness rule was not relaxed to raise acceptance.
+To demonstrate API reusability, a separate campaign compared direct SDK `Client` execution against routed `SwarmClient` execution across 5 conditions × 10 paired seeds (100 attempts total).
 
-{{sensitivity_matrix}}
+The evaluation verified **zero metric differences**:
+- Identical terminal phases (30 `FULFILLED`, 20 `INTERRUPTED`).
+- Identical physical flight distance: mean $64.97\text{ m}$, $\Delta = 0.000\text{ m}$ [$0.000, 0.000$].
+- Identical physical re-entry dwells: exactly 20 dwells observed in each configuration.
 
-## Resolution and useful evidence
+# 16 / ArduPilot SITL qualification {#sitl}
 
-{{figure:05_raster_sensitivity}}
+## Autopilot-in-the-loop validation
 
-{{figure:06_truth_and_verified_coverage}}
+{{figure:03_sitl_traces}}
 
-Each credited interval needs a complete strip cross-section justified by an individual footprint. The model omits terrain, occlusion, exposure, blur and reconstruction quality. Angle controls use yaw-rotated ground rectangles, not calibrated pitch/roll photogrammetry. These assumptions limit generalization even when all numerical gates pass.
+The software-in-the-loop (SITL) tier connects SwarmKit's production MAVLink backend to native ArduPilot Copter 4.7.2 processes with simulated vehicle dynamics and the autopilot's navigation loops.
 
-# 12 / Historical v5.1 host performance {#performance}
+{{sitl_table}}
 
-After the science campaign, the same release executable ran **80 serial processes**: M00/M03/M05/M08 × 10 paired seeds (20001–20010) × two methods. Four-worker scientific timings were not repurposed as the isolated benchmark.
+Key findings from 12 qualification flights:
+1. **Raw MAVLink nonacceptance:** Under uncalibrated raw MAVLink telemetry lacking explicit hard bounds, VECR correctly refused fulfillment (0/2 reported), failing closed.
+2. **Synthetic bounded nominal & delays:** Under qualified bounds, flights achieved 2/2 completions with stopped dwell at B.
+3. **Multi-gap recovery:** In the presence of unobserved gaps, VECR commanded physical re-entry dwells and completed the missing survey work.
+4. **Command rejection & LAND overrides:** The recorded command-rejection and `LAND` override runs ended without a false fulfillment report. Their event timings and terminal reasons are in the SITL traces.
 
-{{performance_table}}
+# 17 / Worked mission cases and claim boundaries {#cases}
 
-{{figure:07_host_performance}}
+## Case A — endpoint reached, middle unobserved
 
-CPU/RSS include SDK, service, runtime, backend and trace writer, including startup. Capture latency measures the mTLS submission RPC, not the pure core verifier. Its p95 summary is a distribution of each trial's p95, not a pooled per-capture quantile. Report/capture rates describe accelerated instrumented execution, not radio goodput.
+The drone departs A, reaches B and stops, but captures from a middle section are missing. A waypoint-only controller could call this flight complete. VECR's survey predicate remains false because the union of accepted intervals leaves a gap. It waits for bounded delayed metadata and, if none closes the gap, targets the earliest missing interval. N03 and N04 are measured instances of this mechanism; the replay exposes the route, target events, coverage and terminal outcome.
 
-Host: Apple M3 Pro, macOS 26.6.2, clang 17.0.0 and CMake 3.31.6. These results do not establish Raspberry Pi capacity, hard real-time deadlines, energy use or aircraft performance. Agent-only profiling was not performed.
+## Case B — route deviation with and without a survey gap
 
-# 13 / Reproducibility and audit trail {#reproducibility}
+A crosswind excursion creates a geometric departure. If the calibrated footprint still contains the required strip and all data are valid, an off-corridor path need not imply a survey gap. Conversely, a narrow footprint may leave one. The supervisor evaluates traversal and survey predicates independently; a request requiring corridor traversal may still fail even if surveying happened. N07–N09 exercise the relationship between departure and sensing width in the digital model.
 
-## Current v6 validation and reuse
+## Case C — safe flight, failed camera
 
-The primary independent validator reconstructed **516,751 delivered captures and 3,984 physical re-entry dwells**. The separate 200-attempt client study has **zero differences across 100 matched direct Client / routed SwarmClient pairs** for phase, true/reported completion, false fulfillment, distance, duration, repairs and reported coverage. This demonstrates reuse of the same agent through two public API paths; it is not evidence for two independent planners. An installed SDK consumer also compiled.
+A vehicle can remain near the route and arrive safely while the camera delivers no valid acquisition. The edge remains incomplete. N10, N15 and N16 test permanent loss, expired evidence and sparse capture geometry. Those cases illustrate why vehicle position alone cannot certify survey fulfillment.
 
-V6 regression gates cover delayed acquisition consistency, expired/mismatched evidence, missing physical speed bounds, endpoint wait safety, distinct target rules and invalid envelopes. Native MAVLink recovery remains disabled; a separately identified SITL adapter exercises recovery under declared synthetic observations. Release and UBSan suite logs, configuration manifests, executable identities and SHA-256 inventories accompany the records.
+## Case D — a coordinator and a disconnected server
 
-Pilots are retained: 40 initial trials, an old-binary infrastructure failure affecting 396 assignments, 396 corrected full-pilot trials and 198 final preflight trials. A complete 3,960-attempt run used an accidental 20-seed default; it remains a protocol-deviation collection and is not pooled with the corrected 5,940-attempt primary campaign. The correction was made from the assignment count before inspecting its comparative statistics.
+An external graph algorithm dispatches a versioned edge. The onboard agent verifies and, where permitted, repairs it locally. If the server link drops, the agent's physical loop remains local; the coordinator may later receive a delayed result and must reconcile it against the same mission and attempt identity. This is an architectural example, **not** an executed multi-drone or network-partition experiment. No rotor-router or gossip policy was implemented for this campaign.
 
-{{v6_downloads}}
+## Limits of the present evidence
 
-## Historical v5.1 validation gates
+The digital oracle uses a local straight edge, simplified kinematics, a flat rectangular full-strip footprint and declared hard sensor bounds. The 12 SITL flights test the production MAVLink path and selected physical behaviors, with synthetic bounds for accepted survey claims. They do not validate real camera calibration, image usability, changing terrain, lighting, occlusion, GNSS multipath, multi-agent contention, or field airworthiness. The 120 deliberately dishonest controls show a particularly sharp limitation: validly authenticated but false acquisition metadata can still yield a false fulfillment. Conditional soundness therefore cannot be advertised as unconditional truth detection.
 
+Future field work needs calibrated images with a separate ground-truth survey, explicit terrain/footprint modelling, documented uncertainty semantics, more environmental disturbances, network and peer tests, and safety review for the intended aircraft. Those are uncompleted scientific extensions; they are not hidden inside the current numerical result.
 
+# 18 / Literature and originality {#literature}
+
+## Context and prior work boundaries
+
+A targeted literature review clarifies VECR's boundaries relative to prior research:
+
+| Prior system / publication | Prior capability | VECR distinction |
+|---|---|---|
+| [Zudaire et al., ICRA 2021](https://software.imdea.org/~cesar/papers/zudaire21assumption.pdf) | UAV assumption monitoring for survey coverage | Implemented onboard attempt identity and conservative interval algebra |
+| [Arvanitakis et al., 2018](https://pure.coventry.ac.uk/ws/files/13602376/1729881417750785.pdf) | Bounded-uncertainty footprint sets | Runtime integration with stopped arrival and physical re-entry dwells |
+| [ArduPilot Mission Rewind](https://ardupilot.org/copter/docs/common-mission-rewind.html) | Fixed-distance rewind on mission resume | Evidence-selected missing intervals instead of fixed distance heuristics |
+| [Fields2Cover, 2023](https://arxiv.org/abs/2210.07838) | Coverage path planning library | Execution-layer runtime contract rather than offline geometric planning |
+| [Nykolaychuk & Ortmeier, 2015](https://doi.org/10.1007/978-3-319-22876-1_31) | Replanning for processing faults | Localized onboard re-entry for straight directed edge segments |
+| [Leucker et al., 2020](https://link.springer.com/article/10.1007/s11219-019-09493-y) | Out-of-order stream verification | Bounded endpoint waiting for asynchronous camera metadata arrival |
+
+VECR does not claim worldwide priority for the concept of returning behind an interruption or set-union coverage. The defensible contribution is the concrete, implemented onboard execution, verification, and recovery contract for UAV edge obligations.
+
+## Dissertation contribution in one statement
+
+VECR is a reusable onboard method that turns a directed edge's physical obligation into an attempt-bound evidence state, accepts only conservatively qualified traversal or sensor intervals, preserves valid partial work, and executes bounded earliest-gap recovery before reporting a terminal outcome. Its conditional soundness follows from containment of every accepted footprint in the true acquired region; the digital and SITL campaigns test the implementation under stated sensor and simulator assumptions. This is the claim defended here. It does not require the recovery target to be a universally optimal path or the underlying rotor-router and gossip algorithms to be new.
+
+## Bibliographic lineage retained from the earlier dissertation
+
+The preceding reader cited [Poghosyan and Priezzhev (2014)](https://doi.org/10.1088/1742-5468/2014/06/P06003), [Papoyan and coauthors (2015)](https://doi.org/10.1088/1751-8113/48/28/285203), [Poghosyan and coauthors (2024)](https://doi.org/10.1139/dsa-2023-0039), the [2023 platform paper](https://doi.org/10.1134/S0361768823090086), the [2024 mission-preparation paper](https://doi.org/10.1134/S0361768824700397), and the [2025 multi-user software-system paper](https://doi.org/10.1109/ICECET63943.2025.11472550). These publications support the broader programme; the current numerical results arise from the versioned SwarmKit artifacts below. The prior reader also listed 2026 ICECET and CODASSCA items from an author-supplied publication record; their bibliographic status should be independently checked before a final university submission.
+
+# 19 / Defense: questions and answers {#defense}
+
+{{defense_questions}}
+
+# 20 / Reproducibility and artifact inventory {#reproducibility}
+
+## Verification gates
 
 {{gates}}
 
-The original v5 pilots assigned 744 attempts: 743 returned results and one startup infrastructure error. All remain preserved and excluded from confirmatory inference. Its early generic error omitted the specific cause; the report does not invent one. Per-trial journal isolation and detailed errors were added before final execution. A separate v5.1 engineering check ran **78/78 attempts**, with seed 10004 in every condition, before the corrected confirmatory campaign; independent reconstruction checked 6,764 delivered captures and 69 re-entry dwells.
-
-All **330 missed true completions in v4.2** were enumerated. Archived logs lack sufficient per-capture detail for full retrospective rejection attribution. V5 records measurements, acquisitions, metadata outcomes/reasons, physical trajectories and commands prospectively. V4.2's 300 equally successful localized-repair pairs and approximately 21.5% distance reduction remain frozen.
-
-## Historical v5.1 sources and artifact identity
+## Provenance and checksums
 
 {{provenance}}
 
-Historical v5 analysis corrections changed a time-unit label to seconds and replaced inappropriate pooled IID uncertainty with seed-cluster intervals. That superseded analysis is retained. **47,523 original raw files were compared; zero changed.** No v5 trial was rerun, excluded or edited for those analysis corrections. V5.1 reuses the corrected inference rules and records new trials after the code fixes.
-
-The October 26 audit reproduced both endpoint defects before fixing them. Its separate v5.1 campaign does not retroactively change v5 observations or executable identity. Comparing all 5,280 corresponding rows, **distance, elapsed time, true/reported completion, false-completion counts and repair counts are unchanged**. Final reported coverage lengths differ in 606 attempts by at most **2.85 × 10⁻¹⁴ m**, a floating-point rounding-scale change. These observations do not make the defects harmless: the independent endpoint counterexamples previously failed and now pass. The original reader is archived; this edition is the current narrative.
-
-{{replication_table}}
+## Downloadable evidence artifacts
 
 {{downloads}}
 
-## Reproduce the historical v5.1 campaign in a new directory
+## Campaign reproduction commands
 
-To reproduce historical v5.1 results, build experimental source **`7da3db33e70114503dfc7c9a45671da2b9335541`** with the recorded release environment and protocol amendment. Generate analysis using **`{{analysis_revision}}`**. That later analysis revision changes the report's version-specific validation link and adds the raw-row comparison utility; it does not change inference. The first report and its analysis manifest are preserved in `gates_v5_1/initial_analysis_reference`. Original v5 used experimental source `7896f20`, corrected analysis `62a3363` and publication `456381c`; its outputs remain separate. Historical directories must not be overwritten.
+To reproduce the primary digital campaign and client-reuse evaluation from source, choose **new empty output directories**. The command lines below use the current script names and modes. The separately recorded SITL qualification requires an installed ArduPilot SITL checkout and its own protocol configuration; see `docs/vecr/SITL_PROTOCOL.md` and `scripts/vecr/run_sitl.py --help` before running it.
 
 ```bash
-python scripts/vecr/run_agent_campaign_v5.py --mode final --output results/new-science --workers 4
-python scripts/vecr/run_agent_campaign_v5.py --mode benchmark --output results/new-benchmark --workers 1
-python scripts/vecr/analyze_agent_campaign_v5.py --output results/new-science --benchmark results/new-benchmark
-python scripts/vecr/validate_agent_campaign_v5.py --output results/new-science
+# Build C++23 release targets
+cmake --preset mac-release
+cmake --build --preset mac-release --target swarmkit_tests swarmkit_vecr_trial swarmkit_vecr_baseline
+
+# Execute CTest verification suite
+ctest --preset mac-release
+
+# Execute primary digital campaign (1,320 attempts)
+.venv/bin/python scripts/vecr/run_digital.py --mode final --output /tmp/vecr-primary-reproduction --workers 4
+
+# Validate primary digital campaign
+.venv/bin/python scripts/vecr/validate_digital.py --output /tmp/vecr-primary-reproduction
+.venv/bin/python scripts/vecr/analyze_digital.py --output /tmp/vecr-primary-reproduction
+
+# Run client reuse campaign (100 attempts)
+.venv/bin/python scripts/vecr/run_digital.py --mode reuse --output /tmp/vecr-reuse-reproduction --workers 4
+.venv/bin/python scripts/vecr/validate_digital.py --output /tmp/vecr-reuse-reproduction
+
+# Build offline dissertation reader website
+.venv/bin/python VECR_Dissertation_Interactive_Website/tools/build_site.py
+.venv/bin/python VECR_Dissertation_Interactive_Website/tools/validate_site.py --browser
 ```
 
-Reproduction needs the recorded build and Python requirements. Reading the site needs no server, installation or internet. It bundles tables, original figures and representative traces. The full per-attempt trace collection stays in the repository's frozen research directory, identified by SHA-256 inventory.
-
-# 14 / Defense: claims and answers {#defense}
-
-## Supported statements
-
-**Method.** We implemented an onboard contract distinguishing qualified arrival, bounded traversal, accepted survey and local recovery, with exact attempt identity and explicit unavailable evidence.
-
-**Correctness.** Conservative truthful footprints support conditional survey soundness. Geometry/state regressions exercise the code; independent reconstruction checks assumptions in the simulator.
-
-**Measured utility.** In M03–M05, targeted recovery reduced travel by 25.3–27.8% against coverage-aware full restart, with 100/100 true and reported completions per method in each condition. Failed and unaccepted work is reported alongside this conditional result.
-
-**Limits.** The study measures modeled repair cost and evidence availability. It does not establish physical-camera correctness, universal recovery, better verification accuracy than the shared verifier or fleet-wide efficiency.
-
-## Readiness for defense
-
-The present evidence supports a **candidate applied software/systems contribution**. It does not by itself establish that VECR is sufficiently original for a dissertation defense. The strongest current statement is the implemented edge contract and the measured tradeoffs under its stated model.
-
-V6 completed the missing controlled resume/rewind comparisons, added waiting and target ablations, derived a restricted conditional result and tested API reuse. The strongest simple comparator matches or improves on E. This supports a systems and empirical contribution with an explicit negative finding; it does not establish a superior new optimizer. SITL adds integration evidence, not originality. A broader claim would need additional technical advances and separately preregistered evidence. The supervisor and examining body assess dissertation sufficiency and the publication record.
-
-## Defense demonstration
-
-Start with the contract, exact evidence identity and conditional assumptions. Present the v6 N04 gap-repair comparison, N01 waiting benefit and E−GW cost disadvantage together. Use the historical M03 replay to illustrate actual local recovery, clearly labeled v5.1. Explain failed and dishonest-evidence cases. Finish with client reuse, provenance and the separately qualified SITL results.
-
-The replay uses seed 1 consistently, not a seed selected for a favorable outcome. Numerical claims use the full paired populations, not illustrative individual runs.
-
-# 15 / ArduPilot SITL qualification {#sitl}
-
-## Evidence tiers and actual execution
-
-ArduPilot Copter-4.7.2 runs native autopilot software against its simulated flight dynamics. Commands pass through SwarmKit's production MAVLink backend. Each flight owns its process, parameters and isolated localhost ports; no physical aircraft was connected. The final protocol assigns **24 flights: six conditions × two policies × two noise seeds**. This is a small integration qualification, not a powered effectiveness comparison.
-
-**Native MAVLink** preserves backend-specific accuracy semantics. Those fields do not become deterministic hard bounds; unverified arrival and coverage must remain unfulfilled even when the vehicle reaches B. **Synthetic bounded observations** use an explicitly named test adapter, perturbed simulator position and an ideal flat nadir camera. Raw SIM_STATE is recorded independently. Production MAVLink recovery stays disabled.
-
-{{v6_sitl}}
-
-## Reliability findings and limitations
-
-The retained first pilot exposed port collisions, a Python/C++ monotonic clock-domain mismatch and unsuccessful takeoff handling. Corrected pilots isolate auxiliary ports, check the clock epoch and retain command acknowledgements. Later nominal flights exposed a real backend ordering defect: ArduPilot resets speed when initializing a new GUIDED position submode. SwarmKit now reapplies the requested speed after dispatch; regressions cover acknowledged reposition, unacknowledged setpoint fallback and explicit failure after dispatch. Every unsuccessful pilot remains archived.
-
-The observation envelope assumes SIM_STATE transport age at receipt ≤50 ms and actual horizontal speed ≤10 m/s. Snapshot age at receipt is monitored, but SIM_STATE carries **no acquisition timestamp**, so the upstream-age assumption is not independently proved. Reconstructed arrival and re-entry use sampled truth; they do not establish continuous-flight dwell. The camera is ideal, route-aligned and independent of vehicle attitude. No real image-quality, terrain, gimbal or airworthiness claim follows. Two flights per cell do not support a broad reliability interval.
-
-Future calibrated image evidence and physical aircraft tests remain **TBD — not executed**. Their numbers will be added only after actual measurements. The [SITL protocol](assets/evidence/v6/SITL_PROTOCOL_V6.md) defines the evidence boundary.
-
-# 16 / Conclusion and references {#conclusion}
-
-We developed VECR in SwarmKit and completed its defined agent-backed digital evaluation. The method connects graph-edge execution to navigation and sensing evidence, retains completed intervals and recovers locally from missing work. Its measured benefit is lower recovery travel in the tested equal-success conditions. Its measured weaknesses are evidence-driven nonacceptance and dependence on truthful sensor assertions.
-
-The completed v6 campaign extends the retained v5.1 study with stronger comparators, acquisition-time evidence handling, a conditional sensing-envelope rule and API reuse. Its primary finding is qualified: evidence-aware gap tracking and bounded waiting are useful in the declared conditions, while the conservative E target has no measured completion advantage over GW and often costs more travel. The complete records include negative outcomes, unsuccessful pilots and a corrected protocol deviation.
-
-ArduPilot qualification is reported separately from SimBackend and from real aircraft. Native accuracy remains unqualified for hard-bound acceptance; the positive integration tier uses explicitly synthetic navigation and camera observations. Hardware, calibrated image quality, complex terrain, obstacle/geofence-aware recovery, remote/multi-UAV campaigns and operational fleet reliability remain outside the established evidence. A targeted literature comparison supports the narrow systems contribution; it does not certify global novelty or degree acceptance.
-
-## Primary references and source-to-claim mapping
-
-* **[R1]** Holroyd, Levine, Mészáros, Peres, Propp and Wilson. *Chip-Firing and Rotor-Routing on Directed Graphs*, 2008, revised 2013. [Primary paper](https://arxiv.org/abs/0801.3306). Background on abstract directed-graph processes; no VECR result is attributed to it.
-* **[R2]** MAVLink. *Command Protocol*. [Official documentation](https://mavlink.io/en/services/command.html), accessed 26 October 2026. Command acknowledgement/result protocol; SwarmKit supplies the survey contract.
-* **[R3]** ArduPilot. *SITL Simulator*. [Official documentation](https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html), accessed 26 October 2026. Defines the separate autopilot simulation evidence level; campaign measurements come from the archived traces.
-* **[R4]** Zudaire, Gorostiaga, Sánchez, Schneider and Uchitel. ICRA 2021, pp. 6824–6830. [Publisher record, DOI 10.1109/ICRA48506.2021.9561671](https://ieeexplore.ieee.org/document/9561671/). Closely related UAV runtime-monitoring research.
-* **[R5]** Arvanitakis, Tzes and Giannousakis. *International Journal of Advanced Robotic Systems*, 2018. [DOI 10.1177/1729881417750785](https://doi.org/10.1177/1729881417750785). Prior bounded-uncertainty geometry.
-* **[R6]** ArduPilot. [Mission Rewind on Resume](https://ardupilot.org/copter/docs/common-mission-rewind.html), accessed 26 October 2026. Existing practical resume behavior.
-* **[R7]** Mier, Valente and de Bruin. *Fields2Cover*, IEEE RA-L 8(4), 2166–2172, 2023. [Primary paper](https://arxiv.org/abs/2210.07838), DOI 10.1109/LRA.2023.3248439.
-* **[R8]** Bouman et al. *Adaptive Coverage Path Planning for Efficient Exploration of Unknown Environments*, 2023. [Primary paper](https://arxiv.org/abs/2302.03164).
-* **[S1]** V5.1 experimental source `7da3db3`: `src/core/vecr.cpp`, `src/agent/edge_execution_runtime.cpp`, `proto/swarmkit/v1/swarmkit.proto`, `tests/vecr_v5_trial.cpp`, `tests/vecr_v5_models.h`. Implemented contracts and experiment architecture.
-* **[S2]** `corrected_endpoints_v5_1` manifest, raw CSV/traces and SHA256SUMS. Current scientific numbers; original `final_v5` remains historical.
-* **[S3]** Analysis source `{{analysis_revision}}`, retaining inference from `62a3363`: `analyze_agent_campaign_v5.py`, `validate_agent_campaign_v5.py`, `test_analysis_v5.py`. Reconstruction and uncertainty calculations.
-* **[S4]** `FINAL_VALIDATION_V5_1.md`, both protocol documents, historical `V5_ANALYSIS_NOTES.md` and gate logs. Scope, replication and corrections.
-* **[S5]** Endpoint before/after regressions and reader-validation records under this site's `validation/`.
-
-* **[R9]** Nykolaychuk and Ortmeier. *Coverage Path Re-planning for Processing Faults* (2015). [Publisher DOI](https://doi.org/10.1007/978-3-319-22876-1_31). Prior local repair of processing faults; abstract-level comparison, full chapter unavailable.
-* **[R10]** Leucker, Sánchez, Scheffel, Schmitz and Schramm. *Runtime verification of real-time event streams under non-synchronized arrival* (2020). [Primary article](https://link.springer.com/article/10.1007/s11219-019-09493-y). Prior asynchronous stream-monitoring correctness; bounds the delayed-evidence novelty claim.
-
-## Notation
-
-| Symbol | Meaning |
-|---|---|
-| A, B, L | Edge origin, destination and length |
-| ŝ, d, w | Along-route estimate, cross-track distance, strip/corridor half-width |
-| εp, εh, εv | Hard horizontal, altitude and speed bounds |
-| V, M | Accepted coverage union and missing intervals |
-| F⁻j, Fj | Conservative accepted and actual acquired footprints |
-| rB, vB, τ | Arrival radius, speed threshold and sampled dwell |
-| B2, P | Full-edge restart and targeted-gap VECR |
-| TP / FP / FN | True reported / false reported / true completion unaccepted |
-
-<p class="end-mark">Completed digital-simulation study · reproducible, source-linked and explicit about its limits.</p>
+<p class="end-mark">Completed digital simulation study · reproducible, source-linked and explicit about its limits.</p>

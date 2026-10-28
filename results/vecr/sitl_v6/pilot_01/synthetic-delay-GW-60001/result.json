@@ -1,8 +1,0 @@
-{
-  "navigation": "synthetic",
-  "fault": "delay",
-  "policy": "GW",
-  "seed": 60001,
-  "run_id": "synthetic-delay-GW-60001",
-  "infrastructure_error": "SITL trial startup/execution deadline"
-}

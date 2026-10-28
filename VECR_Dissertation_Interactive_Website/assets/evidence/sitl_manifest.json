@@ -1,0 +1,95 @@
+{
+  "protocol": "v7-sitl",
+  "mode": "final",
+  "status": "COMPLETE",
+  "assignments": [
+    {
+      "navigation": "raw",
+      "fault": "none",
+      "policy": "VECR",
+      "seed": 73001
+    },
+    {
+      "navigation": "raw",
+      "fault": "none",
+      "policy": "VECR",
+      "seed": 73002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "VECR",
+      "seed": 73001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "none",
+      "policy": "VECR",
+      "seed": 73002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "delay",
+      "policy": "VECR",
+      "seed": 73001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "delay",
+      "policy": "VECR",
+      "seed": 73002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "multi_gap",
+      "policy": "VECR",
+      "seed": 73001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "multi_gap",
+      "policy": "VECR",
+      "seed": 73002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "command_rejected",
+      "policy": "VECR",
+      "seed": 73001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "command_rejected",
+      "policy": "VECR",
+      "seed": 73002
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "land_override",
+      "policy": "VECR",
+      "seed": 73001
+    },
+    {
+      "navigation": "synthetic",
+      "fault": "land_override",
+      "policy": "VECR",
+      "seed": 73002
+    }
+  ],
+  "source_revision": "05ca999704fc680f39e90cd1dda1e95bb6266905",
+  "source_patch_sha256": "b26f600fec2b28b3d9c99c8cbf7daefdf2cc72fa11e5a093d8aba17f37f9b21a",
+  "agent_binary_sha256": "d5e472a73f9475d0dcb5a495505ee0743c6d78a4dbc5b6d0e80df70308d12594",
+  "ardupilot_revision": "fb773567896014da007bca58358704d4a0d8516f",
+  "ardupilot_binary_sha256": "d07af53d9a2a5fb0c980cbab41057ff4273195ffb32d16cfcc6b7e8e1ff68efd",
+  "runner_sha256": "6241cddc1fb19c02a53870242605697a789993a8b497dd6f7863c5f86c17b09b",
+  "frozen_binary_path": "/private/tmp/swarmkit-v7-sitl-qualification-frozen",
+  "dirty_experimental_source": "",
+  "workers": 2,
+  "clock_domain": "CLOCK_MONOTONIC_RAW",
+  "clock_probe_ms": [
+    5077664032.128291,
+    5077664795,
+    5077664795.524458
+  ],
+  "completed_rows": 12
+}

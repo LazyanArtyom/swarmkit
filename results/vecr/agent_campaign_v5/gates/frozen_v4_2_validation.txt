@@ -1,1 +1,0 @@
-VALID: 2400 paired-assignment rows and 107 SHA-256 artifacts

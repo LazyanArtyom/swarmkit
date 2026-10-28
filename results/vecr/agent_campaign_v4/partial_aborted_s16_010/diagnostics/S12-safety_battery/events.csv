@@ -1,3 +1,0 @@
-scenario_id,seed,policy,attempt_id,tick,simulation_time_ms,kind,truth_east_m,truth_north_m,detail
-S12,1,P,S12-1-P,-1,0,backend_goto_accepted,,,"target_east_m=20.000000;target_north_m=0.000000"
-S12,1,P,S12-1-P,-1,4000,simulated_battery_safety_interruption,,,""

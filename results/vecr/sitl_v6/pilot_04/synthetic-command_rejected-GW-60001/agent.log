@@ -1,5 +1,0 @@
-[2026-10-28 01:45:44.998] [info] MavlinkBackend: listening on 127.0.0.1:50608 target_sys=1 target_comp=1
-[2026-10-28 01:45:45.735] [warning] MavlinkBackend: MAV_CMD_DO_REPOSITION unsupported for drone=drone-1, falling back to SET_POSITION_TARGET_GLOBAL_INT
-[2026-10-28 01:45:50.218] [warning] CommandArbiter: authority of 'test-client' on drone 'drone-1' expired
-INTERRUPTED re-entry command rejected by safety/backend
-[2026-10-28 01:46:00.234] [error] VECR attempt journal append failed: terminal edge record cannot be replaced

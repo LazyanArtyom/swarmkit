@@ -1,3 +1,0 @@
-[2026-10-24 12:59:18.744] [info] rpc=SubscribeReports corr=reports-1792832358738-11662676915536256208491617146944817732-4 agent=v5-agent drone=drone-1 client=test-client result=connected
-[2026-10-24 12:59:18.744] [info] rpc=SubscribeReports corr=reports-1792832358738-11662676915536256208491617146944817732-4 agent=v5-agent drone=drone-1 client=test-client result=disconnected
-v5 infrastructure failure: edge dispatch failed

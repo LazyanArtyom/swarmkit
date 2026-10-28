@@ -12,693 +12,135 @@
     "department_url": "https://www.iiap.sci.am/department.php?did=2&dt=1&langcode=1",
     "provenance": "Name, institute and specialization restored from the original reader. Department verified against the institute's official staff listing on 26 October 2026. Research theme is descriptive, not a claim of an approved title change."
   },
-  "experiment": "7da3db33e70114503dfc7c9a45671da2b9335541",
-  "analysis": "ee3e321a5cfa4015cbcf0ecddc810545e2e1abe0",
+  "experiment": "05ca999704fc680f39e90cd1dda1e95bb6266905",
+  "binary_sha256": {
+    "VECR": "a6c817f0e76bcd4139e3e4146a7f944bbcb9beb208627345c437def8d595d7f9",
+    "B2": "e1d5102c67dc72d47a33201d93964cdf986cb46b47f2d2666dbbd8baa2ef0d1d"
+  },
   "copied_evidence": {
     "assets/evidence/manifest.json": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/manifest.json",
-      "sha256": "68644d690b86c610b87d9c27502870064f3ab73dfa8b6165736229e437d17f01"
-    },
-    "assets/evidence/analysis_manifest.json": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/analysis_manifest.json",
-      "sha256": "92514fbb8f5541f91a0d0867d06d355b8957e294a3a6739af8d4fc44fc45760c"
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/manifest.json",
+      "sha256": "6cb12bc4360031fb18c49e4ac414f233f1024f8e91c522bfaa5deb29c7fa725b"
     },
     "assets/evidence/per_attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/per_attempt.csv",
-      "sha256": "f1b9eb01ec69750c36b808f6f4a910dfe05736b1c424ad662ab1fda92c887ed1"
-    },
-    "assets/evidence/SHA256SUMS": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/SHA256SUMS",
-      "sha256": "2993d9f95fcdd712bdb7983f1ec0c10025d75c08c220e2525dac773e02ad5635"
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/per_attempt.csv",
+      "sha256": "23b0fff5665c4da4c06cb1e56cd0e7cfb9e8e2f02e04e2ae69d9c882679d3560"
     },
     "assets/evidence/environment.txt": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/environment.txt",
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/environment.txt",
       "sha256": "c693ec49461fdf972b551a2322f386d05e2d459c9c81658ea87d9f4a2b762b12"
     },
-    "assets/evidence/aggregate_confusion.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/aggregate_confusion.csv",
-      "sha256": "6a29aa2fd6584fef3f7e57fbc452286f7b2815eda59c52c3dce64fc6eecdbe66"
-    },
-    "assets/evidence/capture_rejections.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/capture_rejections.csv",
-      "sha256": "c16c0e138fdfef1c944e3e214660068b7822b3ae95d27e0a27fa33ec74de8ee6"
-    },
-    "assets/evidence/isolated_host_performance.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/isolated_host_performance.csv",
-      "sha256": "fa33a38388f28227f52cacbdbe63e7754a46b1acb2ac0c5c5ceee564657d5dfd"
-    },
-    "assets/evidence/paired_effects.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/paired_effects.csv",
-      "sha256": "a5a84c33e999300703aa1d866618f95bd8140e7532dde8f631ac7fc2eb18ccdf"
-    },
-    "assets/evidence/paired_primary_cluster_effects.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/paired_primary_cluster_effects.csv",
-      "sha256": "ce84a017fb92184caa654db5a2c41759ac963616fde14ce563bc4d8b515d5e2d"
-    },
-    "assets/evidence/per_scenario.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/per_scenario.csv",
-      "sha256": "4da677e88ee43e637e72e633f3f947059d930764f372027ef5576de0072291b4"
-    },
-    "assets/evidence/raster_sensitivity.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/raster_sensitivity.csv",
-      "sha256": "7e2ff26d509ac7e237cc956f75bf701a151fe48ed81ee33041f04f1dfa61d622"
-    },
-    "assets/evidence/scenario_matrix.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/scenario_matrix.csv",
-      "sha256": "0d1afefc001e47360584405e8b86b095cbad286abd377c42c19bb9f253a81793"
-    },
-    "assets/evidence/unsuccessful_attempts.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/tables/unsuccessful_attempts.csv",
-      "sha256": "01b278331cc53a06f783eee4aff056e24176c4bfb995cd18699c46ab4fbe24ea"
-    },
-    "assets/evidence/SCIENTIFIC_RESULTS.md": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/reports/SCIENTIFIC_RESULTS.md",
-      "sha256": "97d43245db48ec222260024f10b265bb3f0d05e886479a8e027eef53eebf80d9"
-    },
-    "assets/figures/01_availability.svg": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/01_availability.svg",
-      "sha256": "07e80e7d1aa447a66b40b854e6f9ce2e2c661357d081f8694b167974d967b31d"
-    },
-    "assets/figures/01_availability.pdf": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/01_availability.pdf",
-      "sha256": "b3dd945466fc42531be25d010fef840cd0fe23da26ff605e6be3992534c4c334"
-    },
-    "assets/figures/01_availability.png": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/01_availability.png",
-      "sha256": "c794abdff018856e287de53d05fdc19656cee333c6d19d2e9bd5b832d5a57e15"
-    },
-    "assets/figures/02_matched_success_distance.svg": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/02_matched_success_distance.svg",
-      "sha256": "203e91fd9b2aa57b27cf7bbccb72dc496c83372b8af9ac7d845bd45d2024d7c0"
-    },
-    "assets/figures/02_matched_success_distance.pdf": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/02_matched_success_distance.pdf",
-      "sha256": "c3018248e56152825ed0944de5db686011bead165b6b9c1fd0ae7e338cb76010"
-    },
-    "assets/figures/02_matched_success_distance.png": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/02_matched_success_distance.png",
-      "sha256": "a4a2dba04f4a67a6ebedcc339c4be3d51efa1c5791545424d20632374b4292ab"
-    },
-    "assets/figures/03_positive_negative_trajectories.svg": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/03_positive_negative_trajectories.svg",
-      "sha256": "8f6d1d78fa37309d653e001c1ea6c8873b07896b5c16c5f888c2491c8adf573f"
-    },
-    "assets/figures/03_positive_negative_trajectories.pdf": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/03_positive_negative_trajectories.pdf",
-      "sha256": "46bfa6f061e637d6101a358d40bfb65793b09fbbcf35a8d8e5f3903471482deb"
-    },
-    "assets/figures/03_positive_negative_trajectories.png": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/03_positive_negative_trajectories.png",
-      "sha256": "f92a19bcc62c593083adcf7f6ee81428fed926e1573b6202bd121d344cfd8746"
-    },
-    "assets/figures/04_sensitivity.svg": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/04_sensitivity.svg",
-      "sha256": "765b942ef643899d37d3b548af8e2526af6d18a8c72bfed1194c17246a8b8311"
-    },
-    "assets/figures/04_sensitivity.pdf": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/04_sensitivity.pdf",
-      "sha256": "c66f4959e78ef75b4f6fe8c2af94b8a27ee97836da73e324924d325946847f53"
-    },
-    "assets/figures/04_sensitivity.png": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/04_sensitivity.png",
-      "sha256": "c6bfcdb16bdf6f4f2f301a9ba3fdd1769e8bb5a45c8ff05d92d2aa1a2bc49021"
-    },
-    "assets/figures/05_raster_sensitivity.svg": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/05_raster_sensitivity.svg",
-      "sha256": "ec373c4300e06ec6ce36625cd11acae2f5b66af92e528ca464775163baa1900f"
-    },
-    "assets/figures/05_raster_sensitivity.pdf": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/05_raster_sensitivity.pdf",
-      "sha256": "9488ba4dfacb0955e18ab89adf4e419b406e8ea032447a390b4ced0f7577ee6b"
-    },
-    "assets/figures/05_raster_sensitivity.png": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/05_raster_sensitivity.png",
-      "sha256": "c1f4c074816a54e97235c5877e968adf1ec8506c16bc7650ad2492b1864ef596"
-    },
-    "assets/figures/06_truth_and_verified_coverage.svg": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/06_truth_and_verified_coverage.svg",
-      "sha256": "e5bbb6842e9c69ec420641a4fa32436e5343dc637e950e530de7b7fa393aa408"
-    },
-    "assets/figures/06_truth_and_verified_coverage.pdf": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/06_truth_and_verified_coverage.pdf",
-      "sha256": "ab28818e3842d2af23998781afabc151cbcb7eb8900db0d43511a45c0f6d9307"
-    },
-    "assets/figures/06_truth_and_verified_coverage.png": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/06_truth_and_verified_coverage.png",
-      "sha256": "49486c6415fa49c5c088c22aaacc32f3ecd1a76a80551563435f421241c3be2c"
-    },
-    "assets/figures/07_host_performance.svg": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/07_host_performance.svg",
-      "sha256": "b5d1dd703cd7d229d126bef4f750cfa606b1f50445a40c9f4295d186af027dd5"
-    },
-    "assets/figures/07_host_performance.pdf": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/07_host_performance.pdf",
-      "sha256": "bdfb22eaf59eb5c19cc3da1638abdcb533cde02e094d8ee0825bd71eca960855"
-    },
-    "assets/figures/07_host_performance.png": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/figures/07_host_performance.png",
-      "sha256": "b299f8d364876f6400ad497ef7dbd68c83c477db7a1e15f149ecd2b305b98157"
-    },
-    "assets/evidence/NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md": {
-      "source": "docs/vecr/NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md",
-      "sha256": "18ac18e411b45e367d47ede267fe575a2e2ec6bfee83fea4e4d0d9ea8ee9a2aa"
-    },
-    "assets/evidence/FINAL_VALIDATION_V5_1.md": {
-      "source": "docs/vecr/FINAL_VALIDATION_V5_1.md",
-      "sha256": "b15e5943eaacc6bcb6d93dd19835234688c4feee7cc6a5ee4833bfa8620196c3"
-    },
-    "assets/evidence/SIMULATION_PROTOCOL_V5_1.md": {
-      "source": "docs/vecr/SIMULATION_PROTOCOL_V5_1.md",
-      "sha256": "add82de5bf9f99405e58c4592bdd84c240b033ea452b02adca2d07320cdda2b6"
-    },
-    "assets/evidence/FINAL_VALIDATION_V5.md": {
-      "source": "docs/vecr/FINAL_VALIDATION_V5.md",
-      "sha256": "ac81591d6b7174531147a54944540aa61505172605163400ef0b5e50adee56bd"
-    },
-    "assets/evidence/V5_ANALYSIS_NOTES.md": {
-      "source": "docs/vecr/V5_ANALYSIS_NOTES.md",
-      "sha256": "fd0c1e23ca3026b1025f5d8d1fed0358968144f84e212ba8315e9963f667e13c"
-    },
-    "assets/evidence/SIMULATION_PROTOCOL_V5.md": {
-      "source": "docs/vecr/SIMULATION_PROTOCOL_V5.md",
-      "sha256": "363c22ebcd0925f66e87ae6f5b19e76e83bba969e9b766acf18886e85aa7feb7"
-    },
-    "assets/evidence/V5_PREIMPLEMENTATION_AUDIT.md": {
-      "source": "docs/vecr/V5_PREIMPLEMENTATION_AUDIT.md",
-      "sha256": "add824ef16498b56627e3283d66fe93c1bdf2d306057a9e26da07bcf2a3e6a5b"
-    },
-    "assets/evidence/replication_comparison.csv": {
-      "source": "results/vecr/agent_campaign_v5/gates_v5_1/replication_comparison.csv",
-      "sha256": "3643b0f0603dfc5a92de75f6b6b0b8bf4b576b71f0eae13b4f99e24f25981831"
-    },
-    "assets/evidence/replication_comparison.json": {
-      "source": "results/vecr/agent_campaign_v5/gates_v5_1/replication_comparison.json",
-      "sha256": "fda1a584e20d4a185ae19fcd233c88c7d786170d8cb5a0a042369ac789b18411"
-    },
-    "assets/evidence/benchmark_manifest.json": {
-      "source": "results/vecr/agent_campaign_v5/benchmark_v5_1/manifest.json",
-      "sha256": "09d540c5c50ded7ed87441ac9ac6945cd532750d1ea7b376c0bd5ded991d04ec"
-    },
-    "assets/evidence/benchmark_SHA256SUMS": {
-      "source": "results/vecr/agent_campaign_v5/benchmark_v5_1/SHA256SUMS",
-      "sha256": "1e32b9291803735b0461c3507a99d76174084ec367671ae34134b78f3b20a099"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/acquisitions.csv.gz",
-      "sha256": "a900217e8d799c9b4170f8de53c3015b5321a7a9edf197a0e4b7678c72a40cc0"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/attempt.csv",
-      "sha256": "67d27bbb8052f9c44ce18b374ec1b38d672628baf9df8f1d6335f6d876518bc0"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/attempt.journal",
-      "sha256": "1a66fa9ed4ab554689ceddbcdf939830d2691e4c0be44fe8ee7e5b175cbf671f"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/captures.csv.gz",
-      "sha256": "a5d942b9d086d194a7388a499a63284f9a849f81e8cdfaa8d0d063c0913816dc"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/events.csv.gz",
-      "sha256": "25add40e9f51d831b85b71c87e25874075a6250b7b07118b10f251893454bc50"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/measurements.csv.gz",
-      "sha256": "4fc9696ae3f14875ba4ff8a967b0922ccc952a790bdd1ca202ad08905f693df5"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/trace.csv.gz",
-      "sha256": "a95ac8d4511052d33f600a52a5fe00481f3c6a109a82ecfc2576f679a88f4c03"
-    },
-    "representative-traces.zip!/trials/M03-00001-B2/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-B2/trajectory.csv.gz",
-      "sha256": "8303ef438f7979be02d2c58354b68e4cffbacfad9874c865092c4bbc0260ba71"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/acquisitions.csv.gz",
-      "sha256": "7eb671f47885ecee93cac01611105100757f79424f862eb14c1fd5a63d94a9bd"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/attempt.csv",
-      "sha256": "2cdd5faf63c1a340eefa2c51761f836d3d9fac0468fe238829c4e22bda68ffb1"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/attempt.journal",
-      "sha256": "9ea614f2c7be0b2d935f30162da0c3fb3563604fd75280f274abd531d727c665"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/captures.csv.gz",
-      "sha256": "68a56853673e37525f0e7a5785b24dc384c082641dc3b3a72c521e93781c4e23"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/events.csv.gz",
-      "sha256": "dfc488e58c882ae110ff17eca549f0c485ee38a280e59f9656fe261ea2647b15"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/measurements.csv.gz",
-      "sha256": "ed14cd1931167c0d04e52f9b00bb325a0fbe5baca53435f09e507d1cdaa1d8ee"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/trace.csv.gz",
-      "sha256": "7e1774980f31508c1092e80970f1839ec269c7a1cc7e21a11ae0df94c7e19f76"
-    },
-    "representative-traces.zip!/trials/M03-00001-P/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M03-00001-P/trajectory.csv.gz",
-      "sha256": "25171ea760fc983f3ddf08cd9ec2f13cd232389bd0588822e3bdbd3d687317b6"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/acquisitions.csv.gz",
-      "sha256": "1d80f19e957deeae6684d3f057a6bc1b33a6bed52f2d12d795d0f9a637906e03"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/attempt.csv",
-      "sha256": "df9dae01f057eb12a050aa8ef281ef5d94a6d989c5ef24cf5505886bc131e005"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/attempt.journal",
-      "sha256": "b1a2b2ed836fbea33392465bfa241cb0db9a1ee83bea0f266da9c06f83909930"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/captures.csv.gz",
-      "sha256": "b741b46562e31b4bfad2ddb34cfba98b65e1c1f6a434748b155625dda476b3fb"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/events.csv.gz",
-      "sha256": "85ca16bc5d87d39ee6a94bbe137ee5b230291e079735a8e691422816044d1459"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/measurements.csv.gz",
-      "sha256": "4fc9696ae3f14875ba4ff8a967b0922ccc952a790bdd1ca202ad08905f693df5"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/trace.csv.gz",
-      "sha256": "8cb4a3b490b42086fd35d29aeb9a86d05947c7080540cc4e353c60fb6f7d071a"
-    },
-    "representative-traces.zip!/trials/M04-00001-B2/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-B2/trajectory.csv.gz",
-      "sha256": "8303ef438f7979be02d2c58354b68e4cffbacfad9874c865092c4bbc0260ba71"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/acquisitions.csv.gz",
-      "sha256": "02b58fc41c99bf8aeed6f8b4d0377887c8f8174c134e9c60e6b16faee9228dd2"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/attempt.csv",
-      "sha256": "3ccbec89daa135088f7e5a53093995006bdb1d26bc93d332d80189d3ada677ea"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/attempt.journal",
-      "sha256": "efff08b496766b10c7721c9341b0a94074ab6a4903437e6d209cc10266629453"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/captures.csv.gz",
-      "sha256": "953f63f3473029092e37af33c0cac8d720ae7a4e23fc3d3479330fc8e74cafc4"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/events.csv.gz",
-      "sha256": "f9de67dd280c199a5342303ff32d4a6fb7cf57f6bfd492c3359dc863cbba73a4"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/measurements.csv.gz",
-      "sha256": "03a0d605850e635bb0c7a28743dca5ff02c37b12e8456998e3a50adf599ec38e"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/trace.csv.gz",
-      "sha256": "0a0c03e5a1d0cefadde5a83662cbf3237bf91364dfe321aeb0d39cb30e249c27"
-    },
-    "representative-traces.zip!/trials/M04-00001-P/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M04-00001-P/trajectory.csv.gz",
-      "sha256": "2ba27b93e08cc881f996a5813b351ae68d98e2e7e43adda247886a4b1ede30a3"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/acquisitions.csv.gz",
-      "sha256": "83356f0d3a079bbd64bcff62e258b3b3ca72db8e0fe1c96ea5f1e24d565b3a67"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/attempt.csv",
-      "sha256": "0aa503fb72cc03965e0e08b4ac940a5ea60c333bfb8935c8de061daca4731b84"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/attempt.journal",
-      "sha256": "9832ba884a4abdbbf888c95caf89535290f543fe13b2069ba0c3c08296f3e5fc"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/captures.csv.gz",
-      "sha256": "76aeaa8eb91329bf20cdf51cfdf0557730c288bddc27d7d332645447cdca4515"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/events.csv.gz",
-      "sha256": "85ca16bc5d87d39ee6a94bbe137ee5b230291e079735a8e691422816044d1459"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/measurements.csv.gz",
-      "sha256": "4fc9696ae3f14875ba4ff8a967b0922ccc952a790bdd1ca202ad08905f693df5"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/trace.csv.gz",
-      "sha256": "9077aca99c3b9efc955a34b86584776b3567551384b075b13d991b1c423975b1"
-    },
-    "representative-traces.zip!/trials/M05-00001-B2/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-B2/trajectory.csv.gz",
-      "sha256": "8303ef438f7979be02d2c58354b68e4cffbacfad9874c865092c4bbc0260ba71"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/acquisitions.csv.gz",
-      "sha256": "5cf8745fc6ab0a5678494b41d6ab857c99e06cbfdf82c4a44e97e29ef5300d29"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/attempt.csv",
-      "sha256": "43f62db3ed3a95425a2ffb2784f153ae696ffcb84e9f80021690e0167c3ab00f"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/attempt.journal",
-      "sha256": "cd1e839ae0479e3b78f60f1a818c9e51d93a4f73585d0a3e3ff0c6aea28839c6"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/captures.csv.gz",
-      "sha256": "f0820468959dc7dac5a5d7a5048ea0f2f606b1f442b51473cefdf9da6582869f"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/events.csv.gz",
-      "sha256": "ca932ecf99224dd7f383c783c4633da208006495392ad1857eee3ab5f6debd5c"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/measurements.csv.gz",
-      "sha256": "578069b6a4c7ffbdeef5d616e3b48869f180ff651ad319a1a7119354b7bf9f44"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/trace.csv.gz",
-      "sha256": "0c7c25dfc96e8d6e39b47c89c4d4fe0c5630fef6d1eccbc7204e77550a05d300"
-    },
-    "representative-traces.zip!/trials/M05-00001-P/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M05-00001-P/trajectory.csv.gz",
-      "sha256": "1f946050469668d0ad92938dcf7df63bfb338c667d3e5294455fa27270251f40"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/acquisitions.csv.gz",
-      "sha256": "ba0bb3bde36a1ea9cdd5023191858f4bb4b5ea07cb7aebf168049d9f05c09adb"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/attempt.csv",
-      "sha256": "b196a08942c6babc6f97d1bc97a00570c48cd61539fb9a3550321291dc30bc7c"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/attempt.journal",
-      "sha256": "250a5ca8dd80298f7a4761d128dbb8b9f8a6c0234330d2d7d85b808ba3a00d15"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/captures.csv.gz",
-      "sha256": "8cd6e0415c3bc2b2a9ec1ab1566a0da2ed5d04e047e3c798816252c2a7296612"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/events.csv.gz",
-      "sha256": "b2441e97c4429a32398833dd5a68e56bc44da079ee2e0bf9ff4b79e1875f22a5"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/measurements.csv.gz",
-      "sha256": "ed40edbad1a17f40b9d3ecb0b7fc356b869cdc0cf374c9ad1700f17aa79c688a"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/trace.csv.gz",
-      "sha256": "c6df8518080c5a2e20033569f3d5e704382e6b176a3d8784ee43950510169efa"
-    },
-    "representative-traces.zip!/trials/M08-00001-B2/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-B2/trajectory.csv.gz",
-      "sha256": "7d3098eee44749fdaffd1da3a7b8308d6f3528f6f110ecd152c210339ebd4025"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/acquisitions.csv.gz",
-      "sha256": "629501f5e22c4302bc20362fc6ee4d743d400de634acddc67ba08af815e00e0c"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/attempt.csv",
-      "sha256": "245f813262b48e387353606c18b9b5291884f9ea4c92af157a2bd37390d3129f"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/attempt.journal",
-      "sha256": "6159712b508008c43495bdf32bee51313f57120c5f73ce23f0bdd01a4367bcc3"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/captures.csv.gz",
-      "sha256": "96468d29e6cf17f4101d6210e80e01d4a9fa1e3b907c006a50f8c1c16aab5fee"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/events.csv.gz",
-      "sha256": "cfb11b83db155ba3017dc4a53e5a7b933d6554cbf5a31d91a401b26124eaa725"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/measurements.csv.gz",
-      "sha256": "941d3e94abad6dbe54a17eb48f86abc9b335e0acb70e456d88e0231d2e38af9f"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/trace.csv.gz",
-      "sha256": "2de74f323e2cabe82711b617923e9739373b5ec5c975d712549d96efc01d2fff"
-    },
-    "representative-traces.zip!/trials/M08-00001-P/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M08-00001-P/trajectory.csv.gz",
-      "sha256": "39a0906a8972ff8252f92a68641502640f8ebb5533576de8803f7a0c2728064a"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/acquisitions.csv.gz",
-      "sha256": "736b76a0f8ce930ce36d6d4936ac9e93371e7717e886681894f9d407c2245d48"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/attempt.csv",
-      "sha256": "d305a49dbba4e594f4df5d73dfef4be484f68efe1731f2ba0d582821395ed370"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/attempt.journal",
-      "sha256": "1569336b14f90bb24603dd620e45005a7905f95f2e44496037d43fb02fc2d6df"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/captures.csv.gz",
-      "sha256": "3eed91dce87eaf3e9a67d183c6fad3b0a011eb220308235b396d1424f7f06ea0"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/events.csv.gz",
-      "sha256": "aab56a7d276031f6c1b87bd5d6344a3d1b6b27b362e78a5c879eff07c8b0a58d"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/measurements.csv.gz",
-      "sha256": "cafa981d5289392e67ad0739c8adbc165171ab5e84b589060df609bef09032c5"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/trace.csv.gz",
-      "sha256": "78461ba2fc1d669a704618abbaf209176dfc3c39d606b558d4b2174a058813be"
-    },
-    "representative-traces.zip!/trials/M14-00001-B2/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-B2/trajectory.csv.gz",
-      "sha256": "a1f67ba83a115a1d3be5516e8f5921bfd4403e2c6a073b58a81da2006c49144a"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/acquisitions.csv.gz",
-      "sha256": "736b76a0f8ce930ce36d6d4936ac9e93371e7717e886681894f9d407c2245d48"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/attempt.csv",
-      "sha256": "f5397fc777bcdfcb2379d936d970fb9619ae311d710df8cc2b1a81aa8f3ddafa"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/attempt.journal",
-      "sha256": "4642a28041a8cebfe6fc66f8fa1d025fb60ca000fdf5932a5e67a7952c09db8c"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/captures.csv.gz",
-      "sha256": "4fde26bf52d2457103a895753999bc08374ee7b9d2a4bd88520fb2cbf112b51a"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/events.csv.gz",
-      "sha256": "6a5d6b06cbaa74bd8efb15c12315f2f3258c977bba0f9f4d57a2102ca5a69ecc"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/measurements.csv.gz",
-      "sha256": "cafa981d5289392e67ad0739c8adbc165171ab5e84b589060df609bef09032c5"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/trace.csv.gz",
-      "sha256": "78461ba2fc1d669a704618abbaf209176dfc3c39d606b558d4b2174a058813be"
-    },
-    "representative-traces.zip!/trials/M14-00001-P/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M14-00001-P/trajectory.csv.gz",
-      "sha256": "a1f67ba83a115a1d3be5516e8f5921bfd4403e2c6a073b58a81da2006c49144a"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/acquisitions.csv.gz",
-      "sha256": "dd096ff4969eeee420b00c0622456c2b51e9ecc9244798ecddbcdcec8f31b313"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/attempt.csv",
-      "sha256": "2fcf749bc7f4225cda4f6d3b443576aaf34f51097eb3ec0e64b62d56a9f80799"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/attempt.journal",
-      "sha256": "cbc5df6b4f2b64606b710281141d47ace6b5b718d4a11bb95f830466b1a40de6"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/captures.csv.gz",
-      "sha256": "1f4250485978d123ed85eda50f854c6f4003126d4120ff95c89234e90e1766e5"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/events.csv.gz",
-      "sha256": "f4826132ddef09fdeb6b1043000ff80f27b8c40c0b4888ef3752fe226b9813b7"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/measurements.csv.gz",
-      "sha256": "c596f5af03b847e831d54181995c7e566b004c00caa19e876cb2dcc3c22658cc"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/trace.csv.gz",
-      "sha256": "31069a9ff574ee2659d0629b7bbce6733c9fecc348b6e6093623fcb26797beed"
-    },
-    "representative-traces.zip!/trials/M17-00001-B2/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-B2/trajectory.csv.gz",
-      "sha256": "28781b4ab828c5574e0143dea6d48dbe71744a11153b22b73dbdaf40615aecee"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/acquisitions.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/acquisitions.csv.gz",
-      "sha256": "dd096ff4969eeee420b00c0622456c2b51e9ecc9244798ecddbcdcec8f31b313"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/attempt.csv": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/attempt.csv",
-      "sha256": "1523b188e1aad0f32b0a75f7968f2b24b438c48b4852cdd2cc0358cc67c6b779"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/attempt.journal": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/attempt.journal",
-      "sha256": "79fdfa4e3c12ebbdd2f6b1c2e66f32747cfab365d80fe243b827c0ac3722fa41"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/captures.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/captures.csv.gz",
-      "sha256": "ded98ce761627024368879f84f28db9f698fe7c6a894f57fff9d97be5831b1e1"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/events.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/events.csv.gz",
-      "sha256": "680c246818ca0b913e4d346bd8219299e01377090bdb6fa89cbb1d5c0cdd1bb0"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/measurements.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/measurements.csv.gz",
-      "sha256": "c596f5af03b847e831d54181995c7e566b004c00caa19e876cb2dcc3c22658cc"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/trace.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/trace.csv.gz",
-      "sha256": "31069a9ff574ee2659d0629b7bbce6733c9fecc348b6e6093623fcb26797beed"
-    },
-    "representative-traces.zip!/trials/M17-00001-P/trajectory.csv.gz": {
-      "source": "results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/trials/M17-00001-P/trajectory.csv.gz",
-      "sha256": "28781b4ab828c5574e0143dea6d48dbe71744a11153b22b73dbdaf40615aecee"
-    },
-    "assets/evidence/v6/manifest.json": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/manifest.json",
-      "sha256": "7ca757ba54ec9c4a28adefaabbf05af2dccf75f73420bde6082a942088ef44c0"
-    },
-    "assets/evidence/v6/per_attempt.csv": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/per_attempt.csv",
-      "sha256": "5c67d8b7bc8ff1f4b868ef32e041d8873ed2299ddc08d98053ca6ed25b8e32f7"
-    },
-    "assets/evidence/v6/SHA256SUMS": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/SHA256SUMS",
-      "sha256": "be8876095a537a3e37370449f6016265842f6f47f6d94849f0ddf6aec0472329"
-    },
-    "assets/evidence/v6/summary.json": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/summary.json",
-      "sha256": "17906b55cb8567732519c4a8298e2ee16ce1aa681ae26ab3361b96efaddf10f1"
-    },
-    "assets/evidence/v6/condition_summary.csv": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/condition_summary.csv",
-      "sha256": "ffa6098b2fc8c9b5843fe6a4e77be120ae6e50a126b3e460566e53e364cdf38d"
-    },
-    "assets/evidence/v6/paired_comparisons.csv": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_comparisons.csv",
-      "sha256": "38da7311ae526b7478b31e13476ebef81a1309487d8686bf6d4e6fcc2fdd2bfc"
-    },
-    "assets/evidence/v6/RESULTS.md": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/RESULTS.md",
-      "sha256": "41345c43c5f796ecc030319e8d56f5ac0169c4bf51552290094b02a9f653dae4"
-    },
-    "assets/evidence/v6/FINAL_VALIDATION_V6.md": {
-      "source": "docs/vecr/FINAL_VALIDATION_V6.md",
-      "sha256": "d33e8df8ac60b98afdee61e59037f623480e8b537ba8b5affed83d9e1c0d0c6b"
-    },
-    "assets/evidence/v6/RECOVERY_MODEL_V6.md": {
-      "source": "docs/vecr/RECOVERY_MODEL_V6.md",
-      "sha256": "e5d5874e8b830537e265eeae2af3fc5f833bc17bda9319dd38915e8a2763695e"
-    },
-    "assets/evidence/v6/SIMULATION_PROTOCOL_V6.md": {
-      "source": "docs/vecr/SIMULATION_PROTOCOL_V6.md",
-      "sha256": "df9be781f4520a55ad79e75ee58e91a20a41ef15b60056284a7b8a0212de99a0"
-    },
-    "assets/evidence/v6/NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md": {
-      "source": "docs/vecr/NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md",
-      "sha256": "3b49b5b7b7af2f8f85aaaec1ebeeab6531198f87c77c3fd0ac9ccbc9b0c6c7ae"
-    },
-    "assets/evidence/v6/SITL_PROTOCOL_V6.md": {
-      "source": "docs/vecr/SITL_PROTOCOL_V6.md",
-      "sha256": "3f1fd621b16ecb090ccb40c6bb8ec57c2d7fda4bff21cb41f928d909cda4bce5"
-    },
-    "assets/evidence/v6/SITL_VALIDATION_V6.md": {
-      "source": "docs/vecr/SITL_VALIDATION_V6.md",
-      "sha256": "5dbaef990f18a9a352b9e55695239422a3add30c43f53d5b334d59ae90a9d9b9"
-    },
-    "assets/evidence/v6/client_reuse.json": {
-      "source": "results/vecr/agent_campaign_v6/client_reuse/reuse_comparison.json",
-      "sha256": "b0589feb5d7647efe5594a6fad42118c9886fe4043e7b74f884ca07d9b1ef44a"
-    },
-    "assets/evidence/v6/completion_matrix.svg": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/completion_matrix.svg",
-      "sha256": "6c62d0da27137a61716e7ef0f5f65c38876436f8a310504a32a30e63678f00e5"
-    },
-    "assets/evidence/v6/completion_matrix.png": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/completion_matrix.png",
-      "sha256": "12c2b355a59ade5dbdcb90264d142bac586a7e6fc60d364bee5ffafbd79eac2a"
-    },
-    "assets/evidence/v6/completion_matrix.pdf": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/completion_matrix.pdf",
-      "sha256": "f33de0a9aa916ae01bab11ec5e5a00e7ee912849c8ad8cb98b5289b43c63d141"
-    },
-    "assets/evidence/v6/paired_distance.svg": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_distance.svg",
-      "sha256": "76ecf4996a38de45ed6f5ee8fb94d0dfa55502cf4f4b5338633db0fb1ff4cd44"
-    },
-    "assets/evidence/v6/paired_distance.png": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_distance.png",
-      "sha256": "39132f204f2f690637b34182adbce70eecfcf1aff2a247aac0d1eb9704574dc3"
-    },
-    "assets/evidence/v6/paired_distance.pdf": {
-      "source": "results/vecr/agent_campaign_v6/confirmatory_v6_1/analysis/paired_distance.pdf",
-      "sha256": "cda19f730beba31f6ae61f097a050101b71479f133ae9f7ec69a09c041c2c73a"
-    },
-    "assets/evidence/v6/representative-traces.zip": {
-      "source": "selected unmodified v6 primary trial files",
-      "sha256": "accc05c98421bef015473d4872eb09c2a881b1ba5631bcc4b8950bfc168fa5e2"
-    },
-    "assets/evidence/v6/sitl_reconstructed.csv": {
-      "source": "results/vecr/sitl_v6/confirmatory/analysis/reconstructed.csv",
-      "sha256": "959cb6feeca130863f35221a28d8291c00d8f526e4c30ac37944bf3633ef1b2e"
-    },
-    "assets/evidence/v6/sitl_validation.json": {
-      "source": "results/vecr/sitl_v6/confirmatory/analysis/validation.json",
-      "sha256": "94b45fba9db885131b83fb24446fc40fcb55a65a3a2625a965f16e70939be2ee"
-    },
-    "assets/evidence/v6/sitl_manifest.json": {
-      "source": "results/vecr/sitl_v6/confirmatory/manifest.json",
-      "sha256": "1ef11905883c355f49c56c4ccc8a1a8100a367859720bcfa00ee2df2ea57d82c"
-    },
-    "assets/evidence/v6/sitl_condition_summary.csv": {
-      "source": "results/vecr/sitl_v6/confirmatory/analysis/condition_summary.csv",
-      "sha256": "88ec9536da0f543fae959fa651212ef212232690b029be2804406c1c1fd94e6c"
-    },
-    "assets/evidence/v6/sitl_traces.svg": {
-      "source": "results/vecr/sitl_v6/confirmatory/analysis/sitl_traces.svg",
-      "sha256": "44c81a5ca9ee716831363048f747fd4526020c5833e7c0496b0126c290b55197"
-    },
-    "assets/evidence/v6/sitl_traces.pdf": {
-      "source": "results/vecr/sitl_v6/confirmatory/analysis/sitl_traces.pdf",
-      "sha256": "13449f8a070231f98cca19466dd0949ec8d1d368b06c4874b5e69395a517e34d"
-    },
-    "assets/evidence/v6/sitl_traces.png": {
-      "source": "results/vecr/sitl_v6/confirmatory/analysis/sitl_traces.png",
-      "sha256": "612bea6ad6c784bfb628369b37b30be8732825e95a10355d2baa9bfc635d0901"
+    "assets/evidence/condition_summary.csv": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/condition_summary.csv",
+      "sha256": "0088049a13c06f3f3634bc5d1f793226387a3859baae9a2559ad4fa611417796"
+    },
+    "assets/evidence/paired_comparisons.csv": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/paired_comparisons.csv",
+      "sha256": "f37e374eda4e777747f482902a085dbad388ba0b4cc8cdcae11d3a8e4bbb3504"
+    },
+    "assets/evidence/summary.json": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/summary.json",
+      "sha256": "9024a7bea899f521c7f4b78d803962505da1ad94f86824f0f62ea49f5bc73bc8"
+    },
+    "assets/evidence/RESULTS.md": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/RESULTS.md",
+      "sha256": "623d6cf5d67f05534fd3e37d27630751d421c83ec6e6bbedb8df53b5f0e71ebf"
+    },
+    "assets/evidence/client_reuse.json": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/client_reuse.json",
+      "sha256": "78b8dffdb9ef5e1ad43faba8524f6555dfbde647aa0cabfda269d96d7e035550"
+    },
+    "assets/evidence/client_reuse_manifest.json": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/client_reuse_manifest.json",
+      "sha256": "fb1d38070e03b3755758243d20bcd8f19127f8faadab9de6bb5be090145a84c0"
+    },
+    "assets/evidence/client_reuse_per_attempt.csv": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/client_reuse_per_attempt.csv",
+      "sha256": "57c6babd299f8d090f6974eb7f5a5590b01352cda3711e89be4f5adbe84dbf8d"
+    },
+    "assets/evidence/sitl_manifest.json": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_manifest.json",
+      "sha256": "93f3ae3bbedaa0673badcaf079438739e0ff028c8091a52935d1bbf16c053bd3"
+    },
+    "assets/evidence/sitl_per_attempt.csv": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_per_attempt.csv",
+      "sha256": "962080e452efa7be7e3fa37d5cedb628db568d93d9891441e8025fa521f75a52"
+    },
+    "assets/evidence/sitl_condition_summary.csv": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_condition_summary.csv",
+      "sha256": "dd360012f91a1cfb38be81aaa6e450f019d69b53b77f5f1b21fc9fdd76cf17d7"
+    },
+    "assets/evidence/sitl_reconstructed.csv": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_reconstructed.csv",
+      "sha256": "830b860f2962dde562261789949c14bfc64bc7f320687b59bd2d160b2c836d89"
+    },
+    "assets/evidence/sitl_validation.json": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_validation.json",
+      "sha256": "f8dc066f5061ff97411fe12ca50da3249e2c7a6fdaec14c66db1366da43b8944"
+    },
+    "assets/evidence/METHOD.md": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/METHOD.md",
+      "sha256": "ac8373a93a01d784dcf2db8038888478615bb885824f250438d41157a2cab1e2"
+    },
+    "assets/evidence/SIMULATION_PROTOCOL.md": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/SIMULATION_PROTOCOL.md",
+      "sha256": "fef69b2757e9bcbcbd12969b9d18782f5a90206cf160ef0cdd6c9fdac2b68ded"
+    },
+    "assets/evidence/SITL_PROTOCOL.md": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/SITL_PROTOCOL.md",
+      "sha256": "a49d73fc05903d641109e364d74d4cebbb696e61cf20aeb7ecb1f3d8187260db"
+    },
+    "assets/evidence/LITERATURE.md": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/LITERATURE.md",
+      "sha256": "48fa87e2ef2d5f79e012882da935dfd80499d26b28df1353c3447a371ca1b74f"
+    },
+    "assets/evidence/REVIEW_RESPONSE.md": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/REVIEW_RESPONSE.md",
+      "sha256": "e7f8dd8cf8ec27b164274898758b0e67dd8f27d6fee283b3c0944c524de9784b"
+    },
+    "assets/evidence/representative-traces.zip": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/representative-traces.zip",
+      "sha256": "ae53ada52d6f02b1a798199b4fd6f3d3d8c953ecb7f6b9fb6e571f3c56346927"
+    },
+    "assets/evidence/SHA256SUMS": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/SHA256SUMS",
+      "sha256": "f092045734b5eae1908bd443df7b5512dda6b2e5ba22bb46204dd016dce210e5"
+    },
+    "assets/figures/01_completion_matrix.svg": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/01_completion_matrix.svg",
+      "sha256": "fef5063b0e3b2b6fb2012abea14ab0821d629c44c3869b080c88690dd66d8fd0"
+    },
+    "assets/figures/01_completion_matrix.pdf": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/01_completion_matrix.pdf",
+      "sha256": "18a09d1f87a4c8bdb2d9622afdf9470157c91ea5dc0956024d337dd9b994b59a"
+    },
+    "assets/figures/01_completion_matrix.png": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/01_completion_matrix.png",
+      "sha256": "15fd1cc3bec49f813fbbe9657c36cffa868915415fc8aa2aad96608f814a05ae"
+    },
+    "assets/figures/02_paired_distance.svg": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/02_paired_distance.svg",
+      "sha256": "dbe7243f119a03682599afa68ffa4e5f30280509d22ea93f3f413d9c2d01dacf"
+    },
+    "assets/figures/02_paired_distance.pdf": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/02_paired_distance.pdf",
+      "sha256": "0e6afce31162c668e15a328b26db7760db0e358939df2a4070248427a635f496"
+    },
+    "assets/figures/02_paired_distance.png": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/02_paired_distance.png",
+      "sha256": "9d32bc3aa258edd5a536d519e02d84050f8d12fb8080fba8a6143b1a70eb8a15"
+    },
+    "assets/figures/03_sitl_traces.svg": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/03_sitl_traces.svg",
+      "sha256": "311ee5955e45713909e205b18cab86e2b80975794325964c181608f7f857eefa"
+    },
+    "assets/figures/03_sitl_traces.pdf": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/03_sitl_traces.pdf",
+      "sha256": "5a4838de3baf3456a7c492e1acb599b89d815581c70a732a2c027ee1f9995bcd"
+    },
+    "assets/figures/03_sitl_traces.png": {
+      "source": "VECR_Dissertation_Interactive_Website/assets/figures/03_sitl_traces.png",
+      "sha256": "cac384ba92685b7ecc86285df18fa81022ea8cd2290dc04695310425351d0501"
     }
-  },
-  "current_experiment": "ce09d3b47d54959eb86101c251d9f2c3ea62be40"
+  }
 }

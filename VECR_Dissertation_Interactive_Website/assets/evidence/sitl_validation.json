@@ -1,0 +1,14 @@
+{
+  "assignments": 12,
+  "passes": 12,
+  "infrastructure_failures": 0,
+  "errors": [],
+  "accepted_captures": 509,
+  "sampled_reentry_dwells": 2,
+  "source_sha256": "8107f1c172f600574f709e3a3cd5f849d8140e182ab17f03af036ea8be2f1abb",
+  "limitations": [
+    "SIM_STATE acquisition time absent: <=50 ms upstream age is assumed, not proven.",
+    "Truth and stop dwell are sampled; no continuous-flight guarantee.",
+    "Camera and bounded navigation synthetic; no real image-quality claim."
+  ]
+}

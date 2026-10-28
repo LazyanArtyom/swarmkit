@@ -14,28 +14,33 @@ The Print button opens the browser's print/save-PDF dialog.
 * A restored researcher profile with Artyom Lazyan's institute, department,
   full E.13.04 specialization and research theme. The department is linked to
   the institute's official staff listing; original profile information is retained.
-* Sixteen revised chapters: motivation, contribution, architecture, precise
-  contracts, conditional proofs, implementation, fair experiments, results,
-  failure analysis, sensitivity, performance, provenance and defense questions.
-* All 22 v6 conditions and nine policies (5,940 primary attempts), paired confidence
-  intervals, 200 client-reuse trials and the separately preserved v5.1 study.
-* Twelve real recorded attempts: seed 1 for six conditions under B2 and VECR,
+* Twenty revised chapters: the researcher's earlier graph and multi-user swarm
+  work, SwarmOps mission workflow, SwarmKit control and communication APIs,
+  the implemented VECR contract, conditional proofs, fair experiments, measured
+  results, worked cases, limitations, defense questions and reproducibility.
+* All 22 conditions N00–N21 comparing canonical VECR (earliest-gap recovery with
+  bounded waiting) against the B2 full-restart baseline (1,320 primary attempts),
+  paired bootstrap confidence intervals, 100 client-reuse trials, and 12 ArduPilot
+  SITL qualification flights.
+* Twelve real recorded attempts: seed 70001 for six conditions under B2 and VECR,
   including failed recovery and dishonest-sensor outcomes. Replay starts only
   when requested. No fictional completion percentages are animated.
-* Historical and current experimental figures in SVG/PDF/PNG, six vector method
-  diagrams, and readable offline equations.
+* Current experimental figures in SVG/PDF/PNG, five vector method diagrams,
+  and readable offline equations.
 * Local CSV/manifest downloads and lossless representative raw traces. The full
-  research trace directory is linked separately and needs the surrounding repo.
-* Responsive light/dark themes, search, keyboard navigation, larger reading
-  text, accessible figure dialogs and print styles.
-* A separate 24-flight ArduPilot SITL qualification with independently recorded
+  research trace directory is linked separately and lives in `results/vecr/current/`.
+* A restored dark, photo-led visual edition inspired by the supplied earlier
+  reader, with a measured route-progress chart, responsive light/dark themes,
+  search, keyboard navigation, accessible figure dialogs and print styles.
+* A separate 12-flight ArduPilot SITL qualification with independently recorded
   simulator truth. Native accuracy controls and synthetic bounded sensing are
-  distinguished. Only future calibrated-image and physical-aircraft work is TBD.
+  distinguished.
 * A sourced literature comparison and candid defense-readiness assessment.
-  The closer recovery baselines are now measured: the conservative E rule does
-  not improve completion over the strong GW comparator and often travels farther.
-  The narrow systems contribution and conditional result do not establish global
-  algorithmic superiority, worldwide priority or degree acceptance.
+  VECR is the complete execution method. A separate contribution and planner contract
+  describes its intended use by external graph planners (e.g. rotor-router),
+  with high-level planning explicitly external to the agent.
+  Across 1,200 honest trials, zero false fulfillments occurred; 120 dishonest
+  controls cleanly expose the sensor trust boundary.
 
 The numerical campaign is a flat, one-dimensional full-strip simulator study.
 Real-camera quality, complex terrain, physical flight, cloud deployment and
@@ -70,14 +75,15 @@ the actual check outcome; `validation/screenshots/` contains visual checks.
 hashes. `SHA256SUMS` inventories the finished reader. The upstream research's
 hash inventory remains separate from this derivative presentation.
 
-## Changes from the supplied reader
+## Relation to the supplied earlier reader
 
-The original site described an unimplemented proposal, invented enum/API labels,
-an illustrative animation and unvalidated broader platform ambitions. This
-edition uses the implemented contract, measured paired results and explicit
-scope. The original 17 files are preserved byte-for-byte in
-`source/archive/original_reader_2026-10-26.tar.gz`, with a manifest. That archive
-is superseded historical material, not the current scientific account.
+The supplied earlier website included extensive graph-theoretic, SwarmOps,
+communication, platform, worked-example and bibliography material. Those
+subjects are restored here with explicit status labels. Its VECR proposal,
+obsolete formulas, simulated animations and unverified completion claims were
+not copied into the current scientific account. The original ZIP supplied by
+the user remains outside this generated reader; the repository's earlier
+versions are available through Git history.
 
 The manuscript audit also reproduced two endpoint defects in production code:
 uncertain traversal endpoints were overcredited, and off-segment camera centers
@@ -85,6 +91,7 @@ could be clamped onto the route. Both have recorded before/after regressions.
 The corrected full campaign is versioned separately; earlier results were not
 rewritten. See the protocol and final validation records for exact revisions.
 
-The complete v5.1 reader is additionally preserved in
-`source/archive/v5_1_reader_2026-10-28.tar.gz`. V6 raw trials and statistics are
-separate; neither that reader archive nor the historical research was rewritten.
+The numerical evidence presented here is sourced from the versioned v7 current
+campaign. Earlier research remains in repository history and is not substituted
+for the v7 measurements. Formal submission should independently verify the
+author-supplied bibliographic details for any later publications.

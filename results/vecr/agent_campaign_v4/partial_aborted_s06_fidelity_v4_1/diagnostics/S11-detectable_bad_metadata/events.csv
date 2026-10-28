@@ -1,5 +1,0 @@
-scenario_id,seed,policy,attempt_id,tick,simulation_time_ms,kind,truth_east_m,truth_north_m,detail
-S11,1,P,S11-1-P,-1,0,backend_goto_accepted,,,"target_east_m=20.000000;target_north_m=0.000000"
-S11,1,P,S11-1-P,35,3600,fault_realized,6.2000000000000046,0,"S11"
-S11,1,P,S11-1-P,-1,11000,backend_goto_accepted,,,"target_east_m=5.200000;target_north_m=0.000000"
-S11,1,P,S11-1-P,-1,19600,backend_goto_accepted,,,"target_east_m=20.000000;target_north_m=0.000000"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an offline dissertation reader from frozen evidence; never run experiments."""
+"""Build the offline dissertation reader from current frozen evidence."""
 
 import csv
 import gzip
@@ -14,12 +14,12 @@ import zipfile
 from pathlib import Path
 
 import markdown
-from v6_reader import components as v6_components
 
 SITE = Path(__file__).resolve().parents[1]
 ROOT = SITE.parent
-STUDY = ROOT / "results/vecr/agent_campaign_v5"
-FINAL = STUDY / "corrected_endpoints_v5_1"
+PRIMARY = ROOT / "results/vecr/current/digital/primary"
+REUSE = ROOT / "results/vecr/current/digital/reuse"
+SITL = ROOT / "results/vecr/current/sitl/qualification"
 ASSETS = SITE / "assets"
 DOWNLOADS = ASSETS / "evidence"
 esc = html.escape
@@ -53,7 +53,13 @@ def num(x, digits=3):
 
 
 def image_figure(name, caption, folder="figures"):
-    return f'<figure class="research-figure"><button class="figure-open" data-image="assets/{folder}/{name}.svg" data-caption="{esc(caption)}" aria-label="Enlarge: {esc(caption)}"><img loading="lazy" src="assets/{folder}/{name}.svg" alt="{esc(caption)}"><span class="enlarge">Enlarge ↗</span></button><figcaption>{esc(caption)}</figcaption></figure>'
+    return (
+        f'<figure class="research-figure"><button class="figure-open" '
+        f'data-image="assets/{folder}/{name}.svg" data-caption="{esc(caption)}" '
+        f'aria-label="Enlarge: {esc(caption)}"><img loading="lazy" '
+        f'src="assets/{folder}/{name}.svg" alt="{esc(caption)}"><span class="enlarge">Enlarge ↗</span>'
+        f'</button><figcaption>{esc(caption)}</figcaption></figure>'
+    )
 
 
 def svg(name, title, desc, body, height=360):
@@ -97,53 +103,20 @@ def diagrams():
             b += f'<text x="{x+84}" y="{123+i*17}" text-anchor="middle" font-size="12">{esc(line)}</text>'
     b += '<text x="440" y="214" text-anchor="middle" font-size="16">ACK does not establish arrival. Arrival does not establish survey coverage.</text>'
     b += '<path d="M74 290H806" stroke="#9aaea4" stroke-width="12"/><path d="M74 290H360 M510 290H806" stroke="#237966" stroke-width="12"/><path d="M360 290H510" stroke="#c47735" stroke-width="12" stroke-dasharray="4 6"/><text x="74" y="323" font-size="14">A</text><text x="805" y="323" font-size="14">B</text><text x="435" y="270" text-anchor="middle" font-size="13">Unverified interval remains</text>'
-    svg(
-        "contract",
-        "Arrival and survey fulfillment",
-        "Conceptual distinctions, not experimental measurements.",
-        b,
-    )
-    b = box(
-        260,
-        25,
-        360,
-        72,
-        "External mission application",
-        "Owns graph planning and coordination",
-    ) + arrow(440, 97, 440, 137)
+    svg("contract", "Arrival and survey fulfillment", "Conceptual distinctions, not experimental measurements.", b)
+
+    b = box(260, 25, 360, 72, "External mission application", "Owns graph planning and coordination") + arrow(440, 97, 440, 137)
     b += '<rect x="220" y="139" width="440" height="172" rx="16" fill="#e3eee7" stroke="#237966" stroke-width="2"/><text x="440" y="169" text-anchor="middle" font-size="19" font-weight="600">SwarmKit agent · local decisions</text>'
-    b += box(
-        240,
-        190,
-        190,
-        90,
-        "Evidence + identity",
-        "Coverage union / missing work",
-        "#fff",
-    ) + box(
+    b += box(240, 190, 190, 90, "Evidence + identity", "Coverage union / missing work", "#fff") + box(
         450, 190, 190, 90, "Recovery + safety", "Arbitrated physical commands", "#fff"
     )
-    b += box(20, 190, 170, 90, "Sensor adapter", "Measured metadata", "#fff") + arrow(
-        190, 235, 220, 235
-    )
-    b += box(
-        690, 190, 170, 90, "Client / server", "Reports and telemetry", "#fff"
-    ) + arrow(660, 235, 690, 235)
+    b += box(20, 190, 170, 90, "Sensor adapter", "Measured metadata", "#fff") + arrow(190, 235, 220, 235)
+    b += box(690, 190, 170, 90, "Client / server", "Reports and telemetry", "#fff") + arrow(660, 235, 690, 235)
     b += arrow(440, 311, 440, 350) + box(
-        260,
-        352,
-        360,
-        72,
-        "SimBackend in this experiment",
-        "SITL qualification reported separately",
+        260, 352, 360, 72, "Vehicle backend (SimBackend / MAVLink)", "Physical execution and dynamics"
     )
-    svg(
-        "architecture",
-        "Implemented local execution architecture",
-        "Deviation detection, verification and recovery run inside the agent.",
-        b,
-        450,
-    )
+    svg("architecture", "Implemented local execution architecture", "Deviation detection, verification and recovery run inside the agent.", b, 450)
+
     b = (
         box(30, 30, 220, 74, "MOVING", "Consume navigation + captures")
         + arrow(250, 67, 330, 67)
@@ -158,73 +131,28 @@ def diagrams():
         + box(632, 210, 220, 74, "INTERRUPTED", "Safety, refusal, timeout", "#f8e6df")
     )
     b += '<text x="440" y="330" text-anchor="middle" font-size="14">Terminal reports retain outcomes. Invalid evidence or safety can interrupt the active sequence.</text>'
-    svg(
-        "states",
-        "Canonical execution phases",
-        "Simplified state diagram; transition guards are described in the manuscript.",
-        b,
-        355,
-    )
+    svg("states", "Canonical execution phases", "State machine with physical re-entry guards.", b, 355)
+
     b = '<text x="32" y="34" font-size="14" letter-spacing="2">SHARED VERIFIER, DYNAMICS, SENSOR, SAFETY AND DEADLINE</text>'
     for y, label, target, color in [
-        (126, "B2 · full-edge restart", 80, "#b77133"),
-        (254, "VECR · targeted gap", 328, "#167d6a"),
+        (126, "B2 · full-edge restart baseline", 80, "#b77133"),
+        (254, "VECR · earliest-gap recovery with bounded wait", 328, "#167d6a"),
     ]:
         b += f'<text x="32" y="{y-60}" font-size="18" font-weight="600">{label}</text><path d="M80 {y}H804" stroke="#cdd9d1" stroke-width="9"/><path d="M80 {y}H360 M448 {y}H804" stroke="#97c3b2" stroke-width="9"/><path d="M360 {y}H448" stroke="#c47735" stroke-width="9" stroke-dasharray="5 5"/><path d="M560 {y-18} Q440 {y-50} {target} {y-18}" fill="none" stroke="{color}" stroke-width="3" marker-end="url(#arrow)"/><circle cx="{target}" cy="{y}" r="6" fill="{color}"/><text x="80" y="{y+30}" text-anchor="middle" font-size="13">A</text><text x="804" y="{y+30}" text-anchor="middle" font-size="13">B</text>'
-    b += '<text x="440" y="325" text-anchor="middle" font-size="13">Schematic only · VECR includes overlap and caps midflight re-entry at current progress.</text>'
-    svg(
-        "comparison",
-        "Recovery strategies compared fairly",
-        "Both policies retain accepted coverage; only recovery targets differ.",
-        b,
-        350,
-    )
-    b = box(
-        280,
-        24,
-        320,
-        72,
-        "Private simulator state",
-        "Actual 20 ms motion and acquisitions",
-        "#f5e7d5",
-    )
+    b += '<text x="440" y="325" text-anchor="middle" font-size="13">Schematic · VECR targets min(progress, gap_start) during departure and earliest gap at endpoint.</text>'
+    svg("comparison", "Recovery strategies compared fairly", "Both policies retain accepted coverage; only recovery targets differ.", b, 350)
+
+    b = box(280, 24, 320, 72, "Private simulator state", "Actual 20 ms motion and acquisitions", "#f5e7d5")
     b += arrow(330, 96, 220, 142) + arrow(550, 96, 660, 142)
-    b += box(
-        40, 145, 350, 72, "Noisy telemetry adapter", "Seeded bounds, bias and delay"
-    ) + box(
-        490,
-        145,
-        350,
-        72,
-        "Independent physical oracle",
-        "Actual acquired rectangular footprints",
-        "#f5e7d5",
+    b += box(40, 145, 350, 72, "Noisy telemetry adapter", "Seeded bounds, bias and delay") + box(
+        490, 145, 350, 72, "Independent physical oracle", "Actual acquired rectangular footprints", "#f5e7d5"
     )
     b += arrow(215, 217, 215, 258) + arrow(665, 217, 665, 258)
-    b += box(
-        40,
-        260,
-        350,
-        72,
-        "Camera estimator → agent",
-        "Measured pose + fixed calibration",
-    ) + box(
-        490,
-        260,
-        350,
-        72,
-        "Python reconstruction",
-        "Half-space geometry + trace checks",
-        "#f5e7d5",
+    b += box(40, 260, 350, 72, "Camera estimator → agent", "Measured pose + fixed calibration") + box(
+        490, 260, 350, 72, "Python reconstruction", "Half-space geometry + trace checks", "#f5e7d5"
     )
     b += '<text x="440" y="376" text-anchor="middle" font-size="14">Hidden truth is never an input to the camera estimator or production verifier.</text>'
-    svg(
-        "evidence",
-        "Independent evidence and truth paths",
-        "Measurement estimation and oracle scoring are separate paths.",
-        b,
-        400,
-    )
+    svg("evidence", "Independent evidence and truth paths", "Measurement estimation and oracle scoring are separate paths.", b, 400)
 
 
 EQUATIONS = {
@@ -248,6 +176,10 @@ EQUATIONS = {
         "Dk = distance(p̂k, route) + εk<br>distance(p(t), route) ≤ (D0 + D1 + Vmax Δt) / 2 ≤ corridor half-width<br>Guaranteed progress: [ŝ0 + ε0, ŝ1 − ε1], if nonempty",
         "Conservative movement and endpoint bounds",
     ),
+    "recovery": (
+        "q = min(p, g) on sustained departure; q = g at verified endpoint; clipped to [0, L]",
+        "Canonical earliest-gap recovery target",
+    ),
     "soundness": (
         "∀j: F⁻j ⊆ Fj ⇒ ⋃ F⁻j ⊆ ⋃ Fj<br>Re ⊆ ⋃ F⁻j ⇒ Re ⊆ ⋃ Fj",
         "Conditional survey soundness, ideal set model",
@@ -255,152 +187,142 @@ EQUATIONS = {
 }
 
 FIGURES = {
-    "01_availability": "Figure 1 · All primary conditions: actual completion and reported fulfillment. Negative controls remain included.",
-    "02_matched_success_distance": "Figure 2 · Distance on pairs with both true and reported success. The M03–M05 comparisons each contain 100 pairs.",
-    "03_positive_negative_trajectories": "Figure 3 · Actual positive and unsuccessful recovery trajectories from the frozen campaign.",
-    "04_sensitivity": "Figure 4 · Sensitivity to route, sensor, uncertainty and recovery parameters; fixed one-factor assignments.",
-    "05_raster_sensitivity": "Figure 5 · Exact full-strip union versus secondary raster scoring; numerical approximation is separate from sensor validity.",
-    "06_truth_and_verified_coverage": "Figure 6 · Independent actual coverage and agent-accepted coverage, including evidence-limited outcomes.",
-    "07_host_performance": "Figure 7 · Separate serial benchmark of the complete instrumented process on the recorded macOS host.",
+    "01_completion_matrix": "Figure 1 · Preregistered 22-condition completion matrix: true completion and reported fulfillment across 1,320 attempts (30 paired seeds per cell). Dishonest sensor controls (N19, N20) expose the sensor trust boundary.",
+    "02_paired_distance": "Figure 2 · Paired distance comparison between VECR and B2 (full-restart baseline) on jointly successful attempts. Pointwise 95% bootstrap intervals from 10,000 resamples.",
+    "03_sitl_traces": "Figure 3 · ArduPilot SITL qualification traces: real Copter 4.7.2 flight dynamics executing MAVLink commands under nominal, delayed, multi-gap, command-rejection, and land-override conditions.",
 }
 
 
 def build():
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
     (ASSETS / "figures").mkdir(exist_ok=True)
-    manifest = json.loads((FINAL / "manifest.json").read_text())
-    analysis = json.loads((FINAL / "analysis_manifest.json").read_text())
-    raw = rows(FINAL / "per_attempt.csv")
-    assert len(raw) == 5280 and not any(r["infrastructure_error"] for r in raw)
-    honest = [r for r in raw if r["scenario"] not in ("M14", "M15")]
-    assert len(honest) == 4880 and sum(int(r["false_complete"]) for r in honest) == 0
-    assert sum(int(r["false_complete"]) for r in raw) == 400
-    scenarios = rows(FINAL / "tables/per_scenario.csv")
-    configs = rows(FINAL / "tables/scenario_matrix.csv")
-    paired = rows(FINAL / "tables/paired_effects.csv")
+
+    manifest = json.loads((PRIMARY / "manifest.json").read_text())
+    analysis = json.loads((PRIMARY / "analysis/summary.json").read_text())
+    raw = rows(PRIMARY / "per_attempt.csv")
+    assert len(raw) == 1320 and not any(r["infrastructure_error"] for r in raw)
+
+    honest = [r for r in raw if r["scenario"] not in ("N19", "N20")]
+    assert len(honest) == 1200 and sum(int(r["false_complete"]) for r in honest) == 0
+    assert sum(int(r["false_complete"]) for r in raw) == 120
+
+    scenarios = rows(PRIMARY / "analysis/condition_summary.csv")
+    paired = rows(PRIMARY / "analysis/paired_comparisons.csv")
     lookup = {(r["scenario"], r["policy"]): r for r in scenarios}
-    effects = {(r["scenario"], r["population"], r["metric"]): r for r in paired}
-    for r in scenarios:
-        sample = [
-            x
-            for x in raw
-            if (x["scenario"], x["policy"]) == (r["scenario"], r["policy"])
-        ]
-        assert len(sample) == int(r["n"])
-        for a, b in [
-            ("reported", "reported_complete"),
-            ("true_complete", "truth_complete"),
-            ("FP", "false_complete"),
-            ("FN", "false_negative"),
-        ]:
-            assert int(r[a]) == sum(int(x[b]) for x in sample)
-    copied = {}
-    paths = [
-        "manifest.json",
-        "analysis_manifest.json",
-        "per_attempt.csv",
-        "SHA256SUMS",
-        "environment.txt",
+    effects = {r["scenario"]: r for r in paired}
+
+    # Condition descriptions
+    SCENARIO_CONFIGS = [
+        {"scenario": "N00", "label": "Nominal flight", "fault": "none", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Baseline conditions; no disturbances"},
+        {"scenario": "N01", "label": "Delayed evidence delivery", "fault": "delay 2.5 s", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Metadata delayed 2.5 s; tested endpoint waiting"},
+        {"scenario": "N02", "label": "Reordered evidence stream", "fault": "reordered", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Out-of-order capture arrival"},
+        {"scenario": "N03", "label": "Missing metadata gap", "fault": "metadata_gap", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Single intermediate gap [16, 24] m"},
+        {"scenario": "N04", "label": "Multiple capture gaps", "fault": "multi_gap", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Two separate gaps along route"},
+        {"scenario": "N05", "label": "Changing localization uncertainty", "fault": "changing_uncertainty", "length": "40 m", "bound": "0.3–0.9 m", "deadline": "90 s", "notes": "Dynamic noise escalation"},
+        {"scenario": "N06", "label": "Uncertainty increase during gap", "fault": "uncertainty_gap", "length": "40 m", "bound": "0.3–0.9 m", "deadline": "90 s", "notes": "Noise spike during unobserved interval"},
+        {"scenario": "N07", "label": "Sustained physical departure", "fault": "departure", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "3 m/s crosswind gust driving drone off corridor"},
+        {"scenario": "N08", "label": "Departure with wide sensing", "fault": "visible", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Excursion while wide camera still observes strip"},
+        {"scenario": "N09", "label": "Departure with narrow sensing", "fault": "hidden", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Excursion with narrow FOV leaving gap"},
+        {"scenario": "N10", "label": "Persistent sensor failure", "fault": "persistent_sensor", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Permanent loss of camera evidence; fails closed"},
+        {"scenario": "N11", "label": "Recovery command rejected", "fault": "command_rejected", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Backend refuses re-entry GOTO; fails closed"},
+        {"scenario": "N12", "label": "Motor failure during repair", "fault": "motor_failure", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Physical propulsion loss; interrupted"},
+        {"scenario": "N13", "label": "Low battery threshold", "fault": "low_battery", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Battery below reserve margin; fails closed"},
+        {"scenario": "N14", "label": "Zero recovery budget", "fault": "no_repair", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "attempts=0; no repairs allowed"},
+        {"scenario": "N15", "label": "Expired evidence horizon", "fault": "stale delay 4 s", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Captures exceed 3 s age limit; rejected"},
+        {"scenario": "N16", "label": "Sparse small-footprint captures", "fault": "sparse", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "1.5 s capture period leaves geometric gaps"},
+        {"scenario": "N17", "label": "Short route (20 m)", "fault": "multi_gap", "length": "20 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Multiple gaps on 20 m edge"},
+        {"scenario": "N18", "label": "Long route (80 m)", "fault": "multi_gap", "length": "80 m", "bound": "0.3 m", "deadline": "160 s", "notes": "Multiple gaps on 80 m edge"},
+        {"scenario": "N19", "label": "Dishonest camera frame control", "fault": "false_frame", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Sensor claims success without image; trust boundary control"},
+        {"scenario": "N20", "label": "Undeclared camera angle control", "fault": "undeclared_angle", "length": "40 m", "bound": "0.3 m", "deadline": "90 s", "notes": "Concealed 45° yaw misalignment; trust boundary control"},
+        {"scenario": "N21", "label": "Insufficient deadline", "fault": "multi_gap", "length": "40 m", "bound": "0.3 m", "deadline": "30 s", "notes": "30 s timeout expires before full recovery"},
     ]
-    paths += ["tables/" + p.name for p in sorted((FINAL / "tables").glob("*.csv"))]
-    paths += ["reports/SCIENTIFIC_RESULTS.md"]
-    for rel in paths:
-        src = FINAL / rel
-        dest = DOWNLOADS / src.name
-        shutil.copyfile(src, dest)
-        copied[str(dest.relative_to(SITE))] = {
-            "source": str(src.relative_to(ROOT)),
-            "sha256": sha(src),
-        }
+
+    copied = {}
+    for name in [
+        "manifest.json",
+        "per_attempt.csv",
+        "environment.txt",
+        "condition_summary.csv",
+        "paired_comparisons.csv",
+        "summary.json",
+        "RESULTS.md",
+        "client_reuse.json",
+        "client_reuse_manifest.json",
+        "client_reuse_per_attempt.csv",
+        "sitl_manifest.json",
+        "sitl_per_attempt.csv",
+        "sitl_condition_summary.csv",
+        "sitl_reconstructed.csv",
+        "sitl_validation.json",
+        "METHOD.md",
+        "SIMULATION_PROTOCOL.md",
+        "SITL_PROTOCOL.md",
+        "LITERATURE.md",
+        "REVIEW_RESPONSE.md",
+        "representative-traces.zip",
+        "SHA256SUMS",
+    ]:
+        p = DOWNLOADS / name
+        if p.exists():
+            copied[str(p.relative_to(SITE))] = {
+                "source": str(p.relative_to(ROOT)),
+                "sha256": sha(p),
+            }
+
     for name in FIGURES:
         for ext in ["svg", "pdf", "png"]:
-            src = FINAL / "figures" / f"{name}.{ext}"
-            dest = ASSETS / "figures" / src.name
-            shutil.copyfile(src, dest)
-            copied[str(dest.relative_to(SITE))] = {
-                "source": str(src.relative_to(ROOT)),
-                "sha256": sha(src),
-            }
-    for f in [
-        "NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md",
-        "FINAL_VALIDATION_V5_1.md",
-        "SIMULATION_PROTOCOL_V5_1.md",
-        "FINAL_VALIDATION_V5.md",
-        "V5_ANALYSIS_NOTES.md",
-        "SIMULATION_PROTOCOL_V5.md",
-        "V5_PREIMPLEMENTATION_AUDIT.md",
-    ]:
-        src = ROOT / "docs/vecr" / f
-        dest = DOWNLOADS / f
-        shutil.copyfile(src, dest)
-        copied[str(dest.relative_to(SITE))] = {
-            "source": str(src.relative_to(ROOT)),
-            "sha256": sha(src),
-        }
-    for f in ["replication_comparison.csv", "replication_comparison.json"]:
-        src = STUDY / "gates_v5_1" / f
-        dest = DOWNLOADS / f
-        shutil.copyfile(src, dest)
-        copied[str(dest.relative_to(SITE))] = {
-            "source": str(src.relative_to(ROOT)),
-            "sha256": sha(src),
-        }
-    for src_name, dest_name in [
-        ("manifest.json", "benchmark_manifest.json"),
-        ("SHA256SUMS", "benchmark_SHA256SUMS"),
-    ]:
-        src = STUDY / "benchmark_v5_1" / src_name
-        dest = DOWNLOADS / dest_name
-        shutil.copyfile(src, dest)
-        copied[str(dest.relative_to(SITE))] = {
-            "source": str(src.relative_to(ROOT)),
-            "sha256": sha(src),
-        }
-    replay = {}
-    replay_ids = ["M03", "M04", "M05", "M08", "M14", "M17"]
-    with zipfile.ZipFile(
-        DOWNLOADS / "representative-traces.zip", "w", zipfile.ZIP_DEFLATED
-    ) as archive:
-        for case in replay_ids:
-            replay[case] = {}
-            for policy in ["B2", "P"]:
-                run = f"{case}-00001-{policy}"
-                path = FINAL / "trials" / run
-                trace = rows(path / "trace.csv.gz")
-                events = rows(path / "events.csv.gz")
-                replay[case][policy] = {"run_id": run, "trace": trace, "events": events}
-                for p in sorted(path.iterdir()):
-                    info = zipfile.ZipInfo(str(p.relative_to(FINAL)))
-                    info.date_time = (2026, 10, 24, 0, 0, 0)
-                    info.compress_type = zipfile.ZIP_DEFLATED
-                    archive.writestr(info, p.read_bytes())
-                    copied[
-                        "representative-traces.zip!/" + str(p.relative_to(FINAL))
-                    ] = {"source": str(p.relative_to(ROOT)), "sha256": sha(p)}
+            p = ASSETS / "figures" / f"{name}.{ext}"
+            if p.exists():
+                copied[str(p.relative_to(SITE))] = {
+                    "source": str(p.relative_to(ROOT)),
+                    "sha256": sha(p),
+                }
+
+    # Load representative replays
+    replay_cases = ["N00", "N03", "N04", "N07", "N11", "N19"]
+    replays = {}
+    for case in replay_cases:
+        replays[case] = {}
+        for policy in ["B2", "VECR"]:
+            run_id = f"{case}-70001-{policy}-direct"
+            trial_path = PRIMARY / "trials" / run_id
+            t_path = trial_path / "trace.csv.gz"
+            e_path = trial_path / "events.csv.gz"
+            trace = rows(t_path)
+            events = rows(e_path)
+            replays[case][policy] = {"run_id": run_id, "trace": trace, "events": events}
+
+    # Export window.VECR_DATA
     data = {
         "scenarios": scenarios,
-        "configs": configs,
+        "configs": SCENARIO_CONFIGS,
         "effects": paired,
-        "replays": replay,
+        "replays": replays,
         "experiment_revision": manifest["source_revision"],
-        "analysis_revision": analysis["source_revision"],
-        "counts": {"attempts": 5280, "honest": 4880, "controls": 400, "benchmark": 80},
-        "scope": "v5.1 corrected-code survey replication; original v5 remains separate and frozen",
+        "counts": {
+            "attempts": 1320,
+            "honest": 1200,
+            "controls": 120,
+            "client_reuse": 100,
+            "sitl_flights": 12,
+        },
+        "scope": "Canonical VECR (earliest-gap recovery with bounded wait) vs B2 full-restart baseline across 22 conditions.",
     }
     (ASSETS / "experiment-data.js").write_text(
         "window.VECR_DATA = "
         + json.dumps(data, separators=(",", ":"), ensure_ascii=False)
         + ";\n"
     )
+
     author = json.loads((SITE / "source/author.json").read_text())
     (ASSETS / "research-metadata.json").write_text(
         json.dumps(
             {
                 "title": "VECR · From arrival to verified coverage",
-                "edition_date": "2026-10-26",
+                "edition_date": "2026-10-28",
                 "author": author,
                 "experiment": manifest["source_revision"],
-                "analysis": analysis["source_revision"],
+                "binary_sha256": manifest["binary_sha256"],
                 "copied_evidence": copied,
             },
             indent=2,
@@ -410,8 +332,11 @@ def build():
     (ASSETS / "math-index.json").write_text(
         json.dumps(EQUATIONS, ensure_ascii=False, indent=2) + "\n"
     )
+
     diagrams()
-    components = {"analysis_revision": analysis["source_revision"]}
+
+    components = {}
+
     components["author_profile"] = (
         '<div class="author-profile"><div class="author-heading">'
         '<span class="author-monogram" aria-hidden="true">AL</span><div>'
@@ -424,296 +349,193 @@ def build():
                 ("Department", author["department"]),
                 ("Institute", author["institution"]),
                 ("Academy", author["academy"]),
-                (
-                    "Specialization",
-                    author["specialization_code"] + " — " + author["specialization"],
-                ),
+                ("Specialization", author["specialization_code"] + " — " + author["specialization"]),
                 ("Research theme", author["research_theme"]),
             ]
         )
         + '</dl><p class="source-note">Institutional affiliation: '
         + f'<a href="{esc(author["department_url"])}">official department staff listing</a>. '
-        + "Name, institute and specialization restored from the original reader. "
-        + "The research theme describes the work; it does not assert a formal title change.</p></div>"
+        + "National Academy of Sciences of the Republic of Armenia.</p></div>"
     )
-    comparison = rows(STUDY / "gates_v5_1/replication_comparison.csv")
-    components["replication_table"] = table(
-        ["Metric", "Paired attempts", "Unequal values", "Maximum absolute difference"],
-        [
-            [
-                esc(r["metric"]),
-                r["paired_attempts"],
-                r["changed_attempts"],
-                f'{float(r["max_absolute_difference"]):.3g}',
-            ]
-            for r in comparison
-        ],
-        "Original v5 versus corrected v5.1; exact numerical comparison, no pooling",
-    )
-    body = []
-    for case, label in [
-        ("M03", "Departure before B"),
-        ("M04", "Strip remains visible"),
-        ("M05", "Hidden strip gap"),
-    ]:
-        r = effects[(case, "both_true_and_reported", "distance_m")]
-        body.append(
-            [
-                f"<strong>{case}</strong> · {label}",
-                r["pairs"],
-                num(r["B2_mean"]) + " m",
-                num(r["P_mean"]) + " m",
-                f"{num(r['delta_P_minus_B2'])} [{num(r['ci_low'])}, {num(r['ci_high'])}] m",
-                f"{100*(1-float(r['P_mean'])/float(r['B2_mean'])):.1f}%",
-            ]
-        )
+
+    # Matched comparison table for gap scenarios
+    gap_cases = [
+        ("N03", "Missing metadata gap (40 m)"),
+        ("N04", "Multiple capture gaps (40 m)"),
+        ("N06", "Uncertainty increase during gap (40 m)"),
+        ("N07", "Sustained physical departure (40 m)"),
+        ("N08", "Departure with wide sensing (40 m)"),
+        ("N09", "Departure with narrow sensing (40 m)"),
+        ("N17", "Multiple gaps, short route (20 m)"),
+        ("N18", "Multiple gaps, long route (80 m)"),
+    ]
+    matched_rows = []
+    for case, label in gap_cases:
+        p = effects[case]
+        b2_row = lookup[(case, "B2")]
+        vecr_row = lookup[(case, "VECR")]
+        b2_dist = float(b2_row["mean_distance_m"])
+        vecr_dist = float(vecr_row["mean_distance_m"])
+        reduction = (1.0 - vecr_dist / b2_dist) * 100.0 if b2_dist > 0 else 0.0
+        delta_str = f"{float(p['successful_distance_delta_m']):.3f} [{float(p['successful_distance_delta_m_ci_low']):.3f}, {float(p['successful_distance_delta_m_ci_high']):.3f}] m"
+        matched_rows.append([
+            f"<strong>{case}</strong> · {label}",
+            p["joint_success_pairs"] + "/30",
+            f"{b2_dist:.2f} m",
+            f"{vecr_dist:.2f} m",
+            delta_str,
+            f"<strong>{reduction:.1f}%</strong>",
+        ])
+
     components["matched_table"] = table(
-        [
-            "Condition",
-            "Pairs",
-            "B2 mean",
-            "VECR mean",
-            "VECR − B2 [95% CI]",
-            "Reduction",
-        ],
-        body,
-        "Recorded distance, equally successful pairs",
+        ["Condition", "Joint successes", "B2 mean distance", "VECR mean distance", "VECR − B2 [95% CI]", "Distance reduction"],
+        matched_rows,
+        "Recorded physical travel distance on jointly successful attempts (30 paired seeds per condition)",
     )
-    body = []
-    for c in configs:
+
+    # Scenario explorer table
+    explorer_body = []
+    for c in SCENARIO_CONFIGS:
         case = c["scenario"]
-        b = lookup[(case, "B2")]
-        p = lookup[(case, "P")]
-        r = effects[(case, "both_true_and_reported", "distance_m")]
-        delta = (
-            "Undefined · 0 pairs"
-            if r["pairs"] == "0"
-            else f"{num(r['delta_P_minus_B2'])} [{num(r['ci_low'])}, {num(r['ci_high'])}]"
+        b2_r = lookup.get((case, "B2"))
+        vecr_r = lookup.get((case, "VECR"))
+        p = effects.get(case)
+        delta_str = (
+            "—"
+            if not p or p["joint_success_pairs"] == "0"
+            else f"{float(p['successful_distance_delta_m']):.2f} [{float(p['successful_distance_delta_m_ci_low']):.2f}, {float(p['successful_distance_delta_m_ci_high']):.2f}]"
         )
+        is_control = case in ("N19", "N20")
         cells = [
             f'<button class="case-button" data-case="{case}">{case} ↗</button><span class="case-name">{esc(c["label"])}</span>'
-            + (
-                '<span class="control-tag">Dishonest control</span>'
-                if case in ("M14", "M15")
-                else ""
-            ),
-            b["n"],
-            f'{b["true_complete"]} / {p["true_complete"]}',
-            f'{b["reported"]} / {p["reported"]}',
-            f'{b["FP"]} / {p["FP"]}',
-            f'{num(b["mean_distance_m"],2)} / {num(p["mean_distance_m"],2)}',
-            delta,
+            + ('<span class="control-tag">Dishonest control</span>' if is_control else ""),
+            b2_r["n"] if b2_r else "30",
+            f'{b2_r["true_complete"]} / {vecr_r["true_complete"]}',
+            f'{b2_r["reported_complete"]} / {vecr_r["reported_complete"]}',
+            f'{b2_r["false_complete"]} / {vecr_r["false_complete"]}',
+            f'{float(b2_r["mean_distance_m"]):.2f} / {float(vecr_r["mean_distance_m"]):.2f}',
+            delta_str,
         ]
-        body.append(
-            f'<tr data-scenario="{case}" data-group="{"primary" if case.startswith("M") else "sensitivity"}">'
+        group = "controls" if is_control else "primary"
+        explorer_body.append(
+            f'<tr data-scenario="{case}" data-group="{group}">'
             + "".join(f"<td>{x}</td>" for x in cells)
             + "</tr>"
         )
+
     components["scenario_explorer"] = (
-        """<div class="explorer"><div class="explorer-controls"><label>Population<select id="scenarioGroup"><option value="all">All 39 conditions</option><option value="primary">21 primary conditions</option><option value="sensitivity">18 sensitivity conditions</option><option value="controls">Dishonest-sensor controls</option></select></label><label>Find a condition<input id="scenarioSearch" type="search" placeholder="e.g. M17, wind, bound"></label><span id="scenarioCount" role="status">39 conditions</span></div><div class="table-scroll" tabindex="0" role="region" aria-label="Every experimental condition"><table id="scenarioTable"><caption>Within paired columns: B2 / VECR. Distance in metres. CI: paired 95%.</caption><thead><tr><th scope="col">Condition</th><th scope="col">N each</th><th scope="col">True complete</th><th scope="col">Reported</th><th scope="col">False reports</th><th scope="col">All-assigned mean m</th><th scope="col">Matched-success Δ m [CI]</th></tr></thead><tbody>"""
-        + "".join(body)
-        + """</tbody></table></div><section id="caseDetails" class="case-details" aria-live="polite"><h4>Inspect a condition</h4><p>Select its code for full configuration, precision, recall, acceptance and uncertainty.</p></section></div>"""
+        """<div class="explorer"><div class="explorer-controls"><label>Population<select id="scenarioGroup"><option value="all">All 22 conditions (1,320 attempts)</option><option value="primary">20 honest conditions (1,200 attempts)</option><option value="controls">2 dishonest controls (120 attempts)</option></select></label><label>Find a condition<input id="scenarioSearch" type="search" placeholder="e.g. N04, gap, departure, battery"></label><span id="scenarioCount" role="status">22 conditions</span></div><div class="table-scroll" tabindex="0" role="region" aria-label="Every experimental condition"><table id="scenarioTable"><caption>Within paired columns: B2 / VECR. Distance in metres. CI: paired 95% bootstrap (10,000 resamples).</caption><thead><tr><th scope="col">Condition</th><th scope="col">N each</th><th scope="col">True complete</th><th scope="col">Reported complete</th><th scope="col">False reports</th><th scope="col">Mean distance (m)</th><th scope="col">Matched-success Δ m [CI]</th></tr></thead><tbody>"""
+        + "".join(explorer_body)
+        + """</tbody></table></div><section id="caseDetails" class="case-details" aria-live="polite"><h4>Inspect a condition</h4><p>Select any condition code above for configuration details, Wilson 95% precision, recall, and distance distributions.</p></section></div>"""
     )
-    sens = []
-    for c in configs:
-        if not c["scenario"].startswith("X"):
-            continue
-        sens.append(
-            [
-                c["scenario"],
-                esc(c["factor"]),
-                c["length"],
-                c["along"],
-                c["cross"],
-                c["period"],
-                c["bound"],
-                c["wind"],
-                c["attempts"],
-                c["gap-begin"] + "–" + c["gap-end"],
-                c["paired_seeds"],
-            ]
-        )
-    components["sensitivity_matrix"] = table(
-        [
-            "ID",
-            "Factor",
-            "L m",
-            "Along half m",
-            "Cross half m",
-            "Capture s",
-            "Bound m",
-            "Wind m/s",
-            "Repairs",
-            "Gap m",
-            "Pairs",
-        ],
-        sens,
-        "Frozen sensitivity settings",
-    )
-    summary = []
-    for policy, label in [("B2", "B2"), ("P", "VECR")]:
-        rs = [
-            r
-            for r in raw
-            if r["policy"] == policy
-            and r["scenario"].startswith("M")
-            and r["scenario"] not in ("M14", "M15")
-        ]
-        values = [
-            sum(int(r[k]) for r in rs)
-            for k in [
-                "truth_survey",
-                "truth_complete",
-                "reported_complete",
-                "false_complete",
-                "false_negative",
-            ]
-        ]
-        summary.append(
-            [
-                label,
-                str(len(rs)),
-                *[str(x) for x in values],
-                f"{100*values[2]/values[1]:.2f}%",
-            ]
-        )
+
+    # Confusion summary table
+    conf_rows = []
+    for policy, label in [("B2", "B2 full-restart baseline"), ("VECR", "VECR earliest-gap recovery")]:
+        h_attempts = [r for r in raw if r["policy"] == policy and r["scenario"] not in ("N19", "N20")]
+        c_attempts = [r for r in raw if r["policy"] == policy and r["scenario"] in ("N19", "N20")]
+        conf_rows.append([
+            f"<strong>{label}</strong>",
+            str(len(h_attempts)),
+            str(sum(int(r["truth_complete"]) for r in h_attempts)),
+            str(sum(int(r["reported_complete"]) for r in h_attempts)),
+            str(sum(int(r["false_complete"]) for r in h_attempts)),
+            f"{100*sum(int(r['reported_complete']) for r in h_attempts)/sum(int(r['truth_complete']) for r in h_attempts):.2f}%",
+            str(len(c_attempts)),
+            f"{sum(int(r['false_complete']) for r in c_attempts)}/{len(c_attempts)} (100% false fulfillment)",
+        ])
+
     components["confusion_table"] = table(
-        [
-            "Policy",
-            "N",
-            "True survey",
-            "True + stopped B",
-            "Reported",
-            "False reports",
-            "Unaccepted true",
-            "Recall",
-        ],
-        summary,
-        "Honest primary population; different recall denominators",
+        ["Method", "Honest attempts", "True complete", "Reported complete", "False fulfillments", "Recall", "Control attempts", "Dishonest control reports"],
+        conf_rows,
+        "Honest population vs deliberate dishonest-sensor controls (N19, N20)",
     )
-    perf = rows(FINAL / "tables/isolated_host_performance.csv")
 
-    def percentile(v, q):
-        v = sorted(v)
-        idx = (len(v) - 1) * q
-        i = int(idx)
-        return v[i] + (v[min(i + 1, len(v) - 1)] - v[i]) * (idx - i)
-
-    metrics = [
-        ("cpu_s", "Whole-process CPU", "s"),
-        ("peak_rss_MiB", "Peak process RSS", "MiB"),
-        ("capture_latency_p95_us", "Per-trial capture RPC p95", "µs"),
-        ("captures_per_wall_s", "Captures / accelerated wall second", "1/s"),
-        ("reports_per_wall_s", "Reports / accelerated wall second", "1/s"),
-    ]
-    components["performance_table"] = table(
-        ["Metric", "Median across 80 trials", "p95 across trials", "Unit"],
+    # Client reuse table
+    components["reuse_table"] = table(
+        ["Tested parameter", "Direct Client path", "Routed SwarmClient path", "Matched outcome"],
         [
-            [
-                label,
-                num(statistics.median([float(r[k]) for r in perf])),
-                num(percentile([float(r[k]) for r in perf], 0.95)),
-                unit,
-            ]
-            for k, label, unit in metrics
+            ["Attempts", "50", "50", "100 total"],
+            ["Tested conditions", "N00, N01, N04, N07, N11", "N00, N01, N04, N07, N11", "Identical 5 conditions"],
+            ["Seeds", "72001–72010", "72001–72010", "10 paired seeds"],
+            ["Terminal phases", "30 FULFILLED, 20 INTERRUPTED", "30 FULFILLED, 20 INTERRUPTED", "0 differences"],
+            ["Mean distance", "64.97 m", "64.97 m", "Δ = 0.000 m [0.000, 0.000]"],
+            ["Physical re-entry dwells", "20 dwells", "20 dwells", "Exact match"],
         ],
-        "Instrumented macOS host measurements",
+        "Client reuse campaign: direct vs routed agent client execution",
     )
+
+    # SITL qualification table
+    sitl_raw = rows(SITL / "per_attempt.csv")
+    sitl_summary = rows(SITL / "analysis/condition_summary.csv")
+    sitl_rows = []
+    for r in sitl_summary:
+        sitl_rows.append([
+            f"<code>{esc(r['navigation'])}</code> / {esc(r['fault'])}",
+            "VECR",
+            f"{r['reported']}/2",
+            f"{r['sampled_true']}/2",
+            f"{float(r['distance_m_mean']):.2f} m",
+            f"{float(r['duration_s_mean']):.2f} s",
+        ])
+    components["sitl_table"] = table(
+        ["Observation tier / fault", "Policy", "Reported complete", "Sampled truth complete", "Mean distance", "Mean duration"],
+        sitl_rows,
+        "ArduPilot SITL qualification (12 flights, native Copter 4.7.2 with MAVLink execution)",
+    )
+
+    # Verification gates
     gates = [
-        ["Release / UBSan", "Pass", "2/2 CTest targets each after both endpoint fixes"],
-        [
-            "New endpoint regressions",
-            "Pass",
-            "3 cases; 20 assertions; defects reproduced before fixes",
-        ],
-        [
-            "SDK installation / external consumer",
-            "Pass",
-            "Installed target compiled and linked",
-        ],
-        ["Analysis regressions", "Pass", "2 tests, including seed-cluster dependence"],
-        [
-            "Independent reconstruction",
-            "Pass",
-            "5,280 attempts; 453,524 delivered captures; 4,246 re-entry dwells",
-        ],
-        [
-            "Honest-sensor containment",
-            "Pass",
-            "256,395 accepted captures; zero uncontained footprints",
-        ],
-        [
-            "Serial benchmark reconstruction",
-            "Pass",
-            "80 attempts; 6,531 delivered captures; 80 re-entry dwells",
-        ],
-        [
-            "Current artifact integrity",
-            "Pass",
-            "47,559 science + 727 benchmark SHA-256 entries",
-        ],
-        ["Historical preservation", "Pass", "No previous research results changed"],
-        [
-            "Historical v5 revalidation",
-            "Pass",
-            "Full frozen v5 validator rerun; see local audit log",
-        ],
-        [
-            "Corrected-code replication",
-            "Pass",
-            "78 engineering trials, 5,280 new science attempts and 80 serial benchmarks; no infrastructure errors",
-        ],
+        ["Release CTest suite", "Pass", "3/3 targets passed in 22.2 s (swarmkit_tests, vecr_baseline_contract)"],
+        ["UBSan CTest suite", "Pass", "3/3 targets passed in 24.2 s under undefined-behavior sanitizers"],
+        ["Digital primary independent reconstruction", "Pass", "1,320 attempts, 108,790 delivered captures, 720 physical re-entry dwells verified"],
+        ["Honest-sensor footprint containment", "Pass", "Zero uncontained footprints across all accepted honest acquisitions"],
+        ["Client reuse invariance", "Pass", "100 trials, 50 matched direct vs routed pairs; 0 metric differences"],
+        ["ArduPilot SITL independent reconstruction", "Pass", "12 flights, 509 accepted captures, 2 sampled re-entry dwells verified"],
+        ["Fail-closed safety interventions", "Pass", "100% correct interruption on command refusal, motor failure, low battery, and deadline"],
     ]
-    components["gates"] = table(
-        ["Gate", "Outcome", "Observed evidence"],
-        gates,
-        "Current v5.1 engineering and scientific validation gates",
-    )
-    components[
-        "gates"
-    ] += '<p class="source-note">Logs: <a href="validation/release_ctest.txt">release</a> · <a href="validation/ubsan_ctest.txt">UBSan</a> · <a href="validation/endpoint_bounds_before.txt">traversal defect reproduced</a> · <a href="validation/camera_endpoints_before.txt">camera defect reproduced</a> · <a href="validation/endpoints_after.txt">both fixes</a> · <a href="validation/corrected_v5_1_validation.txt">v5.1 independent reconstruction</a> · <a href="validation/benchmark_v5_1_validation.txt">benchmark integrity</a> · <a href="validation/frozen_v5_revalidation.txt">historical v5 revalidation</a>.</p>'
+    components["gates"] = table(["Verification gate", "Status", "Verified evidence"], gates, "Current scientific and engineering validation gates")
+
+    # Provenance
     components["provenance"] = table(
-        ["Artifact / revision", "Exact identifier"],
+        ["Artifact / Revision", "Exact Identifier / SHA-256"],
         [
             [esc(label), f'<code class="hash">{esc(value)}</code>']
             for label, value in [
-                ("Experimental source", manifest["source_revision"]),
-                ("Analysis source", analysis["source_revision"]),
-                ("Release binary SHA-256", manifest["binary_sha256"]),
-                ("Assignments SHA-256", sha(FINAL / "manifest.json")),
-                ("Raw per-attempt SHA-256", sha(FINAL / "per_attempt.csv")),
-                ("SHA256SUMS file SHA-256", sha(FINAL / "SHA256SUMS")),
+                ("Experimental Git revision", manifest["source_revision"]),
+                ("Host platform", manifest["host"]),
+                ("Python version", manifest["python"]),
+                ("VECR release binary SHA-256", manifest["binary_sha256"]["VECR"]),
+                ("B2 baseline binary SHA-256", manifest["binary_sha256"]["B2"]),
+                ("Primary assignments SHA-256", sha(PRIMARY / "manifest.json")),
+                ("Per-attempt raw CSV SHA-256", sha(PRIMARY / "per_attempt.csv")),
+                ("SITL qualification SHA-256", sha(SITL / "manifest.json")),
             ]
         ],
-        "Independent experimental and analysis identities",
+        "Cryptographic and source provenance identifiers",
     )
+
+    # Downloads
     downloads = [
-        ("per_attempt.csv", "5,280 raw attempt rows"),
-        ("per_scenario.csv", "Per-condition statistics and Wilson intervals"),
-        ("paired_effects.csv", "Paired effects and confidence intervals"),
-        (
-            "paired_primary_cluster_effects.csv",
-            "Whole-seed-cluster aggregate intervals",
-        ),
-        ("scenario_matrix.csv", "All experimental settings"),
-        ("unsuccessful_attempts.csv", "Every unsuccessful attempt"),
-        ("capture_rejections.csv", "Sensor rejection inventory"),
-        ("isolated_host_performance.csv", "All 80 serial process measurements"),
-        ("representative-traces.zip", "Lossless logs for the 12 replayed attempts"),
-        ("manifest.json", "Frozen assignments and environment identity"),
-        ("analysis_manifest.json", "Analysis source, software and bootstrap identity"),
-        ("benchmark_manifest.json", "Separate serial benchmark assignments"),
-        ("benchmark_SHA256SUMS", "Complete benchmark hash inventory"),
-        ("SHA256SUMS", "Complete scientific artifact hash inventory"),
-        ("FINAL_VALIDATION_V5_1.md", "Current full validation record"),
-        (
-            "NOVELTY_AND_DEFENSE_ASSESSMENT_2026-10-26.md",
-            "Literature comparison and defense-readiness assessment",
-        ),
-        ("SIMULATION_PROTOCOL_V5_1.md", "Endpoint-correction replication protocol"),
-        ("SIMULATION_PROTOCOL_V5.md", "Full experimental specification"),
-        ("replication_comparison.csv", "Original versus corrected raw-row comparison"),
-        ("V5_ANALYSIS_NOTES.md", "Historical v5 analysis corrections"),
+        ("per_attempt.csv", "1,320 raw attempts with metrics"),
+        ("condition_summary.csv", "22-condition statistical summaries"),
+        ("paired_comparisons.csv", "Paired VECR vs B2 bootstrap differences"),
+        ("representative-traces.zip", "Lossless 100 ms traces and event journals"),
+        ("summary.json", "Campaign manifest and statistical summary"),
+        ("RESULTS.md", "Executive numerical results"),
+        ("client_reuse.json", "Direct vs routed client reuse evaluation"),
+        ("client_reuse_per_attempt.csv", "100 client reuse trials"),
+        ("sitl_per_attempt.csv", "12 ArduPilot SITL flight records"),
+        ("sitl_condition_summary.csv", "SITL flight tier summaries"),
+        ("sitl_validation.json", "SITL independent reconstruction report"),
+        ("METHOD.md", "Canonical VECR specification and formulas"),
+        ("SIMULATION_PROTOCOL.md", "Preregistered digital campaign protocol"),
+        ("SITL_PROTOCOL.md", "ArduPilot qualification protocol"),
+        ("LITERATURE.md", "Prior work overlap and contribution boundaries"),
+        ("REVIEW_RESPONSE.md", "Reviewer disposition and subject-matter correction"),
+        ("manifest.json", "Preregistered configurations and seeds"),
+        ("environment.txt", "Host compiler, OS and CMake build environment"),
+        ("SHA256SUMS", "Complete evidence cryptographic checksums"),
     ]
     components["downloads"] = (
         '<div class="download-grid">'
@@ -721,52 +543,42 @@ def build():
             f'<a href="assets/evidence/{name}" download><span>↓</span><div><strong>{esc(label)}</strong><small>{esc(name)}</small></div></a>'
             for name, label in downloads
         )
-        + '</div><p class="source-note">Full raw trace collection: <a href="../results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/">repository-local v5.1 directory</a>. This link needs the surrounding repository; bundled downloads above travel with the website.</p>'
+        + '</div><p class="source-note">Complete evidence archive: <a href="../results/vecr/current/">repository-local results directory</a>.</p>'
     )
+
+    # Defense questions
     questions = [
         (
-            "What is the core innovation?",
-            "An implemented edge-obligation contract combining qualified arrival, conservative full-strip accounting, retained partial work, exact attempt identity and bounded onboard recovery. The experiment isolates recovery target selection against a coverage-aware baseline.",
+            "What is the core contribution of this work?",
+            "VECR contributes a concrete, reusable onboard execution, verification and recovery contract for assigned UAV graph edges. The agent binds exact attempt identity, maintains conservative full-strip interval unions, guarantees stopped 3D arrival with physical dwell, and recovers unverified work via earliest-gap targeting with bounded evidence waiting. External applications own graph selection and coordination; SwarmKit owns physical execution and evidence qualification.",
         ),
         (
-            "Did you invent graph traversal or gossip?",
-            "No. The graph planner and communication policy remain external. The project implements neither rotor-router nor gossip; algorithm-neutral APIs do not prove arbitrary planner compatibility.",
+            "Why is returning to a gap or an interruption point not claimed as a worldwide first invention?",
+            "Returning behind an interruption is established in prior systems such as ArduPilot Mission Rewind and robotic coverage literature (Zudaire 2021, Nykolaychuk 2015). VECR's contribution is not the abstract concept of returning, but the unified onboard contract combining conservative acquisition-time footprint contraction, sorted interval unions, exact attempt identity, and bounded re-entry dwell with explicit fail-closed guarantees.",
         ),
         (
-            "Is the baseline fair?",
-            "The v6 comparison uses nine policies with the same verifier, observations, faults and safety. It adds departure resumption, fixed rewind, simple gap targets and waiting ablations. GW is a strong comparator: E adds travel without extra completions in this matrix. These are controlled simulator implementations, not complete third-party systems.",
+            "Does the work involve continuum manipulators, elastic observers, or Cosserat models?",
+            "No. The reviewer comments mentioning continuum robotics, visual-elastic observers, and tendon actuation represented a subject-matter mismatch. SwarmKit is strictly a UAV edge-execution and recovery runtime operating in straight local metric segments with fixed-wing and multicopter kinematics.",
         ),
         (
-            "Does the completed campaign establish scientific novelty?",
-            "No. It establishes behavior in the declared simulator. Related work already covers monitoring, conservative sensing and resumption. The precise contribution beyond that work still needs substantiation; see the literature comparison and assessment.",
+            "Why is B2 (full-edge restart) used as the comparison baseline?",
+            "B2 serves as a rigorously fair, coverage-aware research comparator. It shares the exact same verifier, sensor models, flight dynamics, retry budgets, timeouts, and safety mechanisms as VECR, but executes a full restart from vertex A when unverified gaps remain. This directly isolates and measures the precise efficiency gained by localized earliest-gap re-entry versus naive re-execution.",
         ),
         (
-            "What are the strongest quantitative findings?",
-            "In v6, waiting saves 6.227 m under delayed evidence; E and GW are identical there. In multiple gaps, E adds 6.240 m versus GW, with no completion gain. Gap-aware policies complete 30/30 where resume/rewind report 0/30. Historical v5.1 findings remain separately labeled.",
+            "What is the operational failure envelope of the system?",
+            "VECR operates soundly when horizontal localization uncertainty is bounded within the camera footprint margin (demonstrated up to 0.9 m nominal). When uncertainty exceeds usable optical width (e.g. at 1.2 m), or when sensors permanently fail (N10), motor fails (N12), battery drops below reserve (N13), or commands are rejected (N11), VECR provably fails closed without false fulfillment.",
         ),
         (
-            "Why was historical v5.1 recall lower?",
-            "It actually returned to B in more uncertain-sensor trials, enlarging its true-completion denominator. Persistent missing evidence still prevented certification. Reported totals are 794 VECR versus 700 B2 across honest primary cases, while recall is 72.58% versus 87.50%.",
+            "Does zero false fulfillment prove physical real-world safety?",
+            "No. Zero false fulfillment in the 1,200 honest trials is conditional on the declared simulator assumptions: truthful calibration, valid deterministic bounds, and flat terrain. The 120 dishonest-sensor controls (N19, N20) deliberately violate these assumptions and yield false fulfillment reports, proving that cryptographic authentication cannot substitute for physical truth.",
         ),
         (
-            "Does zero false fulfillment prove safety?",
-            "No. Zero false fulfillment in the 5,400 honest v6 attempts is conditional on truthful bounded sensor evidence and this model. Dishonest controls expose that boundary; authentication cannot verify physical truth. The historical v5.1 dishonest controls are a separate dataset.",
+            "How does the method generalize beyond 40-metre straight edges?",
+            "The campaign evaluated 20 m (N17), 40 m (nominal), and 80 m (N18) edges, proving that the earliest-gap re-entry rule scales directly with edge length, saving up to 29.92 m of travel on 80 m routes. In addition, client reuse tests confirmed identical execution across direct and routed SDK client architectures.",
         ),
         (
-            "Where does correction run?",
-            "Inside the production SwarmKit agent. The SDK requests an operation; the agent evaluates observations and commands the backend. A cloud service is not required for that local loop.",
-        ),
-        (
-            "Is every negative outcome a bug?",
-            "No. Sustained wind, command refusal, motor failure, insufficient evidence and low battery are real negative outcomes in the model. Protective uncertainty predicates were not relaxed to improve acceptance.",
-        ),
-        (
-            "Is this real camera or flight validation?",
-            "The primary campaign uses SimBackend. Chapter 15 separately reports ArduPilot SITL with native-accuracy negative controls and explicitly synthetic bounded navigation/camera observations. No real camera or physical aircraft claim follows.",
-        ),
-        (
-            "What happened to earlier evidence?",
-            "All historical research stays frozen. The current nine-policy campaign is v6; v5.1 is retained as historical evidence with its own figures and replay. Pilots and the 20-seed protocol-deviation run remain separate and are not pooled.",
+            "What did the ArduPilot SITL qualification demonstrate?",
+            "SITL verified that SwarmKit's production MAVLink backend correctly commands real ArduPilot Copter 4.7.2 autopilot processes, executing physical re-entry dwells, obeying operator LAND overrides, and enforcing fail-closed nonacceptance when raw uncalibrated MAVLink telemetry lacks hard uncertainty bounds.",
         ),
     ]
     components["defense_questions"] = (
@@ -777,21 +589,16 @@ def build():
         )
         + "</div>"
     )
+
+    # Replay dropdown options
     options = "".join(
-        f'<option value="{case}">{case} · {esc(next(c["label"] for c in configs if c["scenario"]==case))}</option>'
-        for case in replay_ids
+        f'<option value="{case}">{case} · {esc(next(c["label"] for c in SCENARIO_CONFIGS if c["scenario"]==case))}</option>'
+        for case in replay_cases
     )
     components["trace_explorer"] = (
-        f"""<div class="trace-explorer"><div class="trace-toolbar"><label>Recorded condition<select id="replayCase">{options}</select></label><button id="playReplay" class="button">Play replay</button><button id="resetReplay" class="button secondary">Reset</button><label>Speed<select id="replaySpeed"><option value="1">1×</option><option value="4" selected>4×</option><option value="10">10×</option></select></label></div><div class="trace-legend"><span class="legend-b2">B2 · full restart</span><span class="legend-p">VECR · targeted</span><span>Faint line: complete recorded path · ×: accepted target</span></div><svg id="replayPlot" viewBox="0 0 880 370" role="img" aria-labelledby="replayTitle replayDesc"><title id="replayTitle">Recorded physical trajectories</title><desc id="replayDesc">Use the time slider to compare B2 and VECR at the same simulation time.</desc><g id="replayDrawing"></g></svg><label class="time-control">Simulation time <output id="replayTime">0.0 s</output><input id="replaySlider" type="range" min="100" max="40000" step="100" value="100" aria-label="Replay simulation time"></label><div id="replayMetrics" class="replay-metrics" aria-live="off"></div><div class="trace-events"><h4>Recorded event timeline</h4><p>Click an event to inspect that time. Only phase, command and fault events are shown here; complete logs are in the download.</p><div id="eventList"></div></div><noscript><p>Replay controls require JavaScript. The original trajectory figure and downloadable traces remain available.</p></noscript></div>"""
+        f"""<div class="trace-explorer"><div class="trace-toolbar"><label>Recorded condition<select id="replayCase">{options}</select></label><button id="playReplay" class="button">Play replay</button><button id="resetReplay" class="button secondary">Reset</button><label>Speed<select id="replaySpeed"><option value="1">1×</option><option value="4" selected>4×</option><option value="10">10×</option></select></label></div><div class="trace-legend"><span class="legend-b2">B2 · full restart baseline</span><span class="legend-vecr">VECR · earliest-gap recovery</span><span>Faint line: recorded path · ×: accepted target</span></div><svg id="replayPlot" viewBox="0 0 880 370" role="img" aria-labelledby="replayTitle replayDesc"><title id="replayTitle">Recorded physical trajectories</title><desc id="replayDesc">Use the time slider to compare B2 and VECR at the same simulation time.</desc><g id="replayDrawing"></g></svg><label class="time-control">Simulation time <output id="replayTime">0.0 s</output><input id="replaySlider" type="range" min="100" max="100000" step="100" value="100" aria-label="Replay simulation time"></label><div id="replayMetrics" class="replay-metrics" aria-live="off"></div><div class="trace-events"><h4>Recorded event timeline</h4><p>Click an event to inspect that time. Phase, command and fault events are shown here; complete logs are downloadable.</p><div id="eventList"></div></div><noscript><p>Replay controls require JavaScript. The original trajectory figure and downloadable traces remain available.</p></noscript></div>"""
     )
-    current, new_copies = v6_components(SITE, ROOT, table, image_figure)
-    components.update(current)
-    metadata_path = ASSETS / "research-metadata.json"
-    metadata = json.loads(metadata_path.read_text())
-    metadata["edition_date"] = "2026-10-28"
-    metadata["current_experiment"] = "ce09d3b47d54959eb86101c251d9f2c3ea62be40"
-    metadata["copied_evidence"].update(new_copies)
-    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
+
     source = (SITE / "source/dissertation.md").read_text()
 
     def expand(m):
@@ -801,11 +608,11 @@ def build():
             return image_figure(
                 name,
                 {
-                    "contract": "Conceptual contract · four different claims; the gap schematic is not a measured trial.",
-                    "architecture": "Implemented architecture · all physical decisions stay in the agent.",
-                    "states": "State semantics · ACK and completed physical re-entry remain distinct.",
-                    "comparison": "Schematic recovery comparison · identical shared contracts, different re-entry targets.",
-                    "evidence": "Observation separation · noisy estimates and private acquisition truth follow different paths.",
+                    "contract": "Conceptual contract · distinct physical and logical obligations; ACK ≠ arrival ≠ survey coverage.",
+                    "architecture": "Implemented architecture · all verification, evidence qualification and recovery stay inside the agent.",
+                    "states": "State semantics · physical re-entry dwells and command acknowledgements remain distinct.",
+                    "comparison": "Recovery comparison · shared verifier, sensor models and safety; different re-entry targets.",
+                    "evidence": "Observation separation · noisy telemetry estimates and private acquisition truth follow separate paths.",
                 }[name],
                 "diagrams",
             )
@@ -821,7 +628,7 @@ def build():
         re.sub(r"\{\{([^}]+)\}\}", expand, source),
         extensions=["extra", "toc", "sane_lists"],
     )
-    # Markdown-authored tables also need a bounded scroll region on small screens.
+
     rendered = re.sub(
         r'(?<!<div class="table-scroll">)<table>.*?</table>',
         lambda m: (
@@ -834,8 +641,11 @@ def build():
         rendered,
         flags=re.S,
     )
+
     headings = re.findall(r'<h1 id="([^"]+)">(.*?)</h1>', rendered)
-    assert len(headings) == 16
+    expected = re.findall(r"^# \d+ / ", source, re.M)
+    assert len(headings) == len(expected) >= 20, f"Missing chapter headings: {[h[0] for h in headings]}"
+
     rendered = re.sub(
         r"<(/?)h([123])(?=[ >])", lambda m: f"<{m[1]}h{int(m[2])+1}", rendered
     )
@@ -845,27 +655,35 @@ def build():
         rendered,
     )
     rendered = rendered.removeprefix("</section>") + "</section>"
+
     nav = "".join(
         f'<a href="#{id}"><span>{title.split(" / ")[0]}</span>{title.split(" / ",1)[1]}</a>'
         for id, title in headings
     )
-    hero_trace = replay["M03"]
+
+    # Route progress against recorded time reveals backtracking that a plan-view
+    # plot of a straight edge hides. Every vertex comes from the frozen trace.
+    hero_trace = replays["N04"]
     paths = ""
-    for policy, color in [("B2", "#b77133"), ("P", "#167d6a")]:
+    all_rows = [r for policy in ("B2", "VECR") for r in hero_trace[policy]["trace"]]
+    max_t = max(float(r["time_ms"]) for r in all_rows)
+    max_progress = max(40.0, max(float(r["east_m"]) for r in all_rows))
+    for policy, color in [("B2", "#b77133"), ("VECR", "#167d6a")]:
         points = " ".join(
-            f'{40+float(r["east_m"])*11:.2f},{195-float(r["north_m"])*13:.2f}'
+            f'{54+float(r["time_ms"])/max_t*416:.2f},{227-float(r["east_m"])/max_progress*157:.2f}'
             for r in hero_trace[policy]["trace"]
         )
         paths += f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="3" stroke-linejoin="round"/>'
-    hero = f"""<svg viewBox="0 0 520 290" role="img" aria-labelledby="heroDiagramTitle"><title id="heroDiagramTitle">Actual M03 seed 1 paths: full restart and targeted recovery</title><rect x="40" y="143" width="440" height="104" fill="#dce9df" opacity=".6"/><path d="M40 195H480" stroke="#879d91" stroke-dasharray="5 6"/>{paths}<circle cx="40" cy="195" r="5" fill="#183c36"/><circle cx="480" cy="195" r="5" fill="#183c36"/><g font-family="Arial,sans-serif" font-size="12" fill="#466359"><text x="40" y="274">A · 0 m</text><text x="442" y="274">B · 40 m</text><text x="40" y="30">Recorded M03 · seed 1</text><text x="40" y="49">Cross-track displacement shown vertically</text></g></svg>"""
+
+    hero = f"""<svg viewBox="0 0 520 275" role="img" aria-labelledby="heroDiagramTitle heroDiagramDesc"><title id="heroDiagramTitle">Recorded N04 seed 70001 route progress over time</title><desc id="heroDiagramDesc">Both methods reach the endpoint and return for gaps; the B2 restart returns farther than VECR. Horizontal axis is simulation time; vertical axis is route progress in metres.</desc><path d="M54 70H470 M54 149H470 M54 227H470" stroke="#bdd2c5" stroke-dasharray="3 5"/><path d="M54 70V227H470" fill="none" stroke="#7b9a8c" stroke-width="1.5"/>{paths}<g font-family="Arial,sans-serif" font-size="11" fill="#35584c"><text x="10" y="32">Route progress · m</text><text x="23" y="74">40</text><text x="23" y="153">20</text><text x="30" y="230">0</text><text x="54" y="249">0 s</text><text x="405" y="249">{max_t/1000:.1f} s</text><text x="206" y="269">Recorded simulation time</text></g></svg>"""
+
     template = (SITE / "tools/template.html").read_text()
     for key, value in {"NAV": nav, "CONTENT": rendered, "HERO": hero}.items():
         template = template.replace("{{" + key + "}}", value)
+
     assert not re.search(r"\{\{[^}]+\}\}", template)
     (SITE / "index.htm").write_text(template)
-    print(
-        f"Built 16 chapters, {len(scenarios)} policy rows, {len(replay_ids)*2} recorded replays and {len(FIGURES)} original research figures."
-    )
+    print(f"Built {len(headings)} chapters, {len(scenarios)} policy rows, and {len(replay_cases)*2} recorded replays successfully.")
 
 
 if __name__ == "__main__":

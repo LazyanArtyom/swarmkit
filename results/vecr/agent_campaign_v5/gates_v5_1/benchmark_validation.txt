@@ -1,3 +1,0 @@
-Matplotlib is building the font cache; this may take a moment.
-SHA-256 entries: 727
-VALID: 80 attempts, 6531 delivered captures, 80 physical re-entry dwells; independent truth reconstruction and soundness checks passed

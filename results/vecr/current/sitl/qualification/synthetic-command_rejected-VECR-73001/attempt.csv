@@ -1,0 +1,2 @@
+policy,fault,navigation,start_ms,end_ms,phase,reported_complete,covered_m,recoveries,pending_captures
+VECR,command_rejected,synthetic_bounded,5078008555,5078023643,INTERRUPTED,0,10.460483708901373,0,0

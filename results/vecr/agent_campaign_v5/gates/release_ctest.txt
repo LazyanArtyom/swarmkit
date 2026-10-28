@@ -1,9 +1,0 @@
-Test project /Users/artyom/Documents/MyProjects/swarmkit/build/mac-release
-    Start 1: swarmkit_evidence_inspect_help
-1/2 Test #1: swarmkit_evidence_inspect_help ...   Passed    0.48 sec
-    Start 2: swarmkit_tests
-2/2 Test #2: swarmkit_tests ...................   Passed   21.62 sec
-
-100% tests passed, 0 tests failed out of 2
-
-Total Test time (real) =  22.10 sec

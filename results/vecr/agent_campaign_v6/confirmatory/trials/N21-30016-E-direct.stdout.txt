@@ -1,3 +1,0 @@
-[2026-10-27 20:50:06.720] [info] rpc=SubscribeReports corr=reports-1793119806716-1822536750965474306115868866662558760340-4 agent=v6-agent drone=drone-1 client=test-client result=connected
-N21 30016 E INTERRUPTED true=0 distance=51.44 midflight=0 uncontained=0
-[2026-10-27 20:50:06.945] [info] rpc=SubscribeReports corr=reports-1793119806716-1822536750965474306115868866662558760340-4 agent=v6-agent drone=drone-1 client=test-client result=disconnected

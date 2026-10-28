@@ -1,8 +1,0 @@
-{
-  "navigation": "synthetic",
-  "fault": "command_rejected",
-  "policy": "GW",
-  "seed": 60001,
-  "run_id": "synthetic-command_rejected-GW-60001",
-  "infrastructure_error": "SITL trial startup/execution deadline"
-}

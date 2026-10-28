@@ -1,4 +1,0 @@
-scenario_id,test_name,exit_code,test_binary_sha256
-S15,VECR restart gates a new attempt until simulator hold is confirmed,0,1fa59bcb170644782c7a206156c7a318fc5078a61f0787370c66fcc088fc137f
-S18,VECR agent restart preserves terminal reports and blocks ambiguous replay,0,1fa59bcb170644782c7a206156c7a318fc5078a61f0787370c66fcc088fc137f
-S20,Verified edge agent RPC separates arrival from survey and retains gaps,0,1fa59bcb170644782c7a206156c7a318fc5078a61f0787370c66fcc088fc137f

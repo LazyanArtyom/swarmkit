@@ -1,1 +1,0 @@
-VALID: 234 attempts, 20302 delivered captures, 207 physical re-entry dwells; independent truth reconstruction and soundness checks passed

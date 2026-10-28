@@ -1,9 +1,0 @@
-{
-  "release_ctest_targets_passed": 2,
-  "ubsan_ctest_targets_passed": 2,
-  "endpoint_regression_cases": 3,
-  "engineering_attempts": 78,
-  "pilot_delivered_captures": 6764,
-  "pilot_reentries": 69,
-  "prior_research_modified": false
-}

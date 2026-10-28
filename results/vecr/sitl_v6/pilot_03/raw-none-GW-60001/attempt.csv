@@ -1,2 +1,0 @@
-policy,fault,navigation,start_ms,end_ms,phase,reported_complete,covered_m,recoveries,pending_captures
-GW,none,raw_mavlink,5008099127,5008124226,INTERRUPTED,0,0,0,0

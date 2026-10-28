@@ -1,9 +1,0 @@
-Filters: [v6]
-Randomness seeded to: 134207505
-[2026-10-28 01:38:00.023] [info] MavlinkBackend: listening on 127.0.0.1:49868 target_sys=1 target_comp=1
-[2026-10-28 01:38:00.226] [info] MavlinkBackend: listening on 127.0.0.1:58987 target_sys=1 target_comp=1
-[2026-10-28 01:38:00.731] [warning] MavlinkBackend: MAV_CMD_DO_REPOSITION unsupported for drone=drone-1, falling back to SET_POSITION_TARGET_GLOBAL_INT
-[2026-10-28 01:38:00.933] [info] MavlinkBackend: listening on 127.0.0.1:55761 target_sys=1 target_comp=1
-===============================================================================
-All tests passed (104 assertions in 5 test cases)
-

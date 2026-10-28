@@ -1,8 +1,0 @@
-{
-  "navigation": "synthetic",
-  "fault": "none",
-  "policy": "E",
-  "seed": 60001,
-  "run_id": "synthetic-none-E-60001",
-  "infrastructure_error": "SITL trial startup/execution deadline"
-}

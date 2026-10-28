@@ -1,5 +1,0 @@
-population,metric,independent_seed_clusters,conditions_per_seed,delta_P_minus_B2,ci_low,ci_high
-honest_primary_fixed_mixture,distance_m,100,19,-11.30747364415888,-11.430022504446892,-11.157078472749424
-honest_primary_fixed_mixture,time_s,100,19,-3.7154736842105267,-3.779631578947368,-3.6359473684210535
-honest_primary_fixed_mixture,reported_complete,100,19,0.0494736842105263,0.04684210526315788,0.051578947368421044
-honest_primary_fixed_mixture,truth_complete,100,19,0.15473684210526314,0.15210526315789472,0.15684210526315787

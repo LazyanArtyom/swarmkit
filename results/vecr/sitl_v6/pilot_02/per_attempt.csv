@@ -1,3 +1,0 @@
-covered_m,end_ms,fault,infrastructure_error,navigation,pending_captures,phase,policy,recoveries,reported_complete,run_id,seed,start_ms
-20,5007992104,none,,synthetic_bounded,0,FULFILLED,E,0,1,synthetic-none-E-60001,60001,5007985280
-20,5007992116,none,,synthetic_bounded,0,FULFILLED,GW,0,1,synthetic-none-GW-60001,60001,5007985298

@@ -1,2 +1,0 @@
-policy,fault,navigation,start_ms,end_ms,phase,reported_complete,covered_m,recoveries,pending_captures
-E,command_rejected,synthetic_bounded,5008754758,5008769874,INTERRUPTED,0,9.7396567434229784,0,0

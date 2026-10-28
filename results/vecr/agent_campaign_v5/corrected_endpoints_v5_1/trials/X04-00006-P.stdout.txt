@@ -1,3 +1,0 @@
-[2026-10-26 21:16:55.435] [info] rpc=SubscribeReports corr=reports-1793035015432-918409900362010710313463635343716949652-4 agent=v5-agent drone=drone-1 client=test-client result=connected
-X04 6 P FULFILLED true=1 distance=59.0856 midflight=1 uncontained=0
-[2026-10-26 21:16:55.615] [info] rpc=SubscribeReports corr=reports-1793035015432-918409900362010710313463635343716949652-4 agent=v5-agent drone=drone-1 client=test-client result=disconnected

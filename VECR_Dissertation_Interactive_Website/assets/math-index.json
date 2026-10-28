@@ -19,6 +19,10 @@
     "Dk = distance(p̂k, route) + εk<br>distance(p(t), route) ≤ (D0 + D1 + Vmax Δt) / 2 ≤ corridor half-width<br>Guaranteed progress: [ŝ0 + ε0, ŝ1 − ε1], if nonempty",
     "Conservative movement and endpoint bounds"
   ],
+  "recovery": [
+    "q = min(p, g) on sustained departure; q = g at verified endpoint; clipped to [0, L]",
+    "Canonical earliest-gap recovery target"
+  ],
   "soundness": [
     "∀j: F⁻j ⊆ Fj ⇒ ⋃ F⁻j ⊆ ⋃ Fj<br>Re ⊆ ⋃ F⁻j ⇒ Re ⊆ ⋃ Fj",
     "Conditional survey soundness, ideal set model"

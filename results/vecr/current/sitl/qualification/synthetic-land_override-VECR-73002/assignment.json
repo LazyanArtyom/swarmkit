@@ -1,0 +1,32 @@
+{
+  "navigation": "synthetic",
+  "fault": "land_override",
+  "policy": "VECR",
+  "seed": 73002,
+  "ardupilot_command": [
+    "/private/tmp/swarmkit-ardupilot-v6/build/sitl/bin/arducopter",
+    "--model",
+    "+",
+    "--home",
+    "40,44,100,0",
+    "--speedup",
+    "1",
+    "--wipe",
+    "--defaults",
+    "/Users/artyom/Documents/MyProjects/swarmkit/results/vecr/current/sitl/qualification/synthetic-land_override-VECR-73002/defaults.parm",
+    "--serial0",
+    "tcp:24220",
+    "--base-port",
+    "24220",
+    "--instance",
+    "111",
+    "--rc-in-port",
+    "24232",
+    "--sim-port-in",
+    "24233",
+    "--sim-port-out",
+    "24234",
+    "--irlock-port",
+    "24235"
+  ]
+}

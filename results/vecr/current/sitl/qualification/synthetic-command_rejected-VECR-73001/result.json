@@ -1,0 +1,15 @@
+{
+  "navigation": "synthetic_bounded",
+  "fault": "command_rejected",
+  "policy": "VECR",
+  "seed": 73001,
+  "run_id": "synthetic-command_rejected-VECR-73001",
+  "infrastructure_error": "",
+  "start_ms": "5078008555",
+  "end_ms": "5078023643",
+  "phase": "INTERRUPTED",
+  "reported_complete": "0",
+  "covered_m": "10.460483708901373",
+  "recoveries": "0",
+  "pending_captures": "0"
+}
