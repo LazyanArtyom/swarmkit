@@ -272,7 +272,7 @@ Across the tested honest conditions, VECR and B2 had the same recorded completio
 
 {{matched_table}}
 
-In every condition with unobserved gaps, VECR achieves statistically significant travel distance reductions compared to B2:
+In the eight **jointly successful** recovery conditions N03, N04, N06, N07, N08, N09, N17 and N18, the paired pointwise 95% bootstrap intervals for VECR–B2 travel distance exclude zero. These are condition-specific simulator results, not a universal performance guarantee:
 - **N03 (single gap):** $-29.92\text{ m}$ ($-24.9\%$), reducing distance from 120.20 m to 90.28 m.
 - **N04 (multiple gaps):** $-13.96\text{ m}$ ($-11.6\%$), reducing distance from 120.20 m to 106.24 m.
 - **N07 (sustained departure):** $-24.93\text{ m}$ ($-31.3\%$), reducing distance from 79.58 m to 54.64 m.
