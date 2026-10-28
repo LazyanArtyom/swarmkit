@@ -192,7 +192,7 @@ def browser_checks(data, result):
         page.locator("#themeToggle").click()
         assert page.locator("html").get_attribute("data-theme") == "light"
         page.locator("#results").scroll_into_view_if_needed()
-        page.screenshot(path=str(screenshots / "results-dark.png"))
+        page.screenshot(path=str(screenshots / "results-light.png"))
         page.locator("#themeToggle").click()
         for width in [390, 720, 1024]:
             page.set_viewport_size({"width": width, "height": 844})
