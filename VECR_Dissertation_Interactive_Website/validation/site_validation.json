@@ -7,7 +7,7 @@
   "control_attempts": 120,
   "sitl_flights": 12,
   "replayed_attempts": 12,
-  "copied_artifacts_verified": 31,
+  "copied_artifacts_verified": 32,
   "external_runtime_resources": 0,
   "browser": "PASS",
   "viewports": [

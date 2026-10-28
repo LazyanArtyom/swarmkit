@@ -69,6 +69,11 @@ def validate():
     assert "1,320" in text and "22" in text
     for topic in ("rotor-router", "gossip", "SwarmOps", "multi-user", "mission revision", "sensor trust boundary"):
         assert topic.lower() in text.lower(), topic
+    assert not re.search(r"continuum|cosserat|visual-elastic", text, re.I), "off-domain reader terminology"
+    assert "recovery_v6.svg" not in (SITE / "index.htm").read_text()
+    assert not (SITE / "assets/diagrams/recovery_v6.svg").exists()
+    assert (SITE / "assets/diagrams/recovery.svg").exists()
+    assert "All 480 assigned attempts" in text
     assert "zero false fulfillments" in text.lower() or "0 false fulfillments" in text
     evidence_path = SITE / "assets/evidence"
     with (evidence_path / "per_attempt.csv").open() as f:
@@ -85,6 +90,18 @@ def validate():
     for name, info in metadata["copied_evidence"].items():
         content = (SITE / name).read_bytes()
         assert hashlib.sha256(content).hexdigest() == info["sha256"], name
+        origin = SITE.parent / info["source"]
+        if origin.is_file():
+            assert hashlib.sha256(origin.read_bytes()).hexdigest() == info["sha256"], info["source"]
+    evidence_inventory = {
+        name: digest for digest, name in (
+            line.split("  ", 1) for line in (evidence_path / "SHA256SUMS").read_text().splitlines()
+        )
+    }
+    assert evidence_inventory == {
+        p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in evidence_path.iterdir() if p.is_file() and p.name != "SHA256SUMS"
+    }, "packaged evidence inventory"
     js = (SITE / "assets/experiment-data.js").read_text()
     data = json.loads(js.removeprefix("window.VECR_DATA = ").strip().removesuffix(";"))
     assert len(data["scenarios"]) == 44 and len(data["configs"]) == 22
@@ -136,7 +153,7 @@ def browser_checks(data, result):
         assert page.locator(".chapter").count() == result["chapters"]
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.screenshot(path=str(screenshots / "desktop.png"))
-        for name in ["contract", "architecture", "states", "comparison", "evidence"]:
+        for name in ["contract", "architecture", "states", "recovery", "comparison", "evidence"]:
             diagram = page.locator(f'img[src="assets/diagrams/{name}.svg"]')
             diagram.scroll_into_view_if_needed()
             diagram.evaluate("el => el.decode()")

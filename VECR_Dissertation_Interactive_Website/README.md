@@ -25,7 +25,7 @@ The Print button opens the browser's print/save-PDF dialog.
 * Twelve real recorded attempts: seed 70001 for six conditions under B2 and VECR,
   including failed recovery and dishonest-sensor outcomes. Replay starts only
   when requested. No fictional completion percentages are animated.
-* Current experimental figures in SVG/PDF/PNG, five vector method diagrams,
+* Current experimental figures in SVG/PDF/PNG, six vector method diagrams,
   and readable offline equations.
 * Local CSV/manifest downloads and lossless representative raw traces. The full
   research trace directory is linked separately and lives in `results/vecr/current/`.
@@ -36,6 +36,8 @@ The Print button opens the browser's print/save-PDF dialog.
   simulator truth. Native accuracy controls and synthetic bounded sensing are
   distinguished.
 * A sourced literature comparison and candid defense-readiness assessment.
+  A downloadable defense brief states the conditional invariant, measured effects,
+  failure envelope and exact claim for presentation use.
   VECR is the complete execution method. A separate contribution and planner contract
   describes its intended use by external graph planners (e.g. rotor-router),
   with high-level planning explicitly external to the agent.

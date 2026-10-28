@@ -73,12 +73,9 @@ A planner can dispatch a straight edge A→B, a vehicle backend can accept the c
 
 **The core contribution is an onboard edge-obligation execution contract:** the agent binds evidence to the exact mission, revision, edge, and attempt identity; maintains the conservative union of qualified coverage; retains disjoint completed intervals; identifies unverified intervals; and executes bounded local recovery while respecting authority, evidence validity, and physical safety limits. External applications consume factual outcomes without embedding planners into SwarmKit.
 
-## Refutation of subject-matter misconceptions
+## Domain and scope
 
-An early external review incorrectly categorized this work under continuum manipulators, visual-elastic observers, Cosserat kinostatics, and soft robotics. This is factually erroneous:
-1. **Kinematics:** The measured work uses a multirotor UAV and a straight local 3D route. No continuum manipulators, tendon actuators, elastic rods, or Cosserat models exist in this codebase.
-2. **State Estimation:** SwarmKit normalizes backend telemetry and requires declared error bounds. The agent does not itself implement an inertial-GNSS fusion estimator or compliance-based observer.
-3. **Application Domain:** The research concerns airborne edge coverage, conservative footprint accounting, and local spatial recovery for autonomous UAV missions.
+This is a UAV graph-edge execution method. The measured digital study uses straight local routes and a multirotor vehicle model; the SITL qualification uses ArduPilot Copter. SwarmKit normalizes backend telemetry and requires declared hard bounds for evidence acceptance. The agent does not implement the graph planner or the localization estimator. A separate [review response](assets/evidence/REVIEW_RESPONSE.md) documents the correction of an unrelated subject-matter review.
 
 ## Why the contribution is useful
 
@@ -188,7 +185,11 @@ Corridor conformance verifies that distance to route plus uncertainty remains wi
 
 {{equation:recovery}}
 
+{{diagram:recovery}}
+
 When unverified gaps remain upon reaching B or following a sustained departure, VECR computes the re-entry target $q = \min(p, g)$ on departure (capped at projected progress $p$) and $q = g$ at endpoint B, targeting the start of the earliest unverified interval $g$. A bounded wait of up to 3.0 s at B allows in-flight metadata to arrive before triggering re-entry.
+
+The target rule is a local repair decision. **Its invariant** is that accepted coverage remains a union of qualified intervals, so movement, a command acknowledgement, or a later capture beyond a gap cannot erase an earlier unverified interval. The agent reports survey fulfillment only when the accepted union covers the required strip to the declared allowance and stopped endpoint arrival is qualified. Under truthful sensing and hard error bounds, accepted coverage is contained in actual coverage. The rule gives **no unconditional convergence guarantee**: a failed sensor, rejected command, exhausted repair budget, battery intervention, or deadline can end an attempt without completion.
 
 # 08 / Conditional correctness {#proofs}
 
@@ -302,6 +303,8 @@ Pointwise 95% confidence intervals are computed using 10,000 paired bootstrap re
 
 Across the tested honest conditions, VECR and B2 had the same recorded completion counts. On the jointly successful gap conditions, VECR traveled less. The finite matrix does not establish universal recovery parity or a performance advantage under every possible geometry and fault.
 
+The paired completion difference is 0 in each of the 22 recorded conditions; its paired bootstrap interval is also [0, 0] because no tested seed had a discordant outcome. That degenerate interval describes the observed pairs, **not proof that the methods have equal completion probability in other settings**. For example, 30/30 reported completions still has a condition-wise 95% Wilson lower bound of about 88.6%. The distance intervals below address travel among jointly successful pairs; the interruption table later in the reader accounts for failed attempts separately.
+
 ## Paired distance reduction on gap conditions
 
 {{matched_table}}
@@ -344,6 +347,10 @@ In contrast, the 120 dishonest-sensor controls (N19, N20) resulted in **100% fal
 ## Fail-closed safety verification
 
 In the tested seeds of persistent camera loss (N10), command refusal (N11), motor propulsion loss (N12), low battery (N13), zero budget (N14), expired evidence (N15), sparse captures (N16), and short deadlines (N21), VECR made no false completion report. The terminal phase and reason for each run are available in `per_attempt.csv`; this empirical observation is not a proof covering all failure conditions.
+
+{{abort_table}}
+
+The table retains every assigned run. N10, N14, N15, N16 and N21 ended at the configured deadline; N11 was refused at re-entry, N12 reached vehicle failsafe and N13 crossed the battery threshold. Thus “fail closed” means the agent withheld success under these faults; it does **not** mean every fault was detected immediately. No infrastructure-error or statistical outlier row was excluded from the primary 1,320-attempt dataset. Distance effects are computed only for jointly successful pairs and are therefore conditional on that selection; failure counts are shown separately.
 
 # 14 / Sensitivity and stress analysis {#sensitivity}
 
@@ -423,6 +430,8 @@ A targeted literature review clarifies VECR's boundaries relative to prior resea
 
 VECR does not claim worldwide priority for the concept of returning behind an interruption or set-union coverage. The defensible contribution is the concrete, implemented onboard execution, verification, and recovery contract for UAV edge obligations.
 
+B2 is the campaign's **only measured recovery comparator**. The literature table explains conceptual overlap with other systems; no experiment here compares VECR's flight distance or completion rate directly with ArduPilot Mission Rewind, Fields2Cover or the listed research prototypes.
+
 The prior-art boundary is deliberate. **Waypoint navigation** solves movement toward a target; a waypoint acceptance radius is not a terrain-observation predicate. **Coverage path planning** computes routes intended to cover an area, often before a flight; a planned path does not certify that all required images were actually acquired. **Mission rewind or resume** can revisit a fixed distance after interruption; a fixed distance is not selected from accepted survey evidence. **Runtime verification** can monitor temporal or geometric assumptions, including out-of-order observations, but the particular edge-obligation lifecycle and physical re-entry still need an implementation. VECR combines the local pieces into an onboard execution contract and tests them end to end against an independent oracle.
 
 The theoretical originality is similarly bounded. The containment proof is a simple set-inclusion argument once each accepted footprint is a guaranteed subset of the true acquisition. The hard part is maintaining the premises across capture identity, time, geometry, uncertainty, state transitions, recovery commands and safety. The dissertation can defend this as an applied method with a conditional guarantee and a reproducible systems validation. It should not claim invention of interval unions, robust corridors, earliest-point heuristics, or a globally optimal recovery planner. The negative controls are as important as the positive results because they show exactly where the guarantee stops.
@@ -436,6 +445,8 @@ VECR is a reusable onboard method that turns a directed edge's physical obligati
 The preceding reader cited [Poghosyan and Priezzhev (2014)](https://doi.org/10.1088/1742-5468/2014/06/P06003), [Papoyan and coauthors (2015)](https://doi.org/10.1088/1751-8113/48/28/285203), [Poghosyan and coauthors (2024)](https://doi.org/10.1139/dsa-2023-0039), the [2023 platform paper](https://doi.org/10.1134/S0361768823090086), the [2024 mission-preparation paper](https://doi.org/10.1134/S0361768824700397), and the [2025 multi-user software-system paper](https://doi.org/10.1109/ICECET63943.2025.11472550). These publications support the broader programme; the current numerical results arise from the versioned SwarmKit artifacts below. The prior reader also listed 2026 ICECET and CODASSCA items from an author-supplied publication record; their bibliographic status should be independently checked before a final university submission.
 
 # 19 / Defense: questions and answers {#defense}
+
+The [defense brief](assets/evidence/DEFENSE_BRIEF.md) gives a slide-ready statement of the exact contribution, conditional invariant, measured effects, failure outcomes and remaining validation boundary. No presentation deck is included in this repository, so its wording must be checked separately before a defense.
 
 {{defense_questions}}
 

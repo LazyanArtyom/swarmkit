@@ -7,6 +7,7 @@ recovery with bounded evidence waiting. Graph planning stays external.
 * [Digital protocol](SIMULATION_PROTOCOL.md)
 * [ArduPilot SITL protocol](SITL_PROTOCOL.md)
 * [Literature and contribution](LITERATURE.md)
+* [Defense brief: exact claim, evidence and limits](DEFENSE_BRIEF.md)
 * [Primary results summary](../../results/vecr/current/digital/primary/analysis/RESULTS.md)
 * [SITL qualification results](../../results/vecr/current/sitl/qualification/analysis/RESULTS.md)
 

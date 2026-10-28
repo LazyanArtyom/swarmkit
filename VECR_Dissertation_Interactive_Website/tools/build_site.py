@@ -11,6 +11,7 @@ import shutil
 import statistics
 import textwrap
 import zipfile
+from collections import Counter
 from pathlib import Path
 
 import markdown
@@ -133,6 +134,16 @@ def diagrams():
     b += '<text x="440" y="330" text-anchor="middle" font-size="14">Terminal reports retain outcomes. Invalid evidence or safety can interrupt the active sequence.</text>'
     svg("states", "Canonical execution phases", "State machine with physical re-entry guards.", b, 355)
 
+    b = '<text x="32" y="34" font-size="14" letter-spacing="2">CANONICAL VECR · EVIDENCE-SELECTED LOCAL REPAIR</text>'
+    b += '<text x="32" y="74" font-size="18" font-weight="600">Accepted intervals persist; the earliest gap stays visible</text>'
+    b += '<path d="M70 113H810" stroke="#cbd9cf" stroke-width="14"/><path d="M70 113H360 M475 113H810" stroke="#237966" stroke-width="14"/><path d="M360 113H475" stroke="#c47735" stroke-width="14" stroke-dasharray="5 6"/>'
+    b += '<text x="70" y="145" font-size="13">A</text><text x="345" y="145" font-size="13">g · first missing coordinate</text><text x="802" y="145" font-size="13">B</text>'
+    b += box(30, 178, 390, 92, "Sustained corridor departure", "q = min(current progress p, earliest gap g)", "#e3eee7")
+    b += box(460, 178, 390, 92, "Qualified stopped endpoint", "wait ≤ 3 s for delivery; then q = g", "#e3eee7")
+    b += '<text x="440" y="317" text-anchor="middle" font-size="16" font-weight="600">Command ACK ≠ re-entry · sampled stop and valid evidence decide progress</text>'
+    b += '<rect x="32" y="337" width="816" height="57" rx="10" fill="#fff1dd" stroke="#cda775"/><text x="440" y="359" text-anchor="middle" font-size="13">Safety invariant: unverified gaps cannot be credited by movement or command acceptance.</text><text x="440" y="380" text-anchor="middle" font-size="13">No unconditional completion: sensor, energy, command, repair budget and deadline may fail.</text>'
+    svg("recovery", "VECR recovery rule and conditional boundary", "Current q=min(p,g) departure and q=g endpoint rule, with bounded waiting, physical re-entry and no unconditional completion guarantee.", b, 420)
+
     b = '<text x="32" y="34" font-size="14" letter-spacing="2">SHARED VERIFIER, DYNAMICS, SENSOR, SAFETY AND DEADLINE</text>'
     for y, label, target, color in [
         (126, "B2 · full-edge restart baseline", 80, "#b77133"),
@@ -197,6 +208,44 @@ def build():
     DOWNLOADS.mkdir(parents=True, exist_ok=True)
     (ASSETS / "figures").mkdir(exist_ok=True)
 
+    evidence_sources = {
+        "manifest.json": PRIMARY / "manifest.json",
+        "per_attempt.csv": PRIMARY / "per_attempt.csv",
+        "environment.txt": PRIMARY / "environment.txt",
+        "condition_summary.csv": PRIMARY / "analysis/condition_summary.csv",
+        "paired_comparisons.csv": PRIMARY / "analysis/paired_comparisons.csv",
+        "summary.json": PRIMARY / "analysis/summary.json",
+        "RESULTS.md": PRIMARY / "analysis/RESULTS.md",
+        "client_reuse_manifest.json": REUSE / "manifest.json",
+        "client_reuse_per_attempt.csv": REUSE / "per_attempt.csv",
+        "sitl_manifest.json": SITL / "manifest.json",
+        "sitl_per_attempt.csv": SITL / "per_attempt.csv",
+        "sitl_condition_summary.csv": SITL / "analysis/condition_summary.csv",
+        "sitl_reconstructed.csv": SITL / "analysis/reconstructed.csv",
+        "sitl_validation.json": SITL / "analysis/validation.json",
+        **{name: ROOT / "docs/vecr" / name for name in (
+            "METHOD.md", "SIMULATION_PROTOCOL.md", "SITL_PROTOCOL.md",
+            "LITERATURE.md", "REVIEW_RESPONSE.md", "DEFENSE_BRIEF.md",
+        )},
+    }
+    for name, source_path in evidence_sources.items():
+        shutil.copyfile(source_path, DOWNLOADS / name)
+    figure_sources = {
+        "01_completion_matrix": PRIMARY / "analysis/completion_matrix",
+        "02_paired_distance": PRIMARY / "analysis/paired_distance",
+        "03_sitl_traces": SITL / "analysis/sitl_traces",
+    }
+    for name, source_base in figure_sources.items():
+        for ext in ("svg", "pdf", "png"):
+            shutil.copyfile(source_base.with_suffix(f".{ext}"), ASSETS / "figures" / f"{name}.{ext}")
+    (DOWNLOADS / "SHA256SUMS").write_text(
+        "".join(
+            f"{sha(path)}  {path.name}\n"
+            for path in sorted(DOWNLOADS.iterdir())
+            if path.is_file() and path.name != "SHA256SUMS"
+        )
+    )
+
     manifest = json.loads((PRIMARY / "manifest.json").read_text())
     analysis = json.loads((PRIMARY / "analysis/summary.json").read_text())
     raw = rows(PRIMARY / "per_attempt.csv")
@@ -259,13 +308,18 @@ def build():
         "SITL_PROTOCOL.md",
         "LITERATURE.md",
         "REVIEW_RESPONSE.md",
+        "DEFENSE_BRIEF.md",
         "representative-traces.zip",
         "SHA256SUMS",
     ]:
         p = DOWNLOADS / name
         if p.exists():
+            origin = evidence_sources.get(name)
             copied[str(p.relative_to(SITE))] = {
-                "source": str(p.relative_to(ROOT)),
+                "source": (
+                    str(origin.relative_to(ROOT)) if origin else
+                    "reader-derived artifact; see source records and packaged SHA256SUMS"
+                ),
                 "sha256": sha(p),
             }
 
@@ -273,8 +327,9 @@ def build():
         for ext in ["svg", "pdf", "png"]:
             p = ASSETS / "figures" / f"{name}.{ext}"
             if p.exists():
+                origin = figure_sources[name].with_suffix(f".{ext}")
                 copied[str(p.relative_to(SITE))] = {
-                    "source": str(p.relative_to(ROOT)),
+                    "source": str(origin.relative_to(ROOT)),
                     "sha256": sha(p),
                 }
 
@@ -451,6 +506,30 @@ def build():
         "Honest population vs deliberate dishonest-sensor controls (N19, N20)",
     )
 
+    # Report every failed-run population with the recorded terminal reason.
+    # These counts come directly from the frozen per-attempt file, including
+    # deadline aborts; no failed trial is removed for the paired distance plot.
+    abort_rows = []
+    for case in ("N10", "N11", "N12", "N13", "N14", "N15", "N16", "N21"):
+        for policy in ("B2", "VECR"):
+            selected = [r for r in raw if r["scenario"] == case and r["policy"] == policy]
+            assert len(selected) == 30 and not any(r["infrastructure_error"] for r in selected)
+            counts = Counter((r["phase"], r["reason"]) for r in selected)
+            for (phase, reason), count in sorted(counts.items()):
+                group = [r for r in selected if (r["phase"], r["reason"]) == (phase, reason)]
+                distances = [float(r["distance_m"]) for r in group]
+                abort_rows.append([
+                    f"<strong>{case}</strong>", policy, str(count), esc(phase), esc(reason),
+                    f"{statistics.mean(float(r['recoveries']) for r in group):.1f}",
+                    f"{min(distances):.2f}–{max(distances):.2f}",
+                ])
+    assert sum(int(r[2]) for r in abort_rows) == 480
+    components["abort_table"] = table(
+        ["Condition", "Method", "Runs", "Terminal phase", "Recorded terminal reason", "Mean repairs", "Distance range (m)"],
+        abort_rows,
+        "All 480 assigned attempts in the eight fail-closed conditions; reasons and ranges computed from per_attempt.csv",
+    )
+
     # Client reuse table
     components["reuse_table"] = table(
         ["Tested parameter", "Direct Client path", "Routed SwarmClient path", "Matched outcome"],
@@ -533,6 +612,7 @@ def build():
         ("SITL_PROTOCOL.md", "ArduPilot qualification protocol"),
         ("LITERATURE.md", "Prior work overlap and contribution boundaries"),
         ("REVIEW_RESPONSE.md", "Reviewer disposition and subject-matter correction"),
+        ("DEFENSE_BRIEF.md", "Defense claim, conditional invariant, measured effects and failure envelope"),
         ("manifest.json", "Preregistered configurations and seeds"),
         ("environment.txt", "Host compiler, OS and CMake build environment"),
         ("SHA256SUMS", "Complete evidence cryptographic checksums"),
@@ -555,10 +635,6 @@ def build():
         (
             "Why is returning to a gap or an interruption point not claimed as a worldwide first invention?",
             "Returning behind an interruption is established in systems such as ArduPilot Mission Rewind and related robotic coverage work. VECR's contribution is the implemented onboard contract combining conservative acquisition-time footprint contraction, interval unions, exact attempt identity, bounded re-entry checks, safety limits and explicit terminal outcomes. The formal survey guarantee is conditional on truthful, bounded evidence.",
-        ),
-        (
-            "Does the work involve continuum manipulators, elastic observers, or Cosserat models?",
-            "No. Comments mentioning continuum robotics, visual-elastic observers and tendon actuation were a subject-matter mismatch. This measured study uses multirotor UAV execution of straight local metric segments; it does not validate fixed-wing flight.",
         ),
         (
             "Why is B2 (full-edge restart) used as the comparison baseline?",
@@ -636,6 +712,7 @@ def build():
                     "contract": "Conceptual contract · distinct physical and logical obligations; ACK ≠ arrival ≠ survey coverage.",
                     "architecture": "Implemented architecture · all verification, evidence qualification and recovery stay inside the agent.",
                     "states": "State semantics · physical re-entry dwells and command acknowledgements remain distinct.",
+                    "recovery": "Canonical VECR · retained intervals, earliest-gap target, bounded waiting and the explicit no-convergence boundary.",
                     "comparison": "Recovery comparison · shared verifier, sensor models and safety; different re-entry targets.",
                     "evidence": "Observation separation · noisy telemetry estimates and private acquisition truth follow separate paths.",
                 }[name],

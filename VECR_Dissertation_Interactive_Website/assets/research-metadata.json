@@ -19,127 +19,131 @@
   },
   "copied_evidence": {
     "assets/evidence/manifest.json": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/manifest.json",
+      "source": "results/vecr/current/digital/primary/manifest.json",
       "sha256": "6cb12bc4360031fb18c49e4ac414f233f1024f8e91c522bfaa5deb29c7fa725b"
     },
     "assets/evidence/per_attempt.csv": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/per_attempt.csv",
+      "source": "results/vecr/current/digital/primary/per_attempt.csv",
       "sha256": "23b0fff5665c4da4c06cb1e56cd0e7cfb9e8e2f02e04e2ae69d9c882679d3560"
     },
     "assets/evidence/environment.txt": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/environment.txt",
+      "source": "results/vecr/current/digital/primary/environment.txt",
       "sha256": "c693ec49461fdf972b551a2322f386d05e2d459c9c81658ea87d9f4a2b762b12"
     },
     "assets/evidence/condition_summary.csv": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/condition_summary.csv",
+      "source": "results/vecr/current/digital/primary/analysis/condition_summary.csv",
       "sha256": "0088049a13c06f3f3634bc5d1f793226387a3859baae9a2559ad4fa611417796"
     },
     "assets/evidence/paired_comparisons.csv": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/paired_comparisons.csv",
+      "source": "results/vecr/current/digital/primary/analysis/paired_comparisons.csv",
       "sha256": "f37e374eda4e777747f482902a085dbad388ba0b4cc8cdcae11d3a8e4bbb3504"
     },
     "assets/evidence/summary.json": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/summary.json",
+      "source": "results/vecr/current/digital/primary/analysis/summary.json",
       "sha256": "9024a7bea899f521c7f4b78d803962505da1ad94f86824f0f62ea49f5bc73bc8"
     },
     "assets/evidence/RESULTS.md": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/RESULTS.md",
+      "source": "results/vecr/current/digital/primary/analysis/RESULTS.md",
       "sha256": "623d6cf5d67f05534fd3e37d27630751d421c83ec6e6bbedb8df53b5f0e71ebf"
     },
     "assets/evidence/client_reuse.json": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/client_reuse.json",
+      "source": "reader-derived artifact; see source records and packaged SHA256SUMS",
       "sha256": "78b8dffdb9ef5e1ad43faba8524f6555dfbde647aa0cabfda269d96d7e035550"
     },
     "assets/evidence/client_reuse_manifest.json": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/client_reuse_manifest.json",
+      "source": "results/vecr/current/digital/reuse/manifest.json",
       "sha256": "fb1d38070e03b3755758243d20bcd8f19127f8faadab9de6bb5be090145a84c0"
     },
     "assets/evidence/client_reuse_per_attempt.csv": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/client_reuse_per_attempt.csv",
+      "source": "results/vecr/current/digital/reuse/per_attempt.csv",
       "sha256": "57c6babd299f8d090f6974eb7f5a5590b01352cda3711e89be4f5adbe84dbf8d"
     },
     "assets/evidence/sitl_manifest.json": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_manifest.json",
+      "source": "results/vecr/current/sitl/qualification/manifest.json",
       "sha256": "93f3ae3bbedaa0673badcaf079438739e0ff028c8091a52935d1bbf16c053bd3"
     },
     "assets/evidence/sitl_per_attempt.csv": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_per_attempt.csv",
+      "source": "results/vecr/current/sitl/qualification/per_attempt.csv",
       "sha256": "962080e452efa7be7e3fa37d5cedb628db568d93d9891441e8025fa521f75a52"
     },
     "assets/evidence/sitl_condition_summary.csv": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_condition_summary.csv",
+      "source": "results/vecr/current/sitl/qualification/analysis/condition_summary.csv",
       "sha256": "dd360012f91a1cfb38be81aaa6e450f019d69b53b77f5f1b21fc9fdd76cf17d7"
     },
     "assets/evidence/sitl_reconstructed.csv": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_reconstructed.csv",
+      "source": "results/vecr/current/sitl/qualification/analysis/reconstructed.csv",
       "sha256": "830b860f2962dde562261789949c14bfc64bc7f320687b59bd2d160b2c836d89"
     },
     "assets/evidence/sitl_validation.json": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/sitl_validation.json",
+      "source": "results/vecr/current/sitl/qualification/analysis/validation.json",
       "sha256": "f8dc066f5061ff97411fe12ca50da3249e2c7a6fdaec14c66db1366da43b8944"
     },
     "assets/evidence/METHOD.md": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/METHOD.md",
+      "source": "docs/vecr/METHOD.md",
       "sha256": "ac8373a93a01d784dcf2db8038888478615bb885824f250438d41157a2cab1e2"
     },
     "assets/evidence/SIMULATION_PROTOCOL.md": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/SIMULATION_PROTOCOL.md",
+      "source": "docs/vecr/SIMULATION_PROTOCOL.md",
       "sha256": "fef69b2757e9bcbcbd12969b9d18782f5a90206cf160ef0cdd6c9fdac2b68ded"
     },
     "assets/evidence/SITL_PROTOCOL.md": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/SITL_PROTOCOL.md",
+      "source": "docs/vecr/SITL_PROTOCOL.md",
       "sha256": "a49d73fc05903d641109e364d74d4cebbb696e61cf20aeb7ecb1f3d8187260db"
     },
     "assets/evidence/LITERATURE.md": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/LITERATURE.md",
+      "source": "docs/vecr/LITERATURE.md",
       "sha256": "48fa87e2ef2d5f79e012882da935dfd80499d26b28df1353c3447a371ca1b74f"
     },
     "assets/evidence/REVIEW_RESPONSE.md": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/REVIEW_RESPONSE.md",
+      "source": "docs/vecr/REVIEW_RESPONSE.md",
       "sha256": "e7f8dd8cf8ec27b164274898758b0e67dd8f27d6fee283b3c0944c524de9784b"
     },
+    "assets/evidence/DEFENSE_BRIEF.md": {
+      "source": "docs/vecr/DEFENSE_BRIEF.md",
+      "sha256": "a1b8e9389da22c9a3a2ad97f6317e40d9dcf3e61727ded6447b827feaf2353f1"
+    },
     "assets/evidence/representative-traces.zip": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/representative-traces.zip",
+      "source": "reader-derived artifact; see source records and packaged SHA256SUMS",
       "sha256": "ae53ada52d6f02b1a798199b4fd6f3d3d8c953ecb7f6b9fb6e571f3c56346927"
     },
     "assets/evidence/SHA256SUMS": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/evidence/SHA256SUMS",
-      "sha256": "f092045734b5eae1908bd443df7b5512dda6b2e5ba22bb46204dd016dce210e5"
+      "source": "reader-derived artifact; see source records and packaged SHA256SUMS",
+      "sha256": "442c38d40cb3c1c34255230335f4111dad2855e29e99449cda39e8bf0d4e93c1"
     },
     "assets/figures/01_completion_matrix.svg": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/01_completion_matrix.svg",
+      "source": "results/vecr/current/digital/primary/analysis/completion_matrix.svg",
       "sha256": "fef5063b0e3b2b6fb2012abea14ab0821d629c44c3869b080c88690dd66d8fd0"
     },
     "assets/figures/01_completion_matrix.pdf": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/01_completion_matrix.pdf",
+      "source": "results/vecr/current/digital/primary/analysis/completion_matrix.pdf",
       "sha256": "18a09d1f87a4c8bdb2d9622afdf9470157c91ea5dc0956024d337dd9b994b59a"
     },
     "assets/figures/01_completion_matrix.png": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/01_completion_matrix.png",
+      "source": "results/vecr/current/digital/primary/analysis/completion_matrix.png",
       "sha256": "15fd1cc3bec49f813fbbe9657c36cffa868915415fc8aa2aad96608f814a05ae"
     },
     "assets/figures/02_paired_distance.svg": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/02_paired_distance.svg",
+      "source": "results/vecr/current/digital/primary/analysis/paired_distance.svg",
       "sha256": "dbe7243f119a03682599afa68ffa4e5f30280509d22ea93f3f413d9c2d01dacf"
     },
     "assets/figures/02_paired_distance.pdf": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/02_paired_distance.pdf",
+      "source": "results/vecr/current/digital/primary/analysis/paired_distance.pdf",
       "sha256": "0e6afce31162c668e15a328b26db7760db0e358939df2a4070248427a635f496"
     },
     "assets/figures/02_paired_distance.png": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/02_paired_distance.png",
+      "source": "results/vecr/current/digital/primary/analysis/paired_distance.png",
       "sha256": "9d32bc3aa258edd5a536d519e02d84050f8d12fb8080fba8a6143b1a70eb8a15"
     },
     "assets/figures/03_sitl_traces.svg": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/03_sitl_traces.svg",
+      "source": "results/vecr/current/sitl/qualification/analysis/sitl_traces.svg",
       "sha256": "311ee5955e45713909e205b18cab86e2b80975794325964c181608f7f857eefa"
     },
     "assets/figures/03_sitl_traces.pdf": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/03_sitl_traces.pdf",
+      "source": "results/vecr/current/sitl/qualification/analysis/sitl_traces.pdf",
       "sha256": "5a4838de3baf3456a7c492e1acb599b89d815581c70a732a2c027ee1f9995bcd"
     },
     "assets/figures/03_sitl_traces.png": {
-      "source": "VECR_Dissertation_Interactive_Website/assets/figures/03_sitl_traces.png",
+      "source": "results/vecr/current/sitl/qualification/analysis/sitl_traces.png",
       "sha256": "cac384ba92685b7ecc86285df18fa81022ea8cd2290dc04695310425351d0501"
     }
   }
