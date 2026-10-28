@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seal or verify new v6 research, including failed pilots; never touch older studies."""
+"""Seal or verify the current research, including unsuccessful attempts."""
 
 import argparse
 import hashlib
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-ALLOWED = [ROOT / "results/vecr/agent_campaign_v6", ROOT / "results/vecr/sitl_v6"]
+ALLOWED = [ROOT / "results/vecr/current/digital", ROOT / "results/vecr/current/sitl"]
 
 
 def digest(path):

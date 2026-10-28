@@ -139,40 +139,14 @@ std::optional<edge::EdgeRequest> EdgeExecutionRuntime::Convert(
         : operation.obligation() == swarmkit::v1::EDGE_SURVEY
             ? edge::Obligation::kSurvey
             : edge::Obligation::kTraversalAndSurvey;
-    switch (operation.repair_policy()) {
-        case swarmkit::v1::EDGE_REPAIR_TARGETED_GAP:
-            request.repair_policy = edge::RepairPolicy::kTargetedGap;
-            break;
-        case swarmkit::v1::EDGE_REPAIR_FULL_EDGE_RESTART:
-            request.repair_policy = edge::RepairPolicy::kFullEdgeRestart;
-            break;
-        case swarmkit::v1::EDGE_REPAIR_DEPARTURE_POINT:
-            request.repair_policy = edge::RepairPolicy::kDeparturePoint;
-            break;
-        case swarmkit::v1::EDGE_REPAIR_FIXED_REWIND:
-            request.repair_policy = edge::RepairPolicy::kFixedRewind;
-            break;
-        case swarmkit::v1::EDGE_REPAIR_EVIDENCE_AWARE:
-            request.repair_policy = edge::RepairPolicy::kEvidenceAware;
-            break;
-        default:
-            return std::nullopt;
-    }
     request.maximum_capture_age_ms = operation.maximum_capture_age_ms();
     request.endpoint_evidence_wait_ms = operation.endpoint_evidence_wait_ms();
-    if (operation.has_recovery_sensing()) {
-        const auto& e = operation.recovery_sensing();
-        request.recovery_sensing = edge::RecoverySensingEnvelope{e.minimum_half_footprint_m(),
-                                                                 e.maximum_position_error_m(),
-                                                                 e.maximum_capture_interval_ms()};
-    }
     request.corridor_half_width_m = operation.corridor_half_width_m();
     request.arrival_radius_m = operation.arrival_radius_m();
     request.arrival_max_speed_mps = operation.arrival_max_speed_mps();
     request.target_altitude_m = operation.route(operation.route_size() - 1).alt_m();
     request.maximum_missing_m = operation.maximum_missing_m();
     request.maximum_speed_mps = operation.maximum_speed_mps();
-    request.recovery_overlap_m = operation.recovery_overlap_m();
     request.max_recovery_attempts = operation.max_recovery_attempts();
     request.sustained_deviation_samples = operation.sustained_deviation_samples();
     request.recovery_cooldown_ms = operation.recovery_cooldown_ms();

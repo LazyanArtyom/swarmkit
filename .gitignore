@@ -57,8 +57,9 @@ Thumbs.db
 CLAUDE.md
 memory/
 
-# Frozen v6 research logs are evidence, including unsuccessful pilots.
-!results/vecr/agent_campaign_v6/**/*.log
-!results/vecr/sitl_v6/**/*.log
-!results/vecr/agent_campaign_v6/**/CMakeCache.txt
-!results/vecr/agent_campaign_v6/**/compile_commands.json
+# Current research logs and build snapshots are reproducibility evidence.
+!results/vecr/current/**/*.log
+!results/vecr/current/**/CMakeCache.txt
+!results/vecr/current/**/compile_commands.json
+# Frozen executables are identified by manifest hashes, not distributed in Git.
+results/vecr/current/**/bin/

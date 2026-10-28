@@ -67,7 +67,7 @@ def validate(root):
     )
     assert {keys(r) for r in rows} == {keys(r) for r in manifest["assignments"]}
     if manifest["mode"] == "final":
-        assert len(rows) == 24 and {int(r["seed"]) for r in rows} == {61001, 61002}
+        assert len(rows) == 12 and {int(r["seed"]) for r in rows} == {73001, 73002}
     checked = []
     errors = []
     for r in rows:

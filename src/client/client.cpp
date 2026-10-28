@@ -2930,36 +2930,8 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
     operation->set_arrival_max_speed_mps(request.edge.arrival_max_speed_mps);
     operation->set_maximum_missing_m(request.edge.maximum_missing_m);
     operation->set_maximum_speed_mps(request.edge.maximum_speed_mps);
-    operation->set_recovery_overlap_m(request.edge.recovery_overlap_m);
-    switch (request.edge.repair_policy) {
-        case edge::RepairPolicy::kTargetedGap:
-            operation->set_repair_policy(swarmkit::v1::EDGE_REPAIR_TARGETED_GAP);
-            break;
-        case edge::RepairPolicy::kFullEdgeRestart:
-            operation->set_repair_policy(swarmkit::v1::EDGE_REPAIR_FULL_EDGE_RESTART);
-            break;
-        case edge::RepairPolicy::kDeparturePoint:
-            operation->set_repair_policy(swarmkit::v1::EDGE_REPAIR_DEPARTURE_POINT);
-            break;
-        case edge::RepairPolicy::kFixedRewind:
-            operation->set_repair_policy(swarmkit::v1::EDGE_REPAIR_FIXED_REWIND);
-            break;
-        case edge::RepairPolicy::kEvidenceAware:
-            operation->set_repair_policy(swarmkit::v1::EDGE_REPAIR_EVIDENCE_AWARE);
-            break;
-        default:
-            out.message = "invalid edge repair policy";
-            return out;
-    }
     operation->set_maximum_capture_age_ms(request.edge.maximum_capture_age_ms);
     operation->set_endpoint_evidence_wait_ms(request.edge.endpoint_evidence_wait_ms);
-    if (request.edge.recovery_sensing) {
-        const auto& e = *request.edge.recovery_sensing;
-        auto* wire = operation->mutable_recovery_sensing();
-        wire->set_minimum_half_footprint_m(e.minimum_half_footprint_m);
-        wire->set_maximum_position_error_m(e.maximum_position_error_m);
-        wire->set_maximum_capture_interval_ms(e.maximum_capture_interval_ms);
-    }
     operation->set_max_recovery_attempts(request.edge.max_recovery_attempts);
     operation->set_sustained_deviation_samples(request.edge.sustained_deviation_samples);
     operation->set_recovery_cooldown_ms(request.edge.recovery_cooldown_ms);

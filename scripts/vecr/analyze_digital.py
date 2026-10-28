@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paired v6 analysis; observed data only, including failures and stronger baselines."""
+"""Paired v7 analysis; observed data only, including failures and stronger baselines."""
 
 import argparse, csv, json, hashlib
 from pathlib import Path
@@ -9,12 +9,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-POLICIES = ["B2", "D", "R2", "R8", "P", "G", "GW", "E0", "E"]
-COMPARISONS = (
-    [("P", x) for x in ["B2", "D", "R2", "R8", "G"]]
-    + [("E", x) for x in ["B2", "P", "G", "GW", "E0"]]
-    + [("GW", "G"), ("E0", "G")]
-)
+POLICIES = ["B2", "VECR"]
+COMPARISONS = [("VECR", "B2")]
 
 
 def read(p):
@@ -127,7 +123,7 @@ def analyze(root):
     write(out / "paired_comparisons.csv", paired)
     scenarios = sorted({r["scenario"] for r in rows})
     plt.rcParams.update(
-        {"font.family": "DejaVu Sans", "font.size": 10, "svg.hashsalt": "swarmkit-v6"}
+        {"font.family": "DejaVu Sans", "font.size": 10, "svg.hashsalt": "swarmkit-v7"}
     )
     lookup = {(r["scenario"], r["policy"]): r for r in table}
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -154,7 +150,7 @@ def analyze(root):
     ax.set_xticks(range(len(POLICIES)), POLICIES)
     ax.set_yticks(
         range(len(scenarios)),
-        [s + " " + lookup[s, "E"]["fault"].replace("_", " ") for s in scenarios],
+        [s + " " + lookup[s, "VECR"]["fault"].replace("_", " ") for s in scenarios],
     )
     ax.set_title(
         "Reported fulfillment by condition and policy\n*Includes false fulfillment: dishonest-input control"
@@ -164,15 +160,15 @@ def analyze(root):
     for ext in ("svg", "pdf", "png"):
         fig.savefig(out / f"completion_matrix.{ext}", dpi=180)
     plt.close(fig)
-    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-    for ax, base in zip(axs, ["P", "GW"]):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for ax, base in [(ax, "B2")]:
         data = [
             r
             for r in paired
-            if r["treatment"] == "E"
+            if r["treatment"] == "VECR"
             and r["baseline"] == base
             and r["joint_success_pairs"]
-            and lookup[r["scenario"], "E"]["fault"]
+            and lookup[r["scenario"], "VECR"]["fault"]
             not in ("false_frame", "undeclared_angle")
         ]
         y = np.arange(len(data))
@@ -187,14 +183,14 @@ def analyze(root):
             y, [f"{r['scenario']} (n={r['joint_success_pairs']})" for r in data]
         )
         ax.invert_yaxis()
-        ax.set_xlabel("E minus baseline distance (m), paired 95% CI")
-        ax.set_title(f"E versus {base}: jointly successful pairs")
+        ax.set_xlabel("VECR minus baseline distance (m), paired 95% CI")
+        ax.set_title(f"VECR versus {base}: jointly successful pairs")
     fig.tight_layout()
     for ext in ("svg", "pdf", "png"):
         fig.savefig(out / f"paired_distance.{ext}", dpi=180)
     plt.close(fig)
     summary = dict(
-        protocol="v6",
+        protocol="v7",
         attempts=len(rows),
         conditions=len(scenarios),
         policies=POLICIES,
@@ -227,9 +223,9 @@ def analyze(root):
         summary["by_policy"][p]["honest_attempts"] = len(rr)
     (out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     lines = [
-        "# VECR v6 measured results",
+        "# VECR v7 measured results",
         "",
-        f"{len(rows):,} assigned attempts; {len(scenarios)} conditions; nine policies.",
+        f"{len(rows):,} assigned attempts; {len(scenarios)} conditions; VECR and a full-restart research baseline.",
         "All unsuccessful attempts remain included. Honest-input and dishonest-input controls are separate.",
         "Cost differences below condition on both policies achieving true and reported completion.",
         "",
@@ -237,12 +233,6 @@ def analyze(root):
         "|---|---|---:|---:|",
     ]
     for r in paired:
-        if (r["treatment"], r["baseline"]) not in [
-            ("P", "B2"),
-            ("E", "GW"),
-            ("GW", "G"),
-        ]:
-            continue
         val = r["successful_distance_delta_m"]
         value = (
             "Unavailable: no jointly successful pairs"

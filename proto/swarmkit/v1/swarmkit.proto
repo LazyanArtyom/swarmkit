@@ -648,20 +648,6 @@ enum EdgeObligation {
     EDGE_TRAVERSAL_AND_SURVEY = 4;
 }
 
-enum EdgeRepairPolicy {
-    EDGE_REPAIR_TARGETED_GAP = 0;
-    EDGE_REPAIR_FULL_EDGE_RESTART = 1;
-    EDGE_REPAIR_DEPARTURE_POINT = 2;
-    EDGE_REPAIR_FIXED_REWIND = 3;
-    EDGE_REPAIR_EVIDENCE_AWARE = 4;
-}
-
-message RecoverySensingEnvelope {
-    double minimum_half_footprint_m = 1;
-    double maximum_position_error_m = 2;
-    int64 maximum_capture_interval_ms = 3;
-}
-
 enum EdgePhase {
     EDGE_PHASE_UNSPECIFIED = 0;
     EDGE_MOVING = 1;
@@ -696,17 +682,14 @@ message EdgeOperation {
     double arrival_max_speed_mps = 10;
     double maximum_missing_m = 11;
     double maximum_speed_mps = 12; // Physical hard bound only, not command speed.
-    double recovery_overlap_m = 13;
-    uint32 max_recovery_attempts = 14;
-    uint32 sustained_deviation_samples = 15;
-    int64 recovery_cooldown_ms = 16;
-    int64 timeout_ms = 17;
-    float commanded_speed_mps = 18;
-    EdgeRepairPolicy repair_policy = 19;
-    double deviation_hysteresis_m = 20;
-    int64 maximum_capture_age_ms = 21;
-    int64 endpoint_evidence_wait_ms = 22;
-    RecoverySensingEnvelope recovery_sensing = 23;
+    uint32 max_recovery_attempts = 13;
+    uint32 sustained_deviation_samples = 14;
+    int64 recovery_cooldown_ms = 15;
+    int64 timeout_ms = 16;
+    float commanded_speed_mps = 17;
+    double deviation_hysteresis_m = 18;
+    int64 maximum_capture_age_ms = 19;
+    int64 endpoint_evidence_wait_ms = 20;
 }
 
 message EdgeReport {

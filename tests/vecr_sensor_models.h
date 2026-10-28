@@ -13,7 +13,7 @@
 #include "swarmkit/core/telemetry.h"
 #include "swarmkit/edge/vecr.h"
 
-namespace swarmkit::testsupport::v5 {
+namespace swarmkit::testsupport::sensing {
 
 // Accepts measured telemetry only. It has no simulator/control/truth dependency.
 class CameraEstimator {
@@ -139,4 +139,4 @@ class ExactStripOracle {
     double length_, strip_;
     std::vector<std::pair<double, double>> ranges_;
 };
-}  // namespace swarmkit::testsupport::v5
+}  // namespace swarmkit::testsupport::sensing

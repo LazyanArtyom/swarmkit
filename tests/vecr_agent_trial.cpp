@@ -33,13 +33,12 @@ using namespace std::chrono_literals;
                                                     const agent::SimulationTruthFrame& truth,
                                                     std::int64_t monotonic_ms, int tick) {
     edge::NadirCaptureInput capture;
-    capture.mission_id = "v4-graph-edge";
+    capture.mission_id = "regression-edge";
     capture.mission_revision = 4;
     capture.edge_id = "A-B";
-    capture.attempt_id = config.scenario_id + "-" + std::to_string(config.seed) +
-                         (config.policy == edge::RepairPolicy::kFullEdgeRestart ? "-B2" : "-P");
+    capture.attempt_id = config.scenario_id + "-" + std::to_string(config.seed) + "-VECR";
     capture.capture_id = "synthetic-frame-" + std::to_string(tick);
-    capture.calibration_id = "simulated-nadir-v4";
+    capture.calibration_id = "regression-nadir";
     capture.monotonic_ms = monotonic_ms;
     capture.camera_center = {truth.east_m, truth.north_m};
     capture.altitude_above_ground_m = truth.up_m;
@@ -65,8 +64,7 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
         throw std::invalid_argument("invalid agent trial configuration");
     VecrTrialResult result;
     result.config = config;
-    result.attempt_id = config.scenario_id + "-" + std::to_string(config.seed) +
-                        (config.policy == edge::RepairPolicy::kFullEdgeRestart ? "-B2" : "-P");
+    result.attempt_id = config.scenario_id + "-" + std::to_string(config.seed) + "-VECR";
     auto oracle = std::make_shared<VecrTruthOracle>(config.edge_length_m, 0.25, 4);
     auto record_truth = std::make_shared<std::atomic<bool>>(false);
     agent::SimBackendConfig sim_config;
@@ -114,7 +112,7 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
     agent_config.security.cert_chain_path = certificates.server_cert_chain_path;
     agent_config.security.private_key_path = certificates.server_private_key_path;
     agent_config.vecr_sensor_client_id = "test-client";
-    agent_config.vecr_sensor_calibration_id = "simulated-nadir-v4";
+    agent_config.vecr_sensor_calibration_id = "regression-nadir";
     agent_config.vecr_sim_recovery_enabled = true;
     auto clock_ns = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000LL);
     auto providers = agent::internal::RuntimeProviders::System();
@@ -212,19 +210,17 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
     client_config.retry_policy.max_attempts = 1;
     client::Client client(std::move(client_config));
     client::EdgeOperationRequest request;
-    request.edge.mission_id = "v4-graph-edge";
+    request.edge.mission_id = "regression-edge";
     request.edge.mission_revision = 4;
     request.edge.edge_id = "A-B";
     request.edge.attempt_id = result.attempt_id;
     request.edge.drone_id = "drone-1";
     request.edge.route.points = {{0, 0}, {config.edge_length_m, 0}};
     request.edge.obligation = edge::Obligation::kSurvey;
-    request.edge.repair_policy = config.policy;
     request.edge.corridor_half_width_m = 4;
     request.edge.arrival_radius_m = 2;
     request.edge.arrival_max_speed_mps = 0.5;
     request.edge.maximum_speed_mps = 10;
-    request.edge.recovery_overlap_m = 2;
     request.edge.max_recovery_attempts = 1;
     request.edge.sustained_deviation_samples = 1000;
     request.edge.recovery_cooldown_ms = 1000;

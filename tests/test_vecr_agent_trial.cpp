@@ -4,33 +4,16 @@
 
 #include "vecr_agent_trial.h"
 
-TEST_CASE(
-    "B2 and VECR execute the same camera-gap trial through agent and "
-    "SimBackend",
-    "[vecr][agent-campaign]") {
+TEST_CASE("VECR repairs a camera gap through the agent and SimBackend", "[vecr][agent-campaign]") {
     swarmkit::testsupport::VecrTrialConfig config;
-    config.scenario_id = "S04";
+    config.scenario_id = "camera-gap";
     config.seed = 1;
     config.fault = swarmkit::testsupport::TrialFault::kTransientCameraGap;
-    config.policy = swarmkit::edge::RepairPolicy::kTargetedGap;
-    const auto targeted = swarmkit::testsupport::RunVecrAgentTrial(config);
-    config.policy = swarmkit::edge::RepairPolicy::kFullEdgeRestart;
-    const auto full_restart = swarmkit::testsupport::RunVecrAgentTrial(config);
-    INFO("P phase=" << static_cast<int>(targeted.reported_phase)
-                    << " truth=" << targeted.truth_survey_complete
-                    << " distance=" << targeted.physical_distance_m
-                    << " B2 phase=" << static_cast<int>(full_restart.reported_phase)
-                    << " truth=" << full_restart.truth_survey_complete
-                    << " distance=" << full_restart.physical_distance_m);
-    CHECK(targeted.requested_fault_realized);
-    CHECK(full_restart.requested_fault_realized);
-    CHECK(targeted.reported_phase == swarmkit::edge::Phase::kFulfilled);
-    CHECK(full_restart.reported_phase == swarmkit::edge::Phase::kFulfilled);
-    CHECK(targeted.truth_survey_complete);
-    CHECK(full_restart.truth_survey_complete);
-    CHECK(targeted.backend_goto_accepted >= 3);
-    CHECK(full_restart.backend_goto_accepted >= 3);
-    CHECK(full_restart.physical_distance_m > targeted.physical_distance_m);
+    const auto result = swarmkit::testsupport::RunVecrAgentTrial(config);
+    CHECK(result.requested_fault_realized);
+    CHECK(result.reported_phase == swarmkit::edge::Phase::kFulfilled);
+    CHECK(result.truth_survey_complete);
+    CHECK(result.backend_goto_accepted >= 3);
 }
 
 TEST_CASE("Dishonest camera metadata is detected only by the private truth oracle",
@@ -60,8 +43,7 @@ TEST_CASE("Detectably inconsistent camera metadata is rejected before repair",
     CHECK(observed.reported_phase == swarmkit::edge::Phase::kFulfilled);
 }
 
-TEST_CASE("Persistent motor failure interrupts both agent-backed recovery policies",
-          "[vecr][agent-campaign]") {
+TEST_CASE("Persistent motor failure interrupts agent-backed recovery", "[vecr][agent-campaign]") {
     swarmkit::testsupport::VecrTrialConfig config;
     config.scenario_id = "S16";
     config.fault = swarmkit::testsupport::TrialFault::kMotorFailureOnRepair;
@@ -73,12 +55,9 @@ TEST_CASE("Persistent motor failure interrupts both agent-backed recovery polici
             config.gap_begin_m = 8.2072414973192238;
             config.gap_end_m = 12.069877598199628;
         }
-        for (const auto policy : {swarmkit::edge::RepairPolicy::kTargetedGap,
-                                  swarmkit::edge::RepairPolicy::kFullEdgeRestart}) {
-            config.policy = policy;
+        {
             const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
-            INFO("seed=" << seed << " policy=" << static_cast<int>(policy)
-                         << " phase=" << static_cast<int>(observed.reported_phase));
+            INFO("seed=" << seed << " phase=" << static_cast<int>(observed.reported_phase));
             CHECK(observed.requested_fault_realized);
             CHECK(observed.recovery_attempts == 1);
             CHECK(observed.reported_phase == swarmkit::edge::Phase::kInterrupted);
@@ -87,17 +66,14 @@ TEST_CASE("Persistent motor failure interrupts both agent-backed recovery polici
     }
 }
 
-TEST_CASE("Rejected recovery command is a realized failure for both policies",
-          "[vecr][agent-campaign]") {
+TEST_CASE("Rejected recovery command is a realized failure for VECR", "[vecr][agent-campaign]") {
     swarmkit::testsupport::VecrTrialConfig config;
     config.scenario_id = "S19";
     config.seed = 10;
     config.gap_begin_m = 8.2072414973192238;
     config.gap_end_m = 12.069877598199628;
     config.fault = swarmkit::testsupport::TrialFault::kRecoveryCommandRejected;
-    for (const auto policy : {swarmkit::edge::RepairPolicy::kTargetedGap,
-                              swarmkit::edge::RepairPolicy::kFullEdgeRestart}) {
-        config.policy = policy;
+    {
         const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
         CHECK(observed.requested_fault_realized);
         CHECK(observed.backend_goto_rejected > 0);
@@ -143,9 +119,7 @@ TEST_CASE("S06 short wind zone crosses the corridor while wide sensing covers it
     config.gap_end_m = 12.158663513898638;
     config.wind_north_mps = 2.9506691517960726;
     config.camera_cross_half_m = 14;
-    for (const auto policy : {swarmkit::edge::RepairPolicy::kTargetedGap,
-                              swarmkit::edge::RepairPolicy::kFullEdgeRestart}) {
-        config.policy = policy;
+    {
         const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
         CHECK(observed.requested_fault_realized);
         CHECK(observed.max_truth_cross_track_m > 4);

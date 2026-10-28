@@ -17,7 +17,7 @@
 #include "swarmkit/agent/mavlink_backend.h"
 #include "swarmkit/client/client.h"
 #include "test_support.h"
-#include "vecr_v5_models.h"
+#include "vecr_sensor_models.h"
 namespace {
 using namespace swarmkit;
 using namespace swarmkit::testsupport;
@@ -197,9 +197,9 @@ int Run(const std::map<std::string, std::string>& a) {
         return i == a.end() ? d : i->second;
     };
     const auto root = std::filesystem::path(get("output", ""));
-    const auto policy = get("policy", "E"), fault = get("fault", "none");
+    const auto policy = get("policy", "VECR"), fault = get("fault", "none");
     const bool synthetic = get("navigation", "synthetic") == "synthetic";
-    if (root.empty() || (policy != "E" && policy != "GW"))
+    if (root.empty() || (policy != "VECR"))
         throw std::runtime_error("invalid SITL options");
     agent::MavlinkBackendConfig mc;
     mc.bind_addr = get("bind", "127.0.0.1:14601");
@@ -213,7 +213,7 @@ int Run(const std::map<std::string, std::string>& a) {
     auto* producer = decorated.get();
     const auto cert = MakeDevMtlsPaths();
     agent::AgentConfig cfg;
-    cfg.agent_id = "v6-sitl";
+    cfg.agent_id = "v7-sitl";
     cfg.bind_addr = "127.0.0.1:0";
     cfg.data.artifact_dir = (root / "agent_artifacts").string();
     cfg.vecr_attempt_journal_path = (root / "attempt.journal").string();
@@ -238,7 +238,7 @@ int Run(const std::map<std::string, std::string>& a) {
     }
     client::EdgeOperationRequest req;
     req.edge.mission_id = "sitl-v6";
-    req.edge.mission_revision = 6;
+    req.edge.mission_revision = 7;
     req.edge.edge_id = "A-B";
     req.edge.attempt_id = "sitl-attempt";
     req.edge.drone_id = "drone-1";
@@ -252,10 +252,6 @@ int Run(const std::map<std::string, std::string>& a) {
     req.edge.maximum_capture_age_ms = 3000;
     req.edge.endpoint_evidence_wait_ms = 3000;
     req.edge.max_recovery_attempts = 2;
-    req.edge.repair_policy =
-        policy == "E" ? edge::RepairPolicy::kEvidenceAware : edge::RepairPolicy::kTargetedGap;
-    req.edge.recovery_overlap_m = 0;
-    req.edge.recovery_sensing = edge::RecoverySensingEnvelope{2.85, 1.8, 300};
     req.wgs84_origin = {40, 44};
     req.altitude_m = 10;
     req.commanded_speed_mps = 2;
@@ -280,7 +276,7 @@ int Run(const std::map<std::string, std::string>& a) {
         std::int64_t due;
     };
     std::deque<Pending> pending;
-    v5::CameraEstimator estimator(40, 44, 3, 8);
+    sensing::CameraEstimator estimator(40, 44, 3, 8);
     edge::Status last;
     std::int64_t last_capture = -1;
     int counter = 0;
@@ -303,7 +299,7 @@ int Run(const std::map<std::string, std::string>& a) {
                                             "sitl-ideal-nadir");
             if (input) {
                 input->mission_id = req.edge.mission_id;
-                input->mission_revision = 6;
+                input->mission_revision = 7;
                 input->edge_id = "A-B";
                 input->attempt_id = "sitl-attempt";
                 input->capture_id = "capture-" + std::to_string(counter++);

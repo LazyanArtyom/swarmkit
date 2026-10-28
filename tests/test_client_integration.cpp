@@ -2199,7 +2199,6 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
     request.edge.arrival_radius_m = 2;
     request.edge.arrival_max_speed_mps = 0.5;
     request.edge.maximum_speed_mps = 5;
-    request.edge.recovery_overlap_m = 2;
     request.edge.max_recovery_attempts = 1;
     request.edge.sustained_deviation_samples = 3;
     request.edge.recovery_cooldown_ms = 1000;
@@ -2728,7 +2727,6 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
         request.edge.arrival_radius_m = 2;
         request.edge.arrival_max_speed_mps = 0.5;
         request.edge.maximum_speed_mps = 10;
-        request.edge.recovery_overlap_m = 2;
         request.edge.max_recovery_attempts = 1;
         request.edge.sustained_deviation_samples = 1000;
         request.edge.recovery_cooldown_ms = 1000;

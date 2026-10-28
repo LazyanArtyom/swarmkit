@@ -9,11 +9,11 @@ and MAVLink UDP backend are retained.
 
 The VECR edge supervisor runs inside the agent. It accounts for arrival,
 bounded route traversal, accepted strip-survey intervals, missing sections,
-and simulator-only bounded recovery. A trusted sensor adapter must justify
+and bounded recovery in qualified simulation backends. A trusted sensor adapter must justify
 conservative full-strip capture intervals. There is no validated real camera
-adapter or independent ArduPilot SITL coverage result yet. The geometric
-simulation is documented in [the method](vecr/METHOD_AND_CORRECTNESS.md) and
-[results](../results/vecr/reports/CORE_RESULTS_V2_100_SEEDS.md).
+adapter. Agent-backed digital simulation and separate ArduPilot SITL qualification
+use explicit synthetic sensing; neither establishes physical image quality.
+See [the method](vecr/METHOD.md) and [current validation](vecr/README.md).
 
 External applications own graph traversal, rotor updates, gossip policy,
 fleet scheduling, mission design, and multi-user cloud workflows.

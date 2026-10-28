@@ -22,7 +22,6 @@ EdgeRequest Request(Obligation obligation = Obligation::kSurvey) {
     request.target_altitude_m = 10;
     request.maximum_speed_mps = 5;
     request.minimum_recovery_battery_percent = 20;
-    request.recovery_overlap_m = 2;
     request.max_recovery_attempts = 2;
     request.sustained_deviation_samples = 3;
     request.recovery_cooldown_ms = 1000;
@@ -83,31 +82,11 @@ TEST_CASE("VECR arrival does not imply surveyed terrain", "[vecr]") {
     CHECK_FALSE(status.survey_verified);
     CHECK(status.phase != Phase::kFulfilled);
     REQUIRE(status.pending_reentry.has_value());
-    CHECK(status.pending_reentry->east_m == 38);
+    CHECK(status.pending_reentry->east_m == 40);
     CHECK(status.survey_prefix_m == 40);
     REQUIRE(status.survey_missing.size() == 1);
     CHECK(status.survey_missing.front().begin_m == 40);
     CHECK(status.survey_missing.front().end_m == 70);
-}
-
-TEST_CASE("B2 and targeted recovery share evidence but propose different re-entry",
-          "[vecr][repair-policy]") {
-    for (const auto policy : {RepairPolicy::kTargetedGap, RepairPolicy::kFullEdgeRestart}) {
-        auto request = Request();
-        request.repair_policy = policy;
-        EdgeExecutionSupervisor supervisor(request);
-        REQUIRE(supervisor.Valid());
-        static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
-        static_cast<void>(supervisor.ObserveCapture(Capture(0, 40, 1000, "a")));
-        static_cast<void>(supervisor.ObserveCapture(Capture(70, 100, 1000, "b")));
-        static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
-        const auto status = supervisor.ObservePosition(Position(100, 2300, 0, true));
-        REQUIRE(status.pending_reentry);
-        CHECK(status.survey_covered_m == 70);
-        CHECK(status.survey_missing.size() == 1);
-        CHECK(status.pending_reentry->east_m ==
-              (policy == RepairPolicy::kFullEdgeRestart ? 0 : 38));
-    }
 }
 
 TEST_CASE("VECR retains accepted off-corridor survey and enforces attempt identity", "[vecr]") {
@@ -431,7 +410,7 @@ TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another rep
     CHECK(supervisor.ObservePosition(Position(51, 2100, 5)).phase == Phase::kDeviating);
     auto proposed = supervisor.ObservePosition(Position(52, 2200, 5));
     REQUIRE(proposed.pending_reentry);
-    CHECK(proposed.pending_reentry->east_m == 38);
+    CHECK(proposed.pending_reentry->east_m == 40);
     CHECK(proposed.phase == Phase::kRecovering);
     CHECK(supervisor.RecoveryDispatched(true, 2200).phase == Phase::kRecovering);
     for (int i = 0; i < 10; ++i) {
@@ -475,63 +454,35 @@ TEST_CASE("Midflight re-entry never targets the unseen future tail and cooldown 
     static_cast<void>(supervisor.ObserveCapture(Capture(0, 80, 1000, "wide")));
     auto proposed = supervisor.ObservePosition(Position(50, 2000, 6));
     REQUIRE(proposed.pending_reentry);
-    CHECK(proposed.pending_reentry->east_m == 48);
+    CHECK(proposed.pending_reentry->east_m == 50);
     static_cast<void>(supervisor.RecoveryDispatched(true, 2000));
     static_cast<void>(supervisor.RecoveryReentryCompleted(6000));
     CHECK_FALSE(supervisor.ObservePosition(Position(50, 6500, 6)).pending_reentry);
     CHECK(supervisor.ObservePosition(Position(50, 7000, 6)).pending_reentry.has_value());
 }
 
-TEST_CASE("V6 departure, rewind and gap policies preserve distinct semantics", "[vecr][v6]") {
-    for (auto policy :
-         {RepairPolicy::kDeparturePoint, RepairPolicy::kFixedRewind, RepairPolicy::kTargetedGap}) {
-        auto req = Request();
-        req.repair_policy = policy;
-        EdgeExecutionSupervisor s(req);
-        (void)s.ObservePosition(Position(60, 1000));
-        (void)s.ObserveCapture(Capture(0, 35, 1000, "prefix"));
-        (void)s.ObservePosition(Position(61, 1100, 6));
-        (void)s.ObservePosition(Position(62, 1200, 6));
-        const auto status = s.ObservePosition(Position(63, 1300, 6));
-        REQUIRE(status.pending_reentry);
-        CHECK(std::abs(status.pending_reentry->east_m -
-                       (policy == RepairPolicy::kDeparturePoint ? 60
-                        : policy == RepairPolicy::kFixedRewind  ? 58
-                                                                : 33)) < 1e-9);
-        CHECK_FALSE(status.survey_verified);
-    }
+TEST_CASE("VECR recovery retains an earlier gap during sustained departure", "[vecr][canonical]") {
+    EdgeExecutionSupervisor supervisor(Request());
+    (void)supervisor.ObservePosition(Position(60, 1000));
+    (void)supervisor.ObserveCapture(Capture(0, 35, 1000, "prefix"));
+    (void)supervisor.ObserveCapture(Capture(50, 100, 1000, "later"));
+    (void)supervisor.ObservePosition(Position(61, 1100, 6));
+    (void)supervisor.ObservePosition(Position(62, 1200, 6));
+    const auto status = supervisor.ObservePosition(Position(63, 1300, 6));
+    REQUIRE(status.pending_reentry);
+    CHECK(status.pending_reentry->east_m == 35);
+    CHECK(status.survey_covered_m == 85);
+    REQUIRE(status.survey_missing.size() == 1);
+    CHECK(status.survey_missing.front().begin_m == 35);
+    CHECK(status.survey_missing.front().end_m == 50);
+    CHECK_FALSE(status.survey_verified);
 }
 
-TEST_CASE("V6 robust target is maximal for the declared first-capture bound", "[vecr][v6]") {
-    for (double error : {0.0, 0.3, 1.0}) {
-        const RecoverySensingEnvelope e{3.0, error, 500};
-        const auto p = PlanSurveyReentry(40, 70, 100, 2, 4, e);
-        REQUIRE(p);
-        CHECK(p->first_capture_bound_feasible);
-        const double worst_left = p->target_m + 2 + 4 * 0.5 + 2 * error - 3;
-        CHECK(std::abs(worst_left - 40) < 1e-9);
-        CHECK(worst_left + 0.001 > 40);
-        // Exhaust the independent interval extremes, including opposite estimator error.
-        for (double arrival : {-2.0, 2.0})
-            for (double motion : {0.0, 2.0})
-                for (double measurement : {-error, error})
-                    CHECK(p->target_m + arrival + motion + measurement - (3 - error) <= 40 + 1e-9);
-    }
-    const auto boundary = PlanSurveyReentry(0, 70, 100, 2, 4, {3, 1, 500});
-    REQUIRE(boundary);
-    CHECK_FALSE(boundary->first_capture_bound_feasible);
-    CHECK(boundary->target_m == 0);
-    CHECK_FALSE(PlanSurveyReentry(40, 70, 100, 2, 0, {3, 1, 500}));
-    CHECK_FALSE(PlanSurveyReentry(40, 70, 100, 2, 4, {1, 1, 500}));
-}
-
-TEST_CASE("V6 endpoint wait accepts late evidence but never delays departure or timeout",
-          "[vecr][v6]") {
+TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure or timeout",
+          "[vecr][reliability]") {
     auto req = Request();
     req.maximum_capture_age_ms = 3000;
     req.endpoint_evidence_wait_ms = 1500;
-    req.repair_policy = RepairPolicy::kEvidenceAware;
-    req.recovery_sensing = RecoverySensingEnvelope{3, 0.3, 500};
     SECTION("late evidence resolves the obligation without a repair") {
         EdgeExecutionSupervisor s(req);
         (void)s.ObservePosition(Position(0, 1000));

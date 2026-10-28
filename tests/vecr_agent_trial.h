@@ -34,7 +34,6 @@ enum class TrialFault {
 struct VecrTrialConfig {
     std::string scenario_id;
     std::uint64_t seed{};
-    edge::RepairPolicy policy{edge::RepairPolicy::kTargetedGap};
     TrialFault fault{TrialFault::kNone};
     double edge_length_m{20};
     double gap_begin_m{8};

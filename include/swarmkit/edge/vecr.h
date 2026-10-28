@@ -63,36 +63,8 @@ class IntervalSet {
 };
 
 enum class Obligation { kArrival, kTraversal, kSurvey, kTraversalAndSurvey };
-enum class RepairPolicy {
-    kTargetedGap,
-    kFullEdgeRestart,
-    kDeparturePoint,
-    kFixedRewind,
-    kEvidenceAware
-};
 enum class Phase { kMoving, kDeviating, kRecovering, kFulfilled, kInterrupted, kUnknown };
 enum class EvidenceQuality { kUnknown, kEstimated, kBounded };
-
-// Conditional future-sensing assumptions, never credited as observations.
-// H is a lower bound on (estimated AGL - altitude error) * tan(along FOV / 2).
-struct RecoverySensingEnvelope {
-    double minimum_half_footprint_m{};
-    double maximum_position_error_m{};
-    std::int64_t maximum_capture_interval_ms{};
-};
-
-struct SurveyReentryPlan {
-    double target_m{};
-    double required_backtrack_from_gap_m{};
-    bool first_capture_bound_feasible{};
-    bool consecutive_coverage_bound_feasible{};
-};
-
-// Robust first-capture overlap in the restricted straight-edge model. See
-// docs/vecr/RECOVERY_MODEL_V6.md. A plan is not a completion certificate.
-[[nodiscard]] std::optional<SurveyReentryPlan> PlanSurveyReentry(
-    double gap_begin_m, double progress_m, double length_m, double arrival_radius_m,
-    double maximum_speed_mps, const RecoverySensingEnvelope& envelope);
 
 struct EdgeRequest {
     std::string mission_id;
@@ -102,7 +74,6 @@ struct EdgeRequest {
     std::string drone_id;
     Route route;
     Obligation obligation{Obligation::kSurvey};
-    RepairPolicy repair_policy{RepairPolicy::kTargetedGap};
     double corridor_half_width_m{};
     double arrival_radius_m{};
     double arrival_max_speed_mps{};
@@ -110,7 +81,6 @@ struct EdgeRequest {
     double maximum_missing_m{};
     double maximum_speed_mps{};  // Required for whole-interval traversal proof.
     double minimum_recovery_battery_percent{};
-    double recovery_overlap_m{};
     std::uint32_t max_recovery_attempts{};
     std::uint32_t sustained_deviation_samples{3};
     double deviation_hysteresis_m{0.5};
@@ -119,7 +89,6 @@ struct EdgeRequest {
     std::int64_t maximum_capture_age_ms{500};
     // Wait only at a verified stationary B, still subject to all safety/timeout checks.
     std::int64_t endpoint_evidence_wait_ms{};
-    std::optional<RecoverySensingEnvelope> recovery_sensing;
 };
 
 struct PositionObservation {
@@ -232,7 +201,6 @@ class EdgeExecutionSupervisor {
     std::int64_t last_valid_position_ms_{-1};
     std::int64_t last_recovery_ms_{-1};
     std::uint32_t deviation_samples_{};
-    std::optional<double> departure_progress_m_;
     std::int64_t endpoint_wait_started_ms_{-1};
     bool can_recover_{};
     bool recovery_in_progress_{};

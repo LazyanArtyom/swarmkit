@@ -331,8 +331,8 @@ def main():
         ("synthetic", "command_rejected"),
         ("synthetic", "land_override"),
     ]:
-        for policy in ["GW", "E"]:
-            for seed in ([60001] if a.mode == "pilot" else [61001, 61002]):
+        for policy in ["VECR"]:
+            for seed in ([74001] if a.mode == "pilot" else [73001, 73002]):
                 assignments.append(
                     dict(navigation=navigation, fault=fault, policy=policy, seed=seed)
                 )
@@ -358,24 +358,24 @@ def main():
         "include",
         "proto",
         "tests",
-        "scripts/vecr/run_sitl_v6.py",
-        "scripts/vecr/validate_sitl_v6.py",
-        "docs/vecr/SITL_PROTOCOL_V6.md",
+        "scripts/vecr/run_sitl.py",
+        "scripts/vecr/validate_sitl.py",
+        "docs/vecr/SITL_PROTOCOL.md",
     ]
     dirty_source = subprocess.check_output(
         ["git", "status", "--porcelain", "--", *source_paths], cwd=ROOT, text=True
     )
-    if a.mode == "final" and (dirty_source or len(assignments) != 24):
+    if a.mode == "final" and (dirty_source or len(assignments) != 12):
         raise RuntimeError(
-            "final SITL requires committed source and all 24 assignments"
+            "final SITL requires committed source and all 12 assignments"
         )
-    frozen_binary = Path("/private/tmp") / ("swarmkit-v6-sitl-" + root.name + "-frozen")
+    frozen_binary = Path("/private/tmp") / ("swarmkit-v7-sitl-" + root.name + "-frozen")
     if frozen_binary.exists():
         raise FileExistsError(frozen_binary)
     shutil.copy2(binary, frozen_binary)
     binary = frozen_binary
     manifest = dict(
-        protocol="v6-sitl",
+        protocol="v7-sitl",
         mode=a.mode,
         status="RUNNING",
         assignments=assignments,

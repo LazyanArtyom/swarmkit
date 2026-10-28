@@ -21,7 +21,7 @@
 #include "swarmkit/client/client.h"
 #include "swarmkit/client/swarm_client.h"
 #include "test_support.h"
-#include "vecr_v5_models.h"
+#include "vecr_sensor_models.h"
 
 namespace {
 using namespace swarmkit;
@@ -86,10 +86,13 @@ void Run(const std::map<std::string, std::string>& args) {
         return std::stod(str(key, std::to_string(value)));
     };
     const auto scenario = str("scenario", "nominal"), fault = str("fault", "none"),
-               policy = str("policy", "P");
-    if (policy != "P" && policy != "B2" && policy != "D" && policy != "R2" && policy != "R8" &&
-        policy != "G" && policy != "GW" && policy != "E0" && policy != "E")
-        throw std::invalid_argument("invalid policy");
+               policy = str("policy", "VECR");
+#if defined(SWARMKIT_RESEARCH_FULL_RESTART)
+    if (policy != "B2")
+#else
+    if (policy != "VECR")
+#endif
+        throw std::invalid_argument("policy does not match this executable");
     const auto client_kind = str("client-kind", "direct");
     if (client_kind != "direct" && client_kind != "routed")
         throw std::invalid_argument("invalid client kind");
@@ -99,9 +102,6 @@ void Run(const std::map<std::string, std::string>& args) {
                  wind_begin = num("wind-begin", 6);
     const double wind_end = num("wind-end", 10), gap_begin = num("gap-begin", length * 0.4);
     const double gap_end = num("gap-end", length * 0.6), period = num("period", 0.5);
-    const double envelope_bound = fault == "changing_uncertainty" || fault == "uncertainty_gap"
-                                      ? std::max(bound, 0.9)
-                                      : bound;
     const int delay = static_cast<int>(num("delay", 0.2) * 10),
               attempts = static_cast<int>(num("attempts", 2));
     const int max_ticks = static_cast<int>(num("timeout", 90) * 10) + 5;
@@ -131,7 +131,7 @@ void Run(const std::map<std::string, std::string>& args) {
                     "begin_m,end_m\n";
     measurements << "time_ms,east_m,north_m,altitude_m,north_velocity_mps,east_velocity_mps,"
                     "position_valid,wgs84_frame,hard_bound_semantics,horizontal_bound_m\n";
-    auto oracle = std::make_shared<v5::ExactStripOracle>(length);
+    auto oracle = std::make_shared<sensing::ExactStripOracle>(length);
     auto clock_ns = std::make_shared<std::atomic<std::int64_t>>(1'000'000'000LL);
     bool record = false;
     double distance = 0, max_cross = 0;
@@ -199,7 +199,7 @@ void Run(const std::map<std::string, std::string>& args) {
         const double measured_bound =
             (fault == "changing_uncertainty" || fault == "uncertainty_gap") && elapsed_s >= 8 &&
                     elapsed_s < 18
-                ? envelope_bound
+                ? std::max(bound, 0.9)
                 : bound;
         const double phi = 2 * std::numbers::pi * Unit(seed, tick, 0);
         const auto geo = edge::LocalToWgs84(
@@ -214,7 +214,7 @@ void Run(const std::map<std::string, std::string>& args) {
         m.accuracy.horizontal_position->value = static_cast<float>(measured_bound + 0.00001);
         m.accuracy.vertical_position->value = 0.05001F;
         m.accuracy.horizontal_velocity->value = 0.03001F;
-        m.accuracy.horizontal_position->descriptor.source = "v6.bounded_measurement_adapter";
+        m.accuracy.horizontal_position->descriptor.source = "v7.bounded_measurement_adapter";
         const bool in_region = local.east_m >= gap_begin && local.east_m <= gap_end;
         if (in_region && fault == "gnss_outage") {
             m.validity.position = false;
@@ -251,7 +251,7 @@ void Run(const std::map<std::string, std::string>& args) {
             fault == "command_rejected") {
             fault_realized = true;
             return core::BackendCommandOutcome{
-                .result = core::Result::Rejected("v6 scheduled recovery refusal"),
+                .result = core::Result::Rejected("v7 scheduled recovery refusal"),
                 .dispatch_state = core::BackendDispatchState::kRejected};
         }
         return std::nullopt;
@@ -288,7 +288,7 @@ void Run(const std::map<std::string, std::string>& args) {
     };
     const auto cert = MakeDevMtlsPaths();
     agent::AgentConfig cfg;
-    cfg.agent_id = "v6-agent";
+    cfg.agent_id = "v7-agent";
     cfg.data.artifact_dir = (output / "agent_artifacts").string();
     cfg.vecr_attempt_journal_path = (output / "attempt.journal").string();
     cfg.bind_addr = "127.0.0.1:0";
@@ -296,7 +296,7 @@ void Run(const std::map<std::string, std::string>& args) {
     cfg.security.cert_chain_path = cert.server_cert_chain_path;
     cfg.security.private_key_path = cert.server_private_key_path;
     cfg.vecr_sensor_client_id = "test-client";
-    cfg.vecr_sensor_calibration_id = "v6-calibration";
+    cfg.vecr_sensor_calibration_id = "v7-calibration";
     cfg.vecr_sim_recovery_enabled = true;
     cfg.default_telemetry_rate_hz = 10;
     auto providers = agent::internal::RuntimeProviders::System();
@@ -324,31 +324,19 @@ void Run(const std::map<std::string, std::string>& args) {
     if (!subscription)
         throw std::runtime_error("report subscription failed");
     client::EdgeOperationRequest req;
-    req.edge.mission_id = "v6-graph-edge";
-    req.edge.mission_revision = 6;
+    req.edge.mission_id = "v7-graph-edge";
+    req.edge.mission_revision = 7;
     req.edge.edge_id = "A-B";
     req.edge.attempt_id = scenario + "-" + std::to_string(seed) + "-" + policy;
     req.edge.drone_id = "drone-1";
     req.edge.route.points = {{0, 0}, {length, 0}};
     req.edge.obligation = edge::Obligation::kSurvey;
-    req.edge.repair_policy = policy == "B2"  ? edge::RepairPolicy::kFullEdgeRestart
-                             : policy == "D" ? edge::RepairPolicy::kDeparturePoint
-                             : policy == "R2" || policy == "R8" ? edge::RepairPolicy::kFixedRewind
-                             : policy == "E" || policy == "E0"  ? edge::RepairPolicy::kEvidenceAware
-                                                                : edge::RepairPolicy::kTargetedGap;
     req.edge.corridor_half_width_m = 4;
     req.edge.arrival_radius_m = 2;
     req.edge.arrival_max_speed_mps = 0.5;
     req.edge.maximum_speed_mps = 5;
-    req.edge.recovery_overlap_m = (policy == "G" || policy == "GW") ? 0 : policy == "R8" ? 8 : 2;
     req.edge.maximum_capture_age_ms = static_cast<std::int64_t>(num("max-age", 3) * 1000);
-    req.edge.endpoint_evidence_wait_ms =
-        (policy == "E" || policy == "GW") ? static_cast<std::int64_t>(num("wait", 3) * 1000) : 0;
-    // Fixed calibration/measurement envelope known to every policy before flight.
-    // Failed sensing is an explicit envelope violation, never fabricated coverage.
-    req.edge.recovery_sensing =
-        edge::RecoverySensingEnvelope{along * 0.99, envelope_bound + 0.00002,
-                                      static_cast<std::int64_t>(std::round(period * 1000))};
+    req.edge.endpoint_evidence_wait_ms = static_cast<std::int64_t>(num("wait", 3) * 1000);
     req.edge.max_recovery_attempts = static_cast<std::uint32_t>(attempts);
     req.edge.sustained_deviation_samples = 3;
     req.edge.deviation_hysteresis_m = 0.5;
@@ -367,7 +355,7 @@ void Run(const std::map<std::string, std::string>& args) {
     if (!dispatch.ok)
         throw std::runtime_error("edge dispatch failed: " + dispatch.message);
     record = true;
-    v5::CameraEstimator estimator(sim.home_lat_deg, sim.home_lon_deg, along, cross);
+    sensing::CameraEstimator estimator(sim.home_lat_deg, sim.home_lon_deg, along, cross);
     std::deque<Pending> pending;
     edge::Status last;
     std::string last_phase;
@@ -380,7 +368,7 @@ void Run(const std::map<std::string, std::string>& args) {
     for (int tick = 0; tick < max_ticks; ++tick) {
         const double elapsed = static_cast<double>(tick) / 10;
         if (fault == "motor_failure" && last.recovery_attempts > 0 && !motor_failed) {
-            control->SetFailure("drone-1", true, "v6 recovery motor failure");
+            control->SetFailure("drone-1", true, "v7 recovery motor failure");
             motor_failed = true;
             fault_realized = true;
             std::lock_guard lock(event_mutex);
@@ -467,11 +455,11 @@ void Run(const std::map<std::string, std::string>& args) {
             auto input =
                 measured ? estimator.Estimate(*measured, now, acquired || fault == "false_frame",
                                               fault != "declared_angle",
-                                              bad_cal ? "wrong-calibration" : "v6-calibration")
+                                              bad_cal ? "wrong-calibration" : "v7-calibration")
                          : std::nullopt;
             if (input && !missing) {
                 input->mission_id = req.edge.mission_id;
-                input->mission_revision = 6;
+                input->mission_revision = 7;
                 input->edge_id = "A-B";
                 input->attempt_id = req.edge.attempt_id;
                 input->capture_id = "frame-" + std::to_string(tick);
@@ -615,9 +603,11 @@ void Run(const std::map<std::string, std::string>& args) {
 int main(int argc, char** argv) {
     try {
         if (argc == 2 && std::string(argv[1]) == "--describe") {
-            std::cout
-                << R"({"protocol":"v6","policies":["B2","D","R2","R8","P","G","GW","E0","E"]})"
-                << '\n';
+#if defined(SWARMKIT_RESEARCH_FULL_RESTART)
+            std::cout << R"({"protocol":"v7","policy":"B2"})" << '\n';
+#else
+            std::cout << R"({"protocol":"v7","policy":"VECR"})" << '\n';
+#endif
             return 0;
         }
         std::map<std::string, std::string> args;
@@ -630,7 +620,7 @@ int main(int argc, char** argv) {
         Run(args);
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "v6 infrastructure failure: " << e.what() << '\n';
+        std::cerr << "v7 infrastructure failure: " << e.what() << '\n';
         return 1;
     }
 }

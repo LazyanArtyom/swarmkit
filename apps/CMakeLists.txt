@@ -50,11 +50,6 @@ target_link_libraries(swarmkit-evidence-inspect PRIVATE swarmkit_evidence)
 swarmkit_set_warnings(swarmkit-evidence-inspect)
 swarmkit_enable_sanitizers(swarmkit-evidence-inspect)
 
-add_executable(swarmkit-vecr-experiment ${CMAKE_CURRENT_SOURCE_DIR}/vecr_experiment.cpp)
-target_link_libraries(swarmkit-vecr-experiment PRIVATE swarmkit_core)
-swarmkit_set_warnings(swarmkit-vecr-experiment)
-swarmkit_enable_sanitizers(swarmkit-vecr-experiment)
-
 if(SWARMKIT_BUILD_TESTS)
     add_test(NAME swarmkit_evidence_inspect_help
         COMMAND swarmkit-evidence-inspect --help

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent reconstruction of v5 truth, evidence containment, assignments and hashes."""
+"""Independent reconstruction of current truth, evidence containment, assignments and hashes."""
 
 import argparse, csv, gzip, hashlib, json, math
 from pathlib import Path
@@ -54,7 +54,12 @@ def actual_interval(a, length):
 def validate(out, hashes=True):
     manifest = json.loads((out / "manifest.json").read_text())
     rows = read(out / "per_attempt.csv")
-    keys = lambda r: (r["scenario"], int(r["seed"]), r["policy"])
+    keys = lambda r: (
+        r["scenario"],
+        int(r["seed"]),
+        r["policy"],
+        r.get("client-kind", r.get("client_kind", "direct")),
+    )
     assigned = {keys(x): x for x in manifest["assignments"]}
     seen = {keys(x) for x in rows}
     assert len(rows) == len(assigned) == len(seen) and seen == set(

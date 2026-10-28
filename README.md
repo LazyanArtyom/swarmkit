@@ -33,44 +33,19 @@ An agent-local attempt journal is synced before command dispatch and preserves
 terminal edge reports across agent restarts. Its storage must be persistent;
 attempts interrupted by a restart remain `UNKNOWN` until reconciled.
 
-The reproducible geometric experiment and its limitations are in
-[VECR results](results/vecr/reports/CORE_RESULTS_V2_100_SEEDS.md) and
-[method notes](docs/vecr/METHOD_AND_CORRECTNESS.md). A separate
-[v3 agent-backed pilot](results/vecr/agent_pilot_v3/README.md) records two
-SimBackend attempts and independent simulator truth. This is not an ArduPilot
-SITL or real camera validation. Prior state-acceptance research was archived
-under [docs/vecr/archive](docs/vecr/archive) and removed from the active SDK.
-
-The [v4 simulator protocol](docs/vecr/SIMULATION_PROTOCOL_V4.md) defines a
-paired agent-backed comparison of targeted-gap VECR and coverage-aware
-full-edge restart, with private ground truth and a 21-case capability
-inventory. Results and exact run status are under
-[agent campaign v4](results/vecr/agent_campaign_v4/README.md).
+VECR has one production recovery method: retain verified intervals, wait for
+bounded delayed evidence at a qualified endpoint, then repair the earliest gap.
+The SDK/protobuf have no recovery-policy selector. A separately compiled,
+non-installed full-restart executable supplies the fair research baseline.
 
 Open the [illustrated dissertation reader](VECR_Dissertation_Interactive_Website/index.htm)
-locally for the implemented method, full results, uncertainty, failure analysis,
-recorded trajectory replays and reproducible downloads. It works offline.
-
-The completed [v5/v5.1 digital-simulation studies](results/vecr/agent_campaign_v5/README.md)
-add attainable midflight recovery, noisy sensor estimates, independent exact-strip
-truth, 5,280 scientific attempts and 80 separate host benchmarks per final version.
-V5.1 repeats the same matrix after two endpoint-correctness fixes. See its historical
-[scientific results](results/vecr/agent_campaign_v5/corrected_endpoints_v5_1/reports/SCIENTIFIC_RESULTS.md)
-and [validation gates and limitations](docs/vecr/FINAL_VALIDATION_V5_1.md).
-Previous studies remain frozen and are not pooled with the replication. This is
-agent-backed simulation; it is distinct from the subsequent SITL qualification.
-
-The current [v6 research](results/vecr/agent_campaign_v6/README.md) adds nine fair
-recovery comparators, bounded acquisition-time evidence history, a conditional
-sensing-envelope rule and 5,940 frozen primary attempts. The strongest simple
-baseline matches the derived rule's completion and often travels less; the
-[validation report](docs/vecr/FINAL_VALIDATION_V6.md) includes that negative finding,
-paired intervals, failed attempts and 200 client-reuse trials.
-[ArduPilot SITL v6](results/vecr/sitl_v6/README.md) is a separate qualification
-with native-accuracy negative controls and explicitly synthetic bounded navigation
-and camera observations. Native MAVLink recovery remains disabled; calibrated real
-images and physical aircraft are unvalidated. See the updated
-[literature and contribution assessment](docs/vecr/NOVELTY_AND_DEFENSE_ASSESSMENT_V6_2026-10-28.md).
+for the method, actual results, uncertainty, recorded traces and downloads.
+See the [method and conditional guarantees](docs/vecr/METHOD.md),
+[current validation](docs/vecr/README.md),
+[literature comparison](docs/vecr/LITERATURE.md) and
+[review disposition](docs/vecr/REVIEW_RESPONSE.md).
+The working tree contains current research only; superseded artifacts remain in
+Git history at the revision recorded in the review disposition.
 
 Example (already armed and in a safe guided simulation state):
 
@@ -78,7 +53,7 @@ Example (already armed and in a safe guided simulation state):
 ./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge execute \
   --drone drone-1 --mission-id demo --revision 1 --edge-id A-B --attempt-id try-1 \
   --from-lat 40.0000 --from-lon 44.0000 --to-lat 40.0000 --to-lon 44.0010 \
-  --alt 10 --speed 2 --obligation survey --repair-policy targeted-gap
+  --alt 10 --speed 2 --obligation survey --capture-age-ms 3000 --evidence-wait-ms 3000
 ./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge status \
   --drone drone-1 --attempt-id try-1
 ./build/mac-release/apps/swarmkit-cli --config testdata/client_config.yaml edge watch \

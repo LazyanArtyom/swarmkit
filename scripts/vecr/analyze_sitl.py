@@ -17,7 +17,7 @@ def read(p):
 def main(root):
     validation = json.loads((root / "analysis/validation.json").read_text())
     assert (
-        validation["passes"] == 24
+        validation["passes"] == 12
         and not validation["errors"]
         and not validation["infrastructure_failures"]
     )
@@ -31,7 +31,7 @@ def main(root):
         ("synthetic_bounded", "command_rejected"),
         ("synthetic_bounded", "land_override"),
     ]:
-        for policy in ["GW", "E"]:
+        for policy in ["VECR"]:
             rs = [
                 r
                 for r in rows
@@ -64,9 +64,9 @@ def main(root):
         w.writeheader()
         w.writerows(summary)
     lines = [
-        "# ArduPilot SITL v6: actual qualification results",
+        "# ArduPilot SITL current: actual qualification results",
         "",
-        "24/24 assignments returned records; all passed independent sampled-truth reconstruction.",
+        "12/12 assignments returned records; all passed independent sampled-truth reconstruction.",
         "Two flights per cell; no broad reliability confidence interval is inferred.",
         "Native navigation accuracy remains backend-specific. Positive acceptance uses synthetic navigation and ideal camera observations.",
         "",
@@ -92,14 +92,14 @@ def main(root):
         2, 2, figsize=(11, 6), sharex="col", constrained_layout=True
     )
     for j, fault in enumerate(["delay", "multi_gap"]):
-        for policy, color in [("GW", "#217c68"), ("E", "#a7652f")]:
+        for policy, color in [("VECR", "#217c68")]:
             r = next(
                 r
                 for r in rows
                 if r["navigation"] == "synthetic_bounded"
                 and r["fault"] == fault
                 and r["policy"] == policy
-                and r["seed"] == "61001"
+                and r["seed"] == "73001"
             )
             d = root / r["run_id"]
             start = float(r["start_ms"])
@@ -138,7 +138,7 @@ def main(root):
     axes[1, 0].set_ylabel("Agent accepted coverage (m)")
     axes[0, 0].legend()
     fig.suptitle(
-        "ArduPilot SITL · actual seed 61001 traces\nSynthetic bounded navigation and ideal camera; no real-image claim",
+        "ArduPilot SITL · actual seed 73001 traces\nSynthetic bounded navigation and ideal camera; no real-image claim",
         fontsize=12,
     )
     for ext in ["svg", "pdf", "png"]:

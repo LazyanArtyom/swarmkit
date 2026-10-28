@@ -3,11 +3,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <random>
 
-#include "vecr_v5_models.h"
+#include "vecr_sensor_models.h"
 
 TEST_CASE("V5 independent full-strip truth preserves subcell holes and rotated footprints",
           "[vecr][v5]") {
-    swarmkit::testsupport::v5::ExactStripOracle oracle(20);
+    swarmkit::testsupport::sensing::ExactStripOracle oracle(20);
     oracle.Add(std::pair{0.0, 10.01});
     oracle.Add(std::pair{10.02, 20.0});
     CHECK_FALSE(oracle.Complete());
@@ -24,7 +24,7 @@ TEST_CASE("V5 bounded estimated camera intervals are contained in independent ac
     std::mt19937_64 random(20261024);
     std::uniform_real_distribution<double> uniform(0, 1);
     const edge::Route route{{{0, 0}, {40, 0}}};
-    testsupport::v5::ExactStripOracle oracle(40);
+    testsupport::sensing::ExactStripOracle oracle(40);
     int proved = 0;
     for (int i = 0; i < 3000; ++i) {
         const double x = uniform(random) * 40, y = (uniform(random) - 0.5) * 16;
@@ -49,7 +49,7 @@ TEST_CASE("V5 bounded estimated camera intervals are contained in independent ac
             .value = static_cast<float>(bound + 1e-5), .descriptor = descriptor};
         frame.accuracy.vertical_position =
             core::UncertaintyEstimate{.value = 0.10001F, .descriptor = descriptor};
-        testsupport::v5::CameraEstimator estimator(40, 44, along, cross);
+        testsupport::sensing::CameraEstimator estimator(40, 44, along, cross);
         auto input = estimator.Estimate(frame, 1000, true, true, "cal");
         REQUIRE(input);
         input->mission_id = "m";
