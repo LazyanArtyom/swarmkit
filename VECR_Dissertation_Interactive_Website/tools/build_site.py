@@ -261,12 +261,12 @@ for node in old.select('.sidebar-bottom'):
 for text_node in old.select_one('.hero-meta').find_all(string=True):
     if 'REVISED RESEARCH SPECIFICATION' in text_node:
         text_node.replace_with('SWARMKIT / VECR · DIGITAL VALIDATION V8')
-for card in old.select('.hero-stats > div'):
-    if 'client-reuse' in card.get_text().lower():
-        card.select_one('strong').string = '100'
-        card.select_one('span').string = 'validated v8 client-path attempts'
-    if 'false fulfillments' in card.get_text().lower():
-        card.select_one('span').string = 'false reported complete / 1,200 honest trials*'
+cards = old.select('.hero-stats > div')
+assert len(cards) == 4
+cards[2].select_one('strong').string = '100'
+cards[2].select_one('span').string = 'validated v8 client-path attempts'
+cards[3].select_one('strong').string = '0'
+cards[3].select_one('span').string = 'false reported complete / 1,200 honest trials*'
 edition = old.select_one('.edition-note')
 if edition:
     edition.clear()

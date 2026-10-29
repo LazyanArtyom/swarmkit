@@ -44,6 +44,10 @@ def validate(browser=False):
     assert len(re.findall(r'^# \d\d /', manuscript, re.M)) == 20
     assert len(document.select('footer')) == 1
     assert 'V8 DIGITAL VALIDATED' in markup and 'SITL PENDING' in markup
+    hero_cards = document.select('.hero-stats > div')
+    assert len(hero_cards) == 4
+    assert hero_cards[2].select_one('strong').get_text(strip=True) == '100'
+    assert 'validated v8 client-path attempts' in hero_cards[2].get_text()
     assert 'one terminal' in manuscript.lower() and 'no post-arrival' in manuscript.lower()
     assert 'ARRIVED/INCOMPLETE' in manuscript and 'GetEdgeStatus' in manuscript
     assert 'proposed revised API contract' not in (SITE / 'assets/animations.js').read_text()
