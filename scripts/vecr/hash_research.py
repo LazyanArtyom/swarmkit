@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ALLOWED = [ROOT / "results/vecr/current/digital", ROOT / "results/vecr/current/sitl"]
+V8 = ROOT / "results/vecr/v8"
 
 
 def digest(path):
@@ -48,7 +49,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--write", action="store_true")
     p.add_argument("--collection", choices=["digital", "sitl", "all"], default="all")
+    p.add_argument("--v8", choices=["primary", "reuse"], help="Seal or verify one frozen v8 campaign")
     a = p.parse_args()
+    if a.v8:
+        sub = V8 / a.v8
+        manifest = json.loads((sub / "manifest.json").read_text())
+        assert manifest["status"] != "RUNNING", f"cannot seal active experiment: {sub}"
+        inventory(sub, a.write)
+        return
     for root in (
         ALLOWED if a.collection == "all" else [ALLOWED[a.collection == "sitl"]]
     ):
