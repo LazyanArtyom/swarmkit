@@ -43,6 +43,12 @@ def validate(browser=False):
     assert len(document.select('section.chapter')) == 20
     assert len(re.findall(r'^# \d\d /', manuscript, re.M)) == 20
     assert len(document.select('footer')) == 1
+    scorecards = document.select('.metric-grid strong')
+    assert [card.get_text(strip=True) for card in scorecards] == [
+        '1,320', '0 / 1,200', '1,080 / 1,320', '540 / 1,320', '120 / 120'
+    ]
+    assert sum(int(row['reported_arrived']) for row in raw) == 1080
+    assert sum(int(row['reported_complete']) for row in raw) == 540
     assert 'V8 DIGITAL VALIDATED' in markup and 'SITL PENDING' in markup
     hero_cards = document.select('.hero-stats > div')
     assert len(hero_cards) == 4
@@ -65,6 +71,13 @@ def validate(browser=False):
         assert (SITE / figure['src']).exists(), figure['src']
     for script in document.select('script[src]'):
         assert (SITE / script['src']).exists(), script['src']
+    anchors = {node['id'] for node in document.select('[id]')}
+    for link in document.select('[href]'):
+        target = link['href']
+        if target.startswith('#'):
+            assert target[1:] in anchors, target
+        elif not target.startswith(('http:', 'https:', 'mailto:')):
+            assert (SITE / target).exists(), target
     assert (SITE / 'assets/evidence/legacy_v7/per_attempt.csv').exists()
     reuse = json.loads((SITE / 'assets/evidence/v8/reuse_results.json').read_text())
     assert reuse['attempts'] == 100 and reuse['matched_pairs'] == 50

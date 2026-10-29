@@ -35,6 +35,14 @@ assert len(conditions) == 44 and len(pairs) == 22
 assert summary['source_revision'] == manifest['source_revision']
 by_condition = {(r['scenario'], r['policy']): r for r in conditions}
 inflight = [r for r in pairs if r['scenario'] in ('N07', 'N08', 'N09')]
+honest = [r for r in attempts if r['scenario'] not in ('N19', 'N20')]
+dishonest = [r for r in attempts if r['scenario'] in ('N19', 'N20')]
+count = lambda rows, field: sum(int(row[field]) for row in rows)
+assert len(honest) == 1200 and len(dishonest) == 120
+assert count(honest, 'false_complete') == 0
+assert count(dishonest, 'false_complete') == 120
+assert count(attempts, 'reported_arrived') == 1080
+assert count(attempts, 'reported_complete') == 540
 
 # The full raw evidence remains in the repository; these small copies make the
 # offline reader independently inspectable. Historical v7 stays in legacy_v7.
@@ -146,12 +154,16 @@ paired_table = table(
 )
 summary_html = (
     '<div class="metric-grid">'
-    '<div><strong>1,320</strong><span>recorded attempts; 22 cases × 30 seeds × 2 policies</span></div>'
-    '<div><strong>0 / 1,200</strong><span>false reported completions with honest sensors</span></div>'
-    '<div><strong>960 / 1,320</strong><span>qualified B arrivals</span></div>'
-    '<div><strong>420 / 1,320</strong><span>reported survey complete</span></div>'
-    '<div><strong>120 / 120</strong><span>false reported completions under dishonest-sensor controls</span></div>'
+    f'<div><strong>{len(attempts):,}</strong><span>recorded attempts; 22 cases × 30 seeds × 2 policies</span></div>'
+    f'<div><strong>{count(honest, "false_complete"):,} / {len(honest):,}</strong><span>false reported completions with honest sensors</span></div>'
+    f'<div><strong>{count(attempts, "reported_arrived"):,} / {len(attempts):,}</strong><span>qualified B arrivals, all controls</span></div>'
+    f'<div><strong>{count(attempts, "reported_complete"):,} / {len(attempts):,}</strong><span>reported survey complete, all controls</span></div>'
+    f'<div><strong>{count(dishonest, "false_complete"):,} / {len(dishonest):,}</strong><span>false reported completions under dishonest-sensor controls</span></div>'
     '</div>'
+    f'<p>Honest-sensor subset: {count(honest, "reported_arrived"):,}/{len(honest):,} qualified arrivals, '
+    f'{count(honest, "reported_complete"):,}/{len(honest):,} reported complete surveys, '
+    f'{count(honest, "truth_complete"):,}/{len(honest):,} independently true complete surveys. '
+    'Dishonest controls are reported separately.</p>'
 )
 formulas = {
     'identity': ('id = (mission, revision, edge, attempt, drone)', 'Stable execution identity'),
