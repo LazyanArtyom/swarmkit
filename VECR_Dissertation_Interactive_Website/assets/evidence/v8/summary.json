@@ -1,0 +1,31 @@
+{
+  "protocol": "v8",
+  "attempts": 1320,
+  "conditions": 22,
+  "policies": [
+    "B2",
+    "VECR"
+  ],
+  "source_revision": "66603912556002d162dc42d910b598bfbbc480a2",
+  "input_sha256": "16de31040fc066370b73b290b5c472a35c2cfe91ad5241658a35ba1b4bd20781",
+  "bootstrap_resamples": 10000,
+  "rng_seed": 20261027,
+  "by_policy": {
+    "B2": {
+      "reported_arrived": 480,
+      "truth_complete": 270,
+      "reported_complete": 210,
+      "false_complete": 0,
+      "false_negative": 60,
+      "honest_attempts": 600
+    },
+    "VECR": {
+      "reported_arrived": 480,
+      "truth_complete": 270,
+      "reported_complete": 210,
+      "false_complete": 0,
+      "false_negative": 60,
+      "honest_attempts": 600
+    }
+  }
+}

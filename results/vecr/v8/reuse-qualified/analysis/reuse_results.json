@@ -1,0 +1,81 @@
+{
+  "protocol": "v8",
+  "source_revision": "8b0ad012140d1d1849990fe4aca9936c18497100",
+  "attempts": 100,
+  "matched_pairs": 50,
+  "fields_compared": [
+    "phase",
+    "distance_m",
+    "time_ms",
+    "reported_covered_m",
+    "truth_covered_m",
+    "recoveries",
+    "reported_arrived",
+    "reported_complete",
+    "truth_complete",
+    "unresolved_m"
+  ],
+  "field_differences": [],
+  "phases": [
+    {
+      "scenario": "N00",
+      "client": "direct",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N00",
+      "client": "routed",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N01",
+      "client": "direct",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N01",
+      "client": "routed",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N04",
+      "client": "direct",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N04",
+      "client": "routed",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N07",
+      "client": "direct",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N07",
+      "client": "routed",
+      "phase": "ARRIVED",
+      "count": 10
+    },
+    {
+      "scenario": "N11",
+      "client": "direct",
+      "phase": "FAILED",
+      "count": 10
+    },
+    {
+      "scenario": "N11",
+      "client": "routed",
+      "phase": "FAILED",
+      "count": 10
+    }
+  ]
+}

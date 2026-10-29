@@ -1,0 +1,1802 @@
+diff --git a/apps/cli/output.cpp b/apps/cli/output.cpp
+index 32adefbac..c4da77020 100644
+--- a/apps/cli/output.cpp
++++ b/apps/cli/output.cpp
+@@ -100,8 +100,9 @@ std::string_view EdgePhaseName(swarmkit::edge::Phase phase) {
+         case Phase::kMoving: return "moving";
+         case Phase::kDeviating: return "deviating";
+         case Phase::kRecovering: return "recovering";
+-        case Phase::kFulfilled: return "fulfilled";
+-        case Phase::kInterrupted: return "interrupted";
++        case Phase::kArrived: return "arrived";
++        case Phase::kFailed: return "failed";
++        case Phase::kCancelled: return "cancelled";
+         case Phase::kUnknown: return "unknown";
+     }
+     return "unknown";
+diff --git a/docs/vecr/METHOD.md b/docs/vecr/METHOD.md
+index 2d31c1f71..89f79d8ca 100644
+--- a/docs/vecr/METHOD.md
++++ b/docs/vecr/METHOD.md
+@@ -19,26 +19,27 @@ The SDK and protobuf expose one VECR recovery method with no policy selector:
+ 
+ 1. Bind the request to mission/revision/edge/attempt/drone identity and a fixed route.
+ 2. Accumulate conservative qualified survey intervals and bounded traversal evidence.
+-3. On sustained corridor departure, re-enter at the earlier of current projected
+-   progress and the earliest missing interval. Without missing survey work, use
+-   current progress to restore the route.
+-4. At a verified stationary endpoint, wait for the configured bounded evidence
+-   delivery period. Waiting never credits a future acquisition and remains subject
+-   to endpoint freshness, safety and the attempt deadline.
+-5. If a gap remains, return to its beginning, verify physical stopped re-entry,
+-   then resume toward B. Retain disjoint previously verified work.
+-6. Fulfill only when the requested predicates hold. Exhausted retries, unknown
+-   evidence, backend refusal and safety intervention are explicit outcomes.
++3. On sustained corridor departure *before B*, re-enter at the earlier of current
++   projected progress and the earliest required unverified interval. Without
++   missing survey work, use current progress to restore the route.
++4. Verify physical stopped re-entry before continuing toward B. Retain disjoint
++   previously verified work. Exhausted retries, unsafe navigation, backend refusal
++   and timeout are explicit failed outcomes.
++5. At a verified stationary B, wait only for the configured bounded evidence
++   delivery period. Then terminate with ARRIVED and independently report whether
++   the requested survey/traversal obligation is verified and which intervals remain.
++   No command back to a gap is issued after arrival.
+ 
+ For progress p and earliest gap start g, the local target is q=min(p,g) during
+-sustained departure and q=g for endpoint repair, clipped to the route. This is a
++sustained departure, clipped to the route. This is a
+ repair heuristic, not a guarantee that another pass will acquire valid evidence.
+ No sensing-envelope optimizer or fixed-overlap policy remains in the public API.
+ Uncertainty remains essential to evidence acceptance and physical arrival.
+ 
+-The research-only full-restart baseline chooses q=0. Its separately compiled,
+-non-installed executable shares verification, evidence waiting, faults, dynamics,
+-retry budgets and safety. It is a comparator, not a second production API.
++The research-only full-restart baseline chooses q=0 on the same qualified
++in-flight departure. Its separately compiled, non-installed executable shares
++verification, evidence waiting, faults, dynamics, retry budgets and safety.
++It is a comparator, not a second production API.
+ 
+ ## Physical obligations and identity
+ 
+@@ -98,7 +99,7 @@ prove preservation of a classical rotor-router theorem.
+ 
+ ## Execution and safety
+ 
+-Recovery remains in the agent, including command arbitration, health, authority,
++Recovery remains in the agent during A-to-B flight, including command arbitration, health, authority,
+ battery and navigation checks. ACK does not release recovery: physical re-entry
+ and stopped qualification precede continuation. Attempts, cooldown and deadline
+ bound recovery. Native production MAVLink recovery remains disabled until its
+diff --git a/docs/vecr/SIMULATION_PROTOCOL.md b/docs/vecr/SIMULATION_PROTOCOL.md
+index 4423395c7..04b1d3503 100644
+--- a/docs/vecr/SIMULATION_PROTOCOL.md
++++ b/docs/vecr/SIMULATION_PROTOCOL.md
+@@ -1,12 +1,13 @@
+-# Frozen digital protocol — canonical VECR, edition 7
++# Frozen digital protocol — in-flight VECR, edition 8
+ 
+ ## Selection and preregistration
+ 
+-The single production method retains earliest-gap recovery with bounded endpoint
+-waiting. Selection follows the completed comparison at Git revision
+-`12cc4fdd54a0a6e440988b6310dba7e1d5c7111d`.
+-This is a selected-method validation on new seeds, not a blinded discovery study.
+-Superseded source/data remain recoverable from Git history and are not pooled.
++The single production method permits bounded correction only after a sustained
++departure during A-to-B flight. Qualified arrival at B terminates the attempt
++after at most 3 s of evidence finalization. Residual survey gaps are reported
++without an automatic backward command. This is a selected-method validation,
++not a blinded discovery study. The v7 campaign used endpoint repair and is
++historical; its measurements are not pooled with this edition.
+ 
+ This protocol is committed before the frozen campaign. All assignments and binary
+ hashes are recorded before execution. No failed attempt is replaced. A correction
+@@ -16,31 +17,33 @@ requires a new separately named run and retention of the failed run.
+ 
+ 22 conditions × 30 paired seeds (70001–70030) × two executables = **1,320 attempts**.
+ The production method is labelled VECR; B2 is a non-installed full-edge-restart
+-research comparator. Both wait up to 3 s at B and use the same evidence verifier,
+-3 s capture-age limit, two recovery attempts, dynamics, observations and safety.
+-Only re-entry target differs. No former production policy selector exists.
++research comparator on the same qualified *in-flight* departure. Both wait up
++to 3 s at B and use the same evidence verifier, 3 s capture-age limit, two
++recovery attempts, dynamics, observations and safety. Only the in-flight
++re-entry target differs. Neither policy repairs an endpoint gap. No production
++policy selector exists.
+ 
+ | ID | Condition |
+ |---|---|
+ | N00 | Nominal |
+ | N01 | Evidence delivery delayed 2.5 s |
+ | N02 | Reordered evidence |
+-| N03 | Missing metadata |
+-| N04 | Multiple capture gaps |
++| N03 | Missing metadata; endpoint gap is reported |
++| N04 | Multiple capture gaps; endpoint gaps are reported |
+ | N05 | Changing localization uncertainty |
+-| N06 | Uncertainty increase during a gap |
++| N06 | Uncertainty increase during a gap; endpoint gap is reported |
+ | N07 | Sustained physical departure |
+ | N08 | Departure with wide sensing |
+ | N09 | Departure with narrow sensing |
+ | N10 | Persistent sensor failure |
+ | N11 | Recovery command rejected |
+-| N12 | Motor failure during repair |
++| N12 | Motor failure during qualified in-flight repair |
+ | N13 | Low battery |
+ | N14 | Zero recovery budget |
+ | N15 | Evidence arrives after 3 s validity horizon |
+ | N16 | Sparse small-footprint acquisition |
+-| N17 | Multiple gaps, 20 m route |
+-| N18 | Multiple gaps, 80 m route |
++| N17 | Multiple gaps, 20 m route; no endpoint repair |
++| N18 | Multiple gaps, 80 m route; no endpoint repair |
+ | N19 | Dishonest camera-frame control |
+ | N20 | Undeclared camera-angle control |
+ | N21 | Multiple gaps with short deadline |
+@@ -57,8 +60,10 @@ order by seed. Simulated time is controlled; host timing is descriptive only.
+ Reconstruct truth from actual acquired footprints and trajectories using independent
+ half-space geometry, not the production interval calculation. Check accepted-footprint
+ containment, physical sampled re-entry dwell, exact assignment membership, reported
+-and actual completion, and failures. Dishonest controls are separate from honest-input
+-soundness estimates. No oracle truth enters the agent or sensor estimator.
++arrival, reported obligation verification, actual completion, and failures. Assert
++that no accepted recovery GOTO follows qualified arrival. Dishonest controls are
++separate from honest-input soundness estimates. No oracle truth enters the agent
++or sensor estimator.
+ 
+ Report all 44 condition/method rows. Per-condition completion uses Wilson 95%
+ intervals. Pair by seed. Bootstrap paired acceptance differences on all 30 pairs;
+@@ -75,12 +80,12 @@ All pilot outcomes remain separate from primary statistics.
+ 
+ ## Reproduction
+ 
+-Build the release targets and commit experiment source, then run:
++Build the release targets and commit experiment source, then run into a new v8 directory:
+ 
+ ```
+-.venv/bin/python scripts/vecr/run_digital.py --mode final --output results/vecr/current/digital/primary
+-.venv/bin/python scripts/vecr/validate_digital.py --output results/vecr/current/digital/primary
+-.venv/bin/python scripts/vecr/analyze_digital.py --output results/vecr/current/digital/primary
++.venv/bin/python scripts/vecr/run_digital.py --mode final --output results/vecr/v8/primary
++.venv/bin/python scripts/vecr/validate_digital.py --output results/vecr/v8/primary
++.venv/bin/python scripts/vecr/analyze_digital.py --output results/vecr/v8/primary
+ ```
+ 
+ Use a new output directory for repetition; never overwrite a completed campaign.
+diff --git a/include/swarmkit/client/client.h b/include/swarmkit/client/client.h
+index 1109e5549..649b3c7df 100644
+--- a/include/swarmkit/client/client.h
++++ b/include/swarmkit/client/client.h
+@@ -673,6 +673,9 @@ using TelemetryObservationHandler = std::function<void(const TelemetryObservatio
+ using TelemetryErrorHandler = std::function<void(const std::string&)>;
+ using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
+ using AgentReportHandler = std::function<void(const AgentReport&)>;
++/// Called once per execution identity within one live subscription. Subscribe
++/// before dispatch; after reconnect, query GetEdgeStatus for durable results.
++using EdgeFinishedHandler = std::function<void(const AgentReport::EdgeReport&)>;
+ using DataMessageHandler = std::function<void(const DataMessage&)>;
+ /// @}
+ 
+@@ -1088,6 +1091,13 @@ class Client {
+                                                   SubscriptionEventHandler on_event = {},
+                                                   SubscriptionOptions options = {});
+ 
++    /// Subscribe to terminal edge results only. Arrival and survey verification
++    /// remain separate in EdgeReport::status.
++    [[nodiscard]] SubscriptionResult StartEdgeResults(ReportSubscription subscription,
++                                                      EdgeFinishedHandler on_finished,
++                                                      TelemetryErrorHandler on_error = {},
++                                                      SubscriptionEventHandler on_event = {});
++
+     /// @brief Cancel the active report stream (if any).
+     void StopReports();
+ 
+diff --git a/include/swarmkit/edge/vecr.h b/include/swarmkit/edge/vecr.h
+index 3ca7ce599..5a46fe906 100644
+--- a/include/swarmkit/edge/vecr.h
++++ b/include/swarmkit/edge/vecr.h
+@@ -63,7 +63,7 @@ class IntervalSet {
+ };
+ 
+ enum class Obligation { kArrival, kTraversal, kSurvey, kTraversalAndSurvey };
+-enum class Phase { kMoving, kDeviating, kRecovering, kFulfilled, kInterrupted, kUnknown };
++enum class Phase { kMoving, kDeviating, kRecovering, kArrived, kFailed, kCancelled, kUnknown };
+ enum class EvidenceQuality { kUnknown, kEstimated, kBounded };
+ 
+ struct EdgeRequest {
+@@ -82,6 +82,8 @@ struct EdgeRequest {
+     double maximum_speed_mps{};  // Required for whole-interval traversal proof.
+     double minimum_recovery_battery_percent{};
+     std::uint32_t max_recovery_attempts{};
++    std::int64_t max_recovery_duration_ms{30000};
++    double max_recovery_travel_m{200.0};
+     std::uint32_t sustained_deviation_samples{3};
+     double deviation_hysteresis_m{0.5};
+     std::int64_t recovery_cooldown_ms{1000};
+@@ -160,7 +162,9 @@ struct Status {
+     double survey_prefix_m{};
+     std::vector<Interval> survey_missing;
+     std::vector<Interval> traversal_missing;
++    std::optional<double> projected_progress_m;
+     std::uint32_t recovery_attempts{};
++    double recovery_travel_bound_m{};
+     std::optional<Point> pending_reentry;
+     std::string reason;
+     std::optional<std::int64_t> last_position_monotonic_ms;
+@@ -182,12 +186,14 @@ class EdgeExecutionSupervisor {
+     // continuation to B. Dispatch acknowledgement alone cannot complete recovery.
+     [[nodiscard]] Status RecoveryReentryCompleted(std::int64_t monotonic_ms);
+     [[nodiscard]] Status Interrupt(std::string reason);
++    [[nodiscard]] Status Cancel(std::string reason);
+     [[nodiscard]] Status Snapshot() const;
+     [[nodiscard]] bool WasCaptureAccepted(const CaptureEvidence& evidence) const;
+ 
+    private:
+     void Recompute();
+     void ConsiderRecovery(std::int64_t now_ms, bool safe_to_navigate);
++    void ConsiderEndpointFinalization(std::int64_t now_ms);
+     EdgeRequest request_;
+     double length_m_{};
+     IntervalSet traversal_;
+@@ -200,6 +206,7 @@ class EdgeExecutionSupervisor {
+     std::int64_t arrival_candidate_ms_{-1};
+     std::int64_t last_valid_position_ms_{-1};
+     std::int64_t last_recovery_ms_{-1};
++    std::int64_t recovery_started_ms_{-1};
+     std::uint32_t deviation_samples_{};
+     std::int64_t endpoint_wait_started_ms_{-1};
+     bool can_recover_{};
+diff --git a/proto/swarmkit/v1/swarmkit.proto b/proto/swarmkit/v1/swarmkit.proto
+index 16e718f64..feaef54cb 100644
+--- a/proto/swarmkit/v1/swarmkit.proto
++++ b/proto/swarmkit/v1/swarmkit.proto
+@@ -652,10 +652,11 @@ enum EdgePhase {
+     EDGE_PHASE_UNSPECIFIED = 0;
+     EDGE_MOVING = 1;
+     EDGE_RECOVERING = 2;
+-    EDGE_FULFILLED = 3;
+-    EDGE_INTERRUPTED = 4;
++    EDGE_ARRIVED = 3;
++    EDGE_FAILED = 4;
+     EDGE_UNKNOWN = 5;
+     EDGE_DEVIATING = 6;
++    EDGE_CANCELLED = 7;
+ }
+ 
+ enum EdgeEvidenceQuality {
+@@ -690,6 +691,8 @@ message EdgeOperation {
+     double deviation_hysteresis_m = 18;
+     int64 maximum_capture_age_ms = 19;
+     int64 endpoint_evidence_wait_ms = 20;
++    int64 max_recovery_duration_ms = 21;
++    double max_recovery_travel_m = 22;
+ }
+ 
+ message EdgeReport {
+@@ -712,6 +715,8 @@ message EdgeReport {
+     ExecutionHandle execution_handle = 18;
+     EdgeEvidenceQuality traversal_quality = 19;
+     optional int64 last_position_monotonic_ms = 20;
++    optional double projected_progress_m = 21;
++    double recovery_travel_bound_m = 22;
+ }
+ 
+ message ExecuteEdgeRequest {
+diff --git a/scripts/vecr/analyze_digital.py b/scripts/vecr/analyze_digital.py
+index 0f043e2ff..deb8a931a 100644
+--- a/scripts/vecr/analyze_digital.py
++++ b/scripts/vecr/analyze_digital.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired v7 analysis; observed data only, including failures and stronger baselines."""
++"""Paired v8 analysis; observed data only, including failures and stronger baselines."""
+ 
+ import argparse, csv, json, hashlib
+ from pathlib import Path
+@@ -123,7 +123,7 @@ def analyze(root):
+     write(out / "paired_comparisons.csv", paired)
+     scenarios = sorted({r["scenario"] for r in rows})
+     plt.rcParams.update(
+-        {"font.family": "DejaVu Sans", "font.size": 10, "svg.hashsalt": "swarmkit-v7"}
++        {"font.family": "DejaVu Sans", "font.size": 10, "svg.hashsalt": "swarmkit-v8"}
+     )
+     lookup = {(r["scenario"], r["policy"]): r for r in table}
+     fig, ax = plt.subplots(figsize=(10, 10))
+@@ -190,7 +190,7 @@ def analyze(root):
+         fig.savefig(out / f"paired_distance.{ext}", dpi=180)
+     plt.close(fig)
+     summary = dict(
+-        protocol="v7",
++        protocol="v8",
+         attempts=len(rows),
+         conditions=len(scenarios),
+         policies=POLICIES,
+@@ -223,7 +223,7 @@ def analyze(root):
+         summary["by_policy"][p]["honest_attempts"] = len(rr)
+     (out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+     lines = [
+-        "# VECR v7 measured results",
++        "# VECR v8 measured results",
+         "",
+         f"{len(rows):,} assigned attempts; {len(scenarios)} conditions; VECR and a full-restart research baseline.",
+         "All unsuccessful attempts remain included. Honest-input and dishonest-input controls are separate.",
+diff --git a/scripts/vecr/run_digital.py b/scripts/vecr/run_digital.py
+index 6bf4db65a..a41c1ac19 100644
+--- a/scripts/vecr/run_digital.py
++++ b/scripts/vecr/run_digital.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Frozen paired v7 assignment, actual subprocess trials, no trial replacement."""
++"""Frozen paired v8 assignment, actual subprocess trials, no trial replacement."""
+ 
+ import argparse, concurrent.futures, csv, datetime, gzip, hashlib, json, os, platform, shutil, subprocess, time, tempfile
+ from pathlib import Path
+@@ -81,7 +81,7 @@ def main():
+     binaries = {"VECR": a.binary, "B2": a.baseline_binary.resolve()}
+     for policy, binary in binaries.items():
+         description = json.loads(subprocess.check_output([str(binary), "--describe"], text=True))
+-        if description != {"protocol": "v7", "policy": policy}:
++        if description != {"protocol": "v8", "policy": policy}:
+             raise RuntimeError("binary does not implement its assigned method")
+     a.output.mkdir(parents=True, exist_ok=False)
+     source = subprocess.check_output(
+@@ -135,7 +135,7 @@ def main():
+             "confirmatory assignments must match 22 x 30 x 2 preregistration"
+         )
+     manifest = dict(
+-        protocol="v7",
++        protocol="v8",
+         mode=a.mode,
+         status="RUNNING",
+         source_revision=source,
+@@ -152,7 +152,7 @@ def main():
+     )
+     (a.output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+     (a.output / "source.patch").write_text(subprocess.check_output(["git", "diff", "HEAD", "--", *source_paths], cwd=ROOT, text=True))
+-    binary_dir = Path(tempfile.mkdtemp(prefix="vecr-v7-frozen-"))
++    binary_dir = Path(tempfile.mkdtemp(prefix="vecr-v8-frozen-"))
+     for policy, source_binary in list(binaries.items()):
+         frozen = binary_dir / source_binary.name
+         shutil.copy2(source_binary, frozen)
+diff --git a/scripts/vecr/validate_digital.py b/scripts/vecr/validate_digital.py
+index 899201672..efb92de20 100644
+--- a/scripts/vecr/validate_digital.py
++++ b/scripts/vecr/validate_digital.py
+@@ -112,6 +112,7 @@ def validate(out, hashes=True):
+         distance = 0
+         last = (0, 0)
+         arrival = -1
++        first_qualified_arrival = None
+         by_time = {}
+         for t in truth:
+             time = int(t["time_ms"])
+@@ -128,11 +129,15 @@ def validate(out, hashes=True):
+                     arrival = time
+             else:
+                 arrival = -1
++            if arrival >= 0 and time - arrival >= 200 and first_qualified_arrival is None:
++                first_qualified_arrival = time
+         at_b = arrival >= 0 and int(truth[-1]["time_ms"]) - arrival >= 200
+         near(distance, row["distance_m"])
+         assert at_b == (row["truth_at_b"] == "1")
+         tc = survey and at_b
+-        rc = row["phase"] == "FULFILLED"
++        rc = row["phase"] == "ARRIVED" and row["survey_verified"] == "1"
++        assert (row["phase"] == "ARRIVED") == (row["reported_arrived"] == "1")
++        near(length - float(row["reported_covered_m"]), row["unresolved_m"])
+         assert tc == (row["truth_complete"] == "1")
+         assert rc == (row["reported_complete"] == "1")
+         assert (rc and not tc) == (row["false_complete"] == "1")
+@@ -174,6 +179,12 @@ def validate(out, hashes=True):
+                 near(capture["claimed_north"], m["north_m"])
+         go = [e for e in events if e["kind"] == "goto_accepted"]
+         assert len(go) == int(row["gotos"])
++        if first_qualified_arrival is not None:
++            assert not any(
++                int(e["time_ms"]) > first_qualified_arrival
++                and abs(float(e["target_east"]) - length) > 1e-4
++                for e in go
++            ), (root, "automatic post-arrival recovery is forbidden")
+         for i, e in enumerate(go):
+             if i == 0 or abs(float(e["target_east"]) - length) > 1e-4:
+                 continue
+diff --git a/src/agent/edge_attempt_journal.cpp b/src/agent/edge_attempt_journal.cpp
+index 439ccb61c..af3fb7628 100644
+--- a/src/agent/edge_attempt_journal.cpp
++++ b/src/agent/edge_attempt_journal.cpp
+@@ -182,8 +182,9 @@ EdgeAttemptJournal::EdgeAttemptJournal(std::string path, FaultInjector fault_inj
+         entries_[key] = *entry;
+     }
+     for (auto& [_, entry] : entries_) {
+-        if (entry.report.phase() != swarmkit::v1::EDGE_FULFILLED &&
+-            entry.report.phase() != swarmkit::v1::EDGE_INTERRUPTED) {
++        if (entry.report.phase() != swarmkit::v1::EDGE_ARRIVED &&
++            entry.report.phase() != swarmkit::v1::EDGE_FAILED &&
++            entry.report.phase() != swarmkit::v1::EDGE_CANCELLED) {
+             entry.report.set_phase(swarmkit::v1::EDGE_UNKNOWN);
+             entry.report.set_at_b_verified(false);
+             entry.report.set_reason(
+@@ -217,12 +218,13 @@ core::Result EdgeAttemptJournal::Append(const Entry& entry) {
+             it->second.client_id != entry.client_id)
+             return core::Result::Rejected("edge attempt journal identity conflict");
+         const auto prior_phase = it->second.report.phase();
+-        if (prior_phase == swarmkit::v1::EDGE_FULFILLED ||
+-            prior_phase == swarmkit::v1::EDGE_INTERRUPTED) {
+-            if (prior_phase == swarmkit::v1::EDGE_INTERRUPTED &&
++        if (prior_phase == swarmkit::v1::EDGE_ARRIVED ||
++            prior_phase == swarmkit::v1::EDGE_FAILED ||
++            prior_phase == swarmkit::v1::EDGE_CANCELLED) {
++            if (prior_phase == swarmkit::v1::EDGE_FAILED &&
+                 it->second.physical_navigation_unresolved &&
+                 !entry.physical_navigation_unresolved &&
+-                entry.report.phase() == swarmkit::v1::EDGE_INTERRUPTED &&
++                entry.report.phase() == swarmkit::v1::EDGE_FAILED &&
+                 it->second.dispatch_accepted == entry.dispatch_accepted) {
+                 // A later explicitly confirmed hold may resolve an already
+                 // interrupted task without changing its obligation outcome.
+diff --git a/src/agent/edge_execution_runtime.cpp b/src/agent/edge_execution_runtime.cpp
+index 3ae30762f..fdb5dbc68 100644
+--- a/src/agent/edge_execution_runtime.cpp
++++ b/src/agent/edge_execution_runtime.cpp
+@@ -24,10 +24,12 @@ namespace {
+             return swarmkit::v1::EDGE_DEVIATING;
+         case edge::Phase::kRecovering:
+             return swarmkit::v1::EDGE_RECOVERING;
+-        case edge::Phase::kFulfilled:
+-            return swarmkit::v1::EDGE_FULFILLED;
+-        case edge::Phase::kInterrupted:
+-            return swarmkit::v1::EDGE_INTERRUPTED;
++        case edge::Phase::kArrived:
++            return swarmkit::v1::EDGE_ARRIVED;
++        case edge::Phase::kFailed:
++            return swarmkit::v1::EDGE_FAILED;
++        case edge::Phase::kCancelled:
++            return swarmkit::v1::EDGE_CANCELLED;
+         case edge::Phase::kUnknown:
+             return swarmkit::v1::EDGE_UNKNOWN;
+     }
+@@ -35,7 +37,8 @@ namespace {
+ }
+ 
+ [[nodiscard]] bool Terminal(edge::Phase phase) {
+-    return phase == edge::Phase::kFulfilled || phase == edge::Phase::kInterrupted;
++    return phase == edge::Phase::kArrived || phase == edge::Phase::kFailed ||
++           phase == edge::Phase::kCancelled;
+ }
+ 
+ [[nodiscard]] bool SafetyOverrideMode(const std::string& mode) {
+@@ -148,6 +151,8 @@ std::optional<edge::EdgeRequest> EdgeExecutionRuntime::Convert(
+     request.maximum_missing_m = operation.maximum_missing_m();
+     request.maximum_speed_mps = operation.maximum_speed_mps();
+     request.max_recovery_attempts = operation.max_recovery_attempts();
++    request.max_recovery_duration_ms = operation.max_recovery_duration_ms();
++    request.max_recovery_travel_m = operation.max_recovery_travel_m();
+     request.sustained_deviation_samples = operation.sustained_deviation_samples();
+     request.recovery_cooldown_ms = operation.recovery_cooldown_ms();
+     request.deviation_hysteresis_m = operation.deviation_hysteresis_m();
+@@ -188,6 +193,8 @@ swarmkit::v1::EdgeReport EdgeExecutionRuntime::ToReport(const Attempt& attempt,
+                                      : swarmkit::v1::EDGE_EVIDENCE_UNKNOWN);
+     report.set_survey_covered_m(status.survey_covered_m);
+     report.set_survey_prefix_m(status.survey_prefix_m);
++    if (status.projected_progress_m)
++        report.set_projected_progress_m(*status.projected_progress_m);
+     for (const auto& missing : status.survey_missing) {
+         auto* interval = report.add_survey_missing();
+         interval->set_begin_m(missing.begin_m);
+@@ -199,6 +206,7 @@ swarmkit::v1::EdgeReport EdgeExecutionRuntime::ToReport(const Attempt& attempt,
+         interval->set_end_m(missing.end_m);
+     }
+     report.set_recovery_attempts(status.recovery_attempts);
++    report.set_recovery_travel_bound_m(status.recovery_travel_bound_m);
+     report.set_reason(status.reason);
+     if (status.pending_reentry) {
+         const auto& origin = attempt.operation.route(0);
+@@ -224,13 +232,21 @@ core::Result EdgeExecutionRuntime::Publish(const Attempt& attempt, const edge::S
+         edge_report.set_survey_verified(false);
+         edge_report.set_reason(std::string{physical_unknown_reason});
+     }
++    const bool terminal_report = edge_report.phase() == swarmkit::v1::EDGE_ARRIVED ||
++                                 edge_report.phase() == swarmkit::v1::EDGE_FAILED ||
++                                 edge_report.phase() == swarmkit::v1::EDGE_CANCELLED;
++    if (terminal_report && attempt.terminal_published.exchange(true, std::memory_order_acq_rel)) {
++        if (published)
++            *published = edge_report;
++        return core::Result::Success("terminal edge result already published");
++    }
+     const auto saved = journal_.Append(
+         {.operation = attempt.operation,
+          .client_id = attempt.handle.client_id,
+          .report = edge_report,
+          .dispatch_accepted = physical_unknown_reason.empty(),
+          .physical_navigation_unresolved =
+-             !physical_hold_confirmed && edge_report.phase() != swarmkit::v1::EDGE_FULFILLED});
++             !physical_hold_confirmed && edge_report.phase() != swarmkit::v1::EDGE_ARRIVED});
+     if (!saved.IsOk()) {
+         core::Logger::ErrorFmt("VECR attempt journal append failed: {}", saved.message);
+         edge_report.set_phase(swarmkit::v1::EDGE_UNKNOWN);
+@@ -253,7 +269,7 @@ core::Result EdgeExecutionRuntime::Publish(const Attempt& attempt, const edge::S
+                                  status.reason.find("safety mode") != std::string::npos;
+     report.set_severity(
+         !saved.IsOk() || !physical_unknown_reason.empty() ? swarmkit::v1::REPORT_CRITICAL
+-        : status.phase == edge::Phase::kInterrupted
++        : status.phase == edge::Phase::kFailed
+             ? (safety_critical ? swarmkit::v1::REPORT_CRITICAL : swarmkit::v1::REPORT_WARNING)
+             : swarmkit::v1::REPORT_INFO);
+     report.set_message(edge_report.reason());
+@@ -303,7 +319,7 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
+         *status = prior->report;
+         if (prior->dispatch_accepted)
+             return core::Result::Success("durable edge attempt returned without redispatch");
+-        if (prior->report.phase() == swarmkit::v1::EDGE_INTERRUPTED)
++        if (prior->report.phase() == swarmkit::v1::EDGE_FAILED)
+             return core::Result::Rejected("initial edge command was rejected; no redispatch");
+         return core::Result::Rejected(
+             "edge attempt previously reserved; physical dispatch outcome requires reconciliation");
+@@ -334,7 +350,7 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
+             std::lock_guard<std::mutex> attempt_lock(old->mutex);
+             if (!Terminal(old->supervisor.Snapshot().phase) &&
+                 !(old->physical_unknown_report &&
+-                  old->physical_unknown_report->phase() == swarmkit::v1::EDGE_INTERRUPTED))
++                  old->physical_unknown_report->phase() == swarmkit::v1::EDGE_FAILED))
+                 return core::Result::Rejected("another edge attempt is active for this drone");
+             attempts_.erase(it);
+         }
+@@ -372,7 +388,7 @@ core::Result EdgeExecutionRuntime::Start(const swarmkit::v1::EdgeOperation& oper
+     if (!dispatch->result.IsOk()) {
+         auto rejected = reserved;
+         if (dispatch->dispatch_state == core::BackendDispatchState::kRejected) {
+-            rejected.set_phase(swarmkit::v1::EDGE_INTERRUPTED);
++            rejected.set_phase(swarmkit::v1::EDGE_FAILED);
+             rejected.set_reason("initial edge command rejected: " + dispatch->result.message);
+         } else {
+             rejected.set_reason("initial edge dispatch outcome uncertain: " +
+@@ -654,7 +670,7 @@ core::Result EdgeExecutionRuntime::Cancel(const core::ExecutionHandle& expected,
+         *status = prior->report;
+         if (const auto held = ConfirmSimulatorHold(context, expected.drone_id); !held.IsOk())
+             return held;
+-        status->set_phase(swarmkit::v1::EDGE_INTERRUPTED);
++        status->set_phase(swarmkit::v1::EDGE_FAILED);
+         status->set_reason(
+             "prior attempt reconciled after simulator hold and bounded "
+             "stationary telemetry; survey obligation incomplete");
+@@ -704,7 +720,7 @@ core::Result EdgeExecutionRuntime::Cancel(const core::ExecutionHandle& expected,
+     edge::Status cancelled;
+     {
+         std::lock_guard<std::mutex> lock(attempt->mutex);
+-        cancelled = attempt->supervisor.Interrupt(
++        cancelled = attempt->supervisor.Cancel(
+             "edge cancelled after simulator hold and bounded stationary telemetry");
+     }
+     const auto saved = Publish(*attempt, cancelled, status, {}, true);
+diff --git a/src/agent/edge_execution_runtime.h b/src/agent/edge_execution_runtime.h
+index 9ecd6fe96..b69b707b5 100644
+--- a/src/agent/edge_execution_runtime.h
++++ b/src/agent/edge_execution_runtime.h
+@@ -67,6 +67,7 @@ class EdgeExecutionRuntime {
+         core::BackendCommandOutcome initial_dispatch;
+         TelemetryLease lease;
+         std::atomic<bool> stop{false};
++        mutable std::atomic<bool> terminal_published{false};
+         std::thread worker;
+         std::uint64_t last_sequence{};
+         double last_reported_covered{};
+diff --git a/src/client/client.cpp b/src/client/client.cpp
+index 9e759eebb..5288143b5 100644
+--- a/src/client/client.cpp
++++ b/src/client/client.cpp
+@@ -25,12 +25,14 @@
+ #include <mutex>
+ #include <numbers>
+ #include <optional>
++#include <set>
+ #include <span>
+ #include <sstream>
+ #include <string>
+ #include <string_view>
+ #include <system_error>
+ #include <thread>
++#include <tuple>
+ #include <utility>
+ 
+ #include "env_utils.h"
+@@ -1682,10 +1684,13 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
+         source.phase() == swarmkit::v1::EDGE_MOVING        ? edge::Phase::kMoving
+         : source.phase() == swarmkit::v1::EDGE_DEVIATING   ? edge::Phase::kDeviating
+         : source.phase() == swarmkit::v1::EDGE_RECOVERING  ? edge::Phase::kRecovering
+-        : source.phase() == swarmkit::v1::EDGE_FULFILLED   ? edge::Phase::kFulfilled
+-        : source.phase() == swarmkit::v1::EDGE_INTERRUPTED ? edge::Phase::kInterrupted
++        : source.phase() == swarmkit::v1::EDGE_ARRIVED   ? edge::Phase::kArrived
++        : source.phase() == swarmkit::v1::EDGE_FAILED ? edge::Phase::kFailed
++        : source.phase() == swarmkit::v1::EDGE_CANCELLED ? edge::Phase::kCancelled
+                                                            : edge::Phase::kUnknown;
+     report.status.at_b_verified = source.at_b_verified();
++    if (source.has_projected_progress_m())
++        report.status.projected_progress_m = source.projected_progress_m();
+     report.status.traversal_verified = source.traversal_verified();
+     report.status.survey_verified = source.survey_verified();
+     report.status.traversal_quality =
+@@ -1701,6 +1706,7 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
+     for (const auto& missing : source.traversal_missing())
+         report.status.traversal_missing.push_back({missing.begin_m(), missing.end_m()});
+     report.status.recovery_attempts = source.recovery_attempts();
++    report.status.recovery_travel_bound_m = source.recovery_travel_bound_m();
+     report.status.reason = source.reason();
+     if (source.has_last_position_monotonic_ms())
+         report.status.last_position_monotonic_ms = source.last_position_monotonic_ms();
+@@ -2933,6 +2939,8 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
+     operation->set_maximum_capture_age_ms(request.edge.maximum_capture_age_ms);
+     operation->set_endpoint_evidence_wait_ms(request.edge.endpoint_evidence_wait_ms);
+     operation->set_max_recovery_attempts(request.edge.max_recovery_attempts);
++    operation->set_max_recovery_duration_ms(request.edge.max_recovery_duration_ms);
++    operation->set_max_recovery_travel_m(request.edge.max_recovery_travel_m);
+     operation->set_sustained_deviation_samples(request.edge.sustained_deviation_samples);
+     operation->set_recovery_cooldown_ms(request.edge.recovery_cooldown_ms);
+     operation->set_deviation_hysteresis_m(request.edge.deviation_hysteresis_m);
+@@ -3343,6 +3351,45 @@ std::expected<Subscription, core::SwarmError> Client::StartReports(
+     return Subscription(std::move(state));
+ }
+ 
++SubscriptionResult Client::StartEdgeResults(ReportSubscription subscription,
++                                            EdgeFinishedHandler on_finished,
++                                            TelemetryErrorHandler on_error,
++                                            SubscriptionEventHandler on_event) {
++    if (!on_finished)
++        return std::unexpected(MakeSubscriptionStartError(
++            SubscriptionKind::kReports, core::ErrorCode::kInvalidArgument,
++            "terminal edge callback must not be empty"));
++    struct Seen {
++        std::mutex mutex;
++        std::set<std::tuple<std::string, std::uint64_t, std::string, std::string, std::string>>
++            identities;
++    };
++    auto seen = std::make_shared<Seen>();
++    SubscriptionOptions options;
++    options.backpressure.policy = StreamBackpressurePolicy::kBlock;
++    return StartReports(
++        std::move(subscription),
++        [seen, on_finished = std::move(on_finished)](const AgentReport& report) {
++            if (!report.edge)
++                return;
++            const auto& edge_report = *report.edge;
++            const auto phase = edge_report.status.phase;
++            if (phase != edge::Phase::kArrived && phase != edge::Phase::kFailed &&
++                phase != edge::Phase::kCancelled)
++                return;
++            const auto identity = std::make_tuple(
++                edge_report.mission_id, edge_report.mission_revision, edge_report.edge_id,
++                edge_report.attempt_id, edge_report.drone_id);
++            {
++                std::lock_guard lock(seen->mutex);
++                if (!seen->identities.insert(identity).second)
++                    return;
++            }
++            on_finished(edge_report);
++        },
++        std::move(on_error), std::move(on_event), options);
++}
++
+ void Client::StopReports() {
+     CancelAndJoinStream(*impl_->reports);
+ }
+diff --git a/src/core/vecr.cpp b/src/core/vecr.cpp
+index affe4737b..d57bb179f 100644
+--- a/src/core/vecr.cpp
++++ b/src/core/vecr.cpp
+@@ -22,7 +22,7 @@ constexpr std::int64_t kArrivalEvidenceFreshnessMs = 1000;
+     return std::isfinite(p.east_m) && std::isfinite(p.north_m);
+ }
+ [[nodiscard]] bool Terminal(Phase phase) {
+-    return phase == Phase::kFulfilled || phase == Phase::kInterrupted;
++    return phase == Phase::kArrived || phase == Phase::kFailed || phase == Phase::kCancelled;
+ }
+ }  // namespace
+ 
+@@ -216,7 +216,7 @@ EdgeExecutionSupervisor::EdgeExecutionSupervisor(EdgeRequest request)
+       length_m_(Length(request_.route)),
+       traversal_(length_m_),
+       survey_(length_m_) {
+-    status_.phase = Valid() ? Phase::kMoving : Phase::kInterrupted;
++    status_.phase = Valid() ? Phase::kMoving : Phase::kFailed;
+     status_.reason = Valid() ? "awaiting observation" : "invalid edge request";
+     Recompute();
+ }
+@@ -239,6 +239,9 @@ bool EdgeExecutionSupervisor::Valid() const {
+            std::isfinite(request_.deviation_hysteresis_m) && request_.deviation_hysteresis_m >= 0 &&
+            request_.deviation_hysteresis_m < request_.corridor_half_width_m &&
+            request_.sustained_deviation_samples > 0 && request_.recovery_cooldown_ms >= 0 &&
++           request_.max_recovery_duration_ms > 0 &&
++           std::isfinite(request_.max_recovery_travel_m) &&
++           request_.max_recovery_travel_m > 0.0 &&
+            request_.timeout_ms > 0;
+ }
+ 
+@@ -253,25 +256,41 @@ void EdgeExecutionSupervisor::Recompute() {
+         length_m_ - traversal_.CoveredMeters() <= request_.maximum_missing_m + kGeometryToleranceM;
+     if (Terminal(status_.phase))
+         return;
++}
++
++void EdgeExecutionSupervisor::ConsiderEndpointFinalization(std::int64_t now_ms) {
++    if (Terminal(status_.phase) || recovery_in_progress_ || !status_.at_b_verified)
++        return;
+     const bool obligation_met =
+-        !recovery_in_progress_ && status_.at_b_verified &&
+-        (request_.obligation == Obligation::kArrival ||
+-         (request_.obligation == Obligation::kTraversal && status_.traversal_verified) ||
+-         (request_.obligation == Obligation::kSurvey && status_.survey_verified) ||
+-         (request_.obligation == Obligation::kTraversalAndSurvey && status_.traversal_verified &&
+-          status_.survey_verified));
+-    if (obligation_met) {
+-        status_.phase = Phase::kFulfilled;
+-        status_.reason = "edge obligation verified";
+-        status_.pending_reentry.reset();
++        request_.obligation == Obligation::kArrival ||
++        (request_.obligation == Obligation::kTraversal && status_.traversal_verified) ||
++        (request_.obligation == Obligation::kSurvey && status_.survey_verified) ||
++        (request_.obligation == Obligation::kTraversalAndSurvey && status_.traversal_verified &&
++         status_.survey_verified);
++    if (!obligation_met && request_.endpoint_evidence_wait_ms > 0) {
++        if (endpoint_wait_started_ms_ < 0)
++            endpoint_wait_started_ms_ = now_ms;
++        if (now_ms - endpoint_wait_started_ms_ < request_.endpoint_evidence_wait_ms) {
++            status_.reason = "stationary endpoint evidence finalization pending";
++            return;
++        }
+     }
++    status_.phase = Phase::kArrived;
++    status_.reason = obligation_met ? "arrived at B; edge obligation verified"
++                                    : "arrived at B; edge obligation remains unverified";
++    status_.pending_reentry.reset();
+ }
+ 
+ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to_navigate) {
+     if (Terminal(status_.phase) || status_.pending_reentry || recovery_in_progress_ ||
+-        !safe_to_navigate || request_.max_recovery_attempts == 0 ||
+-        status_.recovery_attempts >= request_.max_recovery_attempts ||
+-        (last_recovery_ms_ >= 0 && now_ms - last_recovery_ms_ < request_.recovery_cooldown_ms))
++        deviation_samples_ < request_.sustained_deviation_samples)
++        return;
++    if (!safe_to_navigate)
++        return static_cast<void>(Interrupt("qualified deviation cannot be recovered safely"));
++    if (request_.max_recovery_attempts == 0 ||
++        status_.recovery_attempts >= request_.max_recovery_attempts)
++        return static_cast<void>(Interrupt("in-flight recovery attempt budget exhausted"));
++    if (last_recovery_ms_ >= 0 && now_ms - last_recovery_ms_ < request_.recovery_cooldown_ms)
+         return;
+     auto gaps =
+         request_.obligation == Obligation::kTraversal ? traversal_.Missing() : survey_.Missing();
+@@ -281,31 +300,20 @@ void EdgeExecutionSupervisor::ConsiderRecovery(std::int64_t now_ms, bool safe_to
+         std::sort(gaps.begin(), gaps.end(),
+                   [](Interval a, Interval b) { return a.begin_m < b.begin_m; });
+     }
+-    const bool departed = deviation_samples_ >= request_.sustained_deviation_samples;
+-    if (!departed && (request_.obligation == Obligation::kArrival || gaps.empty()))
+-        return;
+     // A future unsurveyed tail is not a missed segment. During departure,
+     // re-enter no farther than current progress, even when a wide camera has
+     // already covered the strip. The research baseline shares this trigger.
+     [[maybe_unused]] const double progress =
+         previous_projection_ ? previous_projection_->arclength_m : 0.0;
+     [[maybe_unused]] const double gap_start = gaps.empty() ? progress : gaps.front().begin_m;
+-    if (!departed && status_.at_b_verified && request_.endpoint_evidence_wait_ms > 0) {
+-        if (endpoint_wait_started_ms_ < 0)
+-            endpoint_wait_started_ms_ = now_ms;
+-        if (now_ms - endpoint_wait_started_ms_ < request_.endpoint_evidence_wait_ms) {
+-            status_.reason = "stationary endpoint evidence wait; coverage still unverified";
+-            return;
+-        }
+-    }
+     // Only the research baseline executable defines this compile-time switch.
+     // It changes the target alone; verifier, waiting, dynamics and safety are shared.
+ #if defined(SWARMKIT_RESEARCH_FULL_RESTART)
+     const double s = 0.0;
+     status_.reason = "research baseline: full-edge restart";
+ #else
+-    const double s = std::max(0.0, departed ? std::min(progress, gap_start) : gap_start);
+-    status_.reason = "earliest-gap recovery proposed";
++    const double s = std::max(0.0, std::min(progress, gap_start));
++    status_.reason = "qualified in-flight deviation: local re-entry proposed";
+ #endif
+     status_.pending_reentry = PointAt(request_.route, s);
+     status_.phase = Phase::kRecovering;
+@@ -320,8 +328,11 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+         started_ms_ = observation.monotonic_ms;
+     latest_position_ms_ = observation.monotonic_ms;
+     status_.last_position_monotonic_ms = observation.monotonic_ms;
++    if (recovery_in_progress_ && recovery_started_ms_ >= 0 &&
++        observation.monotonic_ms - recovery_started_ms_ > request_.max_recovery_duration_ms)
++        return Interrupt("in-flight recovery duration budget exhausted");
+     if (observation.monotonic_ms - started_ms_ > request_.timeout_ms) {
+-        status_.phase = Phase::kInterrupted;
++        status_.phase = Phase::kFailed;
+         status_.reason = "edge timeout";
+         status_.pending_reentry.reset();
+         return Snapshot();
+@@ -343,8 +354,11 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+         (observation.vertical_error_hard_bound_m &&
+          (!std::isfinite(*observation.vertical_error_hard_bound_m) ||
+           *observation.vertical_error_hard_bound_m < 0.0))) {
++        if (recovery_in_progress_)
++            return Interrupt("recovery localization unavailable");
+         previous_.reset();
+         previous_projection_.reset();
++        status_.projected_progress_m.reset();
+         status_.at_b_verified = false;
+         arrival_candidate_ms_ = -1;
+         deviation_samples_ = 0;
+@@ -356,8 +370,11 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+     }
+     const auto projection = Project(request_.route, observation.position);
+     if (!projection || projection->ambiguous) {
++        if (recovery_in_progress_)
++            return Interrupt("recovery route projection unavailable");
+         previous_.reset();
+         previous_projection_.reset();
++        status_.projected_progress_m.reset();
+         status_.at_b_verified = false;
+         arrival_candidate_ms_ = -1;
+         status_.phase = Phase::kUnknown;
+@@ -367,6 +384,17 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+         return Snapshot();
+     }
+     const double endpoint_distance = Distance(observation.position, request_.route.points.back());
++    if (recovery_in_progress_ && previous_ && previous_->horizontal_error_hard_bound_m &&
++        observation.horizontal_error_hard_bound_m) {
++        // Upper bound on commanded re-entry travel from consecutive bounded poses.
++        status_.recovery_travel_bound_m +=
++            Distance(previous_->position, observation.position) +
++            *previous_->horizontal_error_hard_bound_m +
++            *observation.horizontal_error_hard_bound_m;
++        if (status_.recovery_travel_bound_m > request_.max_recovery_travel_m)
++            return Interrupt("in-flight recovery travel budget exhausted");
++    }
++    status_.projected_progress_m = projection->arclength_m;
+     last_valid_position_ms_ = observation.monotonic_ms;
+     const bool qualified_at_b =
+         observation.horizontal_error_hard_bound_m && observation.speed_mps &&
+@@ -442,8 +470,9 @@ Status EdgeExecutionSupervisor::ObservePosition(const PositionObservation& obser
+                              : "following edge; obligation verification pending";
+     }
+     Recompute();
+-    if (deviation_samples_ >= request_.sustained_deviation_samples ||
+-        (status_.at_b_verified && status_.phase != Phase::kFulfilled)) {
++    if (status_.at_b_verified) {
++        ConsiderEndpointFinalization(observation.monotonic_ms);
++    } else if (deviation_samples_ >= request_.sustained_deviation_samples) {
+         ConsiderRecovery(observation.monotonic_ms, can_recover_);
+     }
+     return Snapshot();
+@@ -468,6 +497,8 @@ Status EdgeExecutionSupervisor::ObserveCapture(const CaptureEvidence& evidence)
+     if (survey_.Add(evidence.guaranteed_full_strip_interval)) {
+         captures_.emplace(evidence.capture_id, evidence);
+         Recompute();
++        if (status_.at_b_verified)
++            ConsiderEndpointFinalization(latest_position_ms_);
+     }
+     return Snapshot();
+ }
+@@ -485,6 +516,9 @@ Status EdgeExecutionSupervisor::RecoveryDispatched(bool accepted, std::int64_t m
+     arrival_candidate_ms_ = -1;
+     endpoint_wait_started_ms_ = -1;
+     recovery_in_progress_ = true;
++    recovery_started_ms_ = monotonic_ms;
++    previous_.reset();
++    previous_projection_.reset();
+     status_.phase = Phase::kRecovering;
+     status_.reason = "re-entry command accepted; physical outcome pending";
+     return Snapshot();
+@@ -494,6 +528,7 @@ Status EdgeExecutionSupervisor::RecoveryReentryCompleted(std::int64_t monotonic_
+     if (Terminal(status_.phase) || !recovery_in_progress_ || monotonic_ms < last_recovery_ms_)
+         return Snapshot();
+     recovery_in_progress_ = false;
++    recovery_started_ms_ = -1;
+     last_recovery_ms_ = monotonic_ms;  // Cooldown begins after physical completion.
+     deviation_samples_ = 0;
+     arrival_candidate_ms_ = -1;
+@@ -505,7 +540,16 @@ Status EdgeExecutionSupervisor::RecoveryReentryCompleted(std::int64_t monotonic_
+ 
+ Status EdgeExecutionSupervisor::Interrupt(std::string reason) {
+     if (!Terminal(status_.phase)) {
+-        status_.phase = Phase::kInterrupted;
++        status_.phase = Phase::kFailed;
++        status_.reason = std::move(reason);
++        status_.pending_reentry.reset();
++    }
++    return Snapshot();
++}
++
++Status EdgeExecutionSupervisor::Cancel(std::string reason) {
++    if (!Terminal(status_.phase)) {
++        status_.phase = Phase::kCancelled;
+         status_.reason = std::move(reason);
+         status_.pending_reentry.reset();
+     }
+diff --git a/tests/test_client_integration.cpp b/tests/test_client_integration.cpp
+index 4a4402012..a2c054066 100644
+--- a/tests/test_client_integration.cpp
++++ b/tests/test_client_integration.cpp
+@@ -1806,6 +1806,15 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
+     harness.Backend().SetCapabilities(capabilities);
+     Client client = MakeClient(harness.Address());
+ 
++    std::mutex terminal_mutex;
++    std::vector<AgentReport::EdgeReport> terminal_results;
++    auto terminal_stream = client.StartEdgeResults(
++        {.drone_id = "drone-1"}, [&](const AgentReport::EdgeReport& result) {
++            std::lock_guard lock(terminal_mutex);
++            terminal_results.push_back(result);
++        });
++    REQUIRE(terminal_stream.has_value());
++
+     EdgeOperationRequest request;
+     request.edge.mission_id = "mission-1";
+     request.edge.mission_revision = 1;
+@@ -1814,6 +1823,8 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
+     request.edge.drone_id = "drone-1";
+     request.edge.route.points = {{0, 0}, {100, 0}};
+     request.edge.obligation = edge::Obligation::kSurvey;
++    request.edge.maximum_capture_age_ms = 2000;
++    request.edge.endpoint_evidence_wait_ms = 1500;
+     request.edge.corridor_half_width_m = 4;
+     request.edge.arrival_radius_m = 2;
+     request.edge.arrival_max_speed_mps = 0.5;
+@@ -1941,7 +1952,7 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
+     const EdgeResult partial = client.GetEdgeStatus("drone-1", "attempt-1");
+     REQUIRE(partial.status);
+     CHECK_FALSE(partial.status->status.survey_verified);
+-    CHECK(partial.status->status.phase != edge::Phase::kFulfilled);
++    CHECK(partial.status->status.phase != edge::Phase::kArrived);
+     REQUIRE(partial.status->status.survey_missing.size() == 1);
+     CHECK(std::abs(partial.status->status.survey_missing.front().begin_m - 40) < 1e-6);
+     CHECK(std::abs(partial.status->status.survey_missing.front().end_m - 70) < 1e-6);
+@@ -1956,16 +1967,32 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
+         [&] {
+             harness.Backend().EmitTelemetry("drone-1", frame);
+             const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
+-            return status.status && status.status->status.phase == edge::Phase::kFulfilled;
++            return status.status && status.status->status.phase == edge::Phase::kArrived;
+         },
+         kWaitTimeout, std::chrono::milliseconds{10}));
++    REQUIRE(testsupport::WaitUntil(
++        [&] {
++            std::lock_guard lock(terminal_mutex);
++            return terminal_results.size() == 1;
++        },
++        kWaitTimeout));
++    {
++        std::lock_guard lock(terminal_mutex);
++        CHECK(terminal_results.front().status.phase == edge::Phase::kArrived);
++        CHECK(terminal_results.front().status.survey_verified);
++        CHECK(terminal_results.front().attempt_id == "attempt-1");
++    }
+     CHECK(client.ExecuteEdge(request).ok);
++    {
++        std::lock_guard lock(terminal_mutex);
++        CHECK(terminal_results.size() == 1);
++    }
+     CHECK(harness.Backend().ExecuteCallCount() == 1);
+     request.edge.attempt_id = "attempt-2";
+     REQUIRE(client.ExecuteEdge(request).ok);
+     const EdgeResult earlier = client.GetEdgeStatus("drone-1", "attempt-1");
+     REQUIRE(earlier.status);
+-    CHECK(earlier.status->status.phase == edge::Phase::kFulfilled);
++    CHECK(earlier.status->status.phase == edge::Phase::kArrived);
+     CHECK_FALSE(client.GetEdgeStatus("drone-1", "old-attempt").ok);
+     frame.validity.mode = true;
+     frame.mode = "SIM_RTL";
+@@ -1973,7 +2000,7 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
+         [&] {
+             harness.Backend().EmitTelemetry("drone-1", frame);
+             const auto status = client.GetEdgeStatus("drone-1", "attempt-2");
+-            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
++            return status.status && status.status->status.phase == edge::Phase::kFailed;
+         },
+         kWaitTimeout, std::chrono::milliseconds{10}));
+     CHECK(harness.Backend().ExecuteCallCount() == 2);
+@@ -2069,7 +2096,7 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
+             [&] {
+                 harness.Backend().EmitTelemetry("drone-1", frame);
+                 const auto status = client.GetEdgeStatus("drone-1", "terminal-1");
+-                return status.status && status.status->status.phase == edge::Phase::kInterrupted;
++                return status.status && status.status->status.phase == edge::Phase::kFailed;
+             },
+             kWaitTimeout));
+     }
+@@ -2079,7 +2106,7 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
+         Client client = MakeClient(harness.Address());
+         const auto terminal = client.GetEdgeStatus("drone-1", "terminal-1");
+         REQUIRE(terminal.status);
+-        CHECK(terminal.status->status.phase == edge::Phase::kInterrupted);
++        CHECK(terminal.status->status.phase == edge::Phase::kFailed);
+         CHECK(client.ExecuteEdge(request).ok);
+         CHECK(harness.Backend().ExecuteCallCount() == 0);
+     }
+@@ -2105,7 +2132,7 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
+         Client client = MakeClient(harness.Address());
+         const auto rejected = client.GetEdgeStatus("drone-1", "rejected-1");
+         REQUIRE(rejected.status);
+-        CHECK(rejected.status->status.phase == edge::Phase::kInterrupted);
++        CHECK(rejected.status->status.phase == edge::Phase::kFailed);
+         CHECK_FALSE(client.ExecuteEdge(request).ok);
+         CHECK(harness.Backend().ExecuteCallCount() == 0);
+     }
+@@ -2262,8 +2289,9 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
+     REQUIRE(left_capture.ok);
+     REQUIRE(capture("right", 70, 100).ok);
+     const auto endpoint = edge::LocalToWgs84(40, 44, {100, 0});
+-    frame.lat_deg = endpoint.lat_deg;
+-    frame.lon_deg = endpoint.lon_deg;
++    const auto deviation = edge::LocalToWgs84(40, 44, {50, 6});
++    frame.lat_deg = deviation.lat_deg;
++    frame.lon_deg = deviation.lon_deg;
+     REQUIRE(testsupport::WaitUntil(
+         [&] {
+             harness.Backend().EmitTelemetry("drone-1", frame);
+@@ -2286,7 +2314,7 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
+         [&] {
+             harness.Backend().EmitTelemetry("drone-1", frame);
+             const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
+-            return status.status && status.status->status.phase == edge::Phase::kFulfilled;
++            return status.status && status.status->status.phase == edge::Phase::kArrived;
+         },
+         kWaitTimeout, std::chrono::milliseconds{10}));
+     CHECK(harness.Backend().ExecuteCallCount() == 3);
+@@ -2297,7 +2325,7 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
+         [&] {
+             harness.Backend().EmitTelemetry("drone-1", frame);
+             const auto status = client.GetEdgeStatus("drone-1", "battery-attempt");
+-            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
++            return status.status && status.status->status.phase == edge::Phase::kFailed;
+         },
+         kWaitTimeout, std::chrono::milliseconds{10}));
+     CHECK(harness.Backend().ExecuteCallCount() == 4);
+@@ -2366,7 +2394,7 @@ TEST_CASE("VECR arrival executes through SDK agent and physical SimBackend truth
+         REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
+         std::this_thread::sleep_for(std::chrono::milliseconds{2});
+         const auto observed = client.GetEdgeStatus("drone-1", "sim-arrival-1");
+-        fulfilled = observed.status && observed.status->status.phase == edge::Phase::kFulfilled;
++        fulfilled = observed.status && observed.status->status.phase == edge::Phase::kArrived;
+     }
+     CHECK(fulfilled);
+     const auto final_truth = control->Truth("drone-1");
+@@ -2405,7 +2433,7 @@ TEST_CASE("VECR never publishes fulfilled after terminal journal fsync failure",
+     auto providers = agent::internal::RuntimeProviders::System();
+     providers.monotonic_time_ns = [clock_ns] { return clock_ns->load(); };
+     providers.journal_fault_injector = [](const auto& entry) {
+-        return entry.report.phase() == swarmkit::v1::EDGE_FULFILLED
++        return entry.report.phase() == swarmkit::v1::EDGE_ARRIVED
+                    ? agent::internal::EdgeAttemptJournal::Fault::kFsync
+                    : agent::internal::EdgeAttemptJournal::Fault::kNone;
+     };
+@@ -2451,7 +2479,7 @@ TEST_CASE("VECR never publishes fulfilled after terminal journal fsync failure",
+     {
+         std::lock_guard<std::mutex> lock(report_mutex);
+         CHECK_FALSE(std::ranges::any_of(reports, [](const AgentReport& report) {
+-            return report.edge && report.edge->status.phase == edge::Phase::kFulfilled;
++            return report.edge && report.edge->status.phase == edge::Phase::kArrived;
+         }));
+     }
+     CHECK_FALSE(client.GetEdgeStatus("drone-1", "terminal-fsync-fault").ok);
+@@ -2559,11 +2587,11 @@ TEST_CASE("VECR restart gates a new attempt until simulator hold is confirmed",
+         INFO(reconciliation.message);
+         REQUIRE(reconciliation.ok);
+         REQUIRE(reconciliation.status);
+-        CHECK(reconciliation.status->status.phase == edge::Phase::kInterrupted);
++        CHECK(reconciliation.status->status.phase == edge::Phase::kFailed);
+         CHECK(backend->GetHealth().mode == "SIM_HOLD");
+         const auto reconciled = client.GetEdgeStatus("drone-1", "before-restart");
+         REQUIRE(reconciled.status);
+-        CHECK(reconciled.status->status.phase == edge::Phase::kInterrupted);
++        CHECK(reconciled.status->status.phase == edge::Phase::kFailed);
+         CHECK(client.ExecuteEdge(request).ok);
+     }
+     std::filesystem::remove(journal_path);
+@@ -2669,7 +2697,7 @@ TEST_CASE("VECR cancellation distinguishes confirmed hold from unresolved moveme
+             CHECK_FALSE(client.ExecuteEdge(request).ok);
+         } else {
+             CHECK(cancelled.ok);
+-            CHECK(cancelled.status->status.phase == edge::Phase::kInterrupted);
++            CHECK(cancelled.status->status.phase == edge::Phase::kCancelled);
+             CHECK(after->mode == "SIM_HOLD");
+             const auto repeated = client.CancelEdge(started.status->execution_handle);
+             CHECK(repeated.ok);
+@@ -2679,9 +2707,9 @@ TEST_CASE("VECR cancellation distinguishes confirmed hold from unresolved moveme
+     }
+ }
+ 
+-TEST_CASE("VECR agent-backed camera repair records success and physical failure",
++TEST_CASE("VECR agent-backed camera gap terminates at B without local repair",
+           "[client][integration][vecr][sim-backend]") {
+-    for (const bool inject_failure : {false, true}) {
++    for (const bool inject_failure : {false}) {
+         agent::SimBackendConfig sim_config;
+         sim_config.clock_mode = agent::SimulationClockMode::kManual;
+         auto simulator = agent::MakeSimBackend(sim_config);
+@@ -2792,7 +2820,7 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
+                     capture_accepted = accepted_after_pose_sync;
+                     INFO("tick=" << tick << " east=" << truth->east_m
+                                  << " message=" << submitted.message);
+-                    if (observed.status->status.phase != edge::Phase::kFulfilled)
++                    if (observed.status->status.phase != edge::Phase::kArrived)
+                         REQUIRE(submitted.ok);
+                     for (std::size_t cell = 0; cell < truth_covered.size(); ++cell) {
+                         const double center = (static_cast<double>(cell) + 0.5) * 0.25;
+@@ -2802,7 +2830,7 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
+                 }
+             }
+             const auto current = client.GetEdgeStatus("drone-1", "sim-gap-1");
+-            fulfilled = current.status && current.status->status.phase == edge::Phase::kFulfilled;
++            fulfilled = current.status && current.status->status.phase == edge::Phase::kArrived;
+             if (trace && current.status) {
+                 trace << tick << ',' << truth->simulation_time_ms << ',' << truth->east_m << ','
+                       << truth->north_m << ',' << truth->up_m << ',' << physical_distance_m << ','
+@@ -2812,21 +2840,23 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
+                       << current.status->status.recovery_attempts << ',' << capture_emitted << ','
+                       << capture_accepted << ',' << failure_injected << '\n';
+             }
+-            if (current.status && current.status->status.phase == edge::Phase::kInterrupted)
++            if (current.status && current.status->status.phase == edge::Phase::kFailed)
+                 break;
+         }
+-        CHECK(saw_recovery);
++        CHECK_FALSE(saw_recovery);
+         const auto final = client.GetEdgeStatus("drone-1", "sim-gap-1");
+         REQUIRE(final.status);
+         if (inject_failure) {
+             CHECK(failure_injected);
+             CHECK_FALSE(fulfilled);
+-            CHECK(final.status->status.phase == edge::Phase::kInterrupted);
++            CHECK(final.status->status.phase == edge::Phase::kFailed);
+             CHECK(physical_distance_m > 19.5);
+         } else {
+             CHECK(fulfilled);
+-            CHECK(std::ranges::all_of(truth_covered, [](bool cell) { return cell; }));
+-            CHECK(physical_distance_m > 20.0);
++            CHECK_FALSE(std::ranges::all_of(truth_covered, [](bool cell) { return cell; }));
++            CHECK_FALSE(final.status->status.survey_verified);
++            CHECK(final.status->status.survey_missing.size() >= 1);
++            CHECK(physical_distance_m >= 19.5);
+         }
+         CHECK(physical_distance_m < 60.0);
+     }
+@@ -3248,7 +3278,7 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
+     emit(25, 4500, 6);
+     const auto stopped = client.GetEdgeStatus("drone-1", req.edge.attempt_id);
+     REQUIRE(stopped.status);
+-    CHECK(stopped.status->status.phase == edge::Phase::kInterrupted);
++    CHECK(stopped.status->status.phase == edge::Phase::kFailed);
+     CHECK(harness.Backend().ExecuteCallCount() ==
+           1);  // Native MAVLink not enabled by simulator flag.
+ }
+diff --git a/tests/test_edge_attempt_journal.cpp b/tests/test_edge_attempt_journal.cpp
+index 61b206564..a117db838 100644
+--- a/tests/test_edge_attempt_journal.cpp
++++ b/tests/test_edge_attempt_journal.cpp
+@@ -30,7 +30,7 @@ namespace {
+     entry.report.set_reason("recorded outcome");
+     entry.dispatch_accepted = accepted;
+     entry.physical_navigation_unresolved =
+-        phase != swarmkit::v1::EDGE_FULFILLED && phase != swarmkit::v1::EDGE_INTERRUPTED;
++        phase != swarmkit::v1::EDGE_ARRIVED && phase != swarmkit::v1::EDGE_FAILED;
+     return entry;
+ }
+ 
+@@ -55,7 +55,7 @@ TEST_CASE("VECR attempt journal preserves terminal outcome and unknown restart s
+         CHECK_FALSE(unknown->dispatch_accepted);
+         CHECK(unknown->report.reason().find("agent restarted") != std::string::npos);
+         REQUIRE(journal.Unresolved("drone-1"));
+-        REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
++        REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_ARRIVED, true)).IsOk());
+         CHECK_FALSE(journal.Unresolved("drone-1"));
+     }
+     {
+@@ -63,14 +63,14 @@ TEST_CASE("VECR attempt journal preserves terminal outcome and unknown restart s
+         REQUIRE(journal.Ready().IsOk());
+         const auto terminal = journal.Get("drone-1", "attempt-1");
+         REQUIRE(terminal);
+-        CHECK(terminal->report.phase() == swarmkit::v1::EDGE_FULFILLED);
++        CHECK(terminal->report.phase() == swarmkit::v1::EDGE_ARRIVED);
+         CHECK(terminal->dispatch_accepted);
+         CHECK_FALSE(journal.Unresolved("drone-1"));
+-        CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_INTERRUPTED, true)).IsOk());
++        CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FAILED, true)).IsOk());
+         const auto retained = journal.Get("drone-1", "attempt-1");
+         REQUIRE(retained);
+-        CHECK(retained->report.phase() == swarmkit::v1::EDGE_FULFILLED);
+-        auto conflicting = Record(swarmkit::v1::EDGE_FULFILLED, true);
++        CHECK(retained->report.phase() == swarmkit::v1::EDGE_ARRIVED);
++        auto conflicting = Record(swarmkit::v1::EDGE_ARRIVED, true);
+         conflicting.operation.set_edge_id("different-edge");
+         CHECK_FALSE(journal.Append(conflicting).IsOk());
+     }
+@@ -101,14 +101,14 @@ TEST_CASE("VECR journal storage faults never acknowledge a terminal commit", "[v
+         const auto path = JournalPath("write-fault");
+         {
+             Journal journal(path.string(), [fault](const Journal::Entry& entry) {
+-                return entry.report.phase() == swarmkit::v1::EDGE_FULFILLED ? fault
++                return entry.report.phase() == swarmkit::v1::EDGE_ARRIVED ? fault
+                                                                             : Journal::Fault::kNone;
+             });
+             REQUIRE(journal.Ready().IsOk());
+             REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_MOVING, true)).IsOk());
+-            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
++            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_ARRIVED, true)).IsOk());
+             CHECK_FALSE(journal.Ready().IsOk());
+-            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
++            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_ARRIVED, true)).IsOk());
+         }
+         {
+             Journal restarted(path.string());
+@@ -119,7 +119,7 @@ TEST_CASE("VECR journal storage faults never acknowledge a terminal commit", "[v
+                 const auto recovered = restarted.Get("drone-1", "attempt-1");
+                 REQUIRE(recovered);
+                 CHECK(recovered->report.phase() == (fault == Journal::Fault::kFsync
+-                                                        ? swarmkit::v1::EDGE_FULFILLED
++                                                        ? swarmkit::v1::EDGE_ARRIVED
+                                                         : swarmkit::v1::EDGE_UNKNOWN));
+             }
+         }
+@@ -131,7 +131,7 @@ TEST_CASE("Interrupted obligation retains an unresolved physical-navigation gate
+           "[vecr][journal]") {
+     using Journal = swarmkit::agent::internal::EdgeAttemptJournal;
+     const auto path = JournalPath("interrupted-navigation");
+-    auto interrupted = Record(swarmkit::v1::EDGE_INTERRUPTED, true);
++    auto interrupted = Record(swarmkit::v1::EDGE_FAILED, true);
+     interrupted.physical_navigation_unresolved = true;
+     {
+         Journal journal(path.string());
+diff --git a/tests/test_vecr.cpp b/tests/test_vecr.cpp
+index 3be8ce2b0..d3686a195 100644
+--- a/tests/test_vecr.cpp
++++ b/tests/test_vecr.cpp
+@@ -80,9 +80,8 @@ TEST_CASE("VECR arrival does not imply surveyed terrain", "[vecr]") {
+     const auto status = supervisor.ObservePosition(Position(100, 2300, 0, true));
+     CHECK(status.at_b_verified);
+     CHECK_FALSE(status.survey_verified);
+-    CHECK(status.phase != Phase::kFulfilled);
+-    REQUIRE(status.pending_reentry.has_value());
+-    CHECK(status.pending_reentry->east_m == 40);
++    CHECK(status.phase == Phase::kArrived);
++    CHECK_FALSE(status.pending_reentry.has_value());
+     CHECK(status.survey_prefix_m == 40);
+     REQUIRE(status.survey_missing.size() == 1);
+     CHECK(status.survey_missing.front().begin_m == 40);
+@@ -104,10 +103,10 @@ TEST_CASE("VECR retains accepted off-corridor survey and enforces attempt identi
+     const auto accepted = supervisor.ObserveCapture(Capture(0, 100, 2000, "valid"));
+     CHECK(accepted.survey_verified);
+     CHECK_FALSE(accepted.at_b_verified);
+-    CHECK(accepted.phase != Phase::kFulfilled);
++    CHECK(accepted.phase != Phase::kArrived);
+     static_cast<void>(supervisor.ObservePosition(Position(100, 3000, 0, true)));
+     const auto done = supervisor.ObservePosition(Position(100, 3300, 0, true));
+-    CHECK(done.phase == Phase::kFulfilled);
++    CHECK(done.phase == Phase::kArrived);
+     CHECK_FALSE(done.traversal_verified);
+ }
+ 
+@@ -132,7 +131,7 @@ TEST_CASE("VECR sparse samples cannot prove whole interval traversal", "[vecr]")
+     const auto status = supervisor.ObservePosition(Position(100, 11300, 0, true));
+     CHECK(status.at_b_verified);
+     CHECK_FALSE(status.traversal_verified);
+-    CHECK(status.phase != Phase::kFulfilled);
++    CHECK(status.phase == Phase::kArrived);
+ }
+ 
+ TEST_CASE("VECR rejects kinematically impossible traversal samples", "[vecr]") {
+@@ -165,7 +164,7 @@ TEST_CASE("Traversal credit excludes uncertain along-route endpoints", "[vecr][e
+     // never traverses 0..2 or 8..10. Only 2..8 is guaranteed by these samples.
+     CHECK(status.at_b_verified);
+     CHECK_FALSE(status.traversal_verified);
+-    CHECK(status.phase != Phase::kFulfilled);
++    CHECK(status.phase == Phase::kArrived);
+     REQUIRE(status.traversal_missing.size() == 2);
+     CHECK(status.traversal_missing[0] == Interval{0, 2});
+     CHECK(status.traversal_missing[1] == Interval{8, 10});
+@@ -192,17 +191,18 @@ TEST_CASE("VECR recovery is bounded and failsafe wins", "[vecr]") {
+     req.max_recovery_attempts = 1;
+     EdgeExecutionSupervisor supervisor(req);
+     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+-    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+-    auto proposed = supervisor.ObservePosition(Position(100, 2300, 0, true));
++    static_cast<void>(supervisor.ObservePosition(Position(50, 2000, 6)));
++    static_cast<void>(supervisor.ObservePosition(Position(51, 2100, 6)));
++    auto proposed = supervisor.ObservePosition(Position(52, 2200, 6));
+     REQUIRE(proposed.pending_reentry);
+-    static_cast<void>(supervisor.RecoveryDispatched(true, 2300));
++    static_cast<void>(supervisor.RecoveryDispatched(true, 2200));
+     CHECK(supervisor.Snapshot().recovery_attempts == 1);
+-    proposed = supervisor.ObservePosition(Position(100, 4000, 0, true));
++    proposed = supervisor.ObservePosition(Position(40, 4000, 0, true));
+     CHECK_FALSE(proposed.pending_reentry);
+-    auto fail = Position(100, 5000, 0, true);
++    auto fail = Position(40, 5000, 0, true);
+     fail.failsafe = true;
+-    CHECK(supervisor.ObservePosition(fail).phase == Phase::kInterrupted);
+-    CHECK(supervisor.ObserveCapture(Capture(0, 100, 5000, "late")).phase == Phase::kInterrupted);
++    CHECK(supervisor.ObservePosition(fail).phase == Phase::kFailed);
++    CHECK(supervisor.ObserveCapture(Capture(0, 100, 5000, "late")).phase == Phase::kFailed);
+ }
+ 
+ TEST_CASE("VECR rejects degenerate route and resolves polyline projection", "[vecr]") {
+@@ -275,7 +275,7 @@ TEST_CASE("VECR stop arrival requires bounded three-dimensional dwell", "[vecr]"
+     CHECK_FALSE(supervisor.ObservePosition(jump).at_b_verified);
+     CHECK_FALSE(supervisor.ObservePosition(Position(0, 3000)).at_b_verified);
+     CHECK_FALSE(supervisor.ObservePosition(Position(100, 3200, 0, true)).at_b_verified);
+-    CHECK(supervisor.ObservePosition(Position(100, 3500, 0, true)).phase == Phase::kFulfilled);
++    CHECK(supervisor.ObservePosition(Position(100, 3500, 0, true)).phase == Phase::kArrived);
+ }
+ 
+ TEST_CASE("Camera footprints beyond an endpoint are not moved onto the route",
+@@ -317,13 +317,12 @@ TEST_CASE("VECR late survey cannot fulfill from an old arrival", "[vecr]") {
+     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
+     static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
+     CHECK(supervisor.ObservePosition(Position(100, 2300, 0, true)).at_b_verified);
+-    CHECK_FALSE(supervisor.ObservePosition(Position(0, 2400)).at_b_verified);
++    CHECK(supervisor.Snapshot().phase == Phase::kArrived);
++    CHECK_FALSE(supervisor.ObservePosition(Position(0, 2400)).survey_verified);
+     const auto away = supervisor.ObserveCapture(Capture(0, 100, 2500, "late-away"));
+-    CHECK(away.survey_verified);
+-    CHECK(away.phase != Phase::kFulfilled);
+-    CHECK_FALSE(away.at_b_verified);
+-    static_cast<void>(supervisor.ObservePosition(Position(100, 3000, 0, true)));
+-    CHECK(supervisor.ObservePosition(Position(100, 3300, 0, true)).phase == Phase::kFulfilled);
++    CHECK_FALSE(away.survey_verified);
++    CHECK(away.phase == Phase::kArrived);
++    CHECK(away.at_b_verified);
+ }
+ 
+ TEST_CASE("VECR stale position after dropout cannot restore arrival", "[vecr]") {
+@@ -336,7 +335,7 @@ TEST_CASE("VECR stale position after dropout cannot restore arrival", "[vecr]")
+     CHECK_FALSE(supervisor.ObservePosition(Position(100, 2100, 0, true)).at_b_verified);
+     const auto late = supervisor.ObserveCapture(Capture(0, 100, 4000, "late"));
+     CHECK_FALSE(late.at_b_verified);
+-    CHECK(late.phase != Phase::kFulfilled);
++    CHECK(late.phase != Phase::kArrived);
+ }
+ 
+ TEST_CASE("VECR does not credit a polyline traversal from endpoint samples", "[vecr]") {
+@@ -350,11 +349,14 @@ TEST_CASE("VECR does not credit a polyline traversal from endpoint samples", "[v
+     const auto state = supervisor.ObservePosition(Position(100, 2300, 0, true));
+     CHECK(state.at_b_verified);
+     CHECK_FALSE(state.traversal_verified);
+-    CHECK(state.phase != Phase::kFulfilled);
++    CHECK(state.phase == Phase::kArrived);
+ }
+ 
+ TEST_CASE("VECR combined obligation requires both bounded traversal and survey", "[vecr]") {
+-    EdgeExecutionSupervisor supervisor(Request(Obligation::kTraversalAndSurvey));
++    auto req = Request(Obligation::kTraversalAndSurvey);
++    req.maximum_capture_age_ms = 2000;
++    req.endpoint_evidence_wait_ms = 1000;
++    EdgeExecutionSupervisor supervisor(req);
+     for (int x = 0; x <= 100; ++x) {
+         static_cast<void>(supervisor.ObservePosition(Position(x, 1000 + x * 1000, 0, x == 100)));
+     }
+@@ -362,10 +364,10 @@ TEST_CASE("VECR combined obligation requires both bounded traversal and survey",
+     CHECK(at_b.at_b_verified);
+     CHECK(at_b.traversal_verified);
+     CHECK_FALSE(at_b.survey_verified);
+-    CHECK(at_b.phase != Phase::kFulfilled);
++    CHECK(at_b.phase != Phase::kArrived);
+     const auto done = supervisor.ObserveCapture(Capture(0, 100, 101400, "full-strip"));
+     CHECK(done.survey_verified);
+-    CHECK(done.phase == Phase::kFulfilled);
++    CHECK(done.phase == Phase::kArrived);
+ }
+ 
+ TEST_CASE("VECR low battery interrupts before any recovery proposal", "[vecr]") {
+@@ -374,7 +376,7 @@ TEST_CASE("VECR low battery interrupts before any recovery proposal", "[vecr]")
+     auto low = Position(100, 2000, 0, true);
+     low.battery_percent = 5.0;
+     const auto status = supervisor.ObservePosition(low);
+-    CHECK(status.phase == Phase::kInterrupted);
++    CHECK(status.phase == Phase::kFailed);
+     CHECK_FALSE(status.pending_reentry);
+     CHECK(status.recovery_attempts == 0);
+ }
+@@ -396,7 +398,8 @@ TEST_CASE("VECR declines recovery from unbounded navigation position", "[vecr]")
+     at_b.horizontal_error_hard_bound_m = 0;
+     CHECK_FALSE(supervisor.ObservePosition(at_b).pending_reentry);
+     at_b.monotonic_ms = 3200;
+-    CHECK(supervisor.ObservePosition(at_b).pending_reentry.has_value());
++    CHECK(supervisor.ObservePosition(at_b).phase == Phase::kArrived);
++    CHECK_FALSE(supervisor.Snapshot().pending_reentry);
+ }
+ 
+ TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another repair",
+@@ -424,7 +427,7 @@ TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another rep
+     CHECK(supervisor.ObservePosition(Position(100, 5300, 0, true)).phase == Phase::kRecovering);
+     CHECK(supervisor.RecoveryReentryCompleted(5300).phase == Phase::kMoving);
+     static_cast<void>(supervisor.ObservePosition(Position(100, 5400, 0, true)));
+-    CHECK(supervisor.ObservePosition(Position(100, 5600, 0, true)).phase == Phase::kFulfilled);
++    CHECK(supervisor.ObservePosition(Position(100, 5600, 0, true)).phase == Phase::kArrived);
+ }
+ 
+ TEST_CASE("Deviation hysteresis and unknown bounds cannot manufacture consecutive departures",
+@@ -478,6 +481,41 @@ TEST_CASE("VECR recovery retains an earlier gap during sustained departure", "[v
+     CHECK_FALSE(status.survey_verified);
+ }
+ 
++TEST_CASE("In-flight recovery has explicit duration and travel limits", "[vecr][budget]") {
++    auto request = Request();
++    request.sustained_deviation_samples = 1;
++    request.max_recovery_duration_ms = 500;
++    request.max_recovery_travel_m = 1;
++    SECTION("duration") {
++        EdgeExecutionSupervisor supervisor(request);
++        REQUIRE(supervisor.ObservePosition(Position(50, 1000, 6)).pending_reentry);
++        CHECK(supervisor.RecoveryDispatched(true, 1000).phase == Phase::kRecovering);
++        CHECK(supervisor.ObservePosition(Position(50, 1300, 6)).phase == Phase::kRecovering);
++        const auto failed = supervisor.ObservePosition(Position(50, 1600, 6));
++        CHECK(failed.phase == Phase::kFailed);
++        CHECK(failed.reason.find("duration") != std::string::npos);
++    }
++    SECTION("travel") {
++        EdgeExecutionSupervisor supervisor(request);
++        REQUIRE(supervisor.ObservePosition(Position(50, 1000, 6)).pending_reentry);
++        CHECK(supervisor.RecoveryDispatched(true, 1000).phase == Phase::kRecovering);
++        CHECK(supervisor.ObservePosition(Position(50, 1100, 6)).phase == Phase::kRecovering);
++        const auto failed = supervisor.ObservePosition(Position(52, 1200, 6));
++        CHECK(failed.phase == Phase::kFailed);
++        CHECK(failed.reason.find("travel") != std::string::npos);
++        CHECK(failed.recovery_travel_bound_m > 1);
++    }
++}
++
++TEST_CASE("Explicit cancellation is a distinct terminal result", "[vecr][lifecycle]") {
++    EdgeExecutionSupervisor supervisor(Request());
++    (void)supervisor.ObservePosition(Position(0, 1000));
++    const auto cancelled = supervisor.Cancel("caller cancelled after hold");
++    CHECK(cancelled.phase == Phase::kCancelled);
++    CHECK(supervisor.Cancel("duplicate cancel").reason == cancelled.reason);
++    CHECK(supervisor.ObservePosition(Position(100, 2000, 0, true)).phase == Phase::kCancelled);
++}
++
+ TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure or timeout",
+           "[vecr][reliability]") {
+     auto req = Request();
+@@ -490,9 +528,9 @@ TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure o
+         auto status = s.ObservePosition(Position(100, 2300, 0, true));
+         CHECK(status.at_b_verified);
+         CHECK_FALSE(status.pending_reentry);
+-        CHECK(status.phase != Phase::kFulfilled);
++        CHECK(status.phase != Phase::kArrived);
+         status = s.ObserveCapture(Capture(0, 100, 1500, "delayed"));
+-        CHECK(status.phase == Phase::kFulfilled);
++        CHECK(status.phase == Phase::kArrived);
+         CHECK(status.recovery_attempts == 0);
+     }
+     SECTION("waiting expires with missing evidence") {
+@@ -501,7 +539,10 @@ TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure o
+         (void)s.ObservePosition(Position(100, 2000, 0, true));
+         (void)s.ObservePosition(Position(100, 2300, 0, true));
+         CHECK_FALSE(s.ObservePosition(Position(100, 3799, 0, true)).pending_reentry);
+-        CHECK(s.ObservePosition(Position(100, 3800, 0, true)).pending_reentry);
++        const auto terminal = s.ObservePosition(Position(100, 3800, 0, true));
++        CHECK(terminal.phase == Phase::kArrived);
++        CHECK_FALSE(terminal.survey_verified);
++        CHECK_FALSE(terminal.pending_reentry);
+     }
+     SECTION("departure does not wait") {
+         EdgeExecutionSupervisor s(req);
+@@ -515,7 +556,7 @@ TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure o
+         (void)s.ObservePosition(Position(0, 1000));
+         (void)s.ObservePosition(Position(100, 2000, 0, true));
+         (void)s.ObservePosition(Position(100, 2300, 0, true));
+-        CHECK(s.ObservePosition(Position(100, 2500, 0, true)).phase == Phase::kInterrupted);
++        CHECK(s.ObservePosition(Position(100, 2500, 0, true)).phase == Phase::kFailed);
+     }
+     SECTION("expired capture cannot establish coverage") {
+         req.max_recovery_attempts = 0;
+diff --git a/tests/test_vecr_agent_trial.cpp b/tests/test_vecr_agent_trial.cpp
+index d2b98b1f6..3b07c6169 100644
+--- a/tests/test_vecr_agent_trial.cpp
++++ b/tests/test_vecr_agent_trial.cpp
+@@ -4,16 +4,17 @@
+ 
+ #include "vecr_agent_trial.h"
+ 
+-TEST_CASE("VECR repairs a camera gap through the agent and SimBackend", "[vecr][agent-campaign]") {
++TEST_CASE("VECR reports a camera gap at B without a return command", "[vecr][agent-campaign]") {
+     swarmkit::testsupport::VecrTrialConfig config;
+     config.scenario_id = "camera-gap";
+     config.seed = 1;
+     config.fault = swarmkit::testsupport::TrialFault::kTransientCameraGap;
+     const auto result = swarmkit::testsupport::RunVecrAgentTrial(config);
+     CHECK(result.requested_fault_realized);
+-    CHECK(result.reported_phase == swarmkit::edge::Phase::kFulfilled);
+-    CHECK(result.truth_survey_complete);
+-    CHECK(result.backend_goto_accepted >= 3);
++    CHECK(result.reported_phase == swarmkit::edge::Phase::kArrived);
++    CHECK_FALSE(result.truth_survey_complete);
++    CHECK(result.backend_goto_accepted == 1);
++    CHECK(result.recovery_attempts == 0);
+ }
+ 
+ TEST_CASE("Dishonest camera metadata is detected only by the private truth oracle",
+@@ -24,12 +25,12 @@ TEST_CASE("Dishonest camera metadata is detected only by the private truth oracl
+     config.fault = swarmkit::testsupport::TrialFault::kDishonestCamera;
+     const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
+     CHECK(observed.requested_fault_realized);
+-    CHECK(observed.reported_phase == swarmkit::edge::Phase::kFulfilled);
++    CHECK(observed.reported_phase == swarmkit::edge::Phase::kArrived);
+     CHECK_FALSE(observed.truth_survey_complete);
+     CHECK(observed.truth_missing_fraction > 0);
+ }
+ 
+-TEST_CASE("Detectably inconsistent camera metadata is rejected before repair",
++TEST_CASE("Detectably inconsistent camera metadata remains unverified at B",
+           "[vecr][agent-campaign][oracle]") {
+     swarmkit::testsupport::VecrTrialConfig config;
+     config.scenario_id = "S11a";
+@@ -38,15 +39,16 @@ TEST_CASE("Detectably inconsistent camera metadata is rejected before repair",
+     const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
+     CHECK(observed.requested_fault_realized);
+     CHECK(observed.capture_submitted > observed.capture_accepted);
+-    CHECK(observed.recovery_attempts == 1);
+-    CHECK(observed.truth_survey_complete);
+-    CHECK(observed.reported_phase == swarmkit::edge::Phase::kFulfilled);
++    CHECK(observed.recovery_attempts == 0);
++    CHECK_FALSE(observed.truth_survey_complete);
++    CHECK(observed.reported_phase == swarmkit::edge::Phase::kArrived);
+ }
+ 
+ TEST_CASE("Persistent motor failure interrupts agent-backed recovery", "[vecr][agent-campaign]") {
+     swarmkit::testsupport::VecrTrialConfig config;
+     config.scenario_id = "S16";
+     config.fault = swarmkit::testsupport::TrialFault::kMotorFailureOnRepair;
++    config.wind_north_mps = 3.0;
+     for (const int seed : {1, 10}) {
+         config.seed = seed;
+         if (seed == 10) {
+@@ -60,7 +62,7 @@ TEST_CASE("Persistent motor failure interrupts agent-backed recovery", "[vecr][a
+             INFO("seed=" << seed << " phase=" << static_cast<int>(observed.reported_phase));
+             CHECK(observed.requested_fault_realized);
+             CHECK(observed.recovery_attempts == 1);
+-            CHECK(observed.reported_phase == swarmkit::edge::Phase::kInterrupted);
++            CHECK(observed.reported_phase == swarmkit::edge::Phase::kFailed);
+             CHECK_FALSE(observed.truth_survey_complete);
+         }
+     }
+@@ -73,11 +75,12 @@ TEST_CASE("Rejected recovery command is a realized failure for VECR", "[vecr][ag
+     config.gap_begin_m = 8.2072414973192238;
+     config.gap_end_m = 12.069877598199628;
+     config.fault = swarmkit::testsupport::TrialFault::kRecoveryCommandRejected;
++    config.wind_north_mps = 3.0;
+     {
+         const auto observed = swarmkit::testsupport::RunVecrAgentTrial(config);
+         CHECK(observed.requested_fault_realized);
+         CHECK(observed.backend_goto_rejected > 0);
+-        CHECK(observed.reported_phase == swarmkit::edge::Phase::kInterrupted);
++        CHECK(observed.reported_phase == swarmkit::edge::Phase::kFailed);
+         CHECK_FALSE(observed.truth_survey_complete);
+     }
+ }
+@@ -105,7 +108,7 @@ TEST_CASE(
+     const auto wide = swarmkit::testsupport::RunVecrAgentTrial(config);
+     CHECK(wide.requested_fault_realized);
+     CHECK(wide.max_truth_cross_track_m > 4);
+-    CHECK(wide.recovery_attempts == 0);
++    CHECK(wide.recovery_attempts == 1);
+     CHECK(wide.truth_survey_complete);
+ }
+ 
+@@ -124,6 +127,6 @@ TEST_CASE("S06 short wind zone crosses the corridor while wide sensing covers it
+         CHECK(observed.requested_fault_realized);
+         CHECK(observed.max_truth_cross_track_m > 4);
+         CHECK(observed.truth_survey_complete);
+-        CHECK(observed.reported_phase == swarmkit::edge::Phase::kFulfilled);
++        CHECK(observed.reported_phase == swarmkit::edge::Phase::kArrived);
+     }
+ }
+diff --git a/tests/test_vecr_baseline.cpp b/tests/test_vecr_baseline.cpp
+index 52464f7f0..ca19dc884 100644
+--- a/tests/test_vecr_baseline.cpp
++++ b/tests/test_vecr_baseline.cpp
+@@ -2,7 +2,7 @@
+ 
+ #include "swarmkit/edge/vecr.h"
+ 
+-TEST_CASE("Research baseline shares evidence and waiting but returns to A", "[vecr][baseline]") {
++TEST_CASE("Research baseline returns to A only for an in-flight deviation", "[vecr][baseline]") {
+     using namespace swarmkit::edge;
+     EdgeRequest request;
+     request.mission_id = "m";
+@@ -20,7 +20,7 @@ TEST_CASE("Research baseline shares evidence and waiting but returns to A", "[ve
+     request.endpoint_evidence_wait_ms = 500;
+     EdgeExecutionSupervisor supervisor(request);
+     REQUIRE(supervisor.Valid());
+-    PositionObservation observation{.position = {100, 0},
++    PositionObservation observation{.position = {50, 0},
+                                     .monotonic_ms = 1000,
+                                     .valid = true,
+                                     .safe_to_navigate = true,
+@@ -42,16 +42,17 @@ TEST_CASE("Research baseline shares evidence and waiting but returns to A", "[ve
+                             .capture_succeeded = true,
+                             .full_strip_quality_established = true};
+     (void)supervisor.ObserveCapture(capture);
++    observation.position.north_m = 6;
++    observation.monotonic_ms = 1100;
++    CHECK_FALSE(supervisor.ObservePosition(observation).pending_reentry);
+     observation.monotonic_ms = 1200;
+-    auto status = supervisor.ObservePosition(observation);
+-    CHECK(status.at_b_verified);
+-    CHECK_FALSE(status.pending_reentry);
+-    CHECK_FALSE(status.survey_verified);
+-    observation.monotonic_ms = 1700;
+-    status = supervisor.ObservePosition(observation);
++    CHECK_FALSE(supervisor.ObservePosition(observation).pending_reentry);
++    observation.monotonic_ms = 1300;
++    const auto status = supervisor.ObservePosition(observation);
+     REQUIRE(status.pending_reentry);
+     CHECK(status.pending_reentry->east_m == 0);
+     CHECK(status.survey_covered_m == 40);
+     CHECK(status.survey_missing.front().begin_m == 40);
+     CHECK(status.phase == Phase::kRecovering);
++    CHECK_FALSE(status.at_b_verified);
+ }
+diff --git a/tests/vecr_agent_trial.cpp b/tests/vecr_agent_trial.cpp
+index 1b828505d..1cacdd470 100644
+--- a/tests/vecr_agent_trial.cpp
++++ b/tests/vecr_agent_trial.cpp
+@@ -26,7 +26,8 @@ namespace {
+ using namespace std::chrono_literals;
+ 
+ [[nodiscard]] bool Terminal(edge::Phase phase) {
+-    return phase == edge::Phase::kFulfilled || phase == edge::Phase::kInterrupted;
++    return phase == edge::Phase::kArrived || phase == edge::Phase::kFailed ||
++           phase == edge::Phase::kCancelled;
+ }
+ 
+ [[nodiscard]] edge::NadirCaptureInput CameraMessage(const VecrTrialConfig& config,
+@@ -222,7 +223,7 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
+     request.edge.arrival_max_speed_mps = 0.5;
+     request.edge.maximum_speed_mps = 10;
+     request.edge.max_recovery_attempts = 1;
+-    request.edge.sustained_deviation_samples = 1000;
++    request.edge.sustained_deviation_samples = 3;
+     request.edge.recovery_cooldown_ms = 1000;
+     request.edge.timeout_ms = 60000;
+     request.wgs84_origin = {sim_config.home_lat_deg, sim_config.home_lon_deg};
+@@ -247,7 +248,9 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
+                                     before_advance->east_m <= config.gap_end_m;
+         const bool wind_active = config.fault == TrialFault::kPersistentWind ||
+                                  ((config.fault == TrialFault::kDetourWind ||
+-                                   config.fault == TrialFault::kOffcenterWideCamera) &&
++                                   config.fault == TrialFault::kOffcenterWideCamera ||
++                                   config.fault == TrialFault::kMotorFailureOnRepair ||
++                                   config.fault == TrialFault::kRecoveryCommandRejected) &&
+                                   localized_wind);
+         control->SetWind("drone-1", wind_active ? config.wind_north_mps : 0.0, 0.0);
+         clock_ns->fetch_add(100'000'000LL);
+@@ -407,7 +410,7 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
+             {.tick = -1, .simulation_time_ms = 0, .kind = "recovery_command_rejected"});
+     }
+     if (config.fault == TrialFault::kSafetyBattery &&
+-        result.reported_phase == edge::Phase::kInterrupted) {
++        result.reported_phase == edge::Phase::kFailed) {
+         result.requested_fault_realized = true;
+         result.events.push_back({.tick = -1,
+                                  .simulation_time_ms = result.elapsed_simulation_ms,
+diff --git a/tests/vecr_digital_trial.cpp b/tests/vecr_digital_trial.cpp
+index c28bac36a..ff7f2d5aa 100644
+--- a/tests/vecr_digital_trial.cpp
++++ b/tests/vecr_digital_trial.cpp
+@@ -45,17 +45,20 @@ std::string Phase(edge::Phase p) {
+             return "DEVIATING";
+         case edge::Phase::kRecovering:
+             return "RECOVERING";
+-        case edge::Phase::kFulfilled:
+-            return "FULFILLED";
+-        case edge::Phase::kInterrupted:
+-            return "INTERRUPTED";
++        case edge::Phase::kArrived:
++            return "ARRIVED";
++        case edge::Phase::kFailed:
++            return "FAILED";
++        case edge::Phase::kCancelled:
++            return "CANCELLED";
+         case edge::Phase::kUnknown:
+             return "UNKNOWN";
+     }
+     return "INVALID";
+ }
+ bool Terminal(edge::Phase p) {
+-    return p == edge::Phase::kFulfilled || p == edge::Phase::kInterrupted;
++    return p == edge::Phase::kArrived || p == edge::Phase::kFailed ||
++           p == edge::Phase::kCancelled;
+ }
+ double Unit(std::uint64_t seed, std::uint64_t tick, std::uint64_t lane) {
+     auto x = seed * 0x9e3779b97f4a7c15ULL + tick * 0xbf58476d1ce4e5b9ULL + lane;
+@@ -517,7 +520,7 @@ void Run(const std::map<std::string, std::string>& args) {
+         if (!reply.status)
+             throw std::runtime_error("status absent");
+         last = reply.status->status;
+-        if (fault == "low_battery" && last.phase == edge::Phase::kInterrupted &&
++        if (fault == "low_battery" && last.phase == edge::Phase::kFailed &&
+             last.reason.find("battery") != std::string::npos)
+             fault_realized = true;
+         const auto phase = Phase(last.phase);
+@@ -565,7 +568,8 @@ void Run(const std::map<std::string, std::string>& args) {
+     };
+     summary << "client_kind,scenario,seed,policy,fault,phase,reason,truth_survey,truth_at_b,truth_"
+                "complete,"
+-               "reported_complete,false_complete,false_negative,distance_m,time_ms,max_cross_m,"
++               "reported_arrived,reported_complete,survey_verified,false_complete,false_negative,"
++               "unresolved_m,distance_m,time_ms,max_cross_m,"
+                "truth_covered_m,reported_covered_m,missing,recoveries,midflight_repairs,first_"
+                "repair_ms,first_repair_east,reentry_completions,gotos,rejected_commands,captures,"
+                "submitted,accepted,accepted_uncontained,pending_captures,unknown_ticks,deviating_"
+@@ -574,12 +578,14 @@ void Run(const std::map<std::string, std::string>& args) {
+     for (const double cell : {0.1, 0.25, 0.5, 1.0})
+         summary << ",raster_full_" << cell << ",raster_center_" << cell;
+     summary << '\n';
+-    const bool true_complete = oracle->Complete() && truth_at_b,
+-               reported = last.phase == edge::Phase::kFulfilled;
++    const bool true_complete = oracle->Complete() && truth_at_b;
++    const bool reported_arrived = last.phase == edge::Phase::kArrived;
++    const bool reported = reported_arrived && last.survey_verified;
+     summary << client_kind << ',' << scenario << ',' << seed << ',' << policy << ',' << fault << ','
+             << Phase(last.phase) << ',' << Quote(last.reason) << ',' << oracle->Complete() << ','
+-            << truth_at_b << ',' << true_complete << ',' << reported << ','
+-            << (reported && !true_complete) << ',' << (true_complete && !reported) << ','
++            << truth_at_b << ',' << true_complete << ',' << reported_arrived << ',' << reported
++            << ',' << last.survey_verified << ',' << (reported && !true_complete) << ','
++            << (true_complete && !reported) << ',' << length - last.survey_covered_m << ','
+             << distance << ',' << elapsed_ms << ',' << max_cross << ',' << oracle->Covered() << ','
+             << last.survey_covered_m << ',' << Quote(Gaps(last)) << ',' << last.recovery_attempts
+             << ',' << midflight_repairs << ',' << first_repair_ms << ',' << first_repair_east << ','
+@@ -604,9 +610,9 @@ int main(int argc, char** argv) {
+     try {
+         if (argc == 2 && std::string(argv[1]) == "--describe") {
+ #if defined(SWARMKIT_RESEARCH_FULL_RESTART)
+-            std::cout << R"({"protocol":"v7","policy":"B2"})" << '\n';
++            std::cout << R"({"protocol":"v8","policy":"B2"})" << '\n';
+ #else
+-            std::cout << R"({"protocol":"v7","policy":"VECR"})" << '\n';
++            std::cout << R"({"protocol":"v8","policy":"VECR"})" << '\n';
+ #endif
+             return 0;
+         }
+diff --git a/tests/vecr_sitl_trial.cpp b/tests/vecr_sitl_trial.cpp
+index 6e7d41025..12cbdef3d 100644
+--- a/tests/vecr_sitl_trial.cpp
++++ b/tests/vecr_sitl_trial.cpp
+@@ -176,10 +176,12 @@ class SitlAdapter final : public agent::IDroneBackend {
+ };
+ std::string Phase(edge::Phase p) {
+     switch (p) {
+-        case edge::Phase::kFulfilled:
+-            return "FULFILLED";
+-        case edge::Phase::kInterrupted:
+-            return "INTERRUPTED";
++        case edge::Phase::kArrived:
++            return "ARRIVED";
++        case edge::Phase::kFailed:
++            return "FAILED";
++        case edge::Phase::kCancelled:
++            return "CANCELLED";
+         case edge::Phase::kRecovering:
+             return "RECOVERING";
+         case edge::Phase::kMoving:
+@@ -332,7 +334,7 @@ int Run(const std::map<std::string, std::string>& a) {
+               << last.at_b_verified << ',' << last.recovery_attempts << ",\"" << last.reason
+               << "\"\n";
+         trace.flush();
+-        if (last.phase == edge::Phase::kFulfilled || last.phase == edge::Phase::kInterrupted)
++        if (last.phase == edge::Phase::kArrived || last.phase == edge::Phase::kFailed)
+             break;
+         std::this_thread::sleep_for(50ms);
+     }
+@@ -341,7 +343,7 @@ int Run(const std::map<std::string, std::string>& a) {
+                "recoveries,pending_captures\n";
+     summary << policy << ',' << fault << ',' << (synthetic ? "synthetic_bounded" : "raw_mavlink")
+             << ',' << start << ',' << Now() << ',' << Phase(last.phase) << ','
+-            << (last.phase == edge::Phase::kFulfilled) << ',' << last.survey_covered_m << ','
++            << (last.phase == edge::Phase::kArrived) << ',' << last.survey_covered_m << ','
+             << last.recovery_attempts << ',' << pending.size() << '\n';
+     std::cout << Phase(last.phase) << " " << last.reason << '\n';
+     return 0;

@@ -49,7 +49,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--write", action="store_true")
     p.add_argument("--collection", choices=["digital", "sitl", "all"], default="all")
-    p.add_argument("--v8", choices=["primary", "reuse"], help="Seal or verify one frozen v8 campaign")
+    p.add_argument("--v8", choices=["primary", "reuse", "reuse-qualified"], help="Seal or verify one frozen v8 campaign")
     a = p.parse_args()
     if a.v8:
         sub = V8 / a.v8

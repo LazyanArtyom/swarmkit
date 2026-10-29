@@ -1,0 +1,4 @@
+scenario,label,joint_success_pairs,b2_mean_m,vecr_mean_m,delta_m,ci_low_m,ci_high_m
+N07,Sustained departure,30,79.577818,54.644496,-24.933322,-24.973317,-24.895689
+N08,Departure / wide FOV,30,79.577818,54.358840,-25.218978,-25.277499,-25.160523
+N09,Departure / narrow FOV,30,79.577818,56.099952,-23.477866,-23.531247,-23.423972

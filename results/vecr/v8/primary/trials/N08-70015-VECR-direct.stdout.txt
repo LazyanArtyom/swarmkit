@@ -1,0 +1,3 @@
+[2026-10-29 20:11:01.228] [info] rpc=SubscribeReports corr=reports-1793290261223-158290402294756800054534946761577617776-4 agent=v8-agent drone=drone-1 client=test-client result=connected
+N08 70015 VECR ARRIVED true=1 distance=54.4282 midflight=1 uncontained=0
+[2026-10-29 20:11:01.473] [info] rpc=SubscribeReports corr=reports-1793290261223-158290402294756800054534946761577617776-4 agent=v8-agent drone=drone-1 client=test-client result=disconnected

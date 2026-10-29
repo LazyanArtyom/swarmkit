@@ -42,25 +42,69 @@
   addEventListener('beforeprint',()=>{printOpen=$$('details').map(e=>e.open);$$('details').forEach(e=>e.open=true);});
   addEventListener('afterprint',()=>$$('details').forEach((e,i)=>e.open=printOpen[i]||false));
   if(!data)return;
-  function filterCases(){const group=$('#scenarioGroup').value,q=$('#scenarioSearch').value.trim().toLowerCase();let count=0;$$('#scenarioTable tbody tr').forEach(r=>{const allowed=group==='all'||group===r.dataset.group||(group==='controls'&&['N19','N20'].includes(r.dataset.scenario));r.hidden=!(allowed&&r.textContent.toLowerCase().includes(q));if(!r.hidden)count++;});$('#scenarioCount').textContent=`${count} condition${count===1?'':'s'}`;}
-  $('#scenarioGroup').addEventListener('change',filterCases);$('#scenarioSearch').addEventListener('input',filterCases);
-  function percentage(v){return v===''?'Undefined':fixed(Number(v)*100,2)+'%';}
-  function inspectCase(id){const c=data.configs.find(x=>x.scenario===id),rs=['B2','VECR'].map(p=>data.scenarios.find(x=>x.scenario===id&&x.policy===p));const metrics=[['Precision','precision','precision_ci_low','precision_ci_high'],['Recall','recall','recall_ci_low','recall_ci_high'],['Acceptance','acceptance','acceptance_ci_low','acceptance_ci_high'],['False fulfillment / attempts','false_complete_rate','false_ci_low','false_ci_high']];let s=`<h4>${escape(id)} · ${escape(c.label)}</h4><p>Denominators: precision = true reports / all reports; recall = true reports / actual completed missions; acceptance = reports / assigned attempts. Intervals below are Wilson 95% for this condition.</p><div class="table-scroll"><table><thead><tr><th scope="col">Metric</th><th scope="col">B2 [95% CI]</th><th scope="col">VECR [95% CI]</th></tr></thead><tbody>`;for(const [label,k,l,h] of metrics)s+=`<tr><td>${label}</td>`+rs.map(r=>`<td>${percentage(r[k])} ${r[k]===''?'(zero denominator)':`[${percentage(r[l])}, ${percentage(r[h])}]`}</td>`).join('')+'</tr>';s+='</tbody></table></div><div class="case-detail-grid"><div><strong>Distance p50 / p95</strong>';rs.forEach((r,i)=>s+=`<p>${i?'VECR':'B2'}: ${fixed(r.p50_distance_m)} / ${fixed(r.p95_distance_m)} m<br>Time p50 / p95: ${fixed(r.p50_time_s)} / ${fixed(r.p95_time_s)} s</p>`);s+='</div><div><strong>Frozen configuration</strong><pre>'+escape(Object.entries(c).filter(([k])=>!['label','scenario'].includes(k)).map(([k,v])=>`${k}: ${v}`).join('\n'))+'</pre></div></div>';$('#caseDetails').innerHTML=s;$('#caseDetails').scrollIntoView({behavior:reduceMotion.matches?'instant':'smooth',block:'nearest'});}
-  $$('.case-button').forEach(b=>b.addEventListener('click',()=>inspectCase(b.dataset.case)));
+  // The compact replay contains verbatim rows from five frozen v8 cases.
   const slider=$('#replaySlider'), play=$('#playReplay');
-  let current='N04',playing=false,raf=0,lastTick=0,replayTime=100,eventItems=[],bounds=null;
+  let current='N07',playing=false,raf=0,lastTick=0,replayTime=100,eventItems=[],bounds=null;
   const ns='http://www.w3.org/2000/svg';
   function elt(tag,attrs={},text){const n=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));if(text!==undefined)n.textContent=text;return n;}
   function stop(){playing=false;cancelAnimationFrame(raf);raf=0;play.textContent='Play replay';}
   function sample(trace,time){let lo=0,hi=trace.length;while(lo<hi){const m=(lo+hi)>>1;if(Number(trace[m].time_ms)<=time)lo=m+1;else hi=m;}return trace[Math.max(0,lo-1)];}
   function coordinate(x,y){return [65+(x-bounds.x0)/(bounds.x1-bounds.x0)*760,320-(y-bounds.y0)/(bounds.y1-bounds.y0)*270];}
-  function draw(time){const target=$('#replayDrawing');target.replaceChildren();const [xa,ya]=coordinate(0,4),[xb,yb]=coordinate(40,-4);target.append(elt('rect',{x:xa,y:ya,width:xb-xa,height:yb-ya,fill:'#e1eade'}));for(let x=0;x<=40;x+=10){const [px]=coordinate(x,0);target.append(elt('line',{x1:px,y1:40,x2:px,y2:320,stroke:'#d6ded2','stroke-width':1}));target.append(elt('text',{x:px,y:344,'text-anchor':'middle',fill:'#54685c','font-size':12},`${x} m`));}for(let y=Math.ceil(bounds.y0/4)*4;y<=bounds.y1;y+=4){const [,py]=coordinate(0,y);target.append(elt('line',{x1:65,y1:py,x2:825,y2:py,stroke:'#e3e9df'}));target.append(elt('text',{x:54,y:py+4,'text-anchor':'end',fill:'#54685c','font-size':11},`${y}`));}target.append(elt('text',{x:65,y:23,fill:'#365548','font-size':12},'Cross-track (m) · shaded corridor ±4 m'));target.append(elt('text',{x:825,y:365,'text-anchor':'end',fill:'#54685c','font-size':11},'Along-route position (m)'));
-    ['B2','VECR'].forEach(policy=>{const run=data.replays[current][policy],trace=run.trace,color=policy==='VECR'?'#147562':'#ad672e';const all=trace.map(r=>coordinate(Number(r.east_m),Number(r.north_m)).join(',')).join(' ');target.append(elt('polyline',{points:all,fill:'none',stroke:color,'stroke-opacity':.15,'stroke-width':3}));const used=trace.filter(r=>Number(r.time_ms)<=time);const points=used.map(r=>coordinate(Number(r.east_m),Number(r.north_m)).join(',')).join(' ');if(points)target.append(elt('polyline',{points,fill:'none',stroke:color,'stroke-width':3,'stroke-linejoin':'round'}));const row=sample(trace,time),[x,y]=coordinate(Number(row.east_m),Number(row.north_m));target.append(elt('circle',{cx:x,cy:y,r:policy==='VECR'?5:7,fill:policy==='VECR'?color:'#fff',stroke:color,'stroke-width':2}));const commands=run.events.filter(e=>e.kind==='goto_accepted'&&Number(e.time_ms)<=time);if(commands.length){const last=commands[commands.length-1],[tx,ty]=coordinate(Number(last.target_east),Number(last.target_north));target.append(elt('path',{d:`M${tx-5} ${ty-5}L${tx+5} ${ty+5}M${tx+5} ${ty-5}L${tx-5} ${ty+5}`,stroke:color,'stroke-width':2}));}});
+  // The following spatial strips are reconstructed exclusively from each
+  // recorded row's exact missing intervals. The scalar physical-truth score is
+  // *not* projected into an invented spatial map.
+  function acceptedSegments(raw) {
+    const missing=(raw||'').split(';').filter(Boolean).map(pair=>pair.split(':').map(Number))
+      .filter(([a,b])=>Number.isFinite(a)&&Number.isFinite(b)&&b>a)
+      .map(([a,b])=>[Math.max(0,Math.min(40,a)),Math.max(0,Math.min(40,b))]).sort((a,b)=>a[0]-b[0]);
+    const segments=[];let cursor=0;
+    for(const [a,b] of missing){if(a>cursor)segments.push([cursor,a]);cursor=Math.max(cursor,b);}
+    if(cursor<40)segments.push([cursor,40]);return segments;
   }
+  function draw(time){
+    const target=$('#replayDrawing');target.replaceChildren();
+    const [xa,ya]=coordinate(0,4),[xb,yb]=coordinate(40,-4);
+    target.append(elt('rect',{x:xa,y:ya,width:xb-xa,height:yb-ya,rx:6,fill:'#e1eade'}));
+    // Coordinates use the same independent, metric east/north samples as the
+    // original frozen replay. The highlighted ±4 m band is illustrative.
+    for(let x=0;x<=40;x+=5){const [px]=coordinate(x,0);target.append(elt('line',{x1:px,y1:32,x2:px,y2:326,stroke:'#d6ded2','stroke-width':x%10===0?1.4:.7}));if(x%10===0)target.append(elt('text',{x:px,y:346,'text-anchor':'middle',fill:'#54685c','font-size':12},`${x} m`));}
+    for(let y=Math.ceil(bounds.y0/4)*4;y<=bounds.y1;y+=4){const [,py]=coordinate(0,y);target.append(elt('line',{x1:65,y1:py,x2:825,y2:py,stroke:'#e3e9df'}));target.append(elt('text',{x:54,y:py+4,'text-anchor':'end',fill:'#54685c','font-size':11},`${y}`));}
+    target.append(elt('line',{x1:xa,y1:coordinate(0,0)[1],x2:xb,y2:coordinate(0,0)[1],stroke:'#779990','stroke-dasharray':'8 7','stroke-width':1.8}));
+    target.append(elt('text',{x:65,y:21,fill:'#365548','font-size':12},'Recorded 2D physical traces · shaded corridor ±4 m'));
+    target.append(elt('text',{x:825,y:365,'text-anchor':'end',fill:'#54685c','font-size':11},'Along-edge position (m)'));
+    ['B2','VECR'].forEach(policy=>{
+      const run=data.replays[current][policy],trace=run.trace,color=policy==='VECR'?'#147562':'#ad672e';
+      const rows=trace.filter(r=>Number(r.time_ms)<=time),row=sample(trace,time);
+      const fullPath=trace.map(r=>coordinate(Number(r.east_m),Number(r.north_m)).join(',')).join(' ');
+      target.append(elt('polyline',{points:fullPath,fill:'none',stroke:color,'stroke-opacity':.17,'stroke-width':2.5}));
+      const traveled=rows.map(r=>coordinate(Number(r.east_m),Number(r.north_m)).join(',')).join(' ');
+      if(traveled)target.append(elt('polyline',{points:traveled,fill:'none',stroke:color,'stroke-width':3.3,'stroke-linejoin':'round','stroke-linecap':'round'}));
+      // Two parallel bars encode the *accepted* interval union, not assumed truth.
+      const bandY=policy==='B2'?5.7:-5.7;
+      const [bx1,by]=coordinate(0,bandY),[bx2]=coordinate(40,bandY);
+      target.append(elt('line',{x1:bx1,y1:by,x2:bx2,y2:by,stroke:color,'stroke-opacity':.20,'stroke-width':7,'stroke-linecap':'round'}));
+      acceptedSegments(row.missing).forEach(([a,b])=>{const [left]=coordinate(a,bandY),[right]=coordinate(b,bandY);target.append(elt('line',{x1:left,y1:by,x2:right,y2:by,stroke:color,'stroke-opacity':.85,'stroke-width':7,'stroke-linecap':'round'}));});
+      target.append(elt('text',{x:816,y:by-10,'text-anchor':'end','font-size':11,fill:color},policy==='B2'?'B2 accepted':'VECR accepted'));
+      const [x,y]=coordinate(Number(row.east_m),Number(row.north_m));
+      const prev=rows.length>=2?rows[rows.length-2]:row;
+      const dx=Number(row.east_m)-Number(prev.east_m),dy=Number(row.north_m)-Number(prev.north_m);
+      const heading=Math.abs(dx)+Math.abs(dy)<1e-6?0:Math.atan2(dy,dx)*180/Math.PI;
+      // A top-down vehicle glyph conveys heading; no fictitious physical attitude.
+      const body=elt('g',{transform:`translate(${x} ${y}) rotate(${heading})`});
+      if(Math.abs(Number(row.north_m))>4)body.append(elt('circle',{r:17,fill:'#dd7041','fill-opacity':.12,stroke:'#d87d4e','stroke-width':1.5,'stroke-dasharray':'3 3'}));
+      body.append(elt('path',{d:'M-10-10L10 10M-10 10L10-10',stroke:color,'stroke-width':2.2}));
+      [[-11,-11],[11,-11],[-11,11],[11,11]].forEach(([cx,cy])=>body.append(elt('circle',{cx,cy,r:4.8,fill:'#f5f6f0',stroke:color,'stroke-width':1.8})));
+      body.append(elt('path',{d:'M13 0L-5 -7L-3 0L-5 7Z',fill:color,stroke:'#ffffff','stroke-width':.5}));
+      target.append(body);
+      const commands=run.events.filter(e=>e.kind==='goto_accepted'&&Number(e.time_ms)<=time);
+      if(commands.length){const last=commands[commands.length-1],[tx,ty]=coordinate(Number(last.target_east),Number(last.target_north));target.append(elt('path',{d:`M${tx-6} ${ty-6}L${tx+6} ${ty+6}M${tx+6} ${ty-6}L${tx-6} ${ty+6}`,stroke:color,'stroke-width':2.5}));}
+    });
+  }
+
   function render(time){replayTime=Math.min(Number(slider.max),Math.max(100,time));slider.value=String(Math.round(replayTime/100)*100);const t=Number(slider.value);$('#replayTime').textContent=`${fixed(t/1000,1)} / ${fixed(Number(slider.max)/1000,1)} s`;slider.setAttribute('aria-valuetext',`${fixed(t/1000,1)} simulation seconds`);draw(t);$('#replayMetrics').innerHTML=['B2','VECR'].map(policy=>{const trace=data.replays[current][policy].trace,r=sample(trace,t),accepted=Math.max(0,Math.min(100,Number(r.reported_covered_m)/40*100)),truth=Math.max(0,Math.min(100,Number(r.truth_covered_m)/40*100)),ended=t>=Number(trace.at(-1).time_ms);return `<div class="replay-card"><h4><span class="${policy==='VECR'?'legend-vecr':'legend-b2'}">${policy==='VECR'?'VECR':'B2'}</span><span class="phase">${escape(r.phase)}</span></h4><p>${escape(r.reason)}${ended?' · final recorded state':''}</p><p>Travel ${fixed(r.distance_m)} m · repair count ${r.recoveries}<br>Bounded arrival: ${r.at_b_verified==='1'?'yes':'no'} · actual stopped B: ${r.truth_at_b==='1'?'yes':'no'}</p><div class="coverage-label"><span>Agent-accepted strip</span><strong>${fixed(accepted,1)}%</strong></div><div class="coverage-track"><span style="width:${accepted}%"></span></div><div class="coverage-label"><span>Actual acquired full strip</span><strong>${fixed(truth,1)}%</strong></div><div class="coverage-track truth"><span style="width:${truth}%"></span></div><p title="Exact recorded intervals: ${escape(r.missing||'none')}">Missing: ${escape(intervals(r.missing))}<br>Sample time ${fixed(Number(r.time_ms)/1000,1)} s</p></div>`;}).join('');$$('.event-button').forEach(b=>b.classList.toggle('current',Number(b.dataset.time)<=t&&Number(b.dataset.time)>t-500));}
-  function loadCase(id){stop();current=id;const traces=Object.values(data.replays[id]).flatMap(x=>x.trace);const xs=traces.map(x=>Number(x.east_m)),ys=traces.map(x=>Number(x.north_m));bounds={x0:Math.min(-2,...xs)-1,x1:Math.max(42,...xs)+1,y0:Math.min(-6,...ys)-1,y1:Math.max(10,...ys)+1};slider.max=String(Math.max(...traces.map(x=>Number(x.time_ms))));eventItems=['B2','VECR'].flatMap(policy=>data.replays[id][policy].events.filter(e=>['phase','goto_accepted','goto_rejected','motor_failure','battery_low'].includes(e.kind)).map(e=>({...e,policy}))).sort((a,b)=>Number(a.time_ms)-Number(b.time_ms)||a.policy.localeCompare(b.policy));$('#eventList').innerHTML=eventItems.map(e=>`<button class="event-button" data-time="${e.time_ms}" aria-label="Inspect ${escape(e.policy)} ${escape(e.kind)} at ${Number(e.time_ms)/1000} seconds"><time>${fixed(Number(e.time_ms)/1000,1)} s</time><span class="event-policy">${e.policy==='VECR'?'VECR':'B2'}</span><span>${escape(e.kind==='goto_accepted'?`Accepted target ${fixed(e.target_east)}, ${fixed(e.target_north)} m`:e.detail)}</span></button>`).join('');render(100);}
+  function loadCase(id){stop();current=id;$('#replayCase').value=id;const traces=Object.values(data.replays[id]).flatMap(x=>x.trace);const xs=traces.map(x=>Number(x.east_m)),ys=traces.map(x=>Number(x.north_m));bounds={x0:Math.min(-2,...xs)-1,x1:Math.max(42,...xs)+1,y0:Math.min(-6,...ys)-1,y1:Math.max(10,...ys)+1};slider.max=String(Math.max(...traces.map(x=>Number(x.time_ms))));eventItems=['B2','VECR'].flatMap(policy=>data.replays[id][policy].events.filter(e=>['phase','goto_accepted','goto_rejected','motor_failure','battery_low'].includes(e.kind)).map(e=>({...e,policy}))).sort((a,b)=>Number(a.time_ms)-Number(b.time_ms)||a.policy.localeCompare(b.policy));$('#eventList').innerHTML=eventItems.map(e=>`<button class="event-button" data-time="${e.time_ms}" aria-label="Inspect ${escape(e.policy)} ${escape(e.kind)} at ${Number(e.time_ms)/1000} seconds"><time>${fixed(Number(e.time_ms)/1000,1)} s</time><span class="event-policy">${e.policy==='VECR'?'VECR':'B2'}</span><span>${escape(e.kind==='goto_accepted'?`Accepted target ${fixed(e.target_east)}, ${fixed(e.target_north)} m`:e.detail)}</span></button>`).join('');render(100);}
   function tick(now){if(!playing)return;const dt=Math.min(250,now-lastTick);lastTick=now;replayTime+=dt*Number($('#replaySpeed').value);render(replayTime);if(replayTime>=Number(slider.max))stop();else raf=requestAnimationFrame(tick);}
   play.addEventListener('click',()=>{if(playing){stop();return;}if(Number(slider.value)>=Number(slider.max))render(100);playing=true;lastTick=performance.now();play.textContent='Pause replay';raf=requestAnimationFrame(tick);});
   slider.addEventListener('input',()=>{stop();render(Number(slider.value));});$('#resetReplay').addEventListener('click',()=>{stop();render(100);});$('#replayCase').addEventListener('change',e=>loadCase(e.target.value));$('#eventList').addEventListener('click',e=>{const b=e.target.closest('button[data-time]');if(b){stop();render(Number(b.dataset.time));}});document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});
-  loadCase('N04');
+  loadCase('N07');
 })();

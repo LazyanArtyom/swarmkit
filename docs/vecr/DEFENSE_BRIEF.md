@@ -6,7 +6,7 @@
 
 The subject is physical execution and surveying by autonomous UAVs. Rotor-router and
 gossip motivate the graph-level setting but are external applications. The measured
-digital trials run a multirotor model; the SITL qualification runs ArduPilot Copter.
+digital trials run a multirotor model; the archived v7 SITL qualification ran ArduPilot Copter. Revised-method v8 SITL is TBD.
 
 ## One-minute contribution statement
 
@@ -46,23 +46,23 @@ physical image truth.
 3. `comparison.svg` and `paired_comparisons.csv`: B2 has the same verifier, sensing,
    dynamics, safety and budget; only the repair target differs.
 4. `completion_matrix` plus `per_attempt.csv`: all assigned outcomes, including
-   interruptions and deliberately dishonest-sensor controls.
+   failed executions and deliberately dishonest-sensor controls.
 
 B2 is the **only measured recovery comparator** in this campaign. ArduPilot Mission
 Rewind and other coverage or replanning systems are discussed as related work;
 the experiment does not quantify superiority over those implementations.
 
 The v7 digital and SITL measurements used a retired endpoint-repair policy and
-are historical. Cite the newly frozen v8 digital results only after reading
-`results/vecr/v8/primary/analysis/RESULTS.md` and its manifest. The v8 pilot is
-an implementation gate, not a confirmatory estimate. Historical dishonest-input
+are historical. The frozen v8 digital results are in
+`results/vecr/v8/primary/analysis/RESULTS.md` with a source and binary manifest. The v8 pilots are
+implementation gates, not confirmatory estimates. V8 dishonest-input
 controls show why truthful camera metadata is an assumption. The earlier SITL
 qualification used synthetic bounded sensing and does not validate the revised
 endpoint contract.
 
 ## Failure slide: explain the aborts
 
-Use the v8 per-attempt failure reasons and denominator from the new campaign.
+Use the v8 per-attempt failure reasons and denominator from the frozen campaign.
 Endpoint gaps are ARRIVED/INCOMPLETE results, not failed local corrections.
 The distance comparison conditions on joint true-and-reported completion;
 arrival and coverage counts must be displayed separately.

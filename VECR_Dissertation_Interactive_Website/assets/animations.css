@@ -1,0 +1,48 @@
+/* VECR motion atlas: presentation-only SVG animations with accessible scrubbers. */
+.motion-section{margin:32px 0 40px;max-width:100%}
+.motion-atlas{--motion-ink:#e9f5f5;--motion-muted:#a1bdc9;border:1px solid var(--line);border-radius:15px;overflow:hidden;background:linear-gradient(155deg,#102b3c,#0a1f2e);color:var(--motion-ink);box-shadow:0 16px 35px #0002;min-width:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.motion-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:20px 23px 13px}
+.motion-eyebrow{font-size:10px;font-weight:700;letter-spacing:1.55px;color:#77c6bb}
+.motion-head h4{font-size:19px!important;font-weight:650;letter-spacing:-.4px;margin:8px 0 0!important;color:#effff9}
+.motion-live{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:1px;border:1px solid #315a5b;color:#8fd7ce;padding:5px 9px;border-radius:30px;white-space:nowrap}
+.motion-live i{width:6px;height:6px;border-radius:50%;background:#4de3b3;opacity:.45}
+.motion-atlas.is-playing .motion-live i{opacity:1;box-shadow:0 0 12px #5fffd8}
+.motion-screen{padding:1px 15px 0}
+.motion-screen svg{display:block;width:100%;height:auto;border-radius:10px;border:1px solid #385562;aspect-ratio:940/350;background:#0b2331}
+.motion-screen svg text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;pointer-events:none}
+.motion-narrative{display:grid;grid-template-columns:160px 1fr;align-items:start;gap:12px;padding:13px 22px 10px;min-height:74px}
+.motion-step{color:#66dec5;letter-spacing:.5px;text-transform:uppercase;font-size:11px;font-weight:750;padding-top:3px}
+.motion-summary{color:#e7f2ef;font-size:13px;line-height:1.6;margin:0!important;max-width:none!important}
+.motion-modes{display:flex;flex-wrap:wrap;gap:7px;padding:1px 22px 14px}
+.motion-modes button{font-size:11px;border:1px solid #3c6071;color:#cbdfe1;padding:7px 11px;background:#173647;border-radius:6px;transition:background .2s,border-color .2s}
+.motion-modes button[aria-pressed=true]{border-color:#73ddcd;background:#175b55;color:#ecfffb}
+.motion-controls{display:flex;align-items:center;gap:11px;padding:12px 20px;border-top:1px solid #274859;background:#0c2130}
+.motion-controls button{border:1px solid #3c5c68;border-radius:7px;background:#163746;color:#d7eeea;padding:8px 10px;min-height:35px;white-space:nowrap;font-size:12px}
+.motion-controls .motion-play{border-color:#63dec5;color:#072b2e;background:#65dec7;min-width:85px;font-weight:700}
+.motion-controls .motion-restart{font-size:18px;line-height:1}
+.motion-slider-label{flex:1;min-width:50px;display:flex;align-items:center}
+.motion-slider-label input{width:100%;accent-color:#70e4cb;cursor:pointer}
+.motion-time{font:12px/1 ui-monospace,Consolas,monospace;color:#a4c4c8;font-variant-numeric:tabular-nums}
+.motion-controls .motion-next{padding:8px 13px}
+.motion-footnote{font-size:10px;color:#8eafbb;line-height:1.6;padding:9px 22px 13px;background:#0c2130}
+.motion-reference{border:1px solid var(--line);border-radius:0 0 10px 10px;padding:0 14px;margin:0 10px;background:var(--surface)}
+.motion-reference>summary{cursor:pointer;padding:13px 8px;font-size:12px;font-weight:600;color:var(--muted)}
+.motion-reference figure{margin:0 0 17px;box-shadow:none}
+.motion-reference figcaption{font-size:11px}
+.motion-atlas--hero{box-shadow:0 16px 36px #0003}
+.motion-atlas--hero .motion-head{padding:16px 16px 7px}
+.motion-atlas--hero .motion-head h4{font-size:14px!important;margin-top:4px!important}
+.motion-atlas--hero .motion-eyebrow{font-size:9px}
+.motion-atlas--hero .motion-live{display:none}
+.motion-atlas--hero .motion-screen{padding:0 7px}
+.motion-atlas--hero .motion-narrative{grid-template-columns:1fr;gap:2px;min-height:95px;padding:8px 16px 10px}
+.motion-atlas--hero .motion-step{font-size:9px}
+.motion-atlas--hero .motion-summary{font-size:11px}
+.motion-atlas--hero .motion-controls{gap:7px;padding:9px 10px}
+.motion-atlas--hero .motion-controls .motion-play{min-width:62px}
+.motion-atlas--hero .motion-controls .motion-next{display:none}
+.motion-atlas--hero .motion-footnote{font-size:9px;padding:8px 13px 11px}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+@media(max-width:720px){.motion-section{margin:25px 0 30px}.motion-head{padding:14px 13px 10px}.motion-head h4{font-size:15px!important}.motion-live{display:none}.motion-screen{padding:0 6px}.motion-narrative{display:block;padding:10px 13px 12px;min-height:96px}.motion-summary{font-size:12px;line-height:1.55;margin-top:5px!important}.motion-modes{padding:0 13px 12px}.motion-controls{gap:7px;padding:9px 8px;flex-wrap:wrap}.motion-controls button{padding:7px 8px}.motion-controls .motion-next{font-size:10px;padding:7px 8px}.motion-time{font-size:10px}.motion-footnote{padding:8px 13px 12px;font-size:9px}}
+@media print{.motion-section .motion-atlas,.motion-atlas--hero{display:none!important}.motion-reference{border:0;padding:0;margin:10px 0;display:block!important}.motion-reference>summary{display:none!important}.motion-reference figure{display:block!important}.motion-reference:not([open])>*{display:block!important}.motion-reference:not([open]) figure{display:block!important}.motion-reference:not([open])>summary{display:none!important}}
+@media(prefers-reduced-motion:reduce){.motion-atlas *{animation:none!important;transition:none!important}}

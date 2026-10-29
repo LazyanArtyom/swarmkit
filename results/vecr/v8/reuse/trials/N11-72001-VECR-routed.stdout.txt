@@ -1,0 +1,5 @@
+[2026-10-29 20:18:03.422] [info] SwarmClient: registered drone 'drone-1' at 127.0.0.1:0
+[2026-10-29 20:18:03.424] [warning] Client reports stream failed: drone=drone-1 corr=reports-1793290683423-1766952425992996302112893820188932501919-3 attempt=1 status=14 message=failed to connect to all addresses; last error: UNKNOWN: ipv4:127.0.0.1:0: connect: Operation not permitted (1)
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1793290683.421739 17850414 chttp2_server.cc:1116] UNKNOWN:No address added out of total 1 resolved for '127.0.0.1:0' {created_time:"2026-10-29T20:18:03.421719+04:00", children:[FAILED_PRECONDITION:Error in bind for address '127.0.0.1:0': Operation not permitted]}
+v8 infrastructure failure: edge dispatch failed: failed to connect to all addresses; last error: UNKNOWN: ipv4:127.0.0.1:0: connect: Operation not permitted (1)

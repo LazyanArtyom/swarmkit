@@ -34,7 +34,8 @@ terminal edge reports across agent restarts. Its storage must be persistent;
 attempts interrupted by a restart remain `UNKNOWN` until reconciled.
 
 VECR has one production recovery method: after a sustained in-flight departure,
-return to the earliest required unverified location within finite budgets and
+return to the earlier of current projected progress and the first required
+unverified location within finite budgets and
 continue to B after physical re-entry. At B, wait briefly for eligible delayed
 evidence, then report ARRIVED with separate coverage state and remaining gaps;
 never autonomously return from B.
@@ -47,8 +48,9 @@ See the [method and conditional guarantees](docs/vecr/METHOD.md),
 [current validation](docs/vecr/README.md),
 [literature comparison](docs/vecr/LITERATURE.md) and
 [review disposition](docs/vecr/REVIEW_RESPONSE.md).
-The working tree contains current research only; superseded artifacts remain in
-Git history at the revision recorded in the review disposition.
+The current digital campaign is frozen under `results/vecr/v8/`; earlier v7
+digital and SITL research remain archived under `results/vecr/current/` and are
+excluded from revised-method numerical claims. Revised-method SITL is TBD.
 
 Example (already armed and in a safe guided simulation state):
 

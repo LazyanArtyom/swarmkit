@@ -1,0 +1,15 @@
+{
+  "static": "PASS",
+  "chapters": 20,
+  "v8_attempts": 1320,
+  "v8_conditions": 22,
+  "replay_conditions": [
+    "N00",
+    "N03",
+    "N07",
+    "N11",
+    "N19"
+  ],
+  "source_revision": "66603912556002d162dc42d910b598bfbbc480a2",
+  "browser": "PASS"
+}

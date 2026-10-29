@@ -1,0 +1,3 @@
+[2026-10-29 20:11:21.516] [info] rpc=SubscribeReports corr=reports-1793290281512-1720698506366657042116776232819147692956-4 agent=v8-agent drone=drone-1 client=test-client result=connected
+N19 70019 B2 ARRIVED true=0 distance=40.0396 midflight=0 uncontained=12
+[2026-10-29 20:11:21.755] [info] rpc=SubscribeReports corr=reports-1793290281512-1720698506366657042116776232819147692956-4 agent=v8-agent drone=drone-1 client=test-client result=disconnected

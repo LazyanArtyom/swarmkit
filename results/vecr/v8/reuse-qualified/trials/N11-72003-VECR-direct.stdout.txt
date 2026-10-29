@@ -1,0 +1,3 @@
+[2026-10-29 20:23:37.389] [info] rpc=SubscribeReports corr=reports-1793291017386-1692764471084083382916200350331184066851-3 agent=v8-agent drone=drone-1 client=test-client result=connected
+N11 72003 VECR FAILED true=0 distance=16.209 midflight=0 uncontained=0
+[2026-10-29 20:23:37.503] [info] rpc=SubscribeReports corr=reports-1793291017386-1692764471084083382916200350331184066851-3 agent=v8-agent drone=drone-1 client=test-client result=disconnected

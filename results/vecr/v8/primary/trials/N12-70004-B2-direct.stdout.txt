@@ -1,0 +1,4 @@
+[2026-10-29 20:11:08.971] [info] rpc=SubscribeReports corr=reports-1793290268967-36022722693017582559428414960902085184-3 agent=v8-agent drone=drone-1 client=test-client result=connected
+[2026-10-29 20:11:09.007] [error] VECR failed attempt N12-70004-B2: hold command not accepted
+N12 70004 B2 FAILED true=0 distance=16.8675 midflight=1 uncontained=0
+[2026-10-29 20:11:09.108] [info] rpc=SubscribeReports corr=reports-1793290268967-36022722693017582559428414960902085184-3 agent=v8-agent drone=drone-1 client=test-client result=disconnected
