@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paired v7 analysis; observed data only, including failures and stronger baselines."""
+"""Paired v8 analysis; observed data only, including failures and stronger baselines."""
 
 import argparse, csv, json, hashlib
 from pathlib import Path
@@ -69,6 +69,11 @@ def analyze(root):
                 policy=p,
                 n=n,
                 fault=rr[0]["fault"],
+                arrived=sum(int(r["reported_arrived"]) for r in rr),
+                arrived_incomplete=sum(
+                    int(r["reported_arrived"]) and not int(r["reported_complete"])
+                    for r in rr
+                ),
                 reported_complete=reported,
                 true_complete=sum(int(r["truth_complete"]) for r in rr),
                 false_complete=false,
@@ -80,6 +85,7 @@ def analyze(root):
                 mean_distance_m=float(np.mean([float(r["distance_m"]) for r in rr])),
                 mean_time_s=float(np.mean([float(r["time_ms"]) / 1000 for r in rr])),
                 mean_recoveries=float(np.mean([int(r["recoveries"]) for r in rr])),
+                mean_unresolved_m=float(np.mean([float(r["unresolved_m"]) for r in rr])),
             )
         )
     write(out / "condition_summary.csv", table)
@@ -106,8 +112,10 @@ def analyze(root):
                 joint_success_pairs=len(both),
             )
             for metric, scale, selected, label in [
+                ("reported_arrived", 1, seeds, "arrival_delta"),
                 ("reported_complete", 1, seeds, "acceptance_delta"),
                 ("truth_complete", 1, seeds, "true_completion_delta"),
+                ("unresolved_m", 1, seeds, "unresolved_delta_m"),
                 ("distance_m", 1, both, "successful_distance_delta_m"),
                 ("time_ms", 0.001, both, "successful_time_delta_s"),
             ]:
@@ -123,7 +131,7 @@ def analyze(root):
     write(out / "paired_comparisons.csv", paired)
     scenarios = sorted({r["scenario"] for r in rows})
     plt.rcParams.update(
-        {"font.family": "DejaVu Sans", "font.size": 10, "svg.hashsalt": "swarmkit-v7"}
+        {"font.family": "DejaVu Sans", "font.size": 10, "svg.hashsalt": "swarmkit-v8"}
     )
     lookup = {(r["scenario"], r["policy"]): r for r in table}
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -190,7 +198,7 @@ def analyze(root):
         fig.savefig(out / f"paired_distance.{ext}", dpi=180)
     plt.close(fig)
     summary = dict(
-        protocol="v7",
+        protocol="v8",
         attempts=len(rows),
         conditions=len(scenarios),
         policies=POLICIES,
@@ -214,6 +222,7 @@ def analyze(root):
         summary["by_policy"][p] = {
             k: sum(int(r[k]) for r in rr)
             for k in [
+                "reported_arrived",
                 "truth_complete",
                 "reported_complete",
                 "false_complete",
@@ -223,11 +232,24 @@ def analyze(root):
         summary["by_policy"][p]["honest_attempts"] = len(rr)
     (out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     lines = [
-        "# VECR v7 measured results",
+        "# VECR v8 measured results",
         "",
         f"{len(rows):,} assigned attempts; {len(scenarios)} conditions; VECR and a full-restart research baseline.",
         "All unsuccessful attempts remain included. Honest-input and dishonest-input controls are separate.",
         "Cost differences below condition on both policies achieving true and reported completion.",
+        "ARRIVED is physical endpoint status; reported_complete also requires the requested survey obligation.",
+        "",
+        "| Condition | Policy | Arrived | Arrived with gaps | Verified complete | Truth complete | Mean unresolved (m) | Mean recovery count |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in table:
+        lines.append(
+            f"| {r['scenario']} | {r['policy']} | {r['arrived']}/{r['n']} | "
+            f"{r['arrived_incomplete']}/{r['n']} | {r['reported_complete']}/{r['n']} | "
+            f"{r['true_complete']}/{r['n']} | {r['mean_unresolved_m']:.2f} | "
+            f"{r['mean_recoveries']:.2f} |"
+        )
+    lines += [
         "",
         "| Condition | Contrast | Successful pairs | Distance delta, m (95% paired CI) |",
         "|---|---|---:|---:|",

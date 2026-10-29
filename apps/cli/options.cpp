@@ -51,7 +51,8 @@ namespace swarmkit::apps::cli::internal {
            value == "--from-lon" || value == "--to-lat" || value == "--to-lon" ||
            value == "--corridor-m" || value == "--obligation" || value == "--hard-speed-bound" ||
            value == "--capture-age-ms" || value == "--evidence-wait-ms" ||
-           value == "--recovery-attempts";
+           value == "--recovery-attempts" || value == "--recovery-duration-ms" ||
+           value == "--recovery-travel-m";
 }
 
 [[nodiscard]] bool IsFlag(std::string_view value) {

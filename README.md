@@ -21,7 +21,7 @@ estimator state, accuracy fields, and command/goal linkage for monitoring and
 `ExecuteEdge` gives an external graph planner an agent-local edge operation.
 Its report distinguishes backend command acceptance, arrival at B, bounded
 route traversal, verified strip survey, missing survey intervals, and terminal
-fulfillment. A configured sensor adapter submits capture pose, FOV, hard bounds,
+arrival, failure or cancellation. A configured sensor adapter submits capture pose, FOV, hard bounds,
 calibration ID and quality assertions. The agent computes conservative survey
 intervals from those inputs. A trusted calibrated source is still required to
 establish that the assertions match physical images; arrival or a camera command
@@ -33,8 +33,11 @@ An agent-local attempt journal is synced before command dispatch and preserves
 terminal edge reports across agent restarts. Its storage must be persistent;
 attempts interrupted by a restart remain `UNKNOWN` until reconciled.
 
-VECR has one production recovery method: retain verified intervals, wait for
-bounded delayed evidence at a qualified endpoint, then repair the earliest gap.
+VECR has one production recovery method: after a sustained in-flight departure,
+return to the earliest required unverified location within finite budgets and
+continue to B after physical re-entry. At B, wait briefly for eligible delayed
+evidence, then report ARRIVED with separate coverage state and remaining gaps;
+never autonomously return from B.
 The SDK/protobuf have no recovery-policy selector. A separately compiled,
 non-installed full-restart executable supplies the fair research baseline.
 

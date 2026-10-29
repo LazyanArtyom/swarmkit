@@ -112,6 +112,7 @@ def validate(out, hashes=True):
         distance = 0
         last = (0, 0)
         arrival = -1
+        first_qualified_arrival = None
         by_time = {}
         for t in truth:
             time = int(t["time_ms"])
@@ -128,11 +129,15 @@ def validate(out, hashes=True):
                     arrival = time
             else:
                 arrival = -1
+            if arrival >= 0 and time - arrival >= 200 and first_qualified_arrival is None:
+                first_qualified_arrival = time
         at_b = arrival >= 0 and int(truth[-1]["time_ms"]) - arrival >= 200
         near(distance, row["distance_m"])
         assert at_b == (row["truth_at_b"] == "1")
         tc = survey and at_b
-        rc = row["phase"] == "FULFILLED"
+        rc = row["phase"] == "ARRIVED" and row["survey_verified"] == "1"
+        assert (row["phase"] == "ARRIVED") == (row["reported_arrived"] == "1")
+        near(length - float(row["reported_covered_m"]), row["unresolved_m"])
         assert tc == (row["truth_complete"] == "1")
         assert rc == (row["reported_complete"] == "1")
         assert (rc and not tc) == (row["false_complete"] == "1")
@@ -174,6 +179,12 @@ def validate(out, hashes=True):
                 near(capture["claimed_north"], m["north_m"])
         go = [e for e in events if e["kind"] == "goto_accepted"]
         assert len(go) == int(row["gotos"])
+        if first_qualified_arrival is not None:
+            assert not any(
+                int(e["time_ms"]) > first_qualified_arrival
+                and abs(float(e["target_east"]) - length) > 1e-4
+                for e in go
+            ), (root, "automatic post-arrival recovery is forbidden")
         for i, e in enumerate(go):
             if i == 0 or abs(float(e["target_east"]) - length) > 1e-4:
                 continue

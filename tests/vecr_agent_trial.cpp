@@ -26,7 +26,8 @@ namespace {
 using namespace std::chrono_literals;
 
 [[nodiscard]] bool Terminal(edge::Phase phase) {
-    return phase == edge::Phase::kFulfilled || phase == edge::Phase::kInterrupted;
+    return phase == edge::Phase::kArrived || phase == edge::Phase::kFailed ||
+           phase == edge::Phase::kCancelled;
 }
 
 [[nodiscard]] edge::NadirCaptureInput CameraMessage(const VecrTrialConfig& config,
@@ -222,7 +223,7 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
     request.edge.arrival_max_speed_mps = 0.5;
     request.edge.maximum_speed_mps = 10;
     request.edge.max_recovery_attempts = 1;
-    request.edge.sustained_deviation_samples = 1000;
+    request.edge.sustained_deviation_samples = 3;
     request.edge.recovery_cooldown_ms = 1000;
     request.edge.timeout_ms = 60000;
     request.wgs84_origin = {sim_config.home_lat_deg, sim_config.home_lon_deg};
@@ -247,7 +248,9 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
                                     before_advance->east_m <= config.gap_end_m;
         const bool wind_active = config.fault == TrialFault::kPersistentWind ||
                                  ((config.fault == TrialFault::kDetourWind ||
-                                   config.fault == TrialFault::kOffcenterWideCamera) &&
+                                   config.fault == TrialFault::kOffcenterWideCamera ||
+                                   config.fault == TrialFault::kMotorFailureOnRepair ||
+                                   config.fault == TrialFault::kRecoveryCommandRejected) &&
                                   localized_wind);
         control->SetWind("drone-1", wind_active ? config.wind_north_mps : 0.0, 0.0);
         clock_ns->fetch_add(100'000'000LL);
@@ -407,7 +410,7 @@ VecrTrialResult RunVecrAgentTrial(const VecrTrialConfig& config) {
             {.tick = -1, .simulation_time_ms = 0, .kind = "recovery_command_rejected"});
     }
     if (config.fault == TrialFault::kSafetyBattery &&
-        result.reported_phase == edge::Phase::kInterrupted) {
+        result.reported_phase == edge::Phase::kFailed) {
         result.requested_fault_realized = true;
         result.events.push_back({.tick = -1,
                                  .simulation_time_ms = result.elapsed_simulation_ms,

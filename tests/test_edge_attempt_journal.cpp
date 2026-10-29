@@ -30,7 +30,7 @@ namespace {
     entry.report.set_reason("recorded outcome");
     entry.dispatch_accepted = accepted;
     entry.physical_navigation_unresolved =
-        phase != swarmkit::v1::EDGE_FULFILLED && phase != swarmkit::v1::EDGE_INTERRUPTED;
+        phase != swarmkit::v1::EDGE_ARRIVED && phase != swarmkit::v1::EDGE_FAILED;
     return entry;
 }
 
@@ -55,7 +55,7 @@ TEST_CASE("VECR attempt journal preserves terminal outcome and unknown restart s
         CHECK_FALSE(unknown->dispatch_accepted);
         CHECK(unknown->report.reason().find("agent restarted") != std::string::npos);
         REQUIRE(journal.Unresolved("drone-1"));
-        REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
+        REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_ARRIVED, true)).IsOk());
         CHECK_FALSE(journal.Unresolved("drone-1"));
     }
     {
@@ -63,14 +63,14 @@ TEST_CASE("VECR attempt journal preserves terminal outcome and unknown restart s
         REQUIRE(journal.Ready().IsOk());
         const auto terminal = journal.Get("drone-1", "attempt-1");
         REQUIRE(terminal);
-        CHECK(terminal->report.phase() == swarmkit::v1::EDGE_FULFILLED);
+        CHECK(terminal->report.phase() == swarmkit::v1::EDGE_ARRIVED);
         CHECK(terminal->dispatch_accepted);
         CHECK_FALSE(journal.Unresolved("drone-1"));
-        CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_INTERRUPTED, true)).IsOk());
+        CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FAILED, true)).IsOk());
         const auto retained = journal.Get("drone-1", "attempt-1");
         REQUIRE(retained);
-        CHECK(retained->report.phase() == swarmkit::v1::EDGE_FULFILLED);
-        auto conflicting = Record(swarmkit::v1::EDGE_FULFILLED, true);
+        CHECK(retained->report.phase() == swarmkit::v1::EDGE_ARRIVED);
+        auto conflicting = Record(swarmkit::v1::EDGE_ARRIVED, true);
         conflicting.operation.set_edge_id("different-edge");
         CHECK_FALSE(journal.Append(conflicting).IsOk());
     }
@@ -101,14 +101,14 @@ TEST_CASE("VECR journal storage faults never acknowledge a terminal commit", "[v
         const auto path = JournalPath("write-fault");
         {
             Journal journal(path.string(), [fault](const Journal::Entry& entry) {
-                return entry.report.phase() == swarmkit::v1::EDGE_FULFILLED ? fault
+                return entry.report.phase() == swarmkit::v1::EDGE_ARRIVED ? fault
                                                                             : Journal::Fault::kNone;
             });
             REQUIRE(journal.Ready().IsOk());
             REQUIRE(journal.Append(Record(swarmkit::v1::EDGE_MOVING, true)).IsOk());
-            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
+            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_ARRIVED, true)).IsOk());
             CHECK_FALSE(journal.Ready().IsOk());
-            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_FULFILLED, true)).IsOk());
+            CHECK_FALSE(journal.Append(Record(swarmkit::v1::EDGE_ARRIVED, true)).IsOk());
         }
         {
             Journal restarted(path.string());
@@ -119,7 +119,7 @@ TEST_CASE("VECR journal storage faults never acknowledge a terminal commit", "[v
                 const auto recovered = restarted.Get("drone-1", "attempt-1");
                 REQUIRE(recovered);
                 CHECK(recovered->report.phase() == (fault == Journal::Fault::kFsync
-                                                        ? swarmkit::v1::EDGE_FULFILLED
+                                                        ? swarmkit::v1::EDGE_ARRIVED
                                                         : swarmkit::v1::EDGE_UNKNOWN));
             }
         }
@@ -131,7 +131,7 @@ TEST_CASE("Interrupted obligation retains an unresolved physical-navigation gate
           "[vecr][journal]") {
     using Journal = swarmkit::agent::internal::EdgeAttemptJournal;
     const auto path = JournalPath("interrupted-navigation");
-    auto interrupted = Record(swarmkit::v1::EDGE_INTERRUPTED, true);
+    auto interrupted = Record(swarmkit::v1::EDGE_FAILED, true);
     interrupted.physical_navigation_unresolved = true;
     {
         Journal journal(path.string());

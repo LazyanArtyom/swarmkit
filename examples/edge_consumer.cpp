@@ -69,12 +69,15 @@ int main(int argc, char** argv) {
         const auto result = client.GetEdgeStatus(request.edge.drone_id, request.edge.attempt_id);
         if (result.status) {
             const auto phase = result.status->status.phase;
-            if (phase == swarmkit::edge::Phase::kFulfilled) {
-                std::cout << "EDGE_FULFILLED: external graph algorithm may now consume this fact\n";
+            if (phase == swarmkit::edge::Phase::kArrived) {
+                std::cout << "ARRIVED at B; survey verified="
+                          << result.status->status.survey_verified << " missing intervals="
+                          << result.status->status.survey_missing.size() << '\n';
                 reports->Stop();
                 return EXIT_SUCCESS;
             }
-            if (phase == swarmkit::edge::Phase::kInterrupted) {
+            if (phase == swarmkit::edge::Phase::kFailed ||
+                phase == swarmkit::edge::Phase::kCancelled) {
                 std::cerr << "edge incomplete: " << result.status->status.reason << '\n';
                 reports->Stop();
                 return EXIT_FAILURE;

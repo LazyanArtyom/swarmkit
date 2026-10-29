@@ -176,10 +176,12 @@ class SitlAdapter final : public agent::IDroneBackend {
 };
 std::string Phase(edge::Phase p) {
     switch (p) {
-        case edge::Phase::kFulfilled:
-            return "FULFILLED";
-        case edge::Phase::kInterrupted:
-            return "INTERRUPTED";
+        case edge::Phase::kArrived:
+            return "ARRIVED";
+        case edge::Phase::kFailed:
+            return "FAILED";
+        case edge::Phase::kCancelled:
+            return "CANCELLED";
         case edge::Phase::kRecovering:
             return "RECOVERING";
         case edge::Phase::kMoving:
@@ -332,7 +334,7 @@ int Run(const std::map<std::string, std::string>& a) {
               << last.at_b_verified << ',' << last.recovery_attempts << ",\"" << last.reason
               << "\"\n";
         trace.flush();
-        if (last.phase == edge::Phase::kFulfilled || last.phase == edge::Phase::kInterrupted)
+        if (last.phase == edge::Phase::kArrived || last.phase == edge::Phase::kFailed)
             break;
         std::this_thread::sleep_for(50ms);
     }
@@ -341,7 +343,7 @@ int Run(const std::map<std::string, std::string>& a) {
                "recoveries,pending_captures\n";
     summary << policy << ',' << fault << ',' << (synthetic ? "synthetic_bounded" : "raw_mavlink")
             << ',' << start << ',' << Now() << ',' << Phase(last.phase) << ','
-            << (last.phase == edge::Phase::kFulfilled) << ',' << last.survey_covered_m << ','
+            << (last.phase == edge::Phase::kArrived) << ',' << last.survey_covered_m << ','
             << last.recovery_attempts << ',' << pending.size() << '\n';
     std::cout << Phase(last.phase) << " " << last.reason << '\n';
     return 0;

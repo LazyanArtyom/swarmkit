@@ -63,7 +63,7 @@ class IntervalSet {
 };
 
 enum class Obligation { kArrival, kTraversal, kSurvey, kTraversalAndSurvey };
-enum class Phase { kMoving, kDeviating, kRecovering, kFulfilled, kInterrupted, kUnknown };
+enum class Phase { kMoving, kDeviating, kRecovering, kArrived, kFailed, kCancelled, kUnknown };
 enum class EvidenceQuality { kUnknown, kEstimated, kBounded };
 
 struct EdgeRequest {
@@ -82,6 +82,8 @@ struct EdgeRequest {
     double maximum_speed_mps{};  // Required for whole-interval traversal proof.
     double minimum_recovery_battery_percent{};
     std::uint32_t max_recovery_attempts{};
+    std::int64_t max_recovery_duration_ms{30000};
+    double max_recovery_travel_m{200.0};
     std::uint32_t sustained_deviation_samples{3};
     double deviation_hysteresis_m{0.5};
     std::int64_t recovery_cooldown_ms{1000};
@@ -160,7 +162,9 @@ struct Status {
     double survey_prefix_m{};
     std::vector<Interval> survey_missing;
     std::vector<Interval> traversal_missing;
+    std::optional<double> projected_progress_m;
     std::uint32_t recovery_attempts{};
+    double recovery_travel_bound_m{};
     std::optional<Point> pending_reentry;
     std::string reason;
     std::optional<std::int64_t> last_position_monotonic_ms;
@@ -182,12 +186,14 @@ class EdgeExecutionSupervisor {
     // continuation to B. Dispatch acknowledgement alone cannot complete recovery.
     [[nodiscard]] Status RecoveryReentryCompleted(std::int64_t monotonic_ms);
     [[nodiscard]] Status Interrupt(std::string reason);
+    [[nodiscard]] Status Cancel(std::string reason);
     [[nodiscard]] Status Snapshot() const;
     [[nodiscard]] bool WasCaptureAccepted(const CaptureEvidence& evidence) const;
 
    private:
     void Recompute();
     void ConsiderRecovery(std::int64_t now_ms, bool safe_to_navigate);
+    void ConsiderEndpointFinalization(std::int64_t now_ms);
     EdgeRequest request_;
     double length_m_{};
     IntervalSet traversal_;
@@ -200,6 +206,7 @@ class EdgeExecutionSupervisor {
     std::int64_t arrival_candidate_ms_{-1};
     std::int64_t last_valid_position_ms_{-1};
     std::int64_t last_recovery_ms_{-1};
+    std::int64_t recovery_started_ms_{-1};
     std::uint32_t deviation_samples_{};
     std::int64_t endpoint_wait_started_ms_{-1};
     bool can_recover_{};

@@ -652,10 +652,11 @@ enum EdgePhase {
     EDGE_PHASE_UNSPECIFIED = 0;
     EDGE_MOVING = 1;
     EDGE_RECOVERING = 2;
-    EDGE_FULFILLED = 3;
-    EDGE_INTERRUPTED = 4;
+    EDGE_ARRIVED = 3;
+    EDGE_FAILED = 4;
     EDGE_UNKNOWN = 5;
     EDGE_DEVIATING = 6;
+    EDGE_CANCELLED = 7;
 }
 
 enum EdgeEvidenceQuality {
@@ -690,6 +691,8 @@ message EdgeOperation {
     double deviation_hysteresis_m = 18;
     int64 maximum_capture_age_ms = 19;
     int64 endpoint_evidence_wait_ms = 20;
+    int64 max_recovery_duration_ms = 21;
+    double max_recovery_travel_m = 22;
 }
 
 message EdgeReport {
@@ -712,6 +715,8 @@ message EdgeReport {
     ExecutionHandle execution_handle = 18;
     EdgeEvidenceQuality traversal_quality = 19;
     optional int64 last_position_monotonic_ms = 20;
+    optional double projected_progress_m = 21;
+    double recovery_travel_bound_m = 22;
 }
 
 message ExecuteEdgeRequest {

@@ -67,6 +67,7 @@ class EdgeExecutionRuntime {
         core::BackendCommandOutcome initial_dispatch;
         TelemetryLease lease;
         std::atomic<bool> stop{false};
+        mutable std::atomic<bool> terminal_published{false};
         std::thread worker;
         std::uint64_t last_sequence{};
         double last_reported_covered{};
@@ -86,7 +87,7 @@ class EdgeExecutionRuntime {
         const swarmkit::v1::EdgeOperation& operation);
     [[nodiscard]] static swarmkit::v1::EdgeReport ToReport(const Attempt& attempt,
                                                            const edge::Status& status);
-    [[nodiscard]] core::Result Publish(const Attempt& attempt, const edge::Status& status,
+    [[nodiscard]] core::Result Publish(Attempt& attempt, const edge::Status& status,
                                        swarmkit::v1::EdgeReport* published = nullptr,
                                        std::string_view physical_unknown_reason = {},
                                        bool physical_hold_confirmed = false);
@@ -94,6 +95,7 @@ class EdgeExecutionRuntime {
     void DispatchRecovery(const std::shared_ptr<Attempt>& attempt, edge::Point target,
                           std::int64_t now_ms);
     void DispatchReturnToB(const std::shared_ptr<Attempt>& attempt);
+    void RequestFailureHold(const std::shared_ptr<Attempt>& attempt);
     [[nodiscard]] core::Result ConfirmSimulatorHold(const commands::CommandContext& context,
                                                     const std::string& drone_id);
 

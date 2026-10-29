@@ -45,17 +45,20 @@ std::string Phase(edge::Phase p) {
             return "DEVIATING";
         case edge::Phase::kRecovering:
             return "RECOVERING";
-        case edge::Phase::kFulfilled:
-            return "FULFILLED";
-        case edge::Phase::kInterrupted:
-            return "INTERRUPTED";
+        case edge::Phase::kArrived:
+            return "ARRIVED";
+        case edge::Phase::kFailed:
+            return "FAILED";
+        case edge::Phase::kCancelled:
+            return "CANCELLED";
         case edge::Phase::kUnknown:
             return "UNKNOWN";
     }
     return "INVALID";
 }
 bool Terminal(edge::Phase p) {
-    return p == edge::Phase::kFulfilled || p == edge::Phase::kInterrupted;
+    return p == edge::Phase::kArrived || p == edge::Phase::kFailed ||
+           p == edge::Phase::kCancelled;
 }
 double Unit(std::uint64_t seed, std::uint64_t tick, std::uint64_t lane) {
     auto x = seed * 0x9e3779b97f4a7c15ULL + tick * 0xbf58476d1ce4e5b9ULL + lane;
@@ -214,7 +217,7 @@ void Run(const std::map<std::string, std::string>& args) {
         m.accuracy.horizontal_position->value = static_cast<float>(measured_bound + 0.00001);
         m.accuracy.vertical_position->value = 0.05001F;
         m.accuracy.horizontal_velocity->value = 0.03001F;
-        m.accuracy.horizontal_position->descriptor.source = "v7.bounded_measurement_adapter";
+        m.accuracy.horizontal_position->descriptor.source = "v8.bounded_measurement_adapter";
         const bool in_region = local.east_m >= gap_begin && local.east_m <= gap_end;
         if (in_region && fault == "gnss_outage") {
             m.validity.position = false;
@@ -251,7 +254,7 @@ void Run(const std::map<std::string, std::string>& args) {
             fault == "command_rejected") {
             fault_realized = true;
             return core::BackendCommandOutcome{
-                .result = core::Result::Rejected("v7 scheduled recovery refusal"),
+                .result = core::Result::Rejected("v8 scheduled recovery refusal"),
                 .dispatch_state = core::BackendDispatchState::kRejected};
         }
         return std::nullopt;
@@ -288,7 +291,7 @@ void Run(const std::map<std::string, std::string>& args) {
     };
     const auto cert = MakeDevMtlsPaths();
     agent::AgentConfig cfg;
-    cfg.agent_id = "v7-agent";
+    cfg.agent_id = "v8-agent";
     cfg.data.artifact_dir = (output / "agent_artifacts").string();
     cfg.vecr_attempt_journal_path = (output / "attempt.journal").string();
     cfg.bind_addr = "127.0.0.1:0";
@@ -296,7 +299,7 @@ void Run(const std::map<std::string, std::string>& args) {
     cfg.security.cert_chain_path = cert.server_cert_chain_path;
     cfg.security.private_key_path = cert.server_private_key_path;
     cfg.vecr_sensor_client_id = "test-client";
-    cfg.vecr_sensor_calibration_id = "v7-calibration";
+    cfg.vecr_sensor_calibration_id = "v8-calibration";
     cfg.vecr_sim_recovery_enabled = true;
     cfg.default_telemetry_rate_hz = 10;
     auto providers = agent::internal::RuntimeProviders::System();
@@ -324,7 +327,7 @@ void Run(const std::map<std::string, std::string>& args) {
     if (!subscription)
         throw std::runtime_error("report subscription failed");
     client::EdgeOperationRequest req;
-    req.edge.mission_id = "v7-graph-edge";
+    req.edge.mission_id = "v8-graph-edge";
     req.edge.mission_revision = 7;
     req.edge.edge_id = "A-B";
     req.edge.attempt_id = scenario + "-" + std::to_string(seed) + "-" + policy;
@@ -368,7 +371,7 @@ void Run(const std::map<std::string, std::string>& args) {
     for (int tick = 0; tick < max_ticks; ++tick) {
         const double elapsed = static_cast<double>(tick) / 10;
         if (fault == "motor_failure" && last.recovery_attempts > 0 && !motor_failed) {
-            control->SetFailure("drone-1", true, "v7 recovery motor failure");
+            control->SetFailure("drone-1", true, "v8 recovery motor failure");
             motor_failed = true;
             fault_realized = true;
             std::lock_guard lock(event_mutex);
@@ -455,7 +458,7 @@ void Run(const std::map<std::string, std::string>& args) {
             auto input =
                 measured ? estimator.Estimate(*measured, now, acquired || fault == "false_frame",
                                               fault != "declared_angle",
-                                              bad_cal ? "wrong-calibration" : "v7-calibration")
+                                              bad_cal ? "wrong-calibration" : "v8-calibration")
                          : std::nullopt;
             if (input && !missing) {
                 input->mission_id = req.edge.mission_id;
@@ -517,7 +520,7 @@ void Run(const std::map<std::string, std::string>& args) {
         if (!reply.status)
             throw std::runtime_error("status absent");
         last = reply.status->status;
-        if (fault == "low_battery" && last.phase == edge::Phase::kInterrupted &&
+        if (fault == "low_battery" && last.phase == edge::Phase::kFailed &&
             last.reason.find("battery") != std::string::npos)
             fault_realized = true;
         const auto phase = Phase(last.phase);
@@ -565,7 +568,8 @@ void Run(const std::map<std::string, std::string>& args) {
     };
     summary << "client_kind,scenario,seed,policy,fault,phase,reason,truth_survey,truth_at_b,truth_"
                "complete,"
-               "reported_complete,false_complete,false_negative,distance_m,time_ms,max_cross_m,"
+               "reported_arrived,reported_complete,survey_verified,false_complete,false_negative,"
+               "unresolved_m,distance_m,time_ms,max_cross_m,"
                "truth_covered_m,reported_covered_m,missing,recoveries,midflight_repairs,first_"
                "repair_ms,first_repair_east,reentry_completions,gotos,rejected_commands,captures,"
                "submitted,accepted,accepted_uncontained,pending_captures,unknown_ticks,deviating_"
@@ -574,12 +578,14 @@ void Run(const std::map<std::string, std::string>& args) {
     for (const double cell : {0.1, 0.25, 0.5, 1.0})
         summary << ",raster_full_" << cell << ",raster_center_" << cell;
     summary << '\n';
-    const bool true_complete = oracle->Complete() && truth_at_b,
-               reported = last.phase == edge::Phase::kFulfilled;
+    const bool true_complete = oracle->Complete() && truth_at_b;
+    const bool reported_arrived = last.phase == edge::Phase::kArrived;
+    const bool reported = reported_arrived && last.survey_verified;
     summary << client_kind << ',' << scenario << ',' << seed << ',' << policy << ',' << fault << ','
             << Phase(last.phase) << ',' << Quote(last.reason) << ',' << oracle->Complete() << ','
-            << truth_at_b << ',' << true_complete << ',' << reported << ','
-            << (reported && !true_complete) << ',' << (true_complete && !reported) << ','
+            << truth_at_b << ',' << true_complete << ',' << reported_arrived << ',' << reported
+            << ',' << last.survey_verified << ',' << (reported && !true_complete) << ','
+            << (true_complete && !reported) << ',' << length - last.survey_covered_m << ','
             << distance << ',' << elapsed_ms << ',' << max_cross << ',' << oracle->Covered() << ','
             << last.survey_covered_m << ',' << Quote(Gaps(last)) << ',' << last.recovery_attempts
             << ',' << midflight_repairs << ',' << first_repair_ms << ',' << first_repair_east << ','
@@ -604,9 +610,9 @@ int main(int argc, char** argv) {
     try {
         if (argc == 2 && std::string(argv[1]) == "--describe") {
 #if defined(SWARMKIT_RESEARCH_FULL_RESTART)
-            std::cout << R"({"protocol":"v7","policy":"B2"})" << '\n';
+            std::cout << R"({"protocol":"v8","policy":"B2"})" << '\n';
 #else
-            std::cout << R"({"protocol":"v7","policy":"VECR"})" << '\n';
+            std::cout << R"({"protocol":"v8","policy":"VECR"})" << '\n';
 #endif
             return 0;
         }
@@ -620,7 +626,7 @@ int main(int argc, char** argv) {
         Run(args);
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "v7 infrastructure failure: " << e.what() << '\n';
+        std::cerr << "v8 infrastructure failure: " << e.what() << '\n';
         return 1;
     }
 }

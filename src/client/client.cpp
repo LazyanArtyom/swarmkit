@@ -25,12 +25,14 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #include "env_utils.h"
@@ -1682,10 +1684,13 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
         source.phase() == swarmkit::v1::EDGE_MOVING        ? edge::Phase::kMoving
         : source.phase() == swarmkit::v1::EDGE_DEVIATING   ? edge::Phase::kDeviating
         : source.phase() == swarmkit::v1::EDGE_RECOVERING  ? edge::Phase::kRecovering
-        : source.phase() == swarmkit::v1::EDGE_FULFILLED   ? edge::Phase::kFulfilled
-        : source.phase() == swarmkit::v1::EDGE_INTERRUPTED ? edge::Phase::kInterrupted
+        : source.phase() == swarmkit::v1::EDGE_ARRIVED   ? edge::Phase::kArrived
+        : source.phase() == swarmkit::v1::EDGE_FAILED ? edge::Phase::kFailed
+        : source.phase() == swarmkit::v1::EDGE_CANCELLED ? edge::Phase::kCancelled
                                                            : edge::Phase::kUnknown;
     report.status.at_b_verified = source.at_b_verified();
+    if (source.has_projected_progress_m())
+        report.status.projected_progress_m = source.projected_progress_m();
     report.status.traversal_verified = source.traversal_verified();
     report.status.survey_verified = source.survey_verified();
     report.status.traversal_quality =
@@ -1701,6 +1706,7 @@ void PopulateDataPeerListResult(DataPeerListResult* out, const swarmkit::v1::Dat
     for (const auto& missing : source.traversal_missing())
         report.status.traversal_missing.push_back({missing.begin_m(), missing.end_m()});
     report.status.recovery_attempts = source.recovery_attempts();
+    report.status.recovery_travel_bound_m = source.recovery_travel_bound_m();
     report.status.reason = source.reason();
     if (source.has_last_position_monotonic_ms())
         report.status.last_position_monotonic_ms = source.last_position_monotonic_ms();
@@ -2933,6 +2939,8 @@ EdgeResult Client::ExecuteEdge(const EdgeOperationRequest& request) const {
     operation->set_maximum_capture_age_ms(request.edge.maximum_capture_age_ms);
     operation->set_endpoint_evidence_wait_ms(request.edge.endpoint_evidence_wait_ms);
     operation->set_max_recovery_attempts(request.edge.max_recovery_attempts);
+    operation->set_max_recovery_duration_ms(request.edge.max_recovery_duration_ms);
+    operation->set_max_recovery_travel_m(request.edge.max_recovery_travel_m);
     operation->set_sustained_deviation_samples(request.edge.sustained_deviation_samples);
     operation->set_recovery_cooldown_ms(request.edge.recovery_cooldown_ms);
     operation->set_deviation_hysteresis_m(request.edge.deviation_hysteresis_m);
@@ -3341,6 +3349,45 @@ std::expected<Subscription, core::SwarmError> Client::StartReports(
     state->kind = SubscriptionKind::kReports;
     state->generation = *generation;
     return Subscription(std::move(state));
+}
+
+SubscriptionResult Client::StartEdgeResults(ReportSubscription subscription,
+                                            EdgeFinishedHandler on_finished,
+                                            TelemetryErrorHandler on_error,
+                                            SubscriptionEventHandler on_event) {
+    if (!on_finished)
+        return std::unexpected(MakeSubscriptionStartError(
+            SubscriptionKind::kReports, core::ErrorCode::kInvalidArgument,
+            "terminal edge callback must not be empty"));
+    struct Seen {
+        std::mutex mutex;
+        std::set<std::tuple<std::string, std::uint64_t, std::string, std::string, std::string>>
+            identities;
+    };
+    auto seen = std::make_shared<Seen>();
+    SubscriptionOptions options;
+    options.backpressure.policy = StreamBackpressurePolicy::kBlock;
+    return StartReports(
+        std::move(subscription),
+        [seen, on_finished = std::move(on_finished)](const AgentReport& report) {
+            if (!report.edge)
+                return;
+            const auto& edge_report = *report.edge;
+            const auto phase = edge_report.status.phase;
+            if (phase != edge::Phase::kArrived && phase != edge::Phase::kFailed &&
+                phase != edge::Phase::kCancelled)
+                return;
+            const auto identity = std::make_tuple(
+                edge_report.mission_id, edge_report.mission_revision, edge_report.edge_id,
+                edge_report.attempt_id, edge_report.drone_id);
+            {
+                std::lock_guard lock(seen->mutex);
+                if (!seen->identities.insert(identity).second)
+                    return;
+            }
+            on_finished(edge_report);
+        },
+        std::move(on_error), std::move(on_event), options);
 }
 
 void Client::StopReports() {

@@ -16,12 +16,30 @@
 namespace swarmkit::apps::cli::internal {
 namespace {
 
+std::string_view PhaseName(edge::Phase phase) {
+    switch (phase) {
+        case edge::Phase::kMoving: return "moving";
+        case edge::Phase::kDeviating: return "deviating";
+        case edge::Phase::kRecovering: return "recovering";
+        case edge::Phase::kArrived: return "arrived";
+        case edge::Phase::kFailed: return "failed";
+        case edge::Phase::kCancelled: return "cancelled";
+        case edge::Phase::kUnknown: return "unknown";
+    }
+    return "unknown";
+}
+
 void PrintEdge(const client::AgentReport::EdgeReport& report) {
     std::cout << "edge=" << report.edge_id << " attempt=" << report.attempt_id
+              << " phase=" << PhaseName(report.status.phase)
               << " at_b=" << report.status.at_b_verified
               << " traversal=" << report.status.traversal_verified
               << " survey=" << report.status.survey_verified
-              << " covered_m=" << report.status.survey_covered_m << " missing=";
+              << " covered_m=" << report.status.survey_covered_m;
+    if (report.status.projected_progress_m)
+        std::cout << " progress_m=" << *report.status.projected_progress_m;
+    std::cout << " recovery_travel_bound_m=" << report.status.recovery_travel_bound_m
+              << " missing=";
     for (const auto& gap : report.status.survey_missing)
         std::cout << '[' << gap.begin_m << ',' << gap.end_m << ']';
     std::cout << " reason=" << report.status.reason << '\n';
@@ -134,12 +152,21 @@ int RunEdge(client::Client& client, int argc, char** argv) {
                                   "--evidence-wait-ms");
     const auto retries = ParseIntArg(common::GetOptionValue(argc, argv, "--recovery-attempts", "0"),
                                      "--recovery-attempts");
-    if (!hard_speed || !age || !wait || !retries || *retries < 0)
+    const auto recovery_duration = ParseIntArg(
+        common::GetOptionValue(argc, argv, "--recovery-duration-ms", "30000"),
+        "--recovery-duration-ms");
+    const auto recovery_travel = ParseDoubleArg(
+        common::GetOptionValue(argc, argv, "--recovery-travel-m", "200"),
+        "--recovery-travel-m");
+    if (!hard_speed || !age || !wait || !retries || *retries < 0 || !recovery_duration ||
+        *recovery_duration <= 0 || !recovery_travel || *recovery_travel <= 0)
         return EXIT_FAILURE;
     request.edge.maximum_speed_mps = *hard_speed;
     request.edge.maximum_capture_age_ms = *age;
     request.edge.endpoint_evidence_wait_ms = *wait;
     request.edge.max_recovery_attempts = static_cast<std::uint32_t>(*retries);
+    request.edge.max_recovery_duration_ms = *recovery_duration;
+    request.edge.max_recovery_travel_m = *recovery_travel;
     request.edge.sustained_deviation_samples = 3;
     request.edge.recovery_cooldown_ms = 1000;
     request.edge.timeout_ms = *timeout;

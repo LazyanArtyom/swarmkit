@@ -80,9 +80,8 @@ TEST_CASE("VECR arrival does not imply surveyed terrain", "[vecr]") {
     const auto status = supervisor.ObservePosition(Position(100, 2300, 0, true));
     CHECK(status.at_b_verified);
     CHECK_FALSE(status.survey_verified);
-    CHECK(status.phase != Phase::kFulfilled);
-    REQUIRE(status.pending_reentry.has_value());
-    CHECK(status.pending_reentry->east_m == 40);
+    CHECK(status.phase == Phase::kArrived);
+    CHECK_FALSE(status.pending_reentry.has_value());
     CHECK(status.survey_prefix_m == 40);
     REQUIRE(status.survey_missing.size() == 1);
     CHECK(status.survey_missing.front().begin_m == 40);
@@ -104,10 +103,10 @@ TEST_CASE("VECR retains accepted off-corridor survey and enforces attempt identi
     const auto accepted = supervisor.ObserveCapture(Capture(0, 100, 2000, "valid"));
     CHECK(accepted.survey_verified);
     CHECK_FALSE(accepted.at_b_verified);
-    CHECK(accepted.phase != Phase::kFulfilled);
+    CHECK(accepted.phase != Phase::kArrived);
     static_cast<void>(supervisor.ObservePosition(Position(100, 3000, 0, true)));
     const auto done = supervisor.ObservePosition(Position(100, 3300, 0, true));
-    CHECK(done.phase == Phase::kFulfilled);
+    CHECK(done.phase == Phase::kArrived);
     CHECK_FALSE(done.traversal_verified);
 }
 
@@ -132,7 +131,7 @@ TEST_CASE("VECR sparse samples cannot prove whole interval traversal", "[vecr]")
     const auto status = supervisor.ObservePosition(Position(100, 11300, 0, true));
     CHECK(status.at_b_verified);
     CHECK_FALSE(status.traversal_verified);
-    CHECK(status.phase != Phase::kFulfilled);
+    CHECK(status.phase == Phase::kArrived);
 }
 
 TEST_CASE("VECR rejects kinematically impossible traversal samples", "[vecr]") {
@@ -165,7 +164,7 @@ TEST_CASE("Traversal credit excludes uncertain along-route endpoints", "[vecr][e
     // never traverses 0..2 or 8..10. Only 2..8 is guaranteed by these samples.
     CHECK(status.at_b_verified);
     CHECK_FALSE(status.traversal_verified);
-    CHECK(status.phase != Phase::kFulfilled);
+    CHECK(status.phase == Phase::kArrived);
     REQUIRE(status.traversal_missing.size() == 2);
     CHECK(status.traversal_missing[0] == Interval{0, 2});
     CHECK(status.traversal_missing[1] == Interval{8, 10});
@@ -192,17 +191,18 @@ TEST_CASE("VECR recovery is bounded and failsafe wins", "[vecr]") {
     req.max_recovery_attempts = 1;
     EdgeExecutionSupervisor supervisor(req);
     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
-    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
-    auto proposed = supervisor.ObservePosition(Position(100, 2300, 0, true));
+    static_cast<void>(supervisor.ObservePosition(Position(50, 2000, 6)));
+    static_cast<void>(supervisor.ObservePosition(Position(51, 2100, 6)));
+    auto proposed = supervisor.ObservePosition(Position(52, 2200, 6));
     REQUIRE(proposed.pending_reentry);
-    static_cast<void>(supervisor.RecoveryDispatched(true, 2300));
+    static_cast<void>(supervisor.RecoveryDispatched(true, 2200));
     CHECK(supervisor.Snapshot().recovery_attempts == 1);
-    proposed = supervisor.ObservePosition(Position(100, 4000, 0, true));
+    proposed = supervisor.ObservePosition(Position(40, 4000, 0, true));
     CHECK_FALSE(proposed.pending_reentry);
-    auto fail = Position(100, 5000, 0, true);
+    auto fail = Position(40, 5000, 0, true);
     fail.failsafe = true;
-    CHECK(supervisor.ObservePosition(fail).phase == Phase::kInterrupted);
-    CHECK(supervisor.ObserveCapture(Capture(0, 100, 5000, "late")).phase == Phase::kInterrupted);
+    CHECK(supervisor.ObservePosition(fail).phase == Phase::kFailed);
+    CHECK(supervisor.ObserveCapture(Capture(0, 100, 5000, "late")).phase == Phase::kFailed);
 }
 
 TEST_CASE("VECR rejects degenerate route and resolves polyline projection", "[vecr]") {
@@ -275,7 +275,7 @@ TEST_CASE("VECR stop arrival requires bounded three-dimensional dwell", "[vecr]"
     CHECK_FALSE(supervisor.ObservePosition(jump).at_b_verified);
     CHECK_FALSE(supervisor.ObservePosition(Position(0, 3000)).at_b_verified);
     CHECK_FALSE(supervisor.ObservePosition(Position(100, 3200, 0, true)).at_b_verified);
-    CHECK(supervisor.ObservePosition(Position(100, 3500, 0, true)).phase == Phase::kFulfilled);
+    CHECK(supervisor.ObservePosition(Position(100, 3500, 0, true)).phase == Phase::kArrived);
 }
 
 TEST_CASE("Camera footprints beyond an endpoint are not moved onto the route",
@@ -317,13 +317,12 @@ TEST_CASE("VECR late survey cannot fulfill from an old arrival", "[vecr]") {
     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
     static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
     CHECK(supervisor.ObservePosition(Position(100, 2300, 0, true)).at_b_verified);
-    CHECK_FALSE(supervisor.ObservePosition(Position(0, 2400)).at_b_verified);
+    CHECK(supervisor.Snapshot().phase == Phase::kArrived);
+    CHECK_FALSE(supervisor.ObservePosition(Position(0, 2400)).survey_verified);
     const auto away = supervisor.ObserveCapture(Capture(0, 100, 2500, "late-away"));
-    CHECK(away.survey_verified);
-    CHECK(away.phase != Phase::kFulfilled);
-    CHECK_FALSE(away.at_b_verified);
-    static_cast<void>(supervisor.ObservePosition(Position(100, 3000, 0, true)));
-    CHECK(supervisor.ObservePosition(Position(100, 3300, 0, true)).phase == Phase::kFulfilled);
+    CHECK_FALSE(away.survey_verified);
+    CHECK(away.phase == Phase::kArrived);
+    CHECK(away.at_b_verified);
 }
 
 TEST_CASE("VECR stale position after dropout cannot restore arrival", "[vecr]") {
@@ -336,7 +335,7 @@ TEST_CASE("VECR stale position after dropout cannot restore arrival", "[vecr]") 
     CHECK_FALSE(supervisor.ObservePosition(Position(100, 2100, 0, true)).at_b_verified);
     const auto late = supervisor.ObserveCapture(Capture(0, 100, 4000, "late"));
     CHECK_FALSE(late.at_b_verified);
-    CHECK(late.phase != Phase::kFulfilled);
+    CHECK(late.phase != Phase::kArrived);
 }
 
 TEST_CASE("VECR does not credit a polyline traversal from endpoint samples", "[vecr]") {
@@ -350,11 +349,14 @@ TEST_CASE("VECR does not credit a polyline traversal from endpoint samples", "[v
     const auto state = supervisor.ObservePosition(Position(100, 2300, 0, true));
     CHECK(state.at_b_verified);
     CHECK_FALSE(state.traversal_verified);
-    CHECK(state.phase != Phase::kFulfilled);
+    CHECK(state.phase == Phase::kArrived);
 }
 
 TEST_CASE("VECR combined obligation requires both bounded traversal and survey", "[vecr]") {
-    EdgeExecutionSupervisor supervisor(Request(Obligation::kTraversalAndSurvey));
+    auto req = Request(Obligation::kTraversalAndSurvey);
+    req.maximum_capture_age_ms = 2000;
+    req.endpoint_evidence_wait_ms = 1000;
+    EdgeExecutionSupervisor supervisor(req);
     for (int x = 0; x <= 100; ++x) {
         static_cast<void>(supervisor.ObservePosition(Position(x, 1000 + x * 1000, 0, x == 100)));
     }
@@ -362,10 +364,10 @@ TEST_CASE("VECR combined obligation requires both bounded traversal and survey",
     CHECK(at_b.at_b_verified);
     CHECK(at_b.traversal_verified);
     CHECK_FALSE(at_b.survey_verified);
-    CHECK(at_b.phase != Phase::kFulfilled);
+    CHECK(at_b.phase != Phase::kArrived);
     const auto done = supervisor.ObserveCapture(Capture(0, 100, 101400, "full-strip"));
     CHECK(done.survey_verified);
-    CHECK(done.phase == Phase::kFulfilled);
+    CHECK(done.phase == Phase::kArrived);
 }
 
 TEST_CASE("VECR low battery interrupts before any recovery proposal", "[vecr]") {
@@ -374,7 +376,7 @@ TEST_CASE("VECR low battery interrupts before any recovery proposal", "[vecr]") 
     auto low = Position(100, 2000, 0, true);
     low.battery_percent = 5.0;
     const auto status = supervisor.ObservePosition(low);
-    CHECK(status.phase == Phase::kInterrupted);
+    CHECK(status.phase == Phase::kFailed);
     CHECK_FALSE(status.pending_reentry);
     CHECK(status.recovery_attempts == 0);
 }
@@ -396,7 +398,8 @@ TEST_CASE("VECR declines recovery from unbounded navigation position", "[vecr]")
     at_b.horizontal_error_hard_bound_m = 0;
     CHECK_FALSE(supervisor.ObservePosition(at_b).pending_reentry);
     at_b.monotonic_ms = 3200;
-    CHECK(supervisor.ObservePosition(at_b).pending_reentry.has_value());
+    CHECK(supervisor.ObservePosition(at_b).phase == Phase::kArrived);
+    CHECK_FALSE(supervisor.Snapshot().pending_reentry);
 }
 
 TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another repair",
@@ -424,7 +427,7 @@ TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another rep
     CHECK(supervisor.ObservePosition(Position(100, 5300, 0, true)).phase == Phase::kRecovering);
     CHECK(supervisor.RecoveryReentryCompleted(5300).phase == Phase::kMoving);
     static_cast<void>(supervisor.ObservePosition(Position(100, 5400, 0, true)));
-    CHECK(supervisor.ObservePosition(Position(100, 5600, 0, true)).phase == Phase::kFulfilled);
+    CHECK(supervisor.ObservePosition(Position(100, 5600, 0, true)).phase == Phase::kArrived);
 }
 
 TEST_CASE("Deviation hysteresis and unknown bounds cannot manufacture consecutive departures",
@@ -478,6 +481,41 @@ TEST_CASE("VECR recovery retains an earlier gap during sustained departure", "[v
     CHECK_FALSE(status.survey_verified);
 }
 
+TEST_CASE("In-flight recovery has explicit duration and travel limits", "[vecr][budget]") {
+    auto request = Request();
+    request.sustained_deviation_samples = 1;
+    request.max_recovery_duration_ms = 500;
+    request.max_recovery_travel_m = 1;
+    SECTION("duration") {
+        EdgeExecutionSupervisor supervisor(request);
+        REQUIRE(supervisor.ObservePosition(Position(50, 1000, 6)).pending_reentry);
+        CHECK(supervisor.RecoveryDispatched(true, 1000).phase == Phase::kRecovering);
+        CHECK(supervisor.ObservePosition(Position(50, 1300, 6)).phase == Phase::kRecovering);
+        const auto failed = supervisor.ObservePosition(Position(50, 1600, 6));
+        CHECK(failed.phase == Phase::kFailed);
+        CHECK(failed.reason.find("duration") != std::string::npos);
+    }
+    SECTION("travel") {
+        EdgeExecutionSupervisor supervisor(request);
+        REQUIRE(supervisor.ObservePosition(Position(50, 1000, 6)).pending_reentry);
+        CHECK(supervisor.RecoveryDispatched(true, 1000).phase == Phase::kRecovering);
+        CHECK(supervisor.ObservePosition(Position(50, 1100, 6)).phase == Phase::kRecovering);
+        const auto failed = supervisor.ObservePosition(Position(52, 1200, 6));
+        CHECK(failed.phase == Phase::kFailed);
+        CHECK(failed.reason.find("travel") != std::string::npos);
+        CHECK(failed.recovery_travel_bound_m > 1);
+    }
+}
+
+TEST_CASE("Explicit cancellation is a distinct terminal result", "[vecr][lifecycle]") {
+    EdgeExecutionSupervisor supervisor(Request());
+    (void)supervisor.ObservePosition(Position(0, 1000));
+    const auto cancelled = supervisor.Cancel("caller cancelled after hold");
+    CHECK(cancelled.phase == Phase::kCancelled);
+    CHECK(supervisor.Cancel("duplicate cancel").reason == cancelled.reason);
+    CHECK(supervisor.ObservePosition(Position(100, 2000, 0, true)).phase == Phase::kCancelled);
+}
+
 TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure or timeout",
           "[vecr][reliability]") {
     auto req = Request();
@@ -490,9 +528,9 @@ TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure o
         auto status = s.ObservePosition(Position(100, 2300, 0, true));
         CHECK(status.at_b_verified);
         CHECK_FALSE(status.pending_reentry);
-        CHECK(status.phase != Phase::kFulfilled);
+        CHECK(status.phase != Phase::kArrived);
         status = s.ObserveCapture(Capture(0, 100, 1500, "delayed"));
-        CHECK(status.phase == Phase::kFulfilled);
+        CHECK(status.phase == Phase::kArrived);
         CHECK(status.recovery_attempts == 0);
     }
     SECTION("waiting expires with missing evidence") {
@@ -501,7 +539,10 @@ TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure o
         (void)s.ObservePosition(Position(100, 2000, 0, true));
         (void)s.ObservePosition(Position(100, 2300, 0, true));
         CHECK_FALSE(s.ObservePosition(Position(100, 3799, 0, true)).pending_reentry);
-        CHECK(s.ObservePosition(Position(100, 3800, 0, true)).pending_reentry);
+        const auto terminal = s.ObservePosition(Position(100, 3800, 0, true));
+        CHECK(terminal.phase == Phase::kArrived);
+        CHECK_FALSE(terminal.survey_verified);
+        CHECK_FALSE(terminal.pending_reentry);
     }
     SECTION("departure does not wait") {
         EdgeExecutionSupervisor s(req);
@@ -515,7 +556,7 @@ TEST_CASE("VECR endpoint wait accepts late evidence but never delays departure o
         (void)s.ObservePosition(Position(0, 1000));
         (void)s.ObservePosition(Position(100, 2000, 0, true));
         (void)s.ObservePosition(Position(100, 2300, 0, true));
-        CHECK(s.ObservePosition(Position(100, 2500, 0, true)).phase == Phase::kInterrupted);
+        CHECK(s.ObservePosition(Position(100, 2500, 0, true)).phase == Phase::kFailed);
     }
     SECTION("expired capture cannot establish coverage") {
         req.max_recovery_attempts = 0;

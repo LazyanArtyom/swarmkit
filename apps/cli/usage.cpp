@@ -103,6 +103,7 @@ void PrintUsage() {
            "       --from-lat L --from-lon L --to-lat L --to-lon L --alt M\n"
            "       [--obligation arrival|traversal|survey|traversal-survey] [--corridor-m M]\n"
            "       [--capture-age-ms 500] [--evidence-wait-ms 500] [--recovery-attempts 0]\n"
+           "       [--recovery-duration-ms 30000] [--recovery-travel-m 200]\n"
            "  edge status --attempt-id ID [--drone ID]\n"
            "  edge watch [--attempt-id ID] [--drone ID] [--duration-ms MS]\n"
            "\n"

@@ -100,8 +100,9 @@ std::string_view EdgePhaseName(swarmkit::edge::Phase phase) {
         case Phase::kMoving: return "moving";
         case Phase::kDeviating: return "deviating";
         case Phase::kRecovering: return "recovering";
-        case Phase::kFulfilled: return "fulfilled";
-        case Phase::kInterrupted: return "interrupted";
+        case Phase::kArrived: return "arrived";
+        case Phase::kFailed: return "failed";
+        case Phase::kCancelled: return "cancelled";
         case Phase::kUnknown: return "unknown";
     }
     return "unknown";

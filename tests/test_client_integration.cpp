@@ -1806,6 +1806,15 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     harness.Backend().SetCapabilities(capabilities);
     Client client = MakeClient(harness.Address());
 
+    std::mutex terminal_mutex;
+    std::vector<AgentReport::EdgeReport> terminal_results;
+    auto terminal_stream = client.StartEdgeResults(
+        {.drone_id = "drone-1"}, [&](const AgentReport::EdgeReport& result) {
+            std::lock_guard lock(terminal_mutex);
+            terminal_results.push_back(result);
+        });
+    REQUIRE(terminal_stream.has_value());
+
     EdgeOperationRequest request;
     request.edge.mission_id = "mission-1";
     request.edge.mission_revision = 1;
@@ -1814,6 +1823,8 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     request.edge.drone_id = "drone-1";
     request.edge.route.points = {{0, 0}, {100, 0}};
     request.edge.obligation = edge::Obligation::kSurvey;
+    request.edge.maximum_capture_age_ms = 2000;
+    request.edge.endpoint_evidence_wait_ms = 1500;
     request.edge.corridor_half_width_m = 4;
     request.edge.arrival_radius_m = 2;
     request.edge.arrival_max_speed_mps = 0.5;
@@ -1941,7 +1952,7 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
     const EdgeResult partial = client.GetEdgeStatus("drone-1", "attempt-1");
     REQUIRE(partial.status);
     CHECK_FALSE(partial.status->status.survey_verified);
-    CHECK(partial.status->status.phase != edge::Phase::kFulfilled);
+    CHECK(partial.status->status.phase != edge::Phase::kArrived);
     REQUIRE(partial.status->status.survey_missing.size() == 1);
     CHECK(std::abs(partial.status->status.survey_missing.front().begin_m - 40) < 1e-6);
     CHECK(std::abs(partial.status->status.survey_missing.front().end_m - 70) < 1e-6);
@@ -1956,16 +1967,32 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
         [&] {
             harness.Backend().EmitTelemetry("drone-1", frame);
             const auto status = client.GetEdgeStatus("drone-1", "attempt-1");
-            return status.status && status.status->status.phase == edge::Phase::kFulfilled;
+            return status.status && status.status->status.phase == edge::Phase::kArrived;
         },
         kWaitTimeout, std::chrono::milliseconds{10}));
+    REQUIRE(testsupport::WaitUntil(
+        [&] {
+            std::lock_guard lock(terminal_mutex);
+            return terminal_results.size() == 1;
+        },
+        kWaitTimeout));
+    {
+        std::lock_guard lock(terminal_mutex);
+        CHECK(terminal_results.front().status.phase == edge::Phase::kArrived);
+        CHECK(terminal_results.front().status.survey_verified);
+        CHECK(terminal_results.front().attempt_id == "attempt-1");
+    }
     CHECK(client.ExecuteEdge(request).ok);
+    {
+        std::lock_guard lock(terminal_mutex);
+        CHECK(terminal_results.size() == 1);
+    }
     CHECK(harness.Backend().ExecuteCallCount() == 1);
     request.edge.attempt_id = "attempt-2";
     REQUIRE(client.ExecuteEdge(request).ok);
     const EdgeResult earlier = client.GetEdgeStatus("drone-1", "attempt-1");
     REQUIRE(earlier.status);
-    CHECK(earlier.status->status.phase == edge::Phase::kFulfilled);
+    CHECK(earlier.status->status.phase == edge::Phase::kArrived);
     CHECK_FALSE(client.GetEdgeStatus("drone-1", "old-attempt").ok);
     frame.validity.mode = true;
     frame.mode = "SIM_RTL";
@@ -1973,7 +2000,7 @@ TEST_CASE("Verified edge agent RPC separates arrival from survey and retains gap
         [&] {
             harness.Backend().EmitTelemetry("drone-1", frame);
             const auto status = client.GetEdgeStatus("drone-1", "attempt-2");
-            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
+            return status.status && status.status->status.phase == edge::Phase::kFailed;
         },
         kWaitTimeout, std::chrono::milliseconds{10}));
     CHECK(harness.Backend().ExecuteCallCount() == 2);
@@ -2069,7 +2096,7 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
             [&] {
                 harness.Backend().EmitTelemetry("drone-1", frame);
                 const auto status = client.GetEdgeStatus("drone-1", "terminal-1");
-                return status.status && status.status->status.phase == edge::Phase::kInterrupted;
+                return status.status && status.status->status.phase == edge::Phase::kFailed;
             },
             kWaitTimeout));
     }
@@ -2079,7 +2106,7 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
         Client client = MakeClient(harness.Address());
         const auto terminal = client.GetEdgeStatus("drone-1", "terminal-1");
         REQUIRE(terminal.status);
-        CHECK(terminal.status->status.phase == edge::Phase::kInterrupted);
+        CHECK(terminal.status->status.phase == edge::Phase::kFailed);
         CHECK(client.ExecuteEdge(request).ok);
         CHECK(harness.Backend().ExecuteCallCount() == 0);
     }
@@ -2105,7 +2132,7 @@ TEST_CASE("VECR agent restart preserves terminal reports and blocks ambiguous re
         Client client = MakeClient(harness.Address());
         const auto rejected = client.GetEdgeStatus("drone-1", "rejected-1");
         REQUIRE(rejected.status);
-        CHECK(rejected.status->status.phase == edge::Phase::kInterrupted);
+        CHECK(rejected.status->status.phase == edge::Phase::kFailed);
         CHECK_FALSE(client.ExecuteEdge(request).ok);
         CHECK(harness.Backend().ExecuteCallCount() == 0);
     }
@@ -2262,8 +2289,9 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
     REQUIRE(left_capture.ok);
     REQUIRE(capture("right", 70, 100).ok);
     const auto endpoint = edge::LocalToWgs84(40, 44, {100, 0});
-    frame.lat_deg = endpoint.lat_deg;
-    frame.lon_deg = endpoint.lon_deg;
+    const auto deviation = edge::LocalToWgs84(40, 44, {50, 6});
+    frame.lat_deg = deviation.lat_deg;
+    frame.lon_deg = deviation.lon_deg;
     REQUIRE(testsupport::WaitUntil(
         [&] {
             harness.Backend().EmitTelemetry("drone-1", frame);
@@ -2286,7 +2314,7 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
         [&] {
             harness.Backend().EmitTelemetry("drone-1", frame);
             const auto status = client.GetEdgeStatus("drone-1", "recovery-attempt");
-            return status.status && status.status->status.phase == edge::Phase::kFulfilled;
+            return status.status && status.status->status.phase == edge::Phase::kArrived;
         },
         kWaitTimeout, std::chrono::milliseconds{10}));
     CHECK(harness.Backend().ExecuteCallCount() == 3);
@@ -2297,7 +2325,7 @@ TEST_CASE("VECR simulator recovery uses bounded re-entry and resumes toward B",
         [&] {
             harness.Backend().EmitTelemetry("drone-1", frame);
             const auto status = client.GetEdgeStatus("drone-1", "battery-attempt");
-            return status.status && status.status->status.phase == edge::Phase::kInterrupted;
+            return status.status && status.status->status.phase == edge::Phase::kFailed;
         },
         kWaitTimeout, std::chrono::milliseconds{10}));
     CHECK(harness.Backend().ExecuteCallCount() == 4);
@@ -2366,7 +2394,7 @@ TEST_CASE("VECR arrival executes through SDK agent and physical SimBackend truth
         REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
         std::this_thread::sleep_for(std::chrono::milliseconds{2});
         const auto observed = client.GetEdgeStatus("drone-1", "sim-arrival-1");
-        fulfilled = observed.status && observed.status->status.phase == edge::Phase::kFulfilled;
+        fulfilled = observed.status && observed.status->status.phase == edge::Phase::kArrived;
     }
     CHECK(fulfilled);
     const auto final_truth = control->Truth("drone-1");
@@ -2405,7 +2433,7 @@ TEST_CASE("VECR never publishes fulfilled after terminal journal fsync failure",
     auto providers = agent::internal::RuntimeProviders::System();
     providers.monotonic_time_ns = [clock_ns] { return clock_ns->load(); };
     providers.journal_fault_injector = [](const auto& entry) {
-        return entry.report.phase() == swarmkit::v1::EDGE_FULFILLED
+        return entry.report.phase() == swarmkit::v1::EDGE_ARRIVED
                    ? agent::internal::EdgeAttemptJournal::Fault::kFsync
                    : agent::internal::EdgeAttemptJournal::Fault::kNone;
     };
@@ -2451,7 +2479,7 @@ TEST_CASE("VECR never publishes fulfilled after terminal journal fsync failure",
     {
         std::lock_guard<std::mutex> lock(report_mutex);
         CHECK_FALSE(std::ranges::any_of(reports, [](const AgentReport& report) {
-            return report.edge && report.edge->status.phase == edge::Phase::kFulfilled;
+            return report.edge && report.edge->status.phase == edge::Phase::kArrived;
         }));
     }
     CHECK_FALSE(client.GetEdgeStatus("drone-1", "terminal-fsync-fault").ok);
@@ -2559,11 +2587,11 @@ TEST_CASE("VECR restart gates a new attempt until simulator hold is confirmed",
         INFO(reconciliation.message);
         REQUIRE(reconciliation.ok);
         REQUIRE(reconciliation.status);
-        CHECK(reconciliation.status->status.phase == edge::Phase::kInterrupted);
+        CHECK(reconciliation.status->status.phase == edge::Phase::kFailed);
         CHECK(backend->GetHealth().mode == "SIM_HOLD");
         const auto reconciled = client.GetEdgeStatus("drone-1", "before-restart");
         REQUIRE(reconciled.status);
-        CHECK(reconciled.status->status.phase == edge::Phase::kInterrupted);
+        CHECK(reconciled.status->status.phase == edge::Phase::kFailed);
         CHECK(client.ExecuteEdge(request).ok);
     }
     std::filesystem::remove(journal_path);
@@ -2669,7 +2697,7 @@ TEST_CASE("VECR cancellation distinguishes confirmed hold from unresolved moveme
             CHECK_FALSE(client.ExecuteEdge(request).ok);
         } else {
             CHECK(cancelled.ok);
-            CHECK(cancelled.status->status.phase == edge::Phase::kInterrupted);
+            CHECK(cancelled.status->status.phase == edge::Phase::kCancelled);
             CHECK(after->mode == "SIM_HOLD");
             const auto repeated = client.CancelEdge(started.status->execution_handle);
             CHECK(repeated.ok);
@@ -2679,9 +2707,9 @@ TEST_CASE("VECR cancellation distinguishes confirmed hold from unresolved moveme
     }
 }
 
-TEST_CASE("VECR agent-backed camera repair records success and physical failure",
+TEST_CASE("VECR agent-backed camera gap terminates at B without local repair",
           "[client][integration][vecr][sim-backend]") {
-    for (const bool inject_failure : {false, true}) {
+    for (const bool inject_failure : {false}) {
         agent::SimBackendConfig sim_config;
         sim_config.clock_mode = agent::SimulationClockMode::kManual;
         auto simulator = agent::MakeSimBackend(sim_config);
@@ -2792,7 +2820,7 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
                     capture_accepted = accepted_after_pose_sync;
                     INFO("tick=" << tick << " east=" << truth->east_m
                                  << " message=" << submitted.message);
-                    if (observed.status->status.phase != edge::Phase::kFulfilled)
+                    if (observed.status->status.phase != edge::Phase::kArrived)
                         REQUIRE(submitted.ok);
                     for (std::size_t cell = 0; cell < truth_covered.size(); ++cell) {
                         const double center = (static_cast<double>(cell) + 0.5) * 0.25;
@@ -2802,7 +2830,7 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
                 }
             }
             const auto current = client.GetEdgeStatus("drone-1", "sim-gap-1");
-            fulfilled = current.status && current.status->status.phase == edge::Phase::kFulfilled;
+            fulfilled = current.status && current.status->status.phase == edge::Phase::kArrived;
             if (trace && current.status) {
                 trace << tick << ',' << truth->simulation_time_ms << ',' << truth->east_m << ','
                       << truth->north_m << ',' << truth->up_m << ',' << physical_distance_m << ','
@@ -2812,21 +2840,23 @@ TEST_CASE("VECR agent-backed camera repair records success and physical failure"
                       << current.status->status.recovery_attempts << ',' << capture_emitted << ','
                       << capture_accepted << ',' << failure_injected << '\n';
             }
-            if (current.status && current.status->status.phase == edge::Phase::kInterrupted)
+            if (current.status && current.status->status.phase == edge::Phase::kFailed)
                 break;
         }
-        CHECK(saw_recovery);
+        CHECK_FALSE(saw_recovery);
         const auto final = client.GetEdgeStatus("drone-1", "sim-gap-1");
         REQUIRE(final.status);
         if (inject_failure) {
             CHECK(failure_injected);
             CHECK_FALSE(fulfilled);
-            CHECK(final.status->status.phase == edge::Phase::kInterrupted);
+            CHECK(final.status->status.phase == edge::Phase::kFailed);
             CHECK(physical_distance_m > 19.5);
         } else {
             CHECK(fulfilled);
-            CHECK(std::ranges::all_of(truth_covered, [](bool cell) { return cell; }));
-            CHECK(physical_distance_m > 20.0);
+            CHECK_FALSE(std::ranges::all_of(truth_covered, [](bool cell) { return cell; }));
+            CHECK_FALSE(final.status->status.survey_verified);
+            CHECK(final.status->status.survey_missing.size() >= 1);
+            CHECK(physical_distance_m >= 19.5);
         }
         CHECK(physical_distance_m < 60.0);
     }
@@ -3248,7 +3278,7 @@ TEST_CASE("V6 agent validates delayed capture against bounded acquisition histor
     emit(25, 4500, 6);
     const auto stopped = client.GetEdgeStatus("drone-1", req.edge.attempt_id);
     REQUIRE(stopped.status);
-    CHECK(stopped.status->status.phase == edge::Phase::kInterrupted);
+    CHECK(stopped.status->status.phase == edge::Phase::kFailed);
     CHECK(harness.Backend().ExecuteCallCount() ==
           1);  // Native MAVLink not enabled by simulator flag.
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frozen paired v7 assignment, actual subprocess trials, no trial replacement."""
+"""Frozen paired v8 assignment, actual subprocess trials, no trial replacement."""
 
 import argparse, concurrent.futures, csv, datetime, gzip, hashlib, json, os, platform, shutil, subprocess, time, tempfile
 from pathlib import Path
@@ -81,7 +81,7 @@ def main():
     binaries = {"VECR": a.binary, "B2": a.baseline_binary.resolve()}
     for policy, binary in binaries.items():
         description = json.loads(subprocess.check_output([str(binary), "--describe"], text=True))
-        if description != {"protocol": "v7", "policy": policy}:
+        if description != {"protocol": "v8", "policy": policy}:
             raise RuntimeError("binary does not implement its assigned method")
     a.output.mkdir(parents=True, exist_ok=False)
     source = subprocess.check_output(
@@ -135,11 +135,12 @@ def main():
             "confirmatory assignments must match 22 x 30 x 2 preregistration"
         )
     manifest = dict(
-        protocol="v7",
+        protocol="v8",
         mode=a.mode,
         status="RUNNING",
         source_revision=source,
-        source_status=dirty,
+        source_status=source_changes,
+        workspace_status=dirty,
         binary_sha256={p: sha(b) for p,b in binaries.items()},
         runner_sha256=sha(__file__),
         protocol_sha256=sha(ROOT / "docs/vecr/SIMULATION_PROTOCOL.md"),
@@ -152,7 +153,7 @@ def main():
     )
     (a.output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (a.output / "source.patch").write_text(subprocess.check_output(["git", "diff", "HEAD", "--", *source_paths], cwd=ROOT, text=True))
-    binary_dir = Path(tempfile.mkdtemp(prefix="vecr-v7-frozen-"))
+    binary_dir = Path(tempfile.mkdtemp(prefix="vecr-v8-frozen-"))
     for policy, source_binary in list(binaries.items()):
         frozen = binary_dir / source_binary.name
         shutil.copy2(source_binary, frozen)

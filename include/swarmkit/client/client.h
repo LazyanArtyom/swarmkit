@@ -673,6 +673,9 @@ using TelemetryObservationHandler = std::function<void(const TelemetryObservatio
 using TelemetryErrorHandler = std::function<void(const std::string&)>;
 using AuthorityEventHandler = std::function<void(const AuthorityEventInfo&)>;
 using AgentReportHandler = std::function<void(const AgentReport&)>;
+/// Called once per execution identity within one live subscription. Subscribe
+/// before dispatch; after reconnect, query GetEdgeStatus for durable results.
+using EdgeFinishedHandler = std::function<void(const AgentReport::EdgeReport&)>;
 using DataMessageHandler = std::function<void(const DataMessage&)>;
 /// @}
 
@@ -1087,6 +1090,13 @@ class Client {
                                                   TelemetryErrorHandler on_error = {},
                                                   SubscriptionEventHandler on_event = {},
                                                   SubscriptionOptions options = {});
+
+    /// Subscribe to terminal edge results only. Arrival and survey verification
+    /// remain separate in EdgeReport::status.
+    [[nodiscard]] SubscriptionResult StartEdgeResults(ReportSubscription subscription,
+                                                      EdgeFinishedHandler on_finished,
+                                                      TelemetryErrorHandler on_error = {},
+                                                      SubscriptionEventHandler on_event = {});
 
     /// @brief Cancel the active report stream (if any).
     void StopReports();

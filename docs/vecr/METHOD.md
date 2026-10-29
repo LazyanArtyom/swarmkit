@@ -19,26 +19,30 @@ The SDK and protobuf expose one VECR recovery method with no policy selector:
 
 1. Bind the request to mission/revision/edge/attempt/drone identity and a fixed route.
 2. Accumulate conservative qualified survey intervals and bounded traversal evidence.
-3. On sustained corridor departure, re-enter at the earlier of current projected
-   progress and the earliest missing interval. Without missing survey work, use
-   current progress to restore the route.
-4. At a verified stationary endpoint, wait for the configured bounded evidence
-   delivery period. Waiting never credits a future acquisition and remains subject
-   to endpoint freshness, safety and the attempt deadline.
-5. If a gap remains, return to its beginning, verify physical stopped re-entry,
-   then resume toward B. Retain disjoint previously verified work.
-6. Fulfill only when the requested predicates hold. Exhausted retries, unknown
-   evidence, backend refusal and safety intervention are explicit outcomes.
+3. On sustained corridor departure *before B*, re-enter at the earlier of current
+   projected progress and the earliest required unverified interval. Without
+   missing survey work, use current progress to restore the route.
+4. Verify physical stopped re-entry before continuing toward B. Retain disjoint
+   previously verified work. Recovery attempts, duration and conservative
+   telemetry-derived re-entry travel have explicit limits. Exhausted budgets,
+   unsafe navigation, backend refusal and timeout are failed outcomes. On failure
+   the agent requests a backend hold when supported; command acceptance alone does
+   not prove physical stop, so unresolved physical navigation remains explicit.
+5. At a verified stationary B, wait only for the configured bounded evidence
+   delivery period. Then terminate with ARRIVED and independently report whether
+   the requested survey/traversal obligation is verified and which intervals remain.
+   No command back to a gap is issued after arrival.
 
 For progress p and earliest gap start g, the local target is q=min(p,g) during
-sustained departure and q=g for endpoint repair, clipped to the route. This is a
+sustained departure, clipped to the route. This is a
 repair heuristic, not a guarantee that another pass will acquire valid evidence.
 No sensing-envelope optimizer or fixed-overlap policy remains in the public API.
 Uncertainty remains essential to evidence acceptance and physical arrival.
 
-The research-only full-restart baseline chooses q=0. Its separately compiled,
-non-installed executable shares verification, evidence waiting, faults, dynamics,
-retry budgets and safety. It is a comparator, not a second production API.
+The research-only full-restart baseline chooses q=0 on the same qualified
+in-flight departure. Its separately compiled, non-installed executable shares
+verification, evidence waiting, faults, dynamics, retry budgets and safety.
+It is a comparator, not a second production API.
 
 ## Physical obligations and identity
 
@@ -98,7 +102,7 @@ prove preservation of a classical rotor-router theorem.
 
 ## Execution and safety
 
-Recovery remains in the agent, including command arbitration, health, authority,
+Recovery remains in the agent during A-to-B flight, including command arbitration, health, authority,
 battery and navigation checks. ACK does not release recovery: physical re-entry
 and stopped qualification precede continuation. Attempts, cooldown and deadline
 bound recovery. Native production MAVLink recovery remains disabled until its

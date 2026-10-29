@@ -2,7 +2,7 @@
 
 #include "swarmkit/edge/vecr.h"
 
-TEST_CASE("Research baseline shares evidence and waiting but returns to A", "[vecr][baseline]") {
+TEST_CASE("Research baseline returns to A only for an in-flight deviation", "[vecr][baseline]") {
     using namespace swarmkit::edge;
     EdgeRequest request;
     request.mission_id = "m";
@@ -20,7 +20,7 @@ TEST_CASE("Research baseline shares evidence and waiting but returns to A", "[ve
     request.endpoint_evidence_wait_ms = 500;
     EdgeExecutionSupervisor supervisor(request);
     REQUIRE(supervisor.Valid());
-    PositionObservation observation{.position = {100, 0},
+    PositionObservation observation{.position = {50, 0},
                                     .monotonic_ms = 1000,
                                     .valid = true,
                                     .safe_to_navigate = true,
@@ -42,16 +42,17 @@ TEST_CASE("Research baseline shares evidence and waiting but returns to A", "[ve
                             .capture_succeeded = true,
                             .full_strip_quality_established = true};
     (void)supervisor.ObserveCapture(capture);
+    observation.position.north_m = 6;
+    observation.monotonic_ms = 1100;
+    CHECK_FALSE(supervisor.ObservePosition(observation).pending_reentry);
     observation.monotonic_ms = 1200;
-    auto status = supervisor.ObservePosition(observation);
-    CHECK(status.at_b_verified);
-    CHECK_FALSE(status.pending_reentry);
-    CHECK_FALSE(status.survey_verified);
-    observation.monotonic_ms = 1700;
-    status = supervisor.ObservePosition(observation);
+    CHECK_FALSE(supervisor.ObservePosition(observation).pending_reentry);
+    observation.monotonic_ms = 1300;
+    const auto status = supervisor.ObservePosition(observation);
     REQUIRE(status.pending_reentry);
     CHECK(status.pending_reentry->east_m == 0);
     CHECK(status.survey_covered_m == 40);
     CHECK(status.survey_missing.front().begin_m == 40);
     CHECK(status.phase == Phase::kRecovering);
+    CHECK_FALSE(status.at_b_verified);
 }

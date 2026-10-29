@@ -182,8 +182,9 @@ EdgeAttemptJournal::EdgeAttemptJournal(std::string path, FaultInjector fault_inj
         entries_[key] = *entry;
     }
     for (auto& [_, entry] : entries_) {
-        if (entry.report.phase() != swarmkit::v1::EDGE_FULFILLED &&
-            entry.report.phase() != swarmkit::v1::EDGE_INTERRUPTED) {
+        if (entry.report.phase() != swarmkit::v1::EDGE_ARRIVED &&
+            entry.report.phase() != swarmkit::v1::EDGE_FAILED &&
+            entry.report.phase() != swarmkit::v1::EDGE_CANCELLED) {
             entry.report.set_phase(swarmkit::v1::EDGE_UNKNOWN);
             entry.report.set_at_b_verified(false);
             entry.report.set_reason(
@@ -217,12 +218,13 @@ core::Result EdgeAttemptJournal::Append(const Entry& entry) {
             it->second.client_id != entry.client_id)
             return core::Result::Rejected("edge attempt journal identity conflict");
         const auto prior_phase = it->second.report.phase();
-        if (prior_phase == swarmkit::v1::EDGE_FULFILLED ||
-            prior_phase == swarmkit::v1::EDGE_INTERRUPTED) {
-            if (prior_phase == swarmkit::v1::EDGE_INTERRUPTED &&
+        if (prior_phase == swarmkit::v1::EDGE_ARRIVED ||
+            prior_phase == swarmkit::v1::EDGE_FAILED ||
+            prior_phase == swarmkit::v1::EDGE_CANCELLED) {
+            if (prior_phase == swarmkit::v1::EDGE_FAILED &&
                 it->second.physical_navigation_unresolved &&
                 !entry.physical_navigation_unresolved &&
-                entry.report.phase() == swarmkit::v1::EDGE_INTERRUPTED &&
+                entry.report.phase() == swarmkit::v1::EDGE_FAILED &&
                 it->second.dispatch_accepted == entry.dispatch_accepted) {
                 // A later explicitly confirmed hold may resolve an already
                 // interrupted task without changing its obligation outcome.
