@@ -131,6 +131,17 @@ def validate(browser=False):
                 page.locator('[data-scene="graph"] input[type="range"]').evaluate(
                     "node => { node.value = '550'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
                 assert 'EXECUTE LOCALLY' in page.locator('[data-scene="graph"] .motion-step').inner_text().upper()
+                contract = page.locator('[data-scene="contract"]')
+                contract.locator('input[type="range"]').evaluate(
+                    "node => { node.value = '980'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
+                assert 'CALLBACK: ARRIVED' in contract.locator('[data-el="contractOutcome"]').text_content()
+                assert 'survey incomplete' in contract.locator('.motion-summary').inner_text().lower() or \
+                    'missing survey interval' in contract.locator('.motion-summary').inner_text().lower()
+                contract.locator('[data-mode="exhausted"]').click()
+                contract.locator('input[type="range"]').evaluate(
+                    "node => { node.value = '980'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
+                assert 'CALLBACK: FAILED' in contract.locator('[data-el="contractOutcome"]').text_content()
+                assert 'B not reached' in contract.locator('[data-el="contractOutcome"]').text_content()
                 if width == 1440:
                     for name in ('N00', 'N03', 'N07', 'N11', 'N19'):
                         page.locator('#replayCase').select_option(name)

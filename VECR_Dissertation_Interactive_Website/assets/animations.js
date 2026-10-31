@@ -62,13 +62,54 @@
       summary:p=>p<.3?'The planner chooses the next graph edge; the SDK does not implement rotor-router.':p<.63?'VECR runs local motion supervision and qualified evidence tracking.':p<.85?'At B, VECR reports both arrival and coverage state, even when gaps remain.':'Any further task is a new mission-level choice, not an implicit VECR backward command.'
     },
     contract: {
-      title:'At B: report unresolved intervals without returning',note:'Conceptual example of the implemented terminal arrival callback; no autonomous endpoint return.',
-      stages:['Command accepted','Travel to B','Find residual gap','Emit callback'],seconds:12,
-      svg:()=>`${label(40,42,'ARRIVAL IS NOT THE SAME AS COVERAGE',W,17)}${['COMMAND ACK','ARRIVED AT B','COVERAGE STATE','TERMINAL REPORT'].map((t,i)=>`<rect data-el="contractBox${i}" x="${34+i*226}" y="68" width="205" height="62" rx="10" fill="#183343" stroke="#4b6570" stroke-width="1.5"/>${label(45+i*226,105,t,M,13)}`).join('')}${route(228)}
-      <rect x="95" y="216" width="310" height="24" rx="4" fill="${G}" opacity=".8"/><rect x="525" y="216" width="320" height="24" rx="4" fill="${G}" opacity=".8"/><rect x="405" y="213" width="120" height="30" rx="4" stroke="${A}" stroke-dasharray="6 4" fill="${A}" opacity=".30"/>
-      ${label(382,197,'unverified',A,14)}${drone('contractDrone')}<text data-el="contractOutcome" x="120" y="320" fill="${G}" font-size="16">Only the caller may authorize a new edge task.</text>`,
-      draw:(svg,p)=>{const phase=[p>.1,p>.38,p>.63,p>.85];phase.forEach((on,i)=>{attr(svg,'contractBox'+i,'fill',on?'#1c6457':'#183343');attr(svg,'contractBox'+i,'stroke',on?G:'#4b6570');});pos(svg,'contractDrone',lerp(95,845,smooth(p/.54)),228);setText(svg,'contractOutcome',p<.6?'B is a destination, not an instruction to backtrack':p<.85?'Coverage = INCOMPLETE · [18.2, 21.6] m':'CALLBACK: ARRIVED / INCOMPLETE · NO GOTO after B');},
-      summary:p=>p<.38?'Command acceptance does not prove physical arrival or image quality.':p<.63?'The UAV reaches B and stays at B; the middle interval is unverified.':p<.85?'VECR assembles the immutable arrival/coverage result.':'One terminal event is delivered; the caller decides how to resolve the gap. VECR sends no return command.'
+      title:'Deviation → bounded recovery → B report',
+      note:'Conceptual example, not a recorded flight. One accepted re-entry command is allowed here. A second qualified departure after that limit causes FAILED; VECR does not silently continue an unsafe edge.',
+      stages:['Detect deviation','Return and verify','Resume and monitor','Terminal outcome'],breakpoints:[0,.30,.58,.90,1],seconds:16,
+      options:[['arrival','Recovery succeeds; B has a gap'],['exhausted','Another deviation; budget used']],
+      svg:()=>`${label(34,39,'CORRECT DURING A → B · REPORT ONLY AFTER B',W,17)}
+        <text data-el="contractCount" x="34" y="65" fill="${M}" font-size="13">Accepted recovery commands: 0 / 1</text>
+        ${['DETECT','RE-ENTER','CONTINUE','TERMINAL'].map((name,i)=>`<rect data-el="contractBox${i}" x="${34+i*226}" y="77" width="205" height="41" rx="9" fill="#173644" stroke="#4b6570" stroke-width="1.5"/>${label(47+i*226,103,`${i+1}  ${name}`,W,12)}`).join('')}
+        ${route(220)}
+        <path data-el="contractOffPath" d="M320 220 Q366 122 425 140" stroke="${A}" stroke-width="4" stroke-dasharray="7 6" fill="none" opacity="0"/>
+        <path data-el="contractReturn" d="M425 140 Q371 155 315 220" stroke="${B}" stroke-width="4" stroke-dasharray="7 6" fill="none" opacity="0"/>
+        <path data-el="contractSecond" d="M610 220 Q642 147 660 145" stroke="${A}" stroke-width="4" stroke-dasharray="7 6" fill="none" opacity="0"/>
+        <rect data-el="contractCoverageA" x="95" y="207" width="0" height="26" rx="3" fill="${G}" opacity=".82"/>
+        <rect data-el="contractCoverageB" x="500" y="207" width="0" height="26" rx="3" fill="${G}" opacity=".82"/>
+        <rect x="440" y="204" width="60" height="32" rx="4" fill="${A}" fill-opacity=".20" stroke="${A}" stroke-dasharray="5 5"/>
+        <text data-el="contractGapLabel" x="512" y="184" fill="${A}" font-size="13" opacity="0">camera evidence unverified</text>
+        <circle data-el="contractQ" cx="315" cy="220" r="7" fill="${B}" opacity="0"/>
+        <text data-el="contractQLabel" x="270" y="172" fill="${B}" font-size="13" opacity="0">re-entry q</text>
+        <text data-el="contractNotB" x="694" y="177" fill="${A}" font-size="13" opacity="0">B NOT REACHED</text>
+        ${drone('contractDrone')}
+        <text data-el="contractOutcome" x="40" y="326" fill="${G}" font-size="15">A → B: monitoring bounded position and survey evidence</text>`,
+      draw:(svg,p,mode)=>{
+        const exhausted=mode==='exhausted';
+        let x=95,y=220,angle=0;
+        if(p<.18){x=lerp(95,320,p/.18);}
+        else if(p<.30){const t=smooth((p-.18)/.12);x=lerp(320,425,t);y=lerp(220,140,t);angle=-30;}
+        else if(p<.42){x=425;y=140;angle=-30;}
+        else if(p<.58){const t=smooth((p-.42)/.16);x=lerp(425,315,t);y=lerp(140,220,t);angle=130;}
+        else if(p<.64){x=315;}
+        else if(exhausted&&p>=.80){const t=smooth((p-.80)/.10);x=lerp(610,660,t);y=lerp(220,145,t);angle=-30;}
+        else {const end=exhausted?610:845;const duration=exhausted?.16:.26;x=lerp(315,end,smooth((p-.64)/duration));}
+        pos(svg,'contractDrone',x,y,angle);
+        const stage=p<.30?0:p<.58?1:p<.90?2:3;
+        for(let i=0;i<4;i++){attr(svg,'contractBox'+i,'fill',i===stage?(exhausted&&i===3?'#66452c':'#1c6457'):'#173644');attr(svg,'contractBox'+i,'stroke',i===stage?(exhausted&&i===3?A:G):'#4b6570');}
+        attr(svg,'contractOffPath','opacity',p>.18?'1':'0');
+        attr(svg,'contractReturn','opacity',p>.42?'1':'0');
+        attr(svg,'contractSecond','opacity',exhausted&&p>.80?'1':'0');
+        attr(svg,'contractQ','opacity',p>.42?'1':'0');
+        attr(svg,'contractQLabel','opacity',p>.42&&p<.70?'1':'0');
+        attr(svg,'contractCoverageA','width',p<.18?225*smooth(p/.18):p<.64?225:225+120*smooth((p-.64)/.08));
+        attr(svg,'contractCoverageB','width',(exhausted?110:345)*smooth((p-.72)/(exhausted?.08:.17)));
+        attr(svg,'contractGapLabel','opacity',p>.69?'1':'0');
+        attr(svg,'contractNotB','opacity',exhausted&&p>.90?'1':'0');
+        setText(svg,'contractCount',p<.42?'Accepted recovery commands: 0 / 1':'Accepted recovery commands: 1 / 1 · limit reached');
+        const result=p<.30?'MOVING → DEVIATING: sustained bounded departure before B':p<.58?'RECOVERING: return command 1 / 1; physical result pending':p<.64?'Verify stopped re-entry; a command ACK alone is insufficient':p<.80?'MOVING again: accepted evidence retained; no new recovery allowance':exhausted?(p<.90?'New qualified departure; no attempt remains':'CALLBACK: FAILED · recovery budget exhausted · B not reached'):(p<.90?'Approaching B; camera evidence remains unverified':'CALLBACK: ARRIVED · survey incomplete · gap [18.2, 21.6] m');
+        setText(svg,'contractOutcome',result);
+        attr(svg,'contractOutcome','fill',exhausted&&p>.80?A:G);
+      },
+      summary:(p,mode)=>p<.30?'A sustained bounded corridor departure is detected while the UAV is still traveling toward B.':p<.58?'VECR uses one allowed recovery command to return to an evidence-selected point before B.':p<.64?'The agent requires bounded stopped re-entry before resuming; command acceptance is not proof.':mode==='exhausted'?(p<.90?'After resuming, a new qualified departure exceeds the one-attempt limit. The edge cannot safely continue.':'VECR reports FAILED with the reason and retained evidence. There is no arrival claim or automatic retry.'):p<.90?'The drone continues to B. A separate camera-evidence interval remains unverified, despite successful deviation repair.':'After qualified stopped arrival, one terminal callback reports ARRIVED and the missing survey interval. The caller decides what to do next.'
     },
     footprint: {
       title:'Why uncertainty shrinks an accepted camera footprint',note:'Geometric demonstration only · fixed calibrated field-of-view values and truthful quality assertions are assumed; no image pixels are inspected.',

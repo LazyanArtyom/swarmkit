@@ -79,6 +79,8 @@ A backend can acknowledge a flight command, the vehicle can physically reach B, 
 
 {{diagram:contract}}
 
+The interactive example follows one edge from A to B. A **sustained, bounded deviation before B** triggers an authorized return to an evidence-selected re-entry point. After physical stopped re-entry is verified, the drone resumes toward B; using the last allowed recovery attempt does not itself stop that resumed flight. If another qualified departure then requires recovery with no attempt left, VECR ends the edge as `FAILED` and reports the reason. In the successful branch, a separate interval lacks camera evidence, so qualified arrival at B produces one `ARRIVED` terminal callback with `survey_verified=false` and the missing interval. The animation is conceptual; measured trajectories appear in the recorded replay chapter.
+
 ## Precisely bounded contribution
 
 VECR contributes a **runtime conformance and local correction contract** for one assigned directed graph edge. It (i) binds measurement evidence to an immutable execution identity, (ii) conservatively calculates verified and unverified route intervals, (iii) detects sustained physical departures during A→B, (iv) performs a limited safe return to an evidence-selected re-entry location, and (v) exposes factual status and terminal results to an external planner. The method does **not** compute a graph walk, choose a successor, assign work to other UAVs, or authorize another edge after B.
@@ -87,7 +89,7 @@ The innovation is the **integrated boundary and lifecycle**, rather than the inv
 
 ## One recovery rule and a separate terminal report
 
-**In-flight local deviation correction:** sustained abnormal navigation while executing A→B can trigger a bounded re-entry procedure *before reaching B*. The controller returns to the earlier of current progress and the first unverified required coordinate, validates physical stopped re-entry, then continues to B. Valid prior coverage remains credited. Missing pose bounds suspend qualified progress; if uncertainty persists to a deadline or occurs during recovery, or if a command is refused, safety intervenes, or a budget is exhausted, the attempt fails with an explicit reason.
+**In-flight local deviation correction:** sustained abnormal navigation while executing A→B can trigger a bounded re-entry procedure *before reaching B*. The controller returns to the earlier of current progress and the first unverified required coordinate, validates physical stopped re-entry, then continues to B. Valid prior coverage remains credited. The attempt limit bounds accepted recovery dispatches across the edge; it does not repeatedly send a rejected command or retry a failed physical re-entry. Missing pose bounds suspend qualified progress; if uncertainty persists to a deadline or occurs during recovery, or if a command is refused, safety intervenes, or another required correction exceeds the budget, the attempt fails with an explicit reason.
 
 **Terminal reporting:** when qualified arrival at B occurs, the agent does **not** command a flight back to a leftover interval. It reports `ARRIVED`, separate survey and traversal verdicts, missing interval complements, covered length and a reason. The report does not expose a pending-capture count or an explicit accepted-interval list. The external application decides whether the same UAV, another UAV, or no UAV should address that work.
 
@@ -401,7 +403,7 @@ A revised SITL run must trigger a sustained departure and record recovery before
 
 ## Case A — deviation while traveling A→B
 
-At 25 m along a 40 m edge, sustained corridor departure is detected. Accepted survey evidence covers `[0,18]∪[22,25]` m. VECR computes the first missing coordinate $g=18$ m and chooses $q=\min(25,18)=18$ m. The UAV returns **now, before B**, confirms bounded stopped re-entry/dwell, and resumes A→B if safe. An external rotor-router need not be interrupted for each local correction, and VECR does not choose the next vertex.
+At 25 m along a 40 m edge, sustained corridor departure is detected. Accepted survey evidence covers `[0,18]∪[22,25]` m. VECR computes the first missing coordinate $g=18$ m and chooses $q=\min(25,18)=18$ m. The UAV returns **now, before B**, confirms bounded stopped re-entry/dwell, and resumes A→B if safe. Even when this uses the last permitted recovery dispatch, normal continuation is allowed; a later qualified departure requiring another dispatch ends the attempt as `FAILED`. An external rotor-router need not be interrupted for each local correction, and VECR does not choose the next vertex.
 
 ## Case B — B reached with unresolved survey strip
 
