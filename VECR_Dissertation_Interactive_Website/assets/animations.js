@@ -52,14 +52,53 @@
       summary:p=>p<.23?'The higher-level graph algorithm assigns A → B; the local supervisor collects evidence.':p<.46?'The UAV departs its corridor and VECR starts correction before arriving at B.':p<.7?'The vehicle returns to a conservative evidence-selected coordinate, verifies physical re-entry, then may resume.':'At destination, any unresolved intervals are handed to the caller—not automatically revisited.'
     },
     graph: {
-      title:'Graph algorithm and physical executor have different jobs', note:'Conceptual SDK boundary; rotor-router is a motivating example, not an implemented planner.',
-      stages:['Assign A → B','Execute locally','Arrive + report','Caller decides'],breakpoints:[0,.15,.63,.85,1],seconds:12,
-      svg:() =>`${label(42,42,'EXTERNAL GRAPH CONTROLLER',B,14)}${label(516,42,'VECR LOCAL EXECUTOR',G,14)}<rect x="32" y="62" width="418" height="229" rx="14" fill="#112e42" stroke="#35546b"/><rect x="484" y="62" width="426" height="229" rx="14" fill="#10372f" stroke="#315d55"/>
-      <g stroke="#7194ad" stroke-width="3" fill="none"><path d="M120 156L252 111L358 168L234 244L120 156M252 111L234 244"/></g><g fill="#183e59" stroke="${B}" stroke-width="2"><circle cx="120" cy="156" r="21"/><circle cx="252" cy="111" r="21"/><circle cx="358" cy="168" r="21"/><circle cx="234" cy="244" r="21"/></g>
-      ${label(113,162,'A',W,17)}${label(245,117,'B',W,17)}${label(351,175,'C',W,17)}${label(227,251,'D',W,17)}<path data-el="graphEdge" d="M120 156L252 111" stroke="${A}" stroke-width="7"/><g data-el="graphChip" transform="translate(120 156)"><circle r="10" fill="${A}" stroke="#fdf4e5" stroke-width="2"/></g>
-      <rect x="524" y="130" width="340" height="36" rx="9" fill="#2c5a51"/><rect data-el="graphCoverage" x="524" y="130" width="0" height="36" rx="9" fill="${G}" opacity=".80"/><text x="531" y="116" fill="${W}" font-size="14">Assigned physical edge A → B</text><text data-el="graphOutcome" x="516" y="235" fill="${A}" font-size="14">Caller observes physical execution</text><text x="516" y="267" fill="${M}" font-size="12">VECR never chooses the next graph edge</text>`,
-      draw:(svg,p)=>{const n=p<.63?smooth(p/.63):1;pos(svg,'graphChip',lerp(120,252,n),lerp(156,111,n));attr(svg,'graphCoverage','width',320*smooth((p-.15)/.65));attr(svg,'graphEdge','stroke',p>.84?G:A);setText(svg,'graphOutcome',p<.63?'A → B in execution; poll status on demand':p<.85?'ARRIVED + residual interval report':'Caller alone decides: continue / reassign / retry');},
-      summary:p=>p<.3?'The planner chooses the next graph edge; the SDK does not implement rotor-router.':p<.63?'VECR runs local motion supervision and qualified evidence tracking.':p<.85?'At B, VECR reports both arrival and coverage state, even when gaps remain.':'Any further task is a new mission-level choice, not an implicit VECR backward command.'
+      title:'Who assigns the edge, and who checks the flight?',
+      note:'Conceptual division of responsibility. The mission app may use any graph policy; rotor-router is not implemented by SwarmKit.',
+      stages:['Choose A → B','Execute locally','Return result','App decides'],breakpoints:[0,.16,.64,.84,1],seconds:12,
+      svg:()=>`${label(34,37,'ONE EDGE · TWO RESPONSIBILITIES',W,17)}
+        <rect data-el="graphAppCard" x="30" y="62" width="350" height="237" rx="14" fill="#112e42" stroke="#496981" stroke-width="2"/>
+        <rect data-el="graphAgentCard" x="560" y="62" width="350" height="237" rx="14" fill="#10372f" stroke="#466d62" stroke-width="2"/>
+        ${label(50,94,'MISSION APP',B,17)}
+        <text data-el="graphAppLabel" x="50" y="121" fill="${W}" font-size="15">1  Choose edge A → B</text>
+        <path d="M99 184H249L303 240M99 184L303 240" stroke="#7194ad" stroke-width="3" fill="none"/>
+        <path data-el="graphSelected" d="M99 184H249" stroke="${A}" stroke-width="7"/>
+        <g fill="#193d55" stroke="${B}" stroke-width="3"><circle cx="99" cy="184" r="19"/><circle cx="249" cy="184" r="19"/><circle cx="303" cy="240" r="19"/></g>
+        ${label(92,190,'A',W,17)}${label(242,190,'B',W,17)}${label(296,246,'C',W,17)}
+        <text data-el="graphDecision" x="50" y="277" fill="${M}" font-size="13">The app selects an assigned graph edge.</text>
+        <path data-el="graphRequest" d="M396 143H540" stroke="${B}" stroke-width="4" opacity=".28"/>
+        <path data-el="graphRequestHead" d="M540 143L527 136V150Z" fill="${B}" opacity=".28"/>
+        <text x="468" y="129" fill="${B}" font-size="12" text-anchor="middle">edge request</text>
+        <path data-el="graphReport" d="M544 236H400" stroke="${G}" stroke-width="4" opacity=".28"/>
+        <path data-el="graphReportHead" d="M400 236L413 229V243Z" fill="${G}" opacity=".28"/>
+        <text x="472" y="259" fill="${G}" font-size="12" text-anchor="middle">result + gaps</text>
+        ${label(582,94,'SWARMKIT AGENT · VECR',G,17)}
+        <text data-el="graphAgentLabel" x="582" y="121" fill="${W}" font-size="15">Waits for an assigned edge</text>
+        <path d="M594 185H876" stroke="#487b73" stroke-width="17" stroke-linecap="round"/>
+        <rect data-el="graphCoverageA" x="594" y="178" width="0" height="14" rx="3" fill="${G}"/>
+        <rect data-el="graphCoverageB" x="748" y="178" width="0" height="14" rx="3" fill="${G}"/>
+        <rect data-el="graphGap" x="720" y="173" width="28" height="24" rx="3" fill="${A}" fill-opacity=".3" stroke="${A}" stroke-dasharray="4 4" opacity="0"/>
+        <circle cx="594" cy="185" r="6" fill="${B}"/><circle cx="876" cy="185" r="6" fill="${G}"/>
+        ${label(586,219,'A',M,13)}${label(867,219,'B',M,13)}
+        <g data-el="graphDrone" transform="translate(594 185)"><circle r="12" fill="#0b2830" stroke="${G}" stroke-width="3"/><path d="M-17 0H17M0-17V17" stroke="${G}" stroke-width="2"/><circle r="4" fill="${W}"/></g>
+        <text data-el="graphAgentStatus" x="582" y="277" fill="${M}" font-size="13">Checks flight and camera evidence.</text>`,
+      draw:(svg,p)=>{
+        const executing=p>=.16&&p<.64,reporting=p>=.64&&p<.84,deciding=p>=.84;
+        attr(svg,'graphAppCard','stroke',p<.16||deciding?B:'#496981');
+        attr(svg,'graphAgentCard','stroke',executing||reporting?G:'#466d62');
+        for(const id of ['graphRequest','graphRequestHead'])attr(svg,id,'opacity',p>=.16&&p<.64?.95:.28);
+        for(const id of ['graphReport','graphReportHead'])attr(svg,id,'opacity',p>=.64?.95:.28);
+        const progress=smooth((p-.16)/.48);
+        pos(svg,'graphDrone',lerp(594,876,progress),185);
+        attr(svg,'graphCoverageA','width',126*progress);
+        attr(svg,'graphCoverageB','width',128*smooth((progress-.55)/.45));
+        attr(svg,'graphGap','opacity',p>=.64?'1':'0');
+        attr(svg,'graphSelected','stroke',deciding?B:A);
+        setText(svg,'graphAppLabel',p<.16?'1  Choose edge A → B':deciding?'4  Decide the next task':'A → B assignment is active');
+        setText(svg,'graphDecision',deciding?'Retry, reassign or continue: app chooses.':reporting?'Receives arrival and coverage facts.':'The app selects an assigned graph edge.');
+        setText(svg,'graphAgentLabel',p<.16?'Waits for an assigned edge':executing?'2  Fly A → B and verify evidence':'3  Report B arrival and gaps');
+        setText(svg,'graphAgentStatus',p<.16?'Checks flight and camera evidence.':executing?'Tracks position, accepted photos and gaps.':'ARRIVED · survey unverified · gap remains');
+      },
+      summary:p=>p<.16?'The external mission app chooses one directed edge, A → B, and sends that assignment to SwarmKit.':p<.64?'The onboard agent flies that edge, detects deviations, and checks qualified camera evidence. It does not choose a new graph edge.':p<.84?'At B, the agent reports qualified arrival separately from the remaining unverified camera interval.':'The result goes back to the mission app. Only that app decides whether to revisit, reassign, or proceed to another edge.'
     },
     contract: {
       title:'Deviation → bounded recovery → B report',

@@ -131,6 +131,13 @@ def validate(browser=False):
                 page.locator('[data-scene="graph"] input[type="range"]').evaluate(
                     "node => { node.value = '550'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
                 assert 'EXECUTE LOCALLY' in page.locator('[data-scene="graph"] .motion-step').inner_text().upper()
+                graph = page.locator('[data-scene="graph"]')
+                graph.locator('input[type="range"]').evaluate(
+                    "node => { node.value = '750'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
+                assert 'ARRIVED · survey unverified' in graph.locator('[data-el="graphAgentStatus"]').text_content()
+                graph.locator('input[type="range"]').evaluate(
+                    "node => { node.value = '960'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
+                assert 'Decide the next task' in graph.locator('[data-el="graphAppLabel"]').text_content()
                 contract = page.locator('[data-scene="contract"]')
                 contract.locator('input[type="range"]').evaluate(
                     "node => { node.value = '980'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
