@@ -8,7 +8,7 @@ it reports missing regions and may request bounded in-flight re-entry. It does n
 implement rotor-router, gossip, mission planning, or cloud correction.
 
 The active v8 evidence is the agent-backed geometric campaign in
-[`results/vecr/v8`](../results/vecr/v8). Twelve historical v7 ArduPilot SITL
-flights used the retired endpoint policy; revised-policy SITL and real camera
-coverage remain untested. The [method](vecr/METHOD.md) states the conditional
+[`results/vecr/v8`](../results/vecr/v8). Retired SITL records used a different
+endpoint policy and were removed from the current checkout; revised-policy SITL
+and real camera coverage remain untested. The [method](vecr/METHOD.md) states the conditional
 assumptions, and [current validation](vecr/README.md) identifies open work.

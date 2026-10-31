@@ -28,15 +28,14 @@ committee acceptance can be established by this repository.
 
 ## One-method decision and provenance
 
-The completed comparison at revision
-`12cc4fdd54a0a6e440988b6310dba7e1d5c7111d` motivated retaining earliest-gap recovery
-with bounded evidence waiting. A more conservative envelope target did not improve
-completion and added travel in that matrix. Its calculation and all obsolete public
-policy selectors are removed. This is selection based on measured evidence, not a
-claim that the retained heuristic dominates every possible environment.
+The working tree exposes one production recovery rule: on a qualified in-flight
+departure, return to `q=min(projected progress, first required unverified
+coordinate)` within finite safety budgets. At B, report missing work without an
+automatic backward command. There are no public policy selectors. The frozen v8
+campaign tests this rule against a separately compiled full-restart B2 research
+comparator, which is never an SDK/protobuf choice.
 
-The working tree contains the current method and its fresh validation only.
-Superseded datasets, failed earlier pilots, source and manuscripts remain retrievable
-from that Git revision; history is not rewritten. The current selected-method study
-uses new seeds and retains its own failures. The full-restart comparator is confined
-to a separately compiled research executable, never an SDK/protobuf choice.
+Retired datasets and pilot directories were removed from the current checkout
+after explicit user authorization. Their pre-cleanup state remains recoverable
+from Git history; no older estimate is used as a v8 result. The frozen v8
+primary and qualified reuse campaigns retain their raw outcomes and failures.

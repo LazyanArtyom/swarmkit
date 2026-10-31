@@ -13,7 +13,7 @@ The active dissertation is `VECR_Dissertation_Interactive_Website/source/dissert
 | SwarmKit owns an assigned edge, not a graph traversal algorithm | `include/swarmkit/edge/vecr.h`; client and agent API | Direct/routed v8 reuse campaign; neither rotor-router nor gossip is implemented |
 | Conditional accepted-footprint soundness under honest hard bounds | `src/core/vecr.cpp` evidence acceptance; documented set-containment proof | `validate_digital.py` checks accepted footprint containment; zero false reported completions in 1,200 honest-sensor attempts; N19/N20 are negative controls |
 | Conditional distance reduction versus fair full-restart B2 | `tests/vecr_digital_trial.cpp`; `scripts/vecr/run_digital.py` | 30 common seed pairs each in N07–N09; `paired_comparisons.csv`, `paired_distance.svg`, bootstrap intervals; other scenarios are fully reported without cost superiority claims |
-| Revised-method SITL and real camera performance remain unverified | No v8 SITL or calibrated image campaign | Archived v7 SITL is labelled historical; all revised-method SITL figures are TBD |
+| Revised-method SITL and real camera performance remain unverified | No v8 SITL or calibrated image campaign | Retired v7 SITL records remain in Git history; all revised-method SITL figures are TBD |
 
 ## Interface and evidence limits
 

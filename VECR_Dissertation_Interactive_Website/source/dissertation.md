@@ -10,7 +10,7 @@
 
 **Arrival and coverage are intentionally independent outcomes.** Upon qualified arrival at B, VECR stops autonomous recovery for that edge, returns a single terminal result containing arrival status and residual evidence gaps, and delegates their disposition to the calling controller. During execution, an on-demand *Execution Status Snapshot* exposes the current phase, confidence-qualified missing intervals, projected progress, and recovery counters without periodic callbacks. A terminal-only SDK subscription reports arrival, failed execution or confirmed cancellation once per execution identity within one live subscription; a disconnected caller can reconcile through the durable status query. Recovery is constrained by command authority, health, energy, time, number of attempts, and successful physical re-entry verification; failure is reported, not retried forever.
 
-The revised C++23 agent, protobuf contract, client library and research harness were rebuilt and tested. A new, separately versioned v8 digital campaign executed 1,320 assigned attempts through the agent and backend with independent geometric truth reconstruction. The older v7 campaign included automatic repair after B; it remains archived and is excluded from v8 statistics. The current ArduPilot SITL recordings also belong to that older policy. Revised-policy SITL, real calibrated camera evidence and field flight remain future validation.
+The revised C++23 agent, protobuf contract, client library and research harness were rebuilt and tested. A separately versioned v8 digital campaign executed 1,320 assigned attempts through the agent and backend with independent geometric truth reconstruction. Retired v7 digital and SITL datasets are excluded from the current checkout and from v8 statistics; their pre-cleanup state remains in Git history. Revised-policy SITL, real calibrated camera evidence and field flight remain future validation.
 
 ## The research problem
 
@@ -22,7 +22,7 @@ A correct abstract graph transition does not establish that the physical edge wa
 2. **Can a sustained mid-edge departure trigger efficient local repair?** Detect the departure during A→B, preserve previously accepted evidence, choose the earlier of current progress and the first missing required coordinate, verify physical return, and resume while budgets permit.
 3. **Who resolves residual coverage at B?** VECR reports a terminal **ARRIVED** outcome and explicit unverified intervals. The external application—not VECR—decides whether to revisit, reassign, defer, or ignore according to its own goals.
 4. **What information does the caller need, without event flooding?** A pull-based `GetEdgeStatus` snapshot during execution and one terminal callback for arrival, failure, or cancellation, with exact attempt identity and machine-readable reasons.
-5. **What can be established scientifically?** Conditional sensing soundness from conservative accepted footprints, finite local recovery budgets and measured digital behavior. The v8 manifest, raw attempts, validator and statistical analysis define the evidence; historical measurements remain separate.
+5. **What can be established scientifically?** Conditional sensing soundness from conservative accepted footprints, finite local recovery budgets and measured digital behavior. The v8 manifest, raw attempts, validator and statistical analysis define the evidence; retired measurements are excluded.
 
 ## Contribution and evidence status
 
@@ -34,7 +34,7 @@ A correct abstract graph transition does not establish that the physical edge wa
 | Recorded in-flight correction | New v8 N07–N09 traces | Agent-backed digital mid-edge correction with independent geometric truth |
 | Complete revised-policy digital campaign | 1,320 v8 attempts; independent validation | Conditional simulator measurements, with honest and dishonest sensing separated |
 | Client-path reuse | 100 v8 attempts, 50 matched direct/routed pairs | Matching audited outcomes in the tested cases; this is not fleet-scale portability |
-| ArduPilot SITL | 12 historical v7 flights; no v8 flights | Revised-policy SITL remains to be run |
+| ArduPilot SITL | No v8 flight campaign in the current evidence package | Revised-policy SITL remains to be run; numbers are TBD |
 
 **Scientific integrity rule:** a historical number may describe what an earlier binary did, but never a result that the revised VECR implementation has not yet produced.
 
@@ -67,7 +67,7 @@ Earlier [Knödel-graph gossip research](https://doi.org/10.1109/CSITechnol.2017.
 
 The [multi-user UAV swarm simulation platform](https://doi.org/10.1134/S0361768823090086) and [mission-preparation study](https://doi.org/10.1134/S0361768824700397) establish a platform research line. The [2025 multi-user software-system paper](https://doi.org/10.1109/ICECET63943.2025.11472550) is another part of that lineage. The previously supplied dissertation draft also lists a 2026 simulation-driven monitoring paper and a SwarmKit architecture paper; their bibliographic details are retained as author-supplied records pending formal publisher verification. Their results are not counted in the current VECR digital campaign.
 
-Together these works address mathematical swarm coordination, mission authoring, preflight simulation, software infrastructure and execution monitoring. VECR occupies the remaining interface between a graph plan and a physical survey. A coordinator informed only that the vehicle reached a vertex can incorrectly credit an edge whose middle was never acquired. A coordinator receiving exact attempt identity, remaining gaps and a terminal reason has enough information to make an explicit next decision. The v8 trials test this revised local contract; the v7 trials remain historical. They do not measure the benefit of any particular graph-level reassignment strategy.
+Together these works address mathematical swarm coordination, mission authoring, preflight simulation, software infrastructure and execution monitoring. VECR occupies the remaining interface between a graph plan and a physical survey. A coordinator informed only that the vehicle reached a vertex can incorrectly credit an edge whose middle was never acquired. A coordinator receiving exact attempt identity, remaining gaps and a terminal reason has enough information to make an explicit next decision. The v8 trials test this local contract; they do not measure the benefit of any particular graph-level reassignment strategy.
 
 This dissertation's specific addition is the *physical edge acceptance layer*: the planner may change, and the communication algorithm may change, while the agent applies attempt identity, bounded evidence, gap accounting, and bounded in-flight local recovery. The current v8 direct/routed SDK-path campaign shows parity across 50 matched pairs in five tested cases; it does not experimentally demonstrate a complete rotor-router deployment.
 
@@ -231,7 +231,7 @@ After commanding re-entry, the executor must establish physical arrival with adm
 
 {{equation:arrival}}
 
-At B, sampled stopped arrival is evaluated independently of survey coverage. The terminal status carries a physical phase and separate survey/traversal verdicts. `ARRIVED` with `survey_verified=false` can describe successful navigation with an unverified survey obligation. `FAILED` can describe an unrecoverable fault before B. Historical v7 `FULFILLED` meant a different combined predicate and is not reused as a v8 result code.
+At B, sampled stopped arrival is evaluated independently of survey coverage. The terminal status carries a physical phase and separate survey/traversal verdicts. `ARRIVED` with `survey_verified=false` can describe successful navigation with an unverified survey obligation. `FAILED` can describe an unrecoverable fault before B.
 
 ## Optional corridor-traversal predicate
 
@@ -307,9 +307,9 @@ The only policy difference is the target after a confirmed *in-flight* departure
 
 The analysis reports all 44 condition/policy rows, 95% Wilson intervals for proportions and paired bootstrap intervals for mean differences (10,000 resamples, fixed RNG seed). Distance and time advantages are conditioned on *both* policies having true and reported completion in the same seed. Unsuccessful attempts remain in the arrival, coverage and failure tables. Confidence intervals are pointwise and describe these simulated seeds; they are not fleet-reliability or field-flight intervals.
 
-## Historical boundary
+## Campaign boundary
 
-The earlier v7 campaign and 12 ArduPilot SITL qualifications used an endpoint-repair policy. Their archives remain separately labeled and their estimates are excluded from this v8 analysis. The current 100-attempt direct/routed client-path experiment is a distinct v8 result reported below.
+Only the frozen v8 assignments contribute to the tables and figures below. Earlier pilot and endpoint-policy datasets are absent from the current checkout and excluded from every active estimate; their pre-cleanup state is recoverable from Git history. The 100-attempt direct/routed client-path experiment is a separate v8 result reported below.
 
 # 11 / Measured digital results and fair comparison {#results}
 
@@ -389,9 +389,9 @@ The external caller can use rotor-router, another graph traversal policy or an o
 
 # 16 / ArduPilot SITL and physical validation boundary {#sitl}
 
-## Status of the archived qualification
+## Status of revised-policy qualification
 
-The archive contains 12 v7 ArduPilot Copter 4.7.2 SITL flights using a real autopilot process and a MAVLink adapter, with synthetic bounded navigation and idealized sensing. Some flights relied on the retired endpoint repair rule. They do not validate v8 terminal behavior or real image-quality claims. **No revised-policy SITL flight is included in the current v8 statistics.**
+**No revised-policy ArduPilot SITL flight is included in the current v8 statistics.** Historical flights used a different endpoint policy and synthetic sensing. Their records were removed from the current checkout and cannot validate the v8 terminal behavior or real image quality.
 
 ## Next qualification protocol
 
@@ -469,7 +469,7 @@ The complete agent-backed geometric campaign supports accurate accounting and bo
 
 ## Was ArduPilot SITL run for this revision?
 
-No. The 12 archived SITL flights ran the retired v7 endpoint policy and synthetic sensing. The v8 digital claims and SITL claims are kept separate. New SITL numbers remain TBD pending a run of the revised binary and protocol.
+No. The v8 digital claims and SITL claims are kept separate. Historical flights ran a retired endpoint policy with synthetic sensing and were removed from the current checkout. New SITL numbers remain TBD pending a run of the revised binary and protocol.
 
 # 20 / Reproducibility and audit trail {#reproducibility}
 
@@ -485,8 +485,8 @@ No. The 12 archived SITL flights ran the retired v7 endpoint policy and syntheti
 
 The final SHA-256 manifests cover the experiment output and portable website. A reader can rerun the executable campaign into a fresh directory using `docs/vecr/SIMULATION_PROTOCOL.md`, then run the validator and analysis. Floating point last digits and host timing can differ across platforms, so the committed raw files and executable hashes remain the definitive record for the reported numbers.
 
-The offline reader bundles [v8 results](assets/evidence/v8/RESULTS.md), [the condition table](assets/evidence/v8/condition_summary.csv), [paired contrasts](assets/evidence/v8/paired_comparisons.csv), [the campaign manifest](assets/evidence/v8/manifest.json), [the reuse audit](assets/evidence/v8/REUSE_RESULTS.md), [the revalidation report](assets/evidence/v8/EXPERIMENT_REVALIDATION.md), [claim traceability](assets/evidence/v8/TRACEABILITY.md), [the final gate report](assets/evidence/v8/FINAL_CHANGE_REPORT.md), [the method brief](assets/evidence/v8/METHOD.md), and [the literature boundary](assets/evidence/v8/LITERATURE.md). The full raw trials and the 100-attempt reuse campaign live in the repository, not inside the portable website.
+The offline reader bundles [v8 results](assets/evidence/v8/RESULTS.md), [the condition table](assets/evidence/v8/condition_summary.csv), [paired contrasts](assets/evidence/v8/paired_comparisons.csv), [the campaign manifest](assets/evidence/v8/manifest.json), [the reuse audit](assets/evidence/v8/REUSE_RESULTS.md), [the revalidation report](assets/evidence/v8/EXPERIMENT_REVALIDATION.md), [claim traceability](assets/evidence/v8/TRACEABILITY.md), [the final gate report](assets/evidence/v8/FINAL_CHANGE_REPORT.md), [the method brief](assets/evidence/v8/METHOD.md), [the planned v8 SITL protocol](assets/evidence/v8/SITL_PROTOCOL.md), and [the literature boundary](assets/evidence/v8/LITERATURE.md). The full raw trials and the 100-attempt reuse campaign live in the repository, not inside the portable website.
 
 ## Historical and future evidence
 
-The v7 digital and SITL archives are preserved separately and excluded from the active v8 tables. Real-camera calibration, revised-policy ArduPilot SITL, physical obstacle avoidance and multi-UAV planner integration remain open. The dissertation's **digital simulator validation is complete**; physical-flight and revised-policy SITL claims are not made. SITL measured values: **TBD**.
+Retired digital and SITL datasets are excluded from the current checkout and the active v8 tables; their pre-cleanup state remains in Git history. Real-camera calibration, revised-policy ArduPilot SITL, physical obstacle avoidance and multi-UAV planner integration remain open. The dissertation's **digital simulator validation is complete**; physical-flight and revised-policy SITL claims are not made. SITL measured values: **TBD**.

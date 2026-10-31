@@ -1,3 +1,0 @@
-[2026-10-28 20:50:48.514] [info] rpc=SubscribeReports corr=reports-1793206248510-1819980561298100805812386314933122286527-3 agent=v7-agent drone=drone-1 client=test-client result=connected
-N14 71002 VECR INTERRUPTED true=0 distance=47.525 midflight=0 uncontained=0
-[2026-10-28 20:50:48.874] [info] rpc=SubscribeReports corr=reports-1793206248510-1819980561298100805812386314933122286527-3 agent=v7-agent drone=drone-1 client=test-client result=disconnected

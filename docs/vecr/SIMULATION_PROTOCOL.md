@@ -77,7 +77,9 @@ Reuse campaign: five conditions N00/N01/N04/N07/N11 × ten seeds 72001–72010 �
 direct/routed SDK entry paths × VECR = **100 attempts**, 50 matched pairs.
 This tests client entry paths, not multiple independently implemented graph planners.
 Pilot: all conditions and both executables, two seeds 71001–71002 = 88 attempts.
-All pilot outcomes remain separate from primary statistics.
+Pilot outcomes were kept separate from primary statistics; their directories were
+removed from the current checkout after the frozen campaign and remain
+recoverable from Git history.
 
 ## Reproduction
 

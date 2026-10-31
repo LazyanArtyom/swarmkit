@@ -4,7 +4,7 @@ Open `index.htm` directly in a browser. The 20-chapter reader is offline and inc
 
 ## Evidence
 
-The active digital campaign is `results/vecr/v8/primary/` at the repository root: 22 conditions, 30 common seeds and two policies, for 1,320 attempts. It ran the full agent and backend. The reader's small `assets/evidence/v8/` folder contains the manifest, analysis tables and method documents; the root result folder contains all raw traces and validator output. Earlier v7 data are preserved in `assets/evidence/legacy_v7/` and the repository's historical research archive. V7 data are not pooled with v8 estimates.
+The active digital campaign is `results/vecr/v8/primary/` at the repository root: 22 conditions, 30 common seeds and two policies, for 1,320 attempts. It ran the full agent and backend. The reader's small `assets/evidence/v8/` folder contains the manifest, analysis tables and method documents; the root result folder contains all raw traces and validator output. Retired v7 datasets were removed from the current checkout and remain recoverable from Git history; no v7 estimate is pooled with v8.
 
 The central runtime rule applies only to a qualified in-flight deviation before B. It selects the earlier of projected progress and the earliest missing required coordinate, then verifies physical re-entry within finite command, duration and travel budgets. On qualified arrival at B, the agent reports `ARRIVED` and the independent survey verdict; it issues no automatic endpoint-return command. B2 is a full-edge-restart research comparator, not another public runtime mode.
 

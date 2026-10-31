@@ -2,7 +2,7 @@
 
 ## Protocol boundary
 
-The production method now corrects only a sustained, qualified deviation while traveling A→B. Qualified stopped arrival at B ends local execution after at most the configured passive evidence wait and reports the remaining intervals. There is no autonomous flight from B to a gap. The v7 endpoint-repair campaign and its SITL flights remain archived under `results/vecr/current/` and `VECR_Dissertation_Interactive_Website/assets/evidence/legacy_v7/`; none of their numerical estimates enters the active v8 tables or figures.
+The production method now corrects only a sustained, qualified deviation while traveling A→B. Qualified stopped arrival at B ends local execution after at most the configured passive evidence wait and reports the remaining intervals. There is no autonomous flight from B to a gap. The retired v7 endpoint-repair campaign and its SITL flights are absent from the current checkout; their pre-cleanup state remains in Git history. None of their numerical estimates enters the active v8 tables or figures.
 
 The frozen primary source revision is `66603912556002d162dc42d910b598bfbbc480a2`. `results/vecr/v8/primary/manifest.json` records the source, executable hashes, assignments, 22 condition overrides, 30 common seeds (70001–70030), policy, host and protocol. VECR and the separately compiled non-installed B2 comparator share the agent verifier, dynamics, faults, evidence wait and safety limits; only their qualified in-flight return target differs. B2 returns to A. The campaign contains 1,320 attempts and no substituted failures.
 
@@ -11,7 +11,7 @@ The frozen primary source revision is `66603912556002d162dc42d910b598bfbbc480a2`
 | Gate | Executed evidence | Outcome |
 |---|---|---|
 | Build and CTest | Release build and 3 CTest targets, including the agent/SDK integration suite | Passed; current rerun logged in final change report |
-| Pilot | Four separate 88-attempt pilot directories under `results/vecr/v8/` | Passed; excluded from primary estimates |
+| Pilot | Four 88-attempt pilots were executed during development; their directories were removed from the current checkout | Diagnostic only; excluded from primary estimates; pre-cleanup records remain in Git history |
 | Primary assignment | `primary/manifest.json` and `per_attempt.csv` | 1,320/1,320 assigned attempts recorded |
 | Independent oracle | `scripts/vecr/validate_digital.py`, `primary/validation.json` | Passed: 1,320 attempts, 54,850 delivered captures, 180 physical re-entry dwells; no accepted recovery GOTO after qualified B arrival |
 | Statistical analysis | `scripts/vecr/analyze_digital.py`, `primary/analysis/` | 44 condition/policy rows, 22 paired contrasts; 10,000 paired bootstrap resamples and Wilson proportion intervals |

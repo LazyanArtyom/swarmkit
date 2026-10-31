@@ -14,16 +14,14 @@ flight. Graph planning stays external.
 * [Final change and gate report](FINAL_CHANGE_REPORT.md)
 * [v8 digital results summary](../../results/vecr/v8/primary/analysis/RESULTS.md)
 * [v8 client-path reuse audit](../../results/vecr/v8/reuse-qualified/analysis/REUSE_RESULTS.md)
-* [Historical v7 digital results](../../results/vecr/current/digital/primary/analysis/RESULTS.md)
-* [Historical v7 SITL qualification](../../results/vecr/current/sitl/qualification/analysis/RESULTS.md)
 
-The v7 campaigns remain frozen in `results/vecr/current/` and are excluded from
-claims about the v8 endpoint contract. The completed v8 primary, qualified reuse
+The retired v7 campaigns are excluded from the current checkout and from
+claims about the v8 endpoint contract; their pre-cleanup state remains in Git
+history. The completed v8 primary, qualified reuse
 and unsuccessful sandbox-blocked reuse attempts are separately preserved in
 `results/vecr/v8/`. Their manifests, raw records, independent validators,
 analyses and SHA-256 inventories define the current digital evidence. Check them
 with `python scripts/vecr/hash_research.py --v8 primary`, `--v8 reuse-qualified`
 and `--v8 reuse`. Revised-method SITL results are TBD. The
 [offline dissertation atlas](../../VECR_Dissertation_Interactive_Website/index.htm)
-includes the broader graph and platform context with active v8 results and a
-clearly separated v7 archive.
+includes the broader graph and platform context with active v8 results.

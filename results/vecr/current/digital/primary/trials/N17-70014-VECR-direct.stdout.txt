@@ -1,3 +1,0 @@
-[2026-10-28 20:55:24.166] [info] rpc=SubscribeReports corr=reports-1793206524162-117127847757760420876924073668819399887-4 agent=v7-agent drone=drone-1 client=test-client result=connected
-N17 70014 VECR FULFILLED true=1 distance=54.0083 midflight=0 uncontained=0
-[2026-10-28 20:55:24.366] [info] rpc=SubscribeReports corr=reports-1793206524162-117127847757760420876924073668819399887-4 agent=v7-agent drone=drone-1 client=test-client result=disconnected

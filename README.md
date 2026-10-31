@@ -48,9 +48,10 @@ See the [method and conditional guarantees](docs/vecr/METHOD.md),
 [current validation](docs/vecr/README.md),
 [literature comparison](docs/vecr/LITERATURE.md) and
 [review disposition](docs/vecr/REVIEW_RESPONSE.md).
-The current digital campaign is frozen under `results/vecr/v8/`; earlier v7
-digital and SITL research remain archived under `results/vecr/current/` and are
-excluded from revised-method numerical claims. Revised-method SITL is TBD.
+The current digital campaign is frozen under `results/vecr/v8/`. Retired v7
+digital and SITL data are excluded from the current checkout and from
+revised-method numerical claims; they remain recoverable from Git history.
+Revised-method SITL is TBD.
 
 Example (already armed and in a safe guided simulation state):
 

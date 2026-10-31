@@ -53,9 +53,10 @@ Rewind and other coverage or replanning systems are discussed as related work;
 the experiment does not quantify superiority over those implementations.
 
 The v7 digital and SITL measurements used a retired endpoint-repair policy and
-are historical. The frozen v8 digital results are in
-`results/vecr/v8/primary/analysis/RESULTS.md` with a source and binary manifest. The v8 pilots are
-implementation gates, not confirmatory estimates. V8 dishonest-input
+are historical and were removed from the current checkout; they remain recoverable
+from Git history. The frozen v8 digital results are in
+`results/vecr/v8/primary/analysis/RESULTS.md` with a source and binary manifest.
+The removed v8 pilot records were diagnostic gates, not confirmatory estimates. V8 dishonest-input
 controls show why truthful camera metadata is an assumption. The earlier SITL
 qualification used synthetic bounded sensing and does not validate the revised
 endpoint contract.

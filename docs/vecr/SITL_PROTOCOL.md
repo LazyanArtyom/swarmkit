@@ -1,41 +1,44 @@
-# ArduPilot SITL qualification — historical v7 protocol
+# Planned ArduPilot SITL qualification — VECR v8
 
-This document records the completed v7 qualification protocol. The current v8
-method stops local correction at qualified B arrival, so these flights cannot
-validate its revised terminal behavior. No v8 SITL figures are available; they
-remain TBD until a new versioned campaign runs the revised binary and validator.
+**Status: not executed. Every v8 SITL measurement is TBD.** The current digital
+campaign uses an agent-backed geometric simulator. Retired SITL data used a
+different endpoint policy and were removed from the current checkout; they are
+recoverable from Git history and are not evidence for this protocol.
 
-Freeze source and binary before executing six conditions × two seeds
-73001/73002 = 12 flights, all using the single production VECR method:
+## Qualification boundary
 
-1. Native backend accuracy, nominal route: unfulfilled because hard bounds are absent.
-2. Synthetic bounded navigation and ideal sensing, nominal route.
-3. Synthetic observations, delayed metadata.
-4. Synthetic observations, multiple gaps and physical re-entry.
-5. Synthetic observations, recovery-command refusal: interrupted/unfulfilled.
-6. Synthetic observations, LAND override: no subsequent GOTO, unfulfilled.
+Freeze a new source revision, v8-capable SITL runner, ArduPilot revision, binary
+hashes, parameters, assignments and SHA-256 manifest before executing flights.
+Do not reuse the retired `run_sitl.py` protocol or its output directory without
+auditing and updating it for the current edge API, terminal phases and no-return
+behavior at B. Assign a new versioned results directory. Keep every assigned
+flight and unsuccessful pilot; never replace an inconvenient result.
 
-Use isolated native ArduPilot Copter processes and localhost ports, real production
-MAVLink command handling, declared synthetic observation adapters and independent
-SIM_STATE records. Arming checks remain enabled. Record exact ArduPilot commit,
-binary and agent hashes, parameters, raw MAVLink, backend commands, truth,
-observations, acquisitions, submitted captures, agent states and outcomes.
+Run the complete SwarmKit agent and MAVLink backend with a real ArduPilot Copter
+SITL process. Record raw MAVLink, backend command requests and ACKs, agent
+status, observation provenance, camera reports, actual simulator trajectory,
+capture truth, timing, failures, and exact mission/revision/edge/attempt/drone
+identity. The independent oracle must not supply its truth to VECR.
 
-Check independent footprint containment, sampled stop/re-entry dwell and safety
-intervention. Report all assignments and unsuccessful pilots. Two flights per
-condition are integration qualification; do not infer a population confidence
-interval or field reliability from them.
+## Minimum scenarios
 
-Positive sensing is an ideal flat, route-aligned camera and synthetic bounded
-navigation. SIM_STATE lacks an acquisition timestamp: upstream age <=50 ms remains
-an assumption, combined with monitored receipt age <=100 ms and physical horizontal
-speed bound 10 m/s. Sampled dwell is not proof of continuous dwell. Native GNSS
-accuracy estimates remain backend-specific; production MAVLink recovery stays
-disabled. No calibrated image-quality or physical-flight claim follows.
+1. Native backend accuracy without a declared hard bound: fail closed; do not
+   treat a reported accuracy estimate as a deterministic bound.
+2. Nominal edge: establish stopped arrival and separately score survey evidence.
+3. Sustained departure **before B**: select `q=min(progress, first required
+   unverified coordinate)`, command return, verify bounded stopped re-entry and
+   sampled dwell, then resume toward B.
+4. Delayed and missing camera metadata: wait only within the configured evidence
+   horizon; allow `ARRIVED` with `survey_verified=false` and missing intervals.
+5. Arrival at B with a residual gap: assert no post-arrival return `GOTO`.
+6. Command refusal, low battery, motor failure, missing hard bounds, deadline,
+   cancellation and safety override: record terminal reason, hold behavior and
+   physical uncertainty separately from ACKs.
 
-The archived run was written under `results/vecr/current/sitl/qualification`.
-Do not reuse that output path or its statistics for v8. A future v8 protocol
-must first verify that its SITL runner exercises the revised agent API, then
-record a sustained departure before B, bounded stopped re-entry, B arrival
-with an unresolved strip and no post-B return command, refusal and safety
-failures, exact attempt identity, source/binary hashes and independent truth.
+Check all accepted capture footprints against independent acquisition truth,
+sampled arrival/re-entry dwell, source and assignment identity, command order and
+absence of any accepted recovery command after qualified B arrival. Report all
+outcomes and failed runs. A small SITL qualification tests integration with an
+autopilot process; it does not establish field reliability or real camera
+quality. Real focus, exposure, occlusion and footprint claims require calibrated
+images and independent physical ground truth.

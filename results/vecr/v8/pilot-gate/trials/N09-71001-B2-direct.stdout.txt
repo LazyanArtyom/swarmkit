@@ -1,3 +1,0 @@
-[2026-10-29 20:08:17.549] [info] rpc=SubscribeReports corr=reports-1793290097546-90356202131744508115030596664171556039-3 agent=v8-agent drone=drone-1 client=test-client result=connected
-N09 71001 B2 ARRIVED true=1 distance=79.4115 midflight=1 uncontained=0
-[2026-10-29 20:08:17.721] [info] rpc=SubscribeReports corr=reports-1793290097546-90356202131744508115030596664171556039-3 agent=v8-agent drone=drone-1 client=test-client result=disconnected

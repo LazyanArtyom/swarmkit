@@ -59,6 +59,7 @@ for source, name in [
     (DATA / 'analysis/paired_comparisons.csv', 'paired_comparisons.csv'),
     (ROOT / 'docs/vecr/METHOD.md', 'METHOD.md'),
     (ROOT / 'docs/vecr/SIMULATION_PROTOCOL.md', 'SIMULATION_PROTOCOL.md'),
+    (ROOT / 'docs/vecr/SITL_PROTOCOL.md', 'SITL_PROTOCOL.md'),
     (ROOT / 'docs/vecr/DEFENSE_BRIEF.md', 'DEFENSE_BRIEF.md'),
     (ROOT / 'docs/vecr/LITERATURE.md', 'LITERATURE.md'),
     (ROOT / 'docs/vecr/EXPERIMENT_REVALIDATION.md', 'EXPERIMENT_REVALIDATION.md'),
@@ -341,7 +342,7 @@ for label, ident in [('Researcher', 'researcher'), ('Contribution', 'innovation'
     top_nav.append(link)
 for notice in main.select('.edition-notice'):
     notice.decompose()
-notice = BeautifulSoup('<div class="edition-notice" role="note"><strong>Evidence status:</strong> The v8 digital campaign and independent validator are complete. ArduPilot SITL numbers for this revised method are TBD. Older v7 data are excluded from current estimates.</div>', 'lxml').select_one('.edition-notice')
+notice = BeautifulSoup('<div class="edition-notice" role="note"><strong>Evidence status:</strong> The v8 digital campaign and independent validator are complete. ArduPilot SITL numbers for this revised method are TBD. Retired datasets are excluded from the current checkout and estimates.</div>', 'lxml').select_one('.edition-notice')
 main.select_one('.hero').insert_after(notice)
 (SITE / 'index.htm').write_text('<!doctype html>\n' + str(old.html))
 metadata = ASSETS / 'research-metadata.json'
@@ -357,7 +358,6 @@ meta = {'title': 'VECR — Verified Edge Coverage and Recovery',
         'reuse': {'attempts': 100, 'matched_pairs': 50,
                   'source_revision': json.loads((ROOT / 'results/vecr/v8/reuse-qualified/manifest.json').read_text())['source_revision'],
                   'report': 'assets/evidence/v8/REUSE_RESULTS.md'},
-        'sitl_revised': 'TBD',
-        'historical_archive': 'assets/evidence/legacy_v7/'}
+        'sitl_revised': 'TBD'}
 metadata.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + '\n')
 print(f'Built {len(sections)} chapters, {len(attempts)} attempts, {len(replays)} recorded replay conditions')

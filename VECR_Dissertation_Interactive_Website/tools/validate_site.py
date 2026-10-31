@@ -87,7 +87,8 @@ def validate(browser=False):
             assert target[1:] in anchors, target
         elif not target.startswith(('http:', 'https:', 'mailto:')):
             assert (SITE / target).exists(), target
-    assert (SITE / 'assets/evidence/legacy_v7/per_attempt.csv').exists()
+    assert not (SITE / 'assets/evidence/legacy_v7').exists()
+    assert (SITE / 'assets/evidence/v8/SITL_PROTOCOL.md').exists()
     reuse = json.loads((SITE / 'assets/evidence/v8/reuse_results.json').read_text())
     assert reuse['attempts'] == 100 and reuse['matched_pairs'] == 50
     assert not reuse['field_differences']

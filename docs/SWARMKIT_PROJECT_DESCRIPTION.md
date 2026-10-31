@@ -11,9 +11,10 @@ The VECR edge supervisor runs inside the agent. It accounts for arrival,
 bounded route traversal, accepted strip-survey intervals, missing sections,
 and bounded recovery in qualified simulation backends. A trusted sensor adapter must justify
 conservative full-strip capture intervals. There is no validated real camera
-adapter. The active v8 campaign is agent-backed digital simulation. Historical v7
-ArduPilot SITL qualification used a retired endpoint policy and synthetic sensing;
-neither establishes revised-policy flight behavior or physical image quality.
+adapter. The active v8 campaign is agent-backed digital simulation. Historical
+SITL qualification used a retired endpoint policy and synthetic sensing; its
+records were removed from the current checkout. Neither establishes revised-policy
+flight behavior or physical image quality.
 See [the method](vecr/METHOD.md) and [current validation](vecr/README.md).
 
 External applications own graph traversal, rotor updates, gossip policy,
