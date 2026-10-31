@@ -10,5 +10,5 @@ agent-backed simulator is a research model, and revised-policy ArduPilot SITL
 and real camera validation remain pending.
 
 Use [README](../README.md), [architecture](source/architecture.md),
-[method](vecr/METHOD_AND_CORRECTNESS.md), and
-[progress](vecr/IMPLEMENTATION_PROGRESS.md) for the maintained details.
+[method](vecr/METHOD.md), [current validation](vecr/README.md), and
+[traceability](vecr/TRACEABILITY.md) for the maintained details.

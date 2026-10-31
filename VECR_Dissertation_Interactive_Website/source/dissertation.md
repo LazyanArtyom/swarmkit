@@ -6,7 +6,7 @@
 
 ## Abstract
 
-**Verified Edge Coverage and Recovery (VECR)** is an implemented algorithm-independent supervisory execution method for graph-based unmanned aerial vehicle missions. A graph controller selects a directed edge A→B; VECR monitors the associated physical traversal and sensing obligation, preserves conservative verified intervals, and reacts to a *qualified, sustained in-flight deviation* by attempting a bounded local re-entry at the earliest required unverified interval. The UAV then resumes its assigned edge. VECR does not choose graph successors, reassign vehicles, or change a mission-level policy.
+**Verified Edge Coverage and Recovery (VECR)** is an implemented algorithm-independent supervisory execution method for graph-based unmanned aerial vehicle missions. A graph controller selects a directed edge A→B; VECR monitors the associated physical traversal and sensing obligation, preserves conservative verified intervals, and reacts to a *qualified, sustained in-flight deviation* by attempting bounded local re-entry. It selects the earlier of current along-edge progress and the first required unverified coordinate, then resumes the assigned edge after qualified physical re-entry. VECR does not choose graph successors, reassign vehicles, or change a mission-level policy.
 
 **Arrival and coverage are intentionally independent outcomes.** Upon qualified arrival at B, VECR stops autonomous recovery for that edge, returns a single terminal result containing arrival status and residual evidence gaps, and delegates their disposition to the calling controller. During execution, an on-demand *Execution Status Snapshot* exposes the current phase, confidence-qualified missing intervals, projected progress, and recovery counters without periodic callbacks. A terminal-only SDK subscription reports arrival, failed execution or confirmed cancellation once per execution identity within one live subscription; a disconnected caller can reconcile through the durable status query. Recovery is constrained by command authority, health, energy, time, number of attempts, and successful physical re-entry verification; failure is reported, not retried forever.
 
@@ -19,7 +19,7 @@ A correct abstract graph transition does not establish that the physical edge wa
 ## Research questions and measured answers
 
 1. **How should a graph edge become a physically observable obligation?** Bind a versioned execution identity to a fixed route, corridor, sensing configuration, and evidence policy; keep independently qualified navigation, arrival, and survey records.
-2. **Can a sustained mid-edge departure trigger efficient local repair?** Detect the departure during A→B, preserve previously accepted evidence, target the earliest required missing location within the authorized local edge, verify physical return, and resume while budgets permit.
+2. **Can a sustained mid-edge departure trigger efficient local repair?** Detect the departure during A→B, preserve previously accepted evidence, choose the earlier of current progress and the first missing required coordinate, verify physical return, and resume while budgets permit.
 3. **Who resolves residual coverage at B?** VECR reports a terminal **ARRIVED** outcome and explicit unverified intervals. The external application—not VECR—decides whether to revisit, reassign, defer, or ignore according to its own goals.
 4. **What information does the caller need, without event flooding?** A pull-based `GetEdgeStatus` snapshot during execution and one terminal callback for arrival, failure, or cancellation, with exact attempt identity and machine-readable reasons.
 5. **What can be established scientifically?** Conditional sensing soundness from conservative accepted footprints, finite local recovery budgets and measured digital behavior. The v8 manifest, raw attempts, validator and statistical analysis define the evidence; historical measurements remain separate.
@@ -33,7 +33,8 @@ A correct abstract graph transition does not establish that the physical edge wa
 | Conditional acceptance and interval algebra | Analytic argument; related verifier implemented previously | Sound if identity, calibration, sensor assertions and hard uncertainty bounds hold |
 | Recorded in-flight correction | New v8 N07–N09 traces | Agent-backed digital mid-edge correction with independent geometric truth |
 | Complete revised-policy digital campaign | 1,320 v8 attempts; independent validation | Conditional simulator measurements, with honest and dishonest sensing separated |
-| ArduPilot SITL and client-path checks | v7 SITL archived; v8 SDK integration tests pass | Revised-policy SITL remains to be run |
+| Client-path reuse | 100 v8 attempts, 50 matched direct/routed pairs | Matching audited outcomes in the tested cases; this is not fleet-scale portability |
+| ArduPilot SITL | 12 historical v7 flights; no v8 flights | Revised-policy SITL remains to be run |
 
 **Scientific integrity rule:** a historical number may describe what an earlier binary did, but never a result that the revised VECR implementation has not yet produced.
 
@@ -58,7 +59,7 @@ Earlier [Knödel-graph gossip research](https://doi.org/10.1109/CSITechnol.2017.
 | Layer | Question it answers | Evidence in this repository |
 |---|---|---|
 | External graph controller | Which directed edge should a vehicle attempt next? | Interface boundary; no rotor-router implementation in SwarmKit |
-| VECR agent | Was that edge's physical traversal or survey obligation verified, and what remains? | Implemented runtime, digital campaign, qualified SITL |
+| VECR agent | Was that edge's physical traversal or survey obligation verified, and what remains? | Implemented runtime and v8 agent-backed digital campaign; revised-policy SITL pending |
 | Peer communication | How can application messages and artifacts move between agents? | Implemented API surface; fleet-scale delivery not measured here |
 | Mission workspace | How do people author, approve and inspect graph missions? | Earlier platform publications and prior reader context; not part of VECR trials |
 
@@ -68,7 +69,7 @@ The [multi-user UAV swarm simulation platform](https://doi.org/10.1134/S03617688
 
 Together these works address mathematical swarm coordination, mission authoring, preflight simulation, software infrastructure and execution monitoring. VECR occupies the remaining interface between a graph plan and a physical survey. A coordinator informed only that the vehicle reached a vertex can incorrectly credit an edge whose middle was never acquired. A coordinator receiving exact attempt identity, remaining gaps and a terminal reason has enough information to make an explicit next decision. The v8 trials test this revised local contract; the v7 trials remain historical. They do not measure the benefit of any particular graph-level reassignment strategy.
 
-This dissertation's specific addition is the *physical edge acceptance layer*: the planner may change, and the communication algorithm may change, while the agent applies attempt identity, bounded evidence, gap accounting, and bounded in-flight local recovery. The earlier two SDK-path experiment gives preliminary reuse evidence for the retired implementation; it does not experimentally demonstrate a complete rotor-router deployment.
+This dissertation's specific addition is the *physical edge acceptance layer*: the planner may change, and the communication algorithm may change, while the agent applies attempt identity, bounded evidence, gap accounting, and bounded in-flight local recovery. The current v8 direct/routed SDK-path campaign shows parity across 50 matched pairs in five tested cases; it does not experimentally demonstrate a complete rotor-router deployment.
 
 # 03 / Scientific problem, responsibilities and novelty {#innovation}
 
@@ -84,11 +85,11 @@ VECR contributes a **runtime conformance and local correction contract** for one
 
 The innovation is the **integrated boundary and lifecycle**, rather than the invention of interval unions, return-to-path control, runtime monitoring, or rotor-router mathematics. Practical novelty should be evaluated against this specific composition, reproducible state transitions, and its safety and evidence guarantees.
 
-## Two mechanisms, but only one recovery rule
+## One recovery rule and a separate terminal report
 
-**Mechanism A — real-time local deviation correction:** sustained abnormal navigation while executing A→B triggers a bounded re-entry procedure *before reaching B*. The controller selects the earliest required unverified location based on the current accepted evidence, validates physical stopped re-entry, then continues to B. Valid prior coverage remains credited. An invalid sensor, command refusal, safety intervention, or exhausted budget ends local recovery with an explicit terminal reason.
+**In-flight local deviation correction:** sustained abnormal navigation while executing A→B can trigger a bounded re-entry procedure *before reaching B*. The controller returns to the earlier of current progress and the first unverified required coordinate, validates physical stopped re-entry, then continues to B. Valid prior coverage remains credited. Missing pose bounds suspend qualified progress; if uncertainty persists to a deadline or occurs during recovery, or if a command is refused, safety intervenes, or a budget is exhausted, the attempt fails with an explicit reason.
 
-**Mechanism B — terminal reporting, not recovery:** when qualified arrival at B occurs, the agent does **not** command a flight back to a leftover interval. It closes the edge execution and reports `ARRIVED`, `coverage_state`, verified intervals, unresolved intervals and any outstanding evidence uncertainty. The external application decides whether the same UAV, another UAV, or no UAV should address that work. This is a *division of responsibility*, not a second automatic VECR recovery policy.
+**Terminal reporting:** when qualified arrival at B occurs, the agent does **not** command a flight back to a leftover interval. It reports `ARRIVED`, separate survey and traversal verdicts, missing interval complements, covered length and a reason. The report does not expose a pending-capture count or an explicit accepted-interval list. The external application decides whether the same UAV, another UAV, or no UAV should address that work.
 
 ## Boundary table
 
@@ -115,7 +116,7 @@ For any edge attempt, **one actor must have vehicle command authority**. While V
 
 ## An SDK boundary, not an orchestrator
 
-The SDK consumes an immutable `EdgeExecutionRequest` containing mission/revision/edge/attempt/drone identity, straight local-frame route and required survey/traversal predicates, safety limits, maximum recovery count, deadline, and sensor policy. It returns an `ExecutionId` and exposes `GetEdgeStatus(id)` on demand. A callback delivers one `EdgeExecutionResult` when the attempt terminates.
+The SDK consumes an `EdgeOperationRequest` containing the edge obligation, exact mission/revision/edge/attempt/drone identity, route, safety and recovery limits, and evidence policy. `ExecuteEdge` returns an `EdgeResult` containing a `core::ExecutionHandle` when started. `GetEdgeStatus(drone_id, attempt_id)` provides an on-demand snapshot; `StartEdgeResults` provides terminal reports within one live subscription.
 
 An external rotor-router implementation *might* submit A→B, receive `ARRIVED` with missing intervals, and decide how to update its rotor or outstanding-work ledger. VECR provides no rotor-state mutation and makes no assertion about a particular coordinator's liveness. The application is free to continue from B, schedule a later revisit, or request another task; these decisions are intentionally unimplemented here.
 
@@ -210,11 +211,17 @@ Each accepted sensor capture contributes a contracted interval $I_j^-$ according
 
 Define the accepted interval union $V_t=\bigcup_{j\le t}I_j^-$ and its complement $M_t=[0,L]\setminus V_t$. Already accepted intervals are monotone within one immutable attempt; subsequent movement cannot remove an earlier hole merely by advancing the progress coordinate. The status snapshot exposes the missing-interval complement in relative metres and the current projected progress. It does not claim a count of sensor observations still outside the agent. A sensor-delivery **pending** interval is not automatically a confirmed uncovered area.
 
+The public `survey_verified` flag is true when the *total unverified length* is within the request's configured `maximum_missing_m` allowance (subject to the implementation's small numerical tolerance). It does not imply that the missing-interval list is empty unless that allowance is zero. The same distinction applies to `traversal_verified`.
+
 ## Deviation trigger and local target
 
-A configured number of consecutive, qualified out-of-corridor observations triggers a sustained-departure condition during A→B. An instantaneous noisy sample is insufficient. Let $p$ be the current projected along-edge coordinate from a qualified bounded pose and $g=\inf M_t$ be the earliest required unverified coordinate. Under the authorized local policy, the re-entry target is $q=\min(p,g)$ (clipped to `[0,L]`), or a conservative along-route projected return point if no missing survey work applies. This target is **not necessarily the exact position of the first abnormal GNSS sample**.
+A configured count of qualified out-of-corridor observations triggers a sustained-departure condition during A→B. The counter increases when cross-track distance plus the hard horizontal error bound exceeds the corridor half-width. It resets when that bound is absent or the sum falls below the inner hysteresis threshold; samples inside the hysteresis band retain the count. An instantaneous noisy sample is insufficient. Let $p$ be the current projected along-edge coordinate and $g=\inf M_t$ the first required unverified coordinate. The re-entry target is $q=\min(p,g)$ (clipped to `[0,L]`); if no gap applies, use $g=p$. This target is **not necessarily the exact position of the first abnormal GNSS sample**.
+
+For example, on a 40 m edge with current progress $p=25$ m and accepted survey intervals `[0,18]∪[22,25]` m, the first gap is $g=18$ m, so VECR chooses $q=18$ m. If the first missing point is ahead of current progress, the target stays at $p$: a future unvisited tail is not treated as a gap behind the vehicle.
 
 {{equation:recovery}}
+
+{{recovery_walkthrough}}
 
 {{diagram:recovery}}
 
@@ -302,13 +309,15 @@ The analysis reports all 44 condition/policy rows, 95% Wilson intervals for prop
 
 ## Historical boundary
 
-The frozen v7 campaign, 100 direct/routed client trials and 12 ArduPilot SITL qualifications remain archived. V7 allowed autonomous backward flight from B to a gap. Its headline distance effects, completion matrix and SITL outcomes are not reused as results of the in-flight-only v8 policy. The older website figures are retained only under the clearly labelled historical archive.
+The earlier v7 campaign and 12 ArduPilot SITL qualifications used an endpoint-repair policy. Their archives remain separately labeled and their estimates are excluded from this v8 analysis. The current 100-attempt direct/routed client-path experiment is a distinct v8 result reported below.
 
 # 11 / Measured digital results and fair comparison {#results}
 
 ## Complete v8 scorecard
 
 {{v8_summary}}
+
+{{outcome_guide}}
 
 {{v8_table}}
 
@@ -392,7 +401,7 @@ A revised SITL run must trigger a sustained departure and record recovery before
 
 ## Case A — deviation while traveling A→B
 
-At 14 m along a 40 m edge, sustained corridor departure is detected. VECR computes accepted survey intervals and chooses the earliest required unverified re-entry location; the target may be slightly earlier than 14 m because of sensor footprint and uncertainty. The UAV returns **now, before B**, confirms physical re-entry/dwell, and resumes A→B if safe. An external rotor-router need not be interrupted for each local correction, and VECR does not choose the next vertex.
+At 25 m along a 40 m edge, sustained corridor departure is detected. Accepted survey evidence covers `[0,18]∪[22,25]` m. VECR computes the first missing coordinate $g=18$ m and chooses $q=\min(25,18)=18$ m. The UAV returns **now, before B**, confirms bounded stopped re-entry/dwell, and resumes A→B if safe. An external rotor-router need not be interrupted for each local correction, and VECR does not choose the next vertex.
 
 ## Case B — B reached with unresolved survey strip
 
@@ -404,7 +413,7 @@ The drone may reach B with an empty or incomplete accepted survey union. VECR re
 
 ## Case D — recovery command rejected
 
-A sustained departure calls for a return command, but the backend refuses it. VECR ends with `FAILED/RECOVERY_COMMAND_REJECTED`, preserves qualified intervals, and notifies the caller once. A boolean `reached=false` without reason or gap data would discard useful context. No indefinitely repeated commands are allowed.
+A sustained departure calls for a return command, but the backend refuses it. VECR ends in phase `FAILED` with a reason such as `re-entry command rejected by safety/backend`, preserves qualified intervals, and notifies a live subscriber once. A boolean `reached=false` without reason or gap data would discard useful context. No indefinitely repeated commands are allowed.
 
 ## Case E — communication interruption
 

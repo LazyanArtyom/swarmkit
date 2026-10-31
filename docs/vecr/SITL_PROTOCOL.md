@@ -1,4 +1,9 @@
-# ArduPilot SITL qualification — canonical VECR, edition 7
+# ArduPilot SITL qualification — historical v7 protocol
+
+This document records the completed v7 qualification protocol. The current v8
+method stops local correction at qualified B arrival, so these flights cannot
+validate its revised terminal behavior. No v8 SITL figures are available; they
+remain TBD until a new versioned campaign runs the revised binary and validator.
 
 Freeze source and binary before executing six conditions × two seeds
 73001/73002 = 12 flights, all using the single production VECR method:
@@ -28,7 +33,9 @@ speed bound 10 m/s. Sampled dwell is not proof of continuous dwell. Native GNSS
 accuracy estimates remain backend-specific; production MAVLink recovery stays
 disabled. No calibrated image-quality or physical-flight claim follows.
 
-Run `.venv/bin/python scripts/vecr/run_sitl.py --mode final --output
-results/vecr/current/sitl/qualification` after committing experiment source.
-Validate with `validate_sitl.py` and analyze with `analyze_sitl.py`. New executions
-must use new directories. Optional pilots are diagnostic and remain separate.
+The archived run was written under `results/vecr/current/sitl/qualification`.
+Do not reuse that output path or its statistics for v8. A future v8 protocol
+must first verify that its SITL runner exercises the revised agent API, then
+record a sustained departure before B, bounded stopped re-entry, B arrival
+with an unresolved strip and no post-B return command, refusal and safety
+failures, exact attempt identity, source/binary hashes and independent truth.

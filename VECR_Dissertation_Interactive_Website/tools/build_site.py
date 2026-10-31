@@ -34,6 +34,9 @@ assert summary['protocol'] == 'v8' and len(attempts) == 1320
 assert len(conditions) == 44 and len(pairs) == 22
 assert summary['source_revision'] == manifest['source_revision']
 by_condition = {(r['scenario'], r['policy']): r for r in conditions}
+condition_names = dict(re.findall(r'^\| (N\d\d) \| ([^|]+?) \|$',
+                                  (ROOT / 'docs/vecr/SIMULATION_PROTOCOL.md').read_text(), re.M))
+assert len(condition_names) == 22
 inflight = [r for r in pairs if r['scenario'] in ('N07', 'N08', 'N09')]
 honest = [r for r in attempts if r['scenario'] not in ('N19', 'N20')]
 dishonest = [r for r in attempts if r['scenario'] in ('N19', 'N20')]
@@ -44,8 +47,8 @@ assert count(dishonest, 'false_complete') == 120
 assert count(attempts, 'reported_arrived') == 1080
 assert count(attempts, 'reported_complete') == 540
 
-# The full raw evidence remains in the repository; these small copies make the
-# offline reader independently inspectable. Historical v7 stays in legacy_v7.
+# The full raw v8 evidence remains in the repository; these small copies make
+# the offline reader independently inspectable.
 current = EVIDENCE / 'v8'
 current.mkdir(parents=True, exist_ok=True)
 for source, name in [
@@ -87,12 +90,13 @@ for i, row in enumerate(inflight):
     low = -float(row['successful_distance_delta_m_ci_high'])
     high = -float(row['successful_distance_delta_m_ci_low'])
     y = 99 + i * 80
-    bars += [f'<text x="30" y="{y}" fill="#e5f8f3" font-size="15" font-family="Arial" font-weight="bold">{case}</text>',
-             f'<rect x="95" y="{y-15}" width="{b2*5.2:.2f}" height="17" rx="3" fill="#d5a36e"/>',
-             f'<rect x="95" y="{y+8}" width="{vecr*5.2:.2f}" height="17" rx="3" fill="#5ad6bf"/>',
-             f'<text x="{105+b2*5.2:.2f}" y="{y-2}" fill="#f6d8b4" font-size="12" font-family="Arial">B2 {b2:.1f} m</text>',
-             f'<text x="{105+vecr*5.2:.2f}" y="{y+22}" fill="#b4f1e6" font-size="12" font-family="Arial">VECR {vecr:.1f} m</text>',
-             f'<text x="{95}" y="{y+43}" fill="#a8c9c3" font-size="11" font-family="Arial">Saved {reduction:.2f} m · paired 95% CI [{low:.2f}, {high:.2f}]</text>']
+    case_label = {'N07': 'departure', 'N08': 'wide sensing', 'N09': 'narrow sensing'}[case]
+    bars += [f'<text x="30" y="{y}" fill="#e5f8f3" font-size="15" font-family="Arial" font-weight="bold">{case} · {case_label}</text>',
+             f'<rect x="200" y="{y-15}" width="{b2*4.5:.2f}" height="17" rx="3" fill="#d5a36e"/>',
+             f'<rect x="200" y="{y+8}" width="{vecr*4.5:.2f}" height="17" rx="3" fill="#5ad6bf"/>',
+             f'<text x="{210+b2*4.5:.2f}" y="{y-2}" fill="#f6d8b4" font-size="12" font-family="Arial">B2 {b2:.1f} m</text>',
+             f'<text x="{210+vecr*4.5:.2f}" y="{y+22}" fill="#b4f1e6" font-size="12" font-family="Arial">VECR {vecr:.1f} m</text>',
+             f'<text x="{200}" y="{y+43}" fill="#a8c9c3" font-size="11" font-family="Arial">Saved {reduction:.2f} m · paired 95% CI [{low:.2f}, {high:.2f}]</text>']
 bars += ['<text x="30" y="337" fill="#8fb6af" font-size="11" font-family="Arial">Distance advantage is conditional on joint true and reported completion.</text>', '</svg>']
 (FIGURES / 'inflight_effect.svg').write_text(''.join(bars))
 
@@ -132,19 +136,19 @@ def table(headers, rows, caption):
 
 
 condition_table = table(
-    ['Case', 'Policy', 'Arrived / 30', 'Reported survey complete / 30',
+    ['Case', 'Condition', 'Policy', 'Arrived / 30', 'Reported survey complete / 30',
      'True complete / 30', 'False complete', 'False negative', 'Mean distance (m)',
      'Mean unresolved (m)'],
-    [[r['scenario'], r['policy'], r['arrived'], r['reported_complete'],
+    [[r['scenario'], condition_names[r['scenario']], r['policy'], r['arrived'], r['reported_complete'],
       r['true_complete'], r['false_complete'], r['false_negative'],
       f"{float(r['mean_distance_m']):.2f}", f"{float(r['mean_unresolved_m']):.2f}"]
      for r in conditions],
     'Frozen v8; 30 common seeds per condition and policy. Dishonest controls N19/N20 are excluded from honest-sensor safety counts.',
 )
 paired_table = table(
-    ['Case', 'Joint true/report complete', 'B2 mean (m)', 'VECR mean (m)',
+    ['Case', 'Condition', 'Joint true/report complete', 'B2 mean (m)', 'VECR mean (m)',
      'VECR − B2 (m)', '95% paired bootstrap interval (m)'],
-    [[r['scenario'], f"{r['joint_success_pairs']}/30",
+    [[r['scenario'], condition_names[r['scenario']], f"{r['joint_success_pairs']}/30",
       f"{float(by_condition[r['scenario'], 'B2']['mean_distance_m']):.2f}",
       f"{float(by_condition[r['scenario'], 'VECR']['mean_distance_m']):.2f}",
       f"{float(r['successful_distance_delta_m']):.2f}",
@@ -167,7 +171,7 @@ summary_html = (
 )
 formulas = {
     'identity': ('id = (mission, revision, edge, attempt, drone)', 'Stable execution identity'),
-    'footprint': ('h⁻ = ĥ − εh; a⁻ = h⁻ tan(θa/2) − εp; c⁻ = h⁻ tan(θc/2) − εp; I⁻ = [ŝ − a⁻, ŝ + a⁻] ∩ [0,L]', 'Conservative footprint example; calibrated hard bounds required'),
+    'footprint': ('h⁻ = ĥ − εh; a⁻ = h⁻ tan(θa/2) − εp; c⁻ = h⁻ tan(θc/2) − εp; accept only if d_cross + required strip half-width ≤ c⁻; I⁻ = [ŝ − a⁻, ŝ + a⁻] ∩ [0,L]', 'Conservative footprint with the required cross-strip test; fixed calibrated FOV and valid hard bounds are assumptions'),
     'coverage': ('V(t) = ⋃ accepted I⁻j; M(t) = [0,L] ∖ V(t); unresolved = Σ length(Mi)', 'Accepted union and missing complement'),
     'recovery': ('q = clip[0,L](min(p,g)); trigger = qualified sustained departure before B', 'Single automatic local re-entry rule'),
     'arrival': ('terminal = (ARRIVED | FAILED | CANCELLED, reported survey completeness, missing intervals, reason, identity)', 'Arrival and survey coverage are distinct'),
@@ -176,9 +180,15 @@ formulas = {
 }
 
 
+FIGURE_CAPTIONS = {
+    'completion_matrix': 'Reported survey completion by case and policy. Zero cells include deliberate faults and arrived attempts with unverified gaps; compare arrival and independent truth in the table.',
+    'paired_distance': 'VECR minus B2 distance in frozen v8 simulation. N07–N09 are the successful in-flight comparisons; intervals are pointwise paired 95% bootstrap intervals.',
+    'recovery': 'In-flight target selection and physical re-entry; the terminal B result does not start another return.'
+}
+
+
 def figure(name, directory='diagrams'):
-    caption = ('Frozen v8 agent-backed digital simulation; measured from recorded attempts.'
-               if directory == 'figures' else 'VECR method diagram.')
+    caption = FIGURE_CAPTIONS.get(name, 'VECR method diagram.')
     path = f'assets/{directory}/{name}.svg'
     escaped = html.escape(caption)
     return (f'<figure class="research-figure"><button type="button" class="figure-open" '
@@ -196,9 +206,26 @@ trace_html = f'''<div class="trace-explorer"><div class="trace-toolbar"><label>F
 old = BeautifulSoup((SITE / 'index.htm').read_text(), 'lxml')
 profile = old.select_one('.author-profile')
 assert profile is not None
+outcome_guide = '''<div class="outcome-guide" role="note" aria-label="How to read the outcome matrix">
+<div><strong>1 · Physical arrival</strong><span>Did bounded stopped evidence establish arrival at B?</span></div>
+<div><strong>2 · Survey verdict</strong><span>Did accepted evidence satisfy the requested strip tolerance?</span></div>
+<div><strong>3 · Independent truth</strong><span>Did the simulator oracle reconstruct actual acquisition?</span></div>
+<div><strong>4 · Fault controls</strong><span>Zero completion can be the intended safe result; dishonest-sensor cases test the trust boundary.</span></div>
+</div>'''
+recovery_walkthrough = '''<div class="recovery-walkthrough" role="group" aria-label="Forty metre recovery example">
+<h4>A 40 m edge, explained in four steps</h4>
+<div class="walk-strip" role="img" aria-label="The accepted survey covers 0 to 18 metres and 22 to 25 metres. The gap starts at 18 metres; the drone is at 25 metres.">
+<span class="walk-covered" style="left:0;width:45%"></span><span class="walk-gap" style="left:45%;width:10%"></span><span class="walk-covered" style="left:55%;width:7.5%"></span>
+<i class="walk-q" style="left:45%">q=18</i><i class="walk-p" style="left:62.5%">p=25</i></div>
+<ol><li><strong>Accepted photos:</strong> 0–18 m and 22–25 m are credited; 18–22 m remains unverified.</li>
+<li><strong>Deviation:</strong> the drone departs the corridor while progressing at 25 m, before it reaches B.</li>
+<li><strong>Decision:</strong> the first gap starts at 18 m, so q=min(25,18)=18 m. A future gap would not send the drone forward.</li>
+<li><strong>Physical check:</strong> after the return command, bounded position, altitude and speed plus a 200 ms sampled dwell qualify re-entry. The drone then resumes toward B.</li></ol>
+<p>Green = accepted survey evidence; amber = unverified interval. Arrival at B later has a separate survey verdict.</p></div>'''
 subs = {'author_profile': str(profile), 'v8_summary': summary_html,
         'v8_table': condition_table, 'v8_paired_table': paired_table,
-        'trace_explorer': trace_html}
+        'trace_explorer': trace_html, 'outcome_guide': outcome_guide,
+        'recovery_walkthrough': recovery_walkthrough}
 
 
 def placeholder(match):
@@ -239,7 +266,14 @@ for chunk in chunks:
     number, label, ident = match.groups()
     nav.append((number, label, ident))
     body = re.sub(r'\{\{([^}]+)\}\}', placeholder, body)
-    body = re.sub(r'\$([^$\n]+)\$', lambda m: '<span class="inline-math">' + html.escape(m.group(1)) + '</span>', body)
+    def readable_math(match):
+        expression = match.group(1)
+        for command, replacement in ((r'\bigcup', '⋃'), (r'\setminus', '∖'),
+                                     (r'\inf', 'inf'), (r'\min', 'min'), (r'\to', '→'),
+                                     (r'\in', '∈'), (r'\le', '≤')):
+            expression = expression.replace(command, replacement)
+        return '<span class="inline-math">' + html.escape(expression) + '</span>'
+    body = re.sub(r'\$([^$\n]+)\$', readable_math, body)
     rendered = headings(markdown.render(body))
     section = BeautifulSoup(f'<section class="chapter" aria-labelledby="{ident}"><h2 id="{ident}">{number} / {html.escape(label)}</h2>{rendered}</section>', 'lxml').select_one('section')
     sections.append(section)
@@ -307,7 +341,7 @@ for label, ident in [('Researcher', 'researcher'), ('Contribution', 'innovation'
     top_nav.append(link)
 for notice in main.select('.edition-notice'):
     notice.decompose()
-notice = BeautifulSoup('<div class="edition-notice" role="note"><strong>Evidence status:</strong> The v8 digital campaign and independent validator are complete. ArduPilot SITL numbers for this revised method are TBD. Historical v7 experiments are archived separately.</div>', 'lxml').select_one('.edition-notice')
+notice = BeautifulSoup('<div class="edition-notice" role="note"><strong>Evidence status:</strong> The v8 digital campaign and independent validator are complete. ArduPilot SITL numbers for this revised method are TBD. Older v7 data are excluded from current estimates.</div>', 'lxml').select_one('.edition-notice')
 main.select_one('.hero').insert_after(notice)
 (SITE / 'index.htm').write_text('<!doctype html>\n' + str(old.html))
 metadata = ASSETS / 'research-metadata.json'

@@ -58,6 +58,15 @@ def validate(browser=False):
     assert 'ARRIVED/INCOMPLETE' in manuscript and 'GetEdgeStatus' in manuscript
     assert 'proposed revised API contract' not in (SITE / 'assets/animations.js').read_text()
     assert 'FULFILLED' not in (SITE / 'assets/animations.js').read_text()
+    assert 'AT_B_FINALIZING' not in markup and 'AT_B_FINALIZING' not in (SITE / 'assets/animations.js').read_text()
+    assert 'RECOVERY_COMMAND_REJECTED' not in markup and 'RECOVERY_COMMAND_REJECTED' not in (SITE / 'assets/animations.js').read_text()
+    assert 'qualified SITL' not in manuscript
+    assert 'EdgeExecutionRequest' not in manuscript and 'ExecutionId' not in manuscript
+    assert 'GetEdgeStatus(drone_id, attempt_id)' in manuscript
+    assert 'q=min(25,18)=18' in markup
+    assert len(document.select('.recovery-walkthrough')) == 1
+    assert len(document.select('.outcome-guide > div')) == 4
+    assert r'\bigcup' not in markup and r'\setminus' not in markup
     assert set(replay['replays']) == {'N00', 'N03', 'N07', 'N11', 'N19'}
     for case, policies in replay['replays'].items():
         assert set(policies) == {'B2', 'VECR'}
@@ -108,9 +117,15 @@ def validate(browser=False):
                 page.set_content(content, wait_until='load')
                 page.wait_for_timeout(300)
                 assert not errors, errors
-                assert page.locator('.motion-atlas').count() == 9
+                assert page.locator('.motion-atlas').count() == 8
                 assert page.locator('#replayMetrics .replay-card').count() == 2
                 assert page.evaluate('document.body.scrollWidth') <= width + 1
+                page.locator('.motion-atlas--hero input[type="range"]').evaluate(
+                    "node => { node.value = '700'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
+                assert '04 / 04' in page.locator('.motion-atlas--hero .motion-step').inner_text()
+                page.locator('[data-scene="graph"] input[type="range"]').evaluate(
+                    "node => { node.value = '550'; node.dispatchEvent(new Event('input', {bubbles: true})); }")
+                assert 'EXECUTE LOCALLY' in page.locator('[data-scene="graph"] .motion-step').inner_text().upper()
                 if width == 1440:
                     for name in ('N00', 'N03', 'N07', 'N11', 'N19'):
                         page.locator('#replayCase').select_option(name)

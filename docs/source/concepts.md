@@ -94,10 +94,11 @@ treating console logs as correctness evidence.
 `ExecuteEdge` is an onboard operation associated with a directed graph edge,
 route, obligation mode, mission revision, and unique attempt ID. It reports
 arrival, bounded traversal, and evidence-supported survey separately. The
-agent retains disjoint accepted coverage intervals and proposes a bounded
-re-entry before the earliest missing section. The backend and authority
+agent retains disjoint accepted coverage intervals and can propose bounded
+in-flight re-entry at the earlier of current progress and the first unverified
+required coordinate. The backend and authority
 arbiter still gate every command. The planner owns graph order and sharing
-policy. See [the method](../vecr/METHOD_AND_CORRECTNESS.md).
+policy. See [the method](../vecr/METHOD.md).
 
 ## Goals And Reports
 

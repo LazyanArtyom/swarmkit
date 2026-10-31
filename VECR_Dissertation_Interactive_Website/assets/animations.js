@@ -8,7 +8,6 @@
   const lerp = (a,b,t) => a+(b-a)*clamp(t);
   const smooth = t => {t=clamp(t);return t*t*(3-2*t);};
   const f = n => Number(n).toFixed(1);
-  const el = (name, attrs={}, text) => { const e=document.createElementNS(NS,name);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e; };
   const find = (root,id) => root.querySelector(`[data-el="${id}"]`);
   const setText = (root,id,v) => { const e=find(root,id);if(e)e.textContent=v; };
   const attr = (root,id,name,v) => { const e=find(root,id);if(e)e.setAttribute(name,String(v)); };
@@ -16,12 +15,11 @@
   const route = (y=205) => `<rect x="80" y="${y-35}" width="780" height="70" rx="30" fill="#19423f" opacity=".65"/><path d="M95 ${y}H845" stroke="#305f59" stroke-width="3" stroke-dasharray="9 11"/><circle cx="95" cy="${y}" r="9" fill="${B}"/><circle cx="845" cy="${y}" r="9" fill="${G}"/><text x="84" y="${y+66}" fill="${M}" font-size="15">A · 0 m</text><text x="800" y="${y+66}" fill="${M}" font-size="15">B · 40 m</text>`;
   const drone = (id,color=G) => `<g data-el="${id}" transform="translate(95 205)"><circle r="30" fill="${color}" opacity=".10"/><g stroke="${color}" stroke-width="3" fill="#09232d"><path d="M-19-19L19 19M19-19L-19 19"/><circle cx="-23" cy="-23" r="9"/><circle cx="23" cy="-23" r="9"/><circle cx="-23" cy="23" r="9"/><circle cx="23" cy="23" r="9"/><path d="M0-16L13 6L0 2L-13 6Z" fill="${color}" stroke="none"/></g><circle r="5" fill="#ecfaf8"/></g>`;
   const label = (x,y,value,color=M,size=14) => `<text x="${x}" y="${y}" fill="${color}" font-size="${size}" font-family="system-ui, sans-serif">${value}</text>`;
-  const marker = (id,fill) => `<defs><marker id="${id}" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="${fill}" stroke-width="1.5"/></marker></defs>`;
   const scenes = {
     hero: {
       title:'One automatic recovery: detect, return and resume BEFORE B',
       note:'Conceptual timeline. The UAV never flies to B before this deviation correction; the exact target depends on accepted evidence and safety bounds.',
-      stages:['Follow A → B','Detect deviation','Return now','Resume toward B'],seconds:14,
+      stages:['Follow A → B','Detect deviation','Return and re-enter','Resume toward B'],breakpoints:[0,.23,.46,.70,1],seconds:14,
       svg:()=>`${label(34,39,'REAL-TIME LOCAL CORRECTION · A → B',W,17)}${label(34,66,'The deviation is qualified while B is still ahead.',M,14)}${route(196)}
         <rect x="350" y="175" width="91" height="42" rx="6" fill="${A}" opacity=".20" stroke="${A}" stroke-width="2" stroke-dasharray="6 5"/>
         <rect data-el="heroCoveredA" x="95" y="182" width="0" height="28" rx="3" fill="${G}" opacity=".85"/>
@@ -32,7 +30,7 @@
         <circle data-el="heroSample1" cx="369" cy="154" r="7" fill="${A}" opacity="0"/>
         <circle data-el="heroSample2" cx="405" cy="119" r="7" fill="${A}" opacity="0"/>
         <circle data-el="heroSample3" cx="449" cy="112" r="7" fill="${A}" opacity="0"/>
-        ${label(330,155,'first unverified',A,14)}<text data-el="heroWarning" x="534" y="113" fill="${A}" font-size="15">CORRECTION BEGINS BEFORE B</text>
+        ${label(330,155,'q = earlier of p and gap',A,14)}<text data-el="heroWarning" x="534" y="113" fill="${A}" font-size="15">CORRECTION BEGINS BEFORE B</text>
         ${drone('heroDrone',G)}<rect x="30" y="292" width="880" height="43" rx="10" fill="#123846" stroke="#3a6270"/>
         <text data-el="heroStatus" x="49" y="319" fill="${W}" font-size="16">Monitor accepted coverage and corridor compliance</text>`,
       draw:(svg,p)=>{
@@ -49,13 +47,13 @@
         attr(svg,'heroCoveredLater','width',p>.70?404*smooth((p-.70)/.30):0);
         attr(svg,'heroReacquired','width',p>.70?91*smooth((p-.70)/.10):0);
         attr(svg,'heroWarning','opacity',p>.3&&p<.7?'1':'0');
-        setText(svg,'heroStatus',p<.23?'MOVING · survey evidence accumulates':p<.36?'Consecutive out-of-corridor samples qualify the deviation':p<.46?'DEVIATING → RECOVERING · B has NOT been reached':p<.64?'Return NOW to earliest required unverified point':p<.70?'Check physical re-entry, not just command ACK':p<.97?'Resume MOVING toward B, retaining accepted intervals':'At B: report arrival + any residual gaps; NO rewind');
+        setText(svg,'heroStatus',p<.23?'MOVING · survey evidence accumulates':p<.36?'Qualified violations accumulate with hysteresis':p<.46?'DEVIATING → RECOVERING · B has NOT been reached':p<.64?'Return to q = min(current progress, first required gap)':p<.70?'Check bounded stopped re-entry, not just command ACK':p<.97?'Resume MOVING toward B, retaining accepted intervals':'At B: report arrival + any residual gaps; NO rewind');
       },
       summary:p=>p<.23?'The higher-level graph algorithm assigns A → B; the local supervisor collects evidence.':p<.46?'The UAV departs its corridor and VECR starts correction before arriving at B.':p<.7?'The vehicle returns to a conservative evidence-selected coordinate, verifies physical re-entry, then may resume.':'At destination, any unresolved intervals are handed to the caller—not automatically revisited.'
     },
     graph: {
       title:'Graph algorithm and physical executor have different jobs', note:'Conceptual SDK boundary; rotor-router is a motivating example, not an implemented planner.',
-      stages:['Assign A → B','Execute locally','Arrive + report','Caller decides'],seconds:12,
+      stages:['Assign A → B','Execute locally','Arrive + report','Caller decides'],breakpoints:[0,.15,.63,.85,1],seconds:12,
       svg:() =>`${label(42,42,'EXTERNAL GRAPH CONTROLLER',B,14)}${label(516,42,'VECR LOCAL EXECUTOR',G,14)}<rect x="32" y="62" width="418" height="229" rx="14" fill="#112e42" stroke="#35546b"/><rect x="484" y="62" width="426" height="229" rx="14" fill="#10372f" stroke="#315d55"/>
       <g stroke="#7194ad" stroke-width="3" fill="none"><path d="M120 156L252 111L358 168L234 244L120 156M252 111L234 244"/></g><g fill="#183e59" stroke="${B}" stroke-width="2"><circle cx="120" cy="156" r="21"/><circle cx="252" cy="111" r="21"/><circle cx="358" cy="168" r="21"/><circle cx="234" cy="244" r="21"/></g>
       ${label(113,162,'A',W,17)}${label(245,117,'B',W,17)}${label(351,175,'C',W,17)}${label(227,251,'D',W,17)}<path data-el="graphEdge" d="M120 156L252 111" stroke="${A}" stroke-width="7"/><g data-el="graphChip" transform="translate(120 156)"><circle r="10" fill="${A}" stroke="#fdf4e5" stroke-width="2"/></g>
@@ -73,7 +71,7 @@
       summary:p=>p<.38?'Command acceptance does not prove physical arrival or image quality.':p<.63?'The UAV reaches B and stays at B; the middle interval is unverified.':p<.85?'VECR assembles the immutable arrival/coverage result.':'One terminal event is delivered; the caller decides how to resolve the gap. VECR sends no return command.'
     },
     footprint: {
-      title:'Why uncertainty shrinks an accepted camera footprint',note:'Geometric demonstration only · not a calibrated camera model or measured field of view',
+      title:'Why uncertainty shrinks an accepted camera footprint',note:'Geometric demonstration only · fixed calibrated field-of-view values and truthful quality assertions are assumed; no image pixels are inspected.',
       stages:['Measured footprint','Apply error bounds','Contract interval','Qualify capture'], seconds:13,
       options:[['tight','Small error bounds'],['wide','Larger error bounds']],
       svg:()=>`${label(40,43,'CAMERA ACQUISITION VS. SAFE CREDIT',W,17)}${label(40,74,'Blue: possible geometric footprint      Green: conservatively accepted interval',M,14)}
@@ -84,34 +82,14 @@
         <path d="M466 114L259 148M466 114L677 148" fill="none" stroke="${B}" stroke-width="2" stroke-dasharray="5 6"/>
         ${label(71,281,'0 m',M,13)}${label(805,281,'along-edge interval',M,13)}<text data-el="footprintNote" x="82" y="318" fill="${G}" font-size="17">Verify bounded geometry before accepting coverage</text>`,
       draw:(svg,p,mode)=>{const width=(mode==='wide'?170:330)*smooth((p-.2)/.55);attr(svg,'safeFootprint','width',width);attr(svg,'safeFootprint','x',468-width/2);setText(svg,'footprintNote',p<.7?'Contraction accounts for declared localization / altitude error bounds':mode==='wide'?'Larger bounds → narrower conservative interval':'Smaller bounds → wider qualified interval (within the physical footprint)');},
-      summary:(p,mode)=>p<.25?'A physical camera footprint is not automatically credited to the mission.':p<.70?'The agent contracts the footprint using bounds on position, height and optics.':mode==='wide'?'More uncertainty means less accepted coverage; an invalid cross-track fit rejects the capture.':'The bounded, contracted interval contributes to the accepted union only after qualification.'
-    },
-    coverage: {
-      title:'Preserve accepted intervals, report the remaining hole',note:'Conceptual set-union state. NO endpoint return; the missing interval becomes caller-visible data.',
-      stages:['Accept evidence','Track the union','Arrive at B','Report residual'],seconds:14,
-      svg:()=>`${label(43,47,'EVIDENCE UNION = VERIFIED WORK, NOT DISTANCE',W,17)}${label(42,76,'V = qualified intervals     M = [0,L] minus V',M,14)}<rect x="75" y="121" width="790" height="73" rx="10" fill="#12313d" stroke="#55737b"/>
-      <rect data-el="coverA" x="75" y="121" width="0" height="73" rx="6" fill="${G}" opacity=".75"/><rect data-el="coverB" x="529" y="121" width="0" height="73" rx="6" fill="${G}" opacity=".75"/><rect x="391" y="121" width="138" height="73" rx="6" fill="${A}" opacity=".22" stroke="${A}" stroke-dasharray="6 4"/>
-      ${label(82,160,'[0, 16]', '#052c2e',16)}${label(407,160,'[16, 23]',A,16)}${label(683,160,'[23, 40]','#052c2e',16)}${label(75,219,'0 m',M,13)}${label(835,219,'40 m',M,13)}<line x1="75" y1="247" x2="865" y2="247" stroke="#406575" stroke-width="2"/>${drone('coverDrone',B)}
-      <text data-el="coverMessage" x="51" y="323" fill="${A}" font-size="16">Coverage remains incomplete until qualifying evidence exists</text>`,
-      draw:(svg,p)=>{const x=lerp(75,865,smooth(p/.65));pos(svg,'coverDrone',x,246);attr(svg,'coverA','width',316*smooth(p/.21));attr(svg,'coverB','width',336*smooth((p-.23)/.25));setText(svg,'coverMessage',p<.65?'An unverified hole is not filled by reaching a later route position':'ARRIVED at B / INCOMPLETE: gap [16,23]m reported to caller');},
-      summary:p=>p<.25?'Qualified camera evidence accumulates as a set of intervals.':p<.5?'The union retains earlier verified work while a middle hole is unresolved.':p<.75?'The UAV arrives at B with the hole still visible in the status snapshot.':'VECR leaves the drone at B and emits the residual interval; external mission software decides what follows.'
-    },
-    comparison: {
-      title:'Measured v8 in-flight target comparison',note:'Conceptual comparison of N07-like in-flight departure; measured v8 replay and paired results appear below.',
-      stages:['Qualify departure','Choose return point','Re-enter physically','Resume to B'],seconds:14,
-      svg:()=>`${label(35,35,'B2 · IN-FLIGHT RETURN TO A',A,15)}${label(35,193,'VECR · IN-FLIGHT RETURN TO GAP',G,15)}${[108,266].map((y,i)=>`<rect x="90" y="${y-26}" width="754" height="52" rx="18" fill="#13373c"/><rect x="95" y="${y-14}" width="265" height="28" rx="3" fill="${G}" opacity=".60"/><path d="M95 ${y}H840" fill="none" stroke="#658a84" stroke-width="2" stroke-dasharray="6 7"/><path d="M415 ${y}Q450 ${y-70} 495 ${y-52}" fill="none" stroke="${A}" stroke-width="2.5" stroke-dasharray="5 5"/><rect data-el="comparisonFill${i}" x="360" y="${y-14}" width="0" height="28" fill="${G}" opacity=".87"/><text x="93" y="${y+47}" fill="${M}" font-size="13">A</text><text x="827" y="${y+47}" fill="${M}" font-size="13">B</text>`).join('')}<text x="540" y="59" fill="${A}" font-size="13">Both start correction BEFORE B</text>${drone('compareB2',A)}${drone('compareVECR',G)}`,
-      draw:(svg,p)=>{let x1,x2,yoff=0;
-        if(p<.18){x1=x2=lerp(95,445,p/.18);}else if(p<.28){x1=x2=lerp(445,495,smooth((p-.18)/.10));yoff=-52*smooth((p-.18)/.10);}else if(p<.55){x1=lerp(495,95,smooth((p-.28)/.27));x2=lerp(495,360,smooth((p-.28)/.27));yoff=-52*(1-smooth((p-.28)/.27));}else if(p<.61){x1=95;x2=360;}else {x1=lerp(95,840,smooth((p-.61)/.39));x2=lerp(360,840,smooth((p-.61)/.39));}
-        pos(svg,'compareB2',x1,108+yoff,p>.28&&p<.55?180:0);pos(svg,'compareVECR',x2,266+yoff,p>.28&&p<.55?180:0);for(let i=0;i<2;i++)attr(svg,`comparisonFill${i}`,'width',p>.61?120*smooth((p-.61)/.15):0);
-      },
-      summary:p=>p<.28?'A sustained lateral deviation occurs before either drone reaches B.':p<.55?'The comparator returns to A, while VECR picks the earlier of projected progress and the first required gap.':p<.75?'Both must qualify physical re-entry. Prior accepted intervals are preserved.':'Each resumes its edge. Frozen v8 N07–N09 pairs measure the conditional flight-distance contrast.'
+      summary:(p,mode)=>p<.25?'A physical camera footprint is not automatically credited to the mission.':p<.70?'The agent contracts a fixed calibrated footprint using hard position and altitude error bounds.':mode==='wide'?'More uncertainty means less accepted coverage; an invalid cross-track fit rejects the capture.':'The bounded, contracted interval contributes to the accepted union only after qualification.'
     },
     states: {
       title:'A recovery command does not mean recovery happened',note:'Illustrative state transition · runtime phases include MOVING, DEVIATING, RECOVERING, ARRIVED, FAILED, CANCELLED and UNKNOWN',
-      stages:['MOVING','DEVIATING','RECOVERING','Outcome'], seconds:12,
+      stages:['MOVING','DEVIATING','RECOVERING','Outcome'], breakpoints:[0,.17,.38,.93,1],seconds:12,
       options:[['success','Qualified recovery'],['rejected','Command rejected']],
-      svg:()=>`${label(44,40,'PHYSICAL STATE, NOT COMMAND STATUS',W,17)}<path d="M120 130H824" stroke="#345767" stroke-width="4" stroke-dasharray="5 10"/>${['MOVING','DEVIATING','RECOVERING','MOVING','ARRIVED'].map((s,i)=>`<g><circle data-el="state${i}" cx="${120+i*176}" cy="130" r="38" fill="#173644" stroke="#476371" stroke-width="2"/><text x="${120+i*176}" y="136" fill="${W}" text-anchor="middle" font-size="${s==='RECOVERING'?11:12}" font-family="system-ui">${s}</text></g>`).join('')}<rect x="92" y="225" width="750" height="65" rx="12" fill="#123342" stroke="#3e6471"/><rect data-el="stateProgress" x="92" y="225" width="0" height="65" rx="12" fill="${G}" opacity=".26"/><text data-el="stateCondition" x="112" y="262" fill="${W}" font-size="17">Three consecutive out-of-corridor samples trigger DEVIATING.</text>`,
-      draw:(svg,p,mode)=>{const reject=mode==='rejected';const active=p<.17?0:p<.38?1:p<.78?2:p<.93?3:4;for(let i=0;i<5;i++){const on=i===active&&!(reject&&i>2);attr(svg,'state'+i,'fill',on?(reject&&i===2?'#7c4930':'#195d54'):'#173644');attr(svg,'state'+i,'stroke',on?(reject?A:G):'#476371');}attr(svg,'stateProgress','width',p*750);setText(svg,'stateCondition',reject&&p>.54?'Command rejected → FAILED; no arrival.':p<.17?'MOVING · accumulating verified intervals.':p<.38?'DEVIATING · sustained departure detected.':p<.55?'RECOVERING · command accepted, physical return still pending.':p<.78?'RECOVERING · re-entry dwell and monitoring required.':p<.93?'MOVING · resumed after physical re-entry.':'ARRIVED · stopped arrival qualified; survey verdict separate.');},
+      svg:()=>`${label(44,40,'PHYSICAL STATE, NOT COMMAND STATUS',W,17)}<path d="M120 130H824" stroke="#345767" stroke-width="4" stroke-dasharray="5 10"/>${['MOVING','DEVIATING','RECOVERING','MOVING','ARRIVED'].map((s,i)=>`<g><circle data-el="state${i}" cx="${120+i*176}" cy="130" r="38" fill="#173644" stroke="#476371" stroke-width="2"/><text data-el="stateLabel${i}" x="${120+i*176}" y="136" fill="${W}" text-anchor="middle" font-size="${s==='RECOVERING'?11:12}" font-family="system-ui">${s}</text></g>`).join('')}<rect x="92" y="225" width="750" height="65" rx="12" fill="#123342" stroke="#3e6471"/><rect data-el="stateProgress" x="92" y="225" width="0" height="65" rx="12" fill="${G}" opacity=".26"/><text data-el="stateCondition" x="112" y="262" fill="${W}" font-size="17">Qualified violations with hysteresis trigger DEVIATING.</text>`,
+      draw:(svg,p,mode)=>{const reject=mode==='rejected';const active=reject&&p>.54?4:p<.17?0:p<.38?1:p<.78?2:p<.93?3:4;setText(svg,'stateLabel4',reject?'FAILED':'ARRIVED');for(let i=0;i<5;i++){const on=i===active;attr(svg,'state'+i,'fill',on?(reject&&i===4?'#7c4930':'#195d54'):'#173644');attr(svg,'state'+i,'stroke',on?(reject&&i===4?A:G):'#476371');}attr(svg,'stateProgress','width',p*750);setText(svg,'stateCondition',reject&&p>.54?'Command rejected → FAILED; no arrival.':p<.17?'MOVING · accumulating verified intervals.':p<.38?'DEVIATING · sustained departure detected.':p<.55?'RECOVERING · command accepted, physical return still pending.':p<.78?'RECOVERING · re-entry dwell and monitoring required.':p<.93?'MOVING · resumed after physical re-entry.':'ARRIVED · stopped arrival qualified; survey verdict separate.');},
       summary:(p,mode)=>mode==='rejected'&&p>.54?'A rejected return command terminates the attempt; ACK cannot substitute for physical dwell.':p<.38?'Physical conformance samples—not a UI action—trigger recovery.':p<.78?'RECOVERING persists until stationary re-entry is genuinely qualified.':'The outcome is determined by verified observations and safety conditions.'
     },
     evidence: {
@@ -124,16 +102,16 @@
     },
     wait: {
       title:'Two reporting interfaces: snapshot on demand, one terminal event',note:'Conceptual API requirement. This is a pull/status and push/completion demonstration, not a measurement of callback traffic.',
-      stages:['Execution active','Caller polls','Arrival at B','One callback'],seconds:12,
+      stages:['Execution active','Caller polls','Arrival or failure','Terminal callback'],breakpoints:[0,.2,.44,.74,1],seconds:12,
       options:[['incomplete','Arrive with a gap'],['failure','Correction fails']],
       svg:()=>`${label(38,40,'EXECUTION STATUS SNAPSHOT · PULL',B,16)}<rect x="42" y="60" width="856" height="100" rx="12" fill="#123744" stroke="#466c7c"/>
-       <text data-el="waitPoll" x="64" y="96" fill="${W}" font-size="16">getEdgeStatus(id): MOVING, 28.8 / 40m</text><text data-el="waitInterval" x="64" y="130" fill="${M}" font-size="15">Unverified [18.2,21.6]m; attempts 1/2</text>
+       <text data-el="waitPoll" x="64" y="96" fill="${W}" font-size="16">GetEdgeStatus(drone, attempt): MOVING</text><text data-el="waitInterval" x="64" y="130" fill="${M}" font-size="15">Unverified [18.2,21.6]m; attempts 1/2</text>
        ${label(38,201,'TERMINAL RESULT · PUSH ONCE',G,16)}<rect x="42" y="214" width="856" height="93" rx="12" fill="#123b36" stroke="#45766e"/><text data-el="waitCallback" x="64" y="260" fill="${G}" font-size="16">No callback during each telemetry update</text><text data-el="waitCallbackSub" x="64" y="291" fill="${M}" font-size="14">Only the final edge outcome notifies the caller</text>`,
-      draw:(svg,p,mode)=>{const failure=mode==='failure';setText(svg,'waitPoll',p<.44?'getEdgeStatus(id) → MOVING at 28.8 / 40m':p<.74?(failure?'getEdgeStatus(id) → RECOVERING, command rejected':'getEdgeStatus(id) → AT_B_FINALIZING, stopped at B'):(failure?'getEdgeStatus(id) → FAILED':'getEdgeStatus(id) → ARRIVED'));
+      draw:(svg,p,mode)=>{const failure=mode==='failure';setText(svg,'waitPoll',p<.44?'GetEdgeStatus(drone, attempt) → MOVING':p<.74?(failure?'GetEdgeStatus(drone, attempt) → RECOVERING':'GetEdgeStatus(drone, attempt) → MOVING; B dwell pending'):(failure?'GetEdgeStatus(drone, attempt) → FAILED':'GetEdgeStatus(drone, attempt) → ARRIVED'));
        setText(svg,'waitInterval',p<.74?'Verified [0,18.2], [21.6,28]m; gap still tracked':'Unverified [18.2,21.6]m · immutable evidence cutoff');
-       setText(svg,'waitCallback',p<.74?'No callback on each telemetry frame':failure?'ONE EVENT: FAILED / RECOVERY_COMMAND_REJECTED':'ONE EVENT: ARRIVED / INCOMPLETE');
+       setText(svg,'waitCallback',p<.74?'No callback on each telemetry frame':failure?'ONE EVENT: FAILED · reason: re-entry rejected':'ONE EVENT: ARRIVED · survey incomplete');
        setText(svg,'waitCallbackSub',p<.74?'The caller can poll when it wants':failure?'Budget or safety failure ends local control':'Caller may retry / reassign / continue · VECR sends no GOTO');},
-      summary:(p,mode)=>p<.44?'The upper-level algorithm pulls a status snapshot only when desired.':p<.74?'The SDK maintains phase, coverage intervals and finite recovery counts internally; it does not flood the planner with step events.':mode==='failure'?'A failed correction creates one terminal FAILED event with reason and partial evidence.':'Arrival at B generates one terminal ARRIVED/INCOMPLETE event, without a return-to-gap command.'
+      summary:(p,mode)=>p<.44?'The upper-level algorithm pulls a status snapshot only when desired.':p<.74?'The SDK maintains phase, missing intervals and finite recovery counts internally; it does not flood the planner with step events.':mode==='failure'?'A failed correction creates one terminal FAILED event with reason and partial evidence.':'Arrival at B generates one terminal ARRIVED event with a separate survey verdict, without a return-to-gap command.'
     }
   };
   let counter=0;
@@ -143,21 +121,22 @@
     const s=scenes[kind],id='vecr-motion-'+(++counter),card=document.createElement('div');
     card.className='motion-atlas'+(compact?' motion-atlas--hero':'');card.dataset.scene=kind;
     const options=s.options?`<div class="motion-modes" role="group" aria-label="${s.title} scenario">${s.options.map(([key,title],i)=>`<button type="button" data-mode="${key}" aria-pressed="${i===0}">${title}</button>`).join('')}</div>`:'';
-    card.innerHTML=`<div class="motion-head"><div><span class="motion-eyebrow">${compact?'THE IDEA IN MOTION':'INTERACTIVE RESEARCH EXPLAINER · CONCEPTUAL'}</span><h4>${s.title}</h4></div><span class="motion-live" aria-hidden="true"><i></i> LIVE MODEL</span></div>
+    card.innerHTML=`<div class="motion-head"><div><span class="motion-eyebrow">${compact?'THE IDEA IN MOTION':'INTERACTIVE RESEARCH EXPLAINER · CONCEPTUAL'}</span><h4>${s.title}</h4></div><span class="motion-live" aria-hidden="true">CONCEPTUAL ANIMATION</span></div>
      <div class="motion-screen"><svg viewBox="0 0 940 350" role="img" aria-label="Animated illustrative diagram: ${s.title}"><defs><pattern id="${id}-grid" width="28" height="28" patternUnits="userSpaceOnUse"><path d="M28 0H0V28" fill="none" stroke="#31505e" stroke-width=".6" opacity=".45"/></pattern></defs><rect width="940" height="350" rx="14" fill="#0b2331"/><rect width="940" height="350" rx="14" fill="url(#${id}-grid)"/>${s.svg()}</svg></div>
      <div class="motion-narrative"><span class="motion-step">01 / 04</span><p class="motion-summary" aria-live="off"></p></div>${options}
      <div class="motion-controls"><button type="button" data-action="play" class="motion-play" aria-label="Play animation">▶ <span>Play</span></button><button type="button" data-action="restart" aria-label="Restart animation" class="motion-restart">↺</button><label class="motion-slider-label"><span class="sr-only">Animation progress</span><input type="range" min="0" max="1000" value="0" step="1" aria-label="Scrub animation timeline"></label><span class="motion-time">00:00</span><button type="button" data-action="step" class="motion-next" title="Next stage">Next step →</button></div>
      <div class="motion-footnote">${s.note}</div>`;
     const svg=card.querySelector('svg'),slider=card.querySelector('input[type="range"]'),play=card.querySelector('[data-action="play"]'),restart=card.querySelector('[data-action="restart"]'),next=card.querySelector('[data-action="step"]'),sum=card.querySelector('.motion-summary'),step=card.querySelector('.motion-step'),time=card.querySelector('.motion-time');
     const modeButtons=[...card.querySelectorAll('[data-mode]')];let mode=modeButtons[0]?.dataset.mode||'default',p=0,playing=false,visible=false,raf=0,last=0,userPaused=false;
-    function paint(){s.draw(svg,p,mode);sum.textContent=s.summary(p,mode);const stage=Math.min(3,Math.floor(p*4));step.textContent=`${String(stage+1).padStart(2,'0')} / 04 · ${s.stages[stage]}`;slider.value=String(Math.round(p*1000));time.textContent=`${String(Math.floor(p*s.seconds/60)).padStart(2,'0')}:${String(Math.floor(p*s.seconds%60)).padStart(2,'0')}`;slider.setAttribute('aria-valuetext',`${Math.round(p*100)} percent, ${s.stages[stage]}`);}
+    const milestones=s.breakpoints||[0,.25,.5,.75,1];
+    function paint(){s.draw(svg,p,mode);sum.textContent=s.summary(p,mode);let stage=3;for(let i=0;i<4;i++){if(p<milestones[i+1]){stage=i;break;}}step.textContent=`${String(stage+1).padStart(2,'0')} / 04 · ${s.stages[stage]}`;slider.value=String(Math.round(p*1000));time.textContent=`${String(Math.floor(p*s.seconds/60)).padStart(2,'0')}:${String(Math.floor(p*s.seconds%60)).padStart(2,'0')}`;slider.setAttribute('aria-valuetext',`${Math.round(p*100)} percent, ${s.stages[stage]}`);}
     function showPlaying(flag){playing=flag;play.querySelector('span').textContent=flag?'Pause':'Play';play.setAttribute('aria-label',flag?'Pause animation':'Play animation');play.firstChild.textContent=flag?'Ⅱ ':'▶ ';card.classList.toggle('is-playing',flag);}
     function pause(user=false){if(user)userPaused=true;showPlaying(false);cancelAnimationFrame(raf);raf=0;}
     function tick(ts){if(!playing)return;if(last){p+=Math.min(80,ts-last)/(s.seconds*1000);if(p>=1){p=1;pause();}}last=ts;paint();if(playing)raf=requestAnimationFrame(tick);}
     function start(){if(p>=1)p=0;userPaused=false;last=0;showPlaying(true);raf=requestAnimationFrame(tick);}
     play.addEventListener('click',()=>{if(playing)pause(true);else start();});
     restart.addEventListener('click',()=>{pause(true);p=0;paint();});
-    next.addEventListener('click',()=>{pause(true);const milestone=[0,.25,.50,.75,1].find(q=>q>p+.001);p=milestone??0;paint();});
+    next.addEventListener('click',()=>{pause(true);const milestone=milestones.find(q=>q>p+.001);p=milestone??0;paint();});
     slider.addEventListener('input',()=>{pause(true);p=Number(slider.value)/1000;paint();});
     modeButtons.forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;modeButtons.forEach(x=>x.setAttribute('aria-pressed',String(x===b)));pause(true);p=0;paint();}));
     const instance={card,pause,autostart:()=>{if(!playing&&!userPaused&&p<1&&!reduced.matches)start();},get visible(){return visible;},set visible(v){visible=v;v?this.autostart():pause(false);}};
@@ -173,7 +152,7 @@
     const summary=document.createElement('summary');summary.textContent='Open the static technical reference diagram';
     details.append(summary);figure.replaceWith(shell);details.append(figure);shell.append(details);
   }
-  replaceFigure('contract','contract');replaceFigure('recovery','coverage');replaceFigure('states','states');replaceFigure('comparison','comparison');replaceFigure('evidence','evidence');
+  replaceFigure('contract','contract');replaceFigure('states','states');replaceFigure('evidence','evidence');
   // Architecture is a technical reference diagram: keep it static.
   function afterHeading(id,kind){const h=document.getElementById(id);if(!h)return;const host=document.createElement('div');host.className='motion-section';host.append(build(kind));const next=h.nextElementSibling; // Insert after first explanatory paragraph when possible.
     if(next&&next.tagName==='P')next.insertAdjacentElement('afterend',host);else h.insertAdjacentElement('afterend',host);
@@ -185,8 +164,7 @@
   // Hero illustration becomes a real-time concept animation. The research chart stays unchanged.
   const hero=document.querySelector('.hero-motion-anchor');
   if(hero){const panel=build('hero',{compact:true});hero.replaceWith(panel);}
-  const observer='IntersectionObserver' in window?new IntersectionObserver(entries=>entries.forEach(e=>{const inst=all.find(i=>i.card===e.target);if(inst)inst.visible=e.isIntersecting;}),{threshold:.25}):null;
-  if(observer)all.forEach(i=>observer.observe(i.card));
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)all.forEach(i=>i.pause(false));else all.filter(i=>i.visible).forEach(i=>i.autostart());});
+  // Readers advance the concepts themselves; recorded replay has its own controls.
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)all.forEach(i=>i.pause(false));});
   reduced.addEventListener?.('change',()=>{if(reduced.matches)all.forEach(i=>i.pause(false));});
 })();
