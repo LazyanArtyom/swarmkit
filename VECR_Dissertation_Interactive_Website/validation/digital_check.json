@@ -1,8 +1,8 @@
 {
   "static": "PASS",
   "chapters": 20,
-  "v8_attempts": 1320,
-  "v8_conditions": 22,
+  "attempts": 1320,
+  "conditions": 22,
   "replay_conditions": [
     "N00",
     "N03",

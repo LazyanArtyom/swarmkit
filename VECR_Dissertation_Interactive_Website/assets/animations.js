@@ -62,7 +62,7 @@
       summary:p=>p<.3?'The planner chooses the next graph edge; the SDK does not implement rotor-router.':p<.63?'VECR runs local motion supervision and qualified evidence tracking.':p<.85?'At B, VECR reports both arrival and coverage state, even when gaps remain.':'Any further task is a new mission-level choice, not an implicit VECR backward command.'
     },
     contract: {
-      title:'At B: report unresolved intervals without returning',note:'Conceptual example of the implemented v8 terminal arrival callback; no autonomous endpoint return.',
+      title:'At B: report unresolved intervals without returning',note:'Conceptual example of the implemented terminal arrival callback; no autonomous endpoint return.',
       stages:['Command accepted','Travel to B','Find residual gap','Emit callback'],seconds:12,
       svg:()=>`${label(40,42,'ARRIVAL IS NOT THE SAME AS COVERAGE',W,17)}${['COMMAND ACK','ARRIVED AT B','COVERAGE STATE','TERMINAL REPORT'].map((t,i)=>`<rect data-el="contractBox${i}" x="${34+i*226}" y="68" width="205" height="62" rx="10" fill="#183343" stroke="#4b6570" stroke-width="1.5"/>${label(45+i*226,105,t,M,13)}`).join('')}${route(228)}
       <rect x="95" y="216" width="310" height="24" rx="4" fill="${G}" opacity=".8"/><rect x="525" y="216" width="320" height="24" rx="4" fill="${G}" opacity=".8"/><rect x="405" y="213" width="120" height="30" rx="4" stroke="${A}" stroke-dasharray="6 4" fill="${A}" opacity=".30"/>

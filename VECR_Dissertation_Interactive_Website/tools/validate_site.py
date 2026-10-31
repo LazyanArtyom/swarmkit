@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-check reader claims and recorded replay rows against frozen v8 evidence."""
+"""Cross-check reader claims and recorded replay rows against frozen evidence."""
 import argparse
 import csv
 import gzip
@@ -49,11 +49,15 @@ def validate(browser=False):
     ]
     assert sum(int(row['reported_arrived']) for row in raw) == 1080
     assert sum(int(row['reported_complete']) for row in raw) == 540
-    assert 'V8 DIGITAL VALIDATED' in markup and 'SITL PENDING' in markup
+    assert 'DIGITAL VALIDATION COMPLETE' in markup and 'SITL PENDING' in markup
+    visible = BeautifulSoup(markup, 'lxml')
+    for element in visible.select('script, style'):
+        element.decompose()
+    assert not re.search(r'\bv[78]\b', visible.get_text(' ', strip=True), re.I)
     hero_cards = document.select('.hero-stats > div')
     assert len(hero_cards) == 4
     assert hero_cards[2].select_one('strong').get_text(strip=True) == '100'
-    assert 'validated v8 client-path attempts' in hero_cards[2].get_text()
+    assert 'validated client-path attempts' in hero_cards[2].get_text()
     assert 'one terminal' in manuscript.lower() and 'no post-arrival' in manuscript.lower()
     assert 'ARRIVED/INCOMPLETE' in manuscript and 'GetEdgeStatus' in manuscript
     assert 'proposed revised API contract' not in (SITE / 'assets/animations.js').read_text()
@@ -93,8 +97,8 @@ def validate(browser=False):
     assert reuse['attempts'] == 100 and reuse['matched_pairs'] == 50
     assert not reuse['field_differences']
     assert reuse == json.loads((ROOT / 'results/vecr/v8/reuse-qualified/analysis/reuse_results.json').read_text())
-    result = {'static': 'PASS', 'chapters': 20, 'v8_attempts': 1320,
-              'v8_conditions': 22, 'replay_conditions': sorted(replay['replays']),
+    result = {'static': 'PASS', 'chapters': 20, 'attempts': 1320,
+              'conditions': 22, 'replay_conditions': sorted(replay['replays']),
               'source_revision': summary['source_revision']}
     if browser:
         from playwright.sync_api import sync_playwright
@@ -135,7 +139,7 @@ def validate(browser=False):
             application.close()
         result['browser'] = 'PASS'
     (SITE / 'validation').mkdir(exist_ok=True)
-    (SITE / 'validation/v8_check.json').write_text(json.dumps(result, indent=2) + '\n')
+    (SITE / 'validation/digital_check.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
 
 

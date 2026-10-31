@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the offline dissertation reader from the frozen v8 digital campaign."""
+"""Build the offline dissertation reader from the frozen digital campaign."""
 import csv
 import gzip
 import html
@@ -78,11 +78,11 @@ for stale in FIGURES.glob('inflight_distance.*'):
 # A compact current-data chart fits the landing view; the complete 22-case
 # paired chart remains in the measured-results chapter.
 bars = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 350" role="img" aria-labelledby="effect-title effect-desc">',
-        '<title id="effect-title">Frozen v8 in-flight recovery distance</title>',
+        '<title id="effect-title">Measured in-flight recovery distance</title>',
         '<desc id="effect-desc">B2 and VECR mean distances in N07, N08 and N09, with paired distance reductions and confidence intervals.</desc>',
         '<rect width="720" height="350" rx="14" fill="#102d3c"/>',
         '<text x="30" y="34" fill="#e5f8f3" font-size="20" font-family="Arial" font-weight="bold">Shorter return target, measured flight cost</text>',
-        '<text x="30" y="56" fill="#9bbeb8" font-size="12" font-family="Arial">Frozen v8 · 30 jointly successful seed pairs per case</text>']
+        '<text x="30" y="56" fill="#9bbeb8" font-size="12" font-family="Arial">Frozen digital campaign · 30 jointly successful seed pairs per case</text>']
 for i, row in enumerate(inflight):
     case = row['scenario']
     b2 = float(by_condition[case, 'B2']['mean_distance_m'])
@@ -101,7 +101,7 @@ for i, row in enumerate(inflight):
 bars += ['<text x="30" y="337" fill="#8fb6af" font-size="11" font-family="Arial">Distance advantage is conditional on joint true and reported completion.</text>', '</svg>']
 (FIGURES / 'inflight_effect.svg').write_text(''.join(bars))
 
-# Replay rows are direct copies of recorded v8 traces, not generated animation.
+# Replay rows are direct copies of recorded digital traces, not generated animation.
 replays = {}
 for case in ('N00', 'N03', 'N07', 'N11', 'N19'):
     replays[case] = {}
@@ -115,7 +115,7 @@ for case in ('N00', 'N03', 'N07', 'N11', 'N19'):
         }
 payload = {
     'protocol': 'v8', 'source_revision': summary['source_revision'],
-    'scope': 'Frozen v8 agent-backed digital simulation; SITL evidence is separate.',
+    'scope': 'Frozen agent-backed digital simulation; SITL evidence is separate.',
     'counts': {'attempts': len(attempts), 'conditions': 22, 'paired_seeds': 30},
     'scenarios': conditions, 'effects': pairs,
     'configs': [{'scenario': c, 'policy': p} for c in replays for p in ('B2', 'VECR')],
@@ -144,7 +144,7 @@ condition_table = table(
       r['true_complete'], r['false_complete'], r['false_negative'],
       f"{float(r['mean_distance_m']):.2f}", f"{float(r['mean_unresolved_m']):.2f}"]
      for r in conditions],
-    'Frozen v8; 30 common seeds per condition and policy. Dishonest controls N19/N20 are excluded from honest-sensor safety counts.',
+    'Frozen digital campaign; 30 common seeds per condition and policy. Dishonest controls N19/N20 are excluded from honest-sensor safety counts.',
 )
 paired_table = table(
     ['Case', 'Condition', 'Joint true/report complete', 'B2 mean (m)', 'VECR mean (m)',
@@ -155,7 +155,7 @@ paired_table = table(
       f"{float(r['successful_distance_delta_m']):.2f}",
       f"[{float(r['successful_distance_delta_m_ci_low']):.2f}, {float(r['successful_distance_delta_m_ci_high']):.2f}]m"]
      for r in inflight],
-    'Frozen v8 N07–N09; 30 matched seed pairs per case; distance contrast among joint successful attempts.',
+    'Recorded N07–N09; 30 matched seed pairs per case; distance contrast among joint successful attempts.',
 )
 summary_html = (
     '<div class="metric-grid">'
@@ -183,7 +183,7 @@ formulas = {
 
 FIGURE_CAPTIONS = {
     'completion_matrix': 'Reported survey completion by case and policy. Zero cells include deliberate faults and arrived attempts with unverified gaps; compare arrival and independent truth in the table.',
-    'paired_distance': 'VECR minus B2 distance in frozen v8 simulation. N07–N09 are the successful in-flight comparisons; intervals are pointwise paired 95% bootstrap intervals.',
+    'paired_distance': 'VECR minus B2 distance in frozen digital simulation. N07–N09 are the successful in-flight comparisons; intervals are pointwise paired 95% bootstrap intervals.',
     'recovery': 'In-flight target selection and physical re-entry; the terminal B result does not start another return.'
 }
 
@@ -202,7 +202,7 @@ choices = [('N00', 'Nominal'), ('N03', 'Endpoint evidence gap'),
            ('N07', 'In-flight departure'), ('N11', 'Command refusal'),
            ('N19', 'Dishonest sensor')]
 options = ''.join(f'<option value="{c}">{c} · {html.escape(label)}</option>' for c, label in choices)
-trace_html = f'''<div class="trace-explorer"><div class="trace-toolbar"><label>Frozen v8 condition<select id="replayCase">{options}</select></label><button id="playReplay" class="button">Play replay</button><button id="resetReplay" class="button secondary">Reset</button><label>Speed<select id="replaySpeed"><option value="1">1×</option><option value="4" selected>4×</option><option value="10">10×</option></select></label></div><p class="source-note">Recorded agent-backed digital trajectories from seed 70001; full raw traces and independent checks are in <code>results/vecr/v8/primary</code>. N03 ends ARRIVED with an unresolved evidence gap and no endpoint return.</p><div class="trace-legend"><span class="legend-b2">B2 · in-flight return to A</span><span class="legend-vecr">VECR · local return</span><span>Line: recorded path · bars: agent-accepted coverage · ×: accepted target</span></div><svg id="replayPlot" viewBox="0 0 880 370" role="img" aria-labelledby="replayTitle replayDesc"><title id="replayTitle">Frozen v8 physical trajectories</title><desc id="replayDesc">Use the time slider to compare paired recorded v8 traces.</desc><g id="replayDrawing"></g></svg><label class="time-control">Simulation time <output id="replayTime">0.0 s</output><input id="replaySlider" type="range" min="100" max="100000" step="100" value="100" aria-label="Recorded simulation time"></label><div id="replayMetrics" class="replay-metrics" aria-live="off"></div><div class="trace-events"><h4>Recorded event timeline</h4><p>Click recorded phase, accepted command, or fault events.</p><div id="eventList"></div></div></div>'''
+trace_html = f'''<div class="trace-explorer"><div class="trace-toolbar"><label>Recorded condition<select id="replayCase">{options}</select></label><button id="playReplay" class="button">Play replay</button><button id="resetReplay" class="button secondary">Reset</button><label>Speed<select id="replaySpeed"><option value="1">1×</option><option value="4" selected>4×</option><option value="10">10×</option></select></label></div><p class="source-note">Recorded agent-backed digital trajectories from seed 70001; full raw traces and independent checks are linked in the campaign manifest. N03 ends ARRIVED with an unresolved evidence gap and no endpoint return.</p><div class="trace-legend"><span class="legend-b2">B2 · in-flight return to A</span><span class="legend-vecr">VECR · local return</span><span>Line: recorded path · bars: agent-accepted coverage · ×: accepted target</span></div><svg id="replayPlot" viewBox="0 0 880 370" role="img" aria-labelledby="replayTitle replayDesc"><title id="replayTitle">Recorded physical trajectories</title><desc id="replayDesc">Use the time slider to compare paired recorded digital traces.</desc><g id="replayDrawing"></g></svg><label class="time-control">Simulation time <output id="replayTime">0.0 s</output><input id="replaySlider" type="range" min="100" max="100000" step="100" value="100" aria-label="Recorded simulation time"></label><div id="replayMetrics" class="replay-metrics" aria-live="off"></div><div class="trace-events"><h4>Recorded event timeline</h4><p>Click recorded phase, accepted command, or fault events.</p><div id="eventList"></div></div></div>'''
 
 old = BeautifulSoup((SITE / 'index.htm').read_text(), 'lxml')
 profile = old.select_one('.author-profile')
@@ -223,8 +223,8 @@ recovery_walkthrough = '''<div class="recovery-walkthrough" role="group" aria-la
 <li><strong>Decision:</strong> the first gap starts at 18 m, so q=min(25,18)=18 m. A future gap would not send the drone forward.</li>
 <li><strong>Physical check:</strong> after the return command, bounded position, altitude and speed plus a 200 ms sampled dwell qualify re-entry. The drone then resumes toward B.</li></ol>
 <p>Green = accepted survey evidence; amber = unverified interval. Arrival at B later has a separate survey verdict.</p></div>'''
-subs = {'author_profile': str(profile), 'v8_summary': summary_html,
-        'v8_table': condition_table, 'v8_paired_table': paired_table,
+subs = {'author_profile': str(profile), 'primary_summary': summary_html,
+        'primary_table': condition_table, 'primary_paired_table': paired_table,
         'trace_explorer': trace_html, 'outcome_guide': outcome_guide,
         'recovery_walkthrough': recovery_walkthrough}
 
@@ -291,14 +291,14 @@ footer = main.find('footer', recursive=False)
 if footer:
     paragraph = footer.find('p')
     if paragraph:
-        paragraph.string = 'Frozen v8 digital evidence · explicit assumptions · reproducible records'
+        paragraph.string = 'Frozen digital evidence · explicit assumptions · reproducible records'
 
 hero_figure = old.select_one('.hero-figure')
 if hero_figure:
     hero_figure.clear()
-    hero_figure.append(BeautifulSoup('<div class="hero-evidence"><p class="eyebrow">FROZEN V8 DIGITAL CAMPAIGN</p><img src="assets/figures/inflight_effect.svg" alt="Measured N07 to N09 VECR and B2 mean flight distances with paired confidence intervals"><p class="source-note">1,320 agent-backed attempts · 22 conditions · SITL numbers pending.</p></div>', 'lxml').select_one('.hero-evidence'))
+    hero_figure.append(BeautifulSoup('<div class="hero-evidence"><p class="eyebrow">FROZEN DIGITAL CAMPAIGN</p><img src="assets/figures/inflight_effect.svg" alt="Measured N07 to N09 VECR and B2 mean flight distances with paired confidence intervals"><p class="source-note">1,320 agent-backed attempts · 22 conditions · SITL numbers pending.</p></div>', 'lxml').select_one('.hero-evidence'))
 old.select_one('.hero-summary').string = 'A tested UAV edge-execution runtime: detect sustained in-flight deviation, recover within finite bounds, and report qualified arrival and missing survey evidence separately.'
-old.select_one('.status-pill').string = 'V8 DIGITAL VALIDATED · SITL PENDING'
+old.select_one('.status-pill').string = 'DIGITAL VALIDATION COMPLETE · SITL PENDING'
 old.select_one('.sidebar-intro p').string = 'Implemented method. Frozen digital evidence. Explicit limits.'
 old.select_one('.sidebar-bottom small').string = 'Revised-method SITL: TBD.'
 for node in old.select('.sidebar-bottom'):
@@ -306,12 +306,12 @@ for node in old.select('.sidebar-bottom'):
         if 'Revised specification' in text_node:
             text_node.replace_with(' Digital validation complete')
 for text_node in old.select_one('.hero-meta').find_all(string=True):
-    if 'REVISED RESEARCH SPECIFICATION' in text_node:
-        text_node.replace_with('SWARMKIT / VECR · DIGITAL VALIDATION V8')
+    if 'REVISED RESEARCH SPECIFICATION' in text_node or 'DIGITAL VALIDATION V8' in text_node:
+        text_node.replace_with('SWARMKIT / VECR · DIGITAL VALIDATION')
 cards = old.select('.hero-stats > div')
 assert len(cards) == 4
 cards[2].select_one('strong').string = '100'
-cards[2].select_one('span').string = 'validated v8 client-path attempts'
+cards[2].select_one('span').string = 'validated client-path attempts'
 cards[3].select_one('strong').string = '0'
 cards[3].select_one('span').string = 'false reported complete / 1,200 honest trials*'
 edition = old.select_one('.edition-note')
@@ -319,7 +319,7 @@ if edition:
     edition.clear()
     for span in BeautifulSoup('<span>READER EDITION · 29 OCT 2026</span><span>Frozen agent-backed digital campaign ✓   /   Revised-method SITL TBD</span>', 'html.parser').find_all('span'):
         edition.append(span)
-old.select_one('meta[name="description"]')['content'] = 'VECR dissertation: implemented UAV edge execution, bounded in-flight recovery, and frozen v8 agent-backed digital validation.'
+old.select_one('meta[name="description"]')['content'] = 'VECR dissertation: implemented UAV edge execution, bounded in-flight recovery, and frozen agent-backed digital validation.'
 old.title.string = 'VECR — Verified Edge Coverage and Recovery · Dissertation Reader'
 chapter_nav = old.select_one('.chapter-nav')
 chapter_nav.clear()
@@ -342,14 +342,14 @@ for label, ident in [('Researcher', 'researcher'), ('Contribution', 'innovation'
     top_nav.append(link)
 for notice in main.select('.edition-notice'):
     notice.decompose()
-notice = BeautifulSoup('<div class="edition-notice" role="note"><strong>Evidence status:</strong> The v8 digital campaign and independent validator are complete. ArduPilot SITL numbers for this revised method are TBD. Retired datasets are excluded from the current checkout and estimates.</div>', 'lxml').select_one('.edition-notice')
+notice = BeautifulSoup('<div class="edition-notice" role="note"><strong>Evidence status:</strong> The frozen digital campaign and independent validator are complete. ArduPilot SITL numbers for this revised method are TBD. Retired datasets are excluded from the current checkout and estimates.</div>', 'lxml').select_one('.edition-notice')
 main.select_one('.hero').insert_after(notice)
 (SITE / 'index.htm').write_text('<!doctype html>\n' + str(old.html))
 metadata = ASSETS / 'research-metadata.json'
 author = json.loads(metadata.read_text())['author']
 meta = {'title': 'VECR — Verified Edge Coverage and Recovery',
         'edition_date': '2026-10-29', 'author': author,
-        'research_status': 'Frozen v8 agent-backed digital campaign validated; revised-method SITL pending.',
+        'research_status': 'Frozen agent-backed digital campaign validated; revised-method SITL pending.',
         'digital': {'protocol': 'v8', 'attempts': 1320, 'conditions': 22,
                     'source_revision': summary['source_revision'],
                     'binary_sha256': manifest['binary_sha256'],

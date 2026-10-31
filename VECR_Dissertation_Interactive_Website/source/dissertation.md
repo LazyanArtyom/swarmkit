@@ -10,7 +10,7 @@
 
 **Arrival and coverage are intentionally independent outcomes.** Upon qualified arrival at B, VECR stops autonomous recovery for that edge, returns a single terminal result containing arrival status and residual evidence gaps, and delegates their disposition to the calling controller. During execution, an on-demand *Execution Status Snapshot* exposes the current phase, confidence-qualified missing intervals, projected progress, and recovery counters without periodic callbacks. A terminal-only SDK subscription reports arrival, failed execution or confirmed cancellation once per execution identity within one live subscription; a disconnected caller can reconcile through the durable status query. Recovery is constrained by command authority, health, energy, time, number of attempts, and successful physical re-entry verification; failure is reported, not retried forever.
 
-The revised C++23 agent, protobuf contract, client library and research harness were rebuilt and tested. A separately versioned v8 digital campaign executed 1,320 assigned attempts through the agent and backend with independent geometric truth reconstruction. Retired v7 digital and SITL datasets are excluded from the current checkout and from v8 statistics; their pre-cleanup state remains in Git history. Revised-policy SITL, real calibrated camera evidence and field flight remain future validation.
+The revised C++23 agent, protobuf contract, client library and research harness were rebuilt and tested. A frozen digital campaign executed 1,320 assigned attempts through the agent and backend with independent geometric truth reconstruction. Retired digital and SITL datasets are excluded from the current checkout and current statistics; their pre-cleanup state remains in Git history. Revised-policy SITL, real calibrated camera evidence and field flight remain future validation.
 
 ## The research problem
 
@@ -22,7 +22,7 @@ A correct abstract graph transition does not establish that the physical edge wa
 2. **Can a sustained mid-edge departure trigger efficient local repair?** Detect the departure during A→B, preserve previously accepted evidence, choose the earlier of current progress and the first missing required coordinate, verify physical return, and resume while budgets permit.
 3. **Who resolves residual coverage at B?** VECR reports a terminal **ARRIVED** outcome and explicit unverified intervals. The external application—not VECR—decides whether to revisit, reassign, defer, or ignore according to its own goals.
 4. **What information does the caller need, without event flooding?** A pull-based `GetEdgeStatus` snapshot during execution and one terminal callback for arrival, failure, or cancellation, with exact attempt identity and machine-readable reasons.
-5. **What can be established scientifically?** Conditional sensing soundness from conservative accepted footprints, finite local recovery budgets and measured digital behavior. The v8 manifest, raw attempts, validator and statistical analysis define the evidence; retired measurements are excluded.
+5. **What can be established scientifically?** Conditional sensing soundness from conservative accepted footprints, finite local recovery budgets and measured digital behavior. The campaign manifest, raw attempts, validator and statistical analysis define the evidence; retired measurements are excluded.
 
 ## Contribution and evidence status
 
@@ -31,10 +31,10 @@ A correct abstract graph transition does not establish that the physical edge wa
 | Revised VECR algorithm and SDK boundary | Implemented and regression-tested | One automatic in-flight local correction; endpoint reporting only |
 | On-demand status and terminal result | Implemented in SDK/agent; tested with local gRPC | No per-position callback requirement; one terminal callback per execution identity within one subscription |
 | Conditional acceptance and interval algebra | Analytic argument; related verifier implemented previously | Sound if identity, calibration, sensor assertions and hard uncertainty bounds hold |
-| Recorded in-flight correction | New v8 N07–N09 traces | Agent-backed digital mid-edge correction with independent geometric truth |
-| Complete revised-policy digital campaign | 1,320 v8 attempts; independent validation | Conditional simulator measurements, with honest and dishonest sensing separated |
-| Client-path reuse | 100 v8 attempts, 50 matched direct/routed pairs | Matching audited outcomes in the tested cases; this is not fleet-scale portability |
-| ArduPilot SITL | No v8 flight campaign in the current evidence package | Revised-policy SITL remains to be run; numbers are TBD |
+| Recorded in-flight correction | Recorded N07–N09 traces | Agent-backed digital mid-edge correction with independent geometric truth |
+| Complete revised-policy digital campaign | 1,320 attempts; independent validation | Conditional simulator measurements, with honest and dishonest sensing separated |
+| Client-path reuse | 100 attempts, 50 matched direct/routed pairs | Matching audited outcomes in the tested cases; this is not fleet-scale portability |
+| ArduPilot SITL | No qualifying flight campaign in the current evidence package | Revised-policy SITL remains to be run; numbers are TBD |
 
 **Scientific integrity rule:** a historical number may describe what an earlier binary did, but never a result that the revised VECR implementation has not yet produced.
 
@@ -59,7 +59,7 @@ Earlier [Knödel-graph gossip research](https://doi.org/10.1109/CSITechnol.2017.
 | Layer | Question it answers | Evidence in this repository |
 |---|---|---|
 | External graph controller | Which directed edge should a vehicle attempt next? | Interface boundary; no rotor-router implementation in SwarmKit |
-| VECR agent | Was that edge's physical traversal or survey obligation verified, and what remains? | Implemented runtime and v8 agent-backed digital campaign; revised-policy SITL pending |
+| VECR agent | Was that edge's physical traversal or survey obligation verified, and what remains? | Implemented runtime and agent-backed digital campaign; revised-policy SITL pending |
 | Peer communication | How can application messages and artifacts move between agents? | Implemented API surface; fleet-scale delivery not measured here |
 | Mission workspace | How do people author, approve and inspect graph missions? | Earlier platform publications and prior reader context; not part of VECR trials |
 
@@ -67,9 +67,9 @@ Earlier [Knödel-graph gossip research](https://doi.org/10.1109/CSITechnol.2017.
 
 The [multi-user UAV swarm simulation platform](https://doi.org/10.1134/S0361768823090086) and [mission-preparation study](https://doi.org/10.1134/S0361768824700397) establish a platform research line. The [2025 multi-user software-system paper](https://doi.org/10.1109/ICECET63943.2025.11472550) is another part of that lineage. The previously supplied dissertation draft also lists a 2026 simulation-driven monitoring paper and a SwarmKit architecture paper; their bibliographic details are retained as author-supplied records pending formal publisher verification. Their results are not counted in the current VECR digital campaign.
 
-Together these works address mathematical swarm coordination, mission authoring, preflight simulation, software infrastructure and execution monitoring. VECR occupies the remaining interface between a graph plan and a physical survey. A coordinator informed only that the vehicle reached a vertex can incorrectly credit an edge whose middle was never acquired. A coordinator receiving exact attempt identity, remaining gaps and a terminal reason has enough information to make an explicit next decision. The v8 trials test this local contract; they do not measure the benefit of any particular graph-level reassignment strategy.
+Together these works address mathematical swarm coordination, mission authoring, preflight simulation, software infrastructure and execution monitoring. VECR occupies the remaining interface between a graph plan and a physical survey. A coordinator informed only that the vehicle reached a vertex can incorrectly credit an edge whose middle was never acquired. A coordinator receiving exact attempt identity, remaining gaps and a terminal reason has enough information to make an explicit next decision. The digital trials test this local contract; they do not measure the benefit of any particular graph-level reassignment strategy.
 
-This dissertation's specific addition is the *physical edge acceptance layer*: the planner may change, and the communication algorithm may change, while the agent applies attempt identity, bounded evidence, gap accounting, and bounded in-flight local recovery. The current v8 direct/routed SDK-path campaign shows parity across 50 matched pairs in five tested cases; it does not experimentally demonstrate a complete rotor-router deployment.
+This dissertation's specific addition is the *physical edge acceptance layer*: the planner may change, and the communication algorithm may change, while the agent applies attempt identity, bounded evidence, gap accounting, and bounded in-flight local recovery. The current direct/routed SDK-path campaign shows parity across 50 matched pairs in five tested cases; it does not experimentally demonstrate a complete rotor-router deployment.
 
 # 03 / Scientific problem, responsibilities and novelty {#innovation}
 
@@ -122,7 +122,7 @@ An external rotor-router implementation *might* submit A→B, receive `ARRIVED` 
 
 ## Isolation and reproducibility
 
-The preceding frozen research artifact ran a C++23 SDK/agent over SimBackend and separately over an ArduPilot SITL MAVLink adapter. Those integrations demonstrate an execution boundary, but they were built for the former policy. The v8 digital campaign verifies the revised agent and SDK behavior in simulation. The architecture diagram describes this tested digital boundary. Revised-policy ArduPilot SITL remains unqualified.
+The preceding frozen research artifact ran a C++23 SDK/agent over SimBackend and separately over an ArduPilot SITL MAVLink adapter. Those integrations demonstrate an execution boundary, but they were built for the former policy. The frozen digital campaign verifies the revised agent and SDK behavior in simulation. The architecture diagram describes this tested digital boundary. Revised-policy ArduPilot SITL remains unqualified.
 
 # 05 / Reusable SDK and its integration contract {#swarmkit}
 
@@ -189,7 +189,7 @@ The control path needs two authorization levels. A workspace permission may let 
 
 The wider programme describes a multi-user mission workspace, authorization, versioned mission store, telemetry gateway, event log, artifact store, and post-mission analysis. These are architectural targets and earlier research context. The current VECR result does not claim a deployed multi-tenant SaaS service or bounded latency under hundreds of concurrent drones. Even if a cloud service is unavailable, the experiment's local verification/recovery loop runs in the agent. Remote monitoring would require later synchronization and conflict handling to present an accurate view.
 
-That architecture has three different data flows. The **control plane** carries authorized mission requests and cancellations. The **telemetry/event plane** carries bounded-rate state and typed execution reports. The **artifact plane** carries larger images, logs and derived products. Keeping them conceptually separate prevents an image transfer from being mistaken for a real-time control guarantee. A cloud outage also affects the flows differently: it may stop new assignments or remote visibility while an already authorized onboard attempt continues until its local deadline or safety rule ends it. This is a design implication of the agent boundary, not a measured outage result in the v8 campaign.
+That architecture has three different data flows. The **control plane** carries authorized mission requests and cancellations. The **telemetry/event plane** carries bounded-rate state and typed execution reports. The **artifact plane** carries larger images, logs and derived products. Keeping them conceptually separate prevents an image transfer from being mistaken for a real-time control guarantee. A cloud outage also affects the flows differently: it may stop new assignments or remote visibility while an already authorized onboard attempt continues until its local deadline or safety rule ends it. This is a design implication of the agent boundary, not a measured outage result in the frozen campaign.
 
 # 07 / Formal model, evidence and in-flight correction {#model}
 
@@ -277,7 +277,7 @@ With $m$ disjoint accepted intervals, a sorted interval representation supports 
 
 {{diagram:states}}
 
-The v8 runtime transitions through `MOVING`, `DEVIATING` and `RECOVERING` during A→B. A sustained qualified corridor departure alone can propose local re-entry. A short endpoint evidence wait is represented by the current status reason; it is not a separately published phase. Terminal phases are `ARRIVED`, `FAILED` and `CANCELLED`. `UNKNOWN` is a live evidence/physical-state warning and can also appear as a journal reconciliation state after an uncertain dispatch or crash. It is not proof of arrival.
+The VECR runtime transitions through `MOVING`, `DEVIATING` and `RECOVERING` during A→B. A sustained qualified corridor departure alone can propose local re-entry. A short endpoint evidence wait is represented by the current status reason; it is not a separately published phase. Terminal phases are `ARRIVED`, `FAILED` and `CANCELLED`. `UNKNOWN` is a live evidence/physical-state warning and can also appear as a journal reconciliation state after an uncertain dispatch or crash. It is not proof of arrival.
 
 ## Safety and finite bounds
 
@@ -291,35 +291,35 @@ The attempt journal is synced before dispatch and at published state transitions
 
 ## Validation evidence
 
-Unit regressions cover terminal arrival with gaps, finite evidence wait, in-flight target choice, physical re-entry, duration/travel limits and explicit cancellation. The full CTest suite and v8 agent-backed campaign exercise the implementation. Simulator truth is reconstructed independently from raw trajectory and acquisition files. Operational aircraft safety, real-camera quality and revised-policy SITL are outside this digital result.
+Unit regressions cover terminal arrival with gaps, finite evidence wait, in-flight target choice, physical re-entry, duration/travel limits and explicit cancellation. The full CTest suite and agent-backed digital campaign exercise the implementation. Simulator truth is reconstructed independently from raw trajectory and acquisition files. Operational aircraft safety, real-camera quality and revised-policy SITL are outside this digital result.
 
-# 10 / Evidence provenance and v8 experimental protocol {#protocol}
+# 10 / Evidence provenance and digital experimental protocol {#protocol}
 
 ## Frozen source and assignments
 
-The v8 campaign used committed source revision `66603912556002d162dc42d910b598bfbbc480a2`. Its manifest was written before the trials and records both executable hashes, the runner hash, source revision, protocol hash, 1,320 assignments and host configuration. The experiment consists of 22 conditions (N00–N21), 30 common seeds per condition and two policies. No failed or inconvenient run was replaced. All trials used the complete SwarmKit client, agent and simulator backend; the independent oracle saw the true vehicle trajectory and actual acquired footprint, while the agent saw bounded synthetic observations and qualified capture metadata.
+The frozen digital campaign used committed source revision `66603912556002d162dc42d910b598bfbbc480a2`. Its manifest was written before the trials and records both executable hashes, the runner hash, source revision, protocol hash, 1,320 assignments and host configuration. The experiment consists of 22 conditions (N00–N21), 30 common seeds per condition and two policies. No failed or inconvenient run was replaced. All trials used the complete SwarmKit client, agent and simulator backend; the independent oracle saw the true vehicle trajectory and actual acquired footprint, while the agent saw bounded synthetic observations and qualified capture metadata.
 
 The only policy difference is the target after a confirmed *in-flight* departure: VECR chooses the earlier of projected progress and the first required unverified interval; B2 returns to A. Both use the same evidence verifier, 3 s endpoint metadata wait, hard-bound assumptions, fault injections and safety limits. Neither policy repairs a gap after B. The full condition definitions are in `SIMULATION_PROTOCOL.md`, and the machine-readable overrides are in `manifest.json`.
 
 ## Independent checks
 
-`validate_digital.py` reconstructs truth from recorded trajectories and actual camera rectangles using separate half-space geometry. It recomputes path distance, stopped arrival, acquired strip union, accepted-footprint containment, exact assignment membership, sampled re-entry dwell and reported completion. It rejects any return GOTO after the first independently qualified B arrival. The v8 primary validator passed all 1,320 attempts, 54,850 delivered captures and 180 physical re-entry dwells. This is a geometric simulator check, not a real-image calibration experiment.
+`validate_digital.py` reconstructs truth from recorded trajectories and actual camera rectangles using separate half-space geometry. It recomputes path distance, stopped arrival, acquired strip union, accepted-footprint containment, exact assignment membership, sampled re-entry dwell and reported completion. It rejects any return GOTO after the first independently qualified B arrival. The independent validator passed all 1,320 attempts, 54,850 delivered captures and 180 physical re-entry dwells. This is a geometric simulator check, not a real-image calibration experiment.
 
 The analysis reports all 44 condition/policy rows, 95% Wilson intervals for proportions and paired bootstrap intervals for mean differences (10,000 resamples, fixed RNG seed). Distance and time advantages are conditioned on *both* policies having true and reported completion in the same seed. Unsuccessful attempts remain in the arrival, coverage and failure tables. Confidence intervals are pointwise and describe these simulated seeds; they are not fleet-reliability or field-flight intervals.
 
 ## Campaign boundary
 
-Only the frozen v8 assignments contribute to the tables and figures below. Earlier pilot and endpoint-policy datasets are absent from the current checkout and excluded from every active estimate; their pre-cleanup state is recoverable from Git history. The 100-attempt direct/routed client-path experiment is a separate v8 result reported below.
+Only the frozen assignments contribute to the tables and figures below. Earlier pilot and endpoint-policy datasets are absent from the current checkout and excluded from every active estimate; their pre-cleanup state is recoverable from Git history. The 100-attempt direct/routed client-path experiment is a separate result reported below.
 
 # 11 / Measured digital results and fair comparison {#results}
 
-## Complete v8 scorecard
+## Complete digital scorecard
 
-{{v8_summary}}
+{{primary_summary}}
 
 {{outcome_guide}}
 
-{{v8_table}}
+{{primary_table}}
 
 {{figure:completion_matrix}}
 
@@ -327,7 +327,7 @@ An `ARRIVED` outcome records qualified stopped arrival, even when accepted surve
 
 ## Paired in-flight recovery comparison
 
-{{v8_paired_table}}
+{{primary_paired_table}}
 
 {{figure:paired_distance}}
 
@@ -335,15 +335,15 @@ Only N07–N09 exercised the successful in-flight correction comparison in which
 
 ## Sensor trust and false negatives
 
-Across 1,200 honest-sensor attempts, the independent oracle found zero false reported completions. Some runs achieved physical truth coverage but lacked accepted metadata: N03 and N15 produced 120 conservative false negatives across both policies. The 120 deliberately dishonest-sensor controls N19/N20 produced 120 false reported completions, exposing a critical trust boundary. These are observed outcomes, not a guarantee of future sensor truthfulness. The v8 results do not establish camera focus, occlusion or exposure quality on actual images.
+Across 1,200 honest-sensor attempts, the independent oracle found zero false reported completions. Some runs achieved physical truth coverage but lacked accepted metadata: N03 and N15 produced 120 conservative false negatives across both policies. The 120 deliberately dishonest-sensor controls N19/N20 produced 120 false reported completions, exposing a critical trust boundary. These are observed outcomes, not a guarantee of future sensor truthfulness. The digital results do not establish camera focus, occlusion or exposure quality on actual images.
 
-# 12 / Recorded v8 evidence: trajectory replay {#replay}
+# 12 / Recorded digital evidence: trajectory replay {#replay}
 
 ## Agent-backed recordings
 
 {{trace_explorer}}
 
-The replay viewer reads v8 recorded 100 ms agent status, vehicle positions, accepted commands and missing intervals for representative seeds. N00 shows nominal motion; N03 shows arrival with residual metadata gaps and no return command; N07 shows qualified mid-edge correction; N11 shows command refusal; N19 is a deliberately dishonest camera control. These are recorded digital simulator traces. They are distinct from the conceptual animations elsewhere on this page and from ArduPilot SITL or real flight.
+The replay viewer reads recorded 100 ms agent status, vehicle positions, accepted commands and missing intervals for representative seeds. N00 shows nominal motion; N03 shows arrival with residual metadata gaps and no return command; N07 shows qualified mid-edge correction; N11 shows command refusal; N19 is a deliberately dishonest camera control. These are recorded digital simulator traces. They are distinct from the conceptual animations elsewhere on this page and from ArduPilot SITL or real flight.
 
 A route bar shows the agent's accepted-interval complement, while a separate scalar score reports independently reconstructed physical survey coverage. The scalar truth score is not painted as an invented geographic gap map. The viewer can inspect event timing, target selection, re-entry and terminal reason without smoothing away unsuccessful outcomes.
 
@@ -351,17 +351,17 @@ A route bar shows the agent's accepted-interval complement, while a separate sca
 
 ## Conditional verification, not camera omniscience
 
-Under truthful camera metadata and valid hard bounds, an accepted contracted footprint is contained in the actual acquired footprint. Authentication only identifies the camera adapter; it cannot independently establish focus, exposure, occlusion, lens state or whether the asserted strip really appears in an image. The v8 honest-sensor trials had zero false reported completions; the two deliberate dishonest-sensor controls had 120/120 false completions. The latter is a negative control, not a property of normal camera operation.
+Under truthful camera metadata and valid hard bounds, an accepted contracted footprint is contained in the actual acquired footprint. Authentication only identifies the camera adapter; it cannot independently establish focus, exposure, occlusion, lens state or whether the asserted strip really appears in an image. The honest-sensor trials had zero false reported completions; the two deliberate dishonest-sensor controls had 120/120 false completions. The latter is a negative control, not a property of normal camera operation.
 
 {{diagram:evidence}}
 
 ## Missing evidence has several meanings
 
-An **unverified interval** is absent from the accepted evidence set. It may have been physically observed but the evidence delayed, rejected or never sent. A **confirmed missed interval** requires independent truth or a sufficiently strong negative observation. The v8 agent reports the unverified complement; it does not claim to know all captures still queued outside the agent. It waits a configured finite period at B for eligible metadata, then commits the terminal snapshot. The external application decides whether to revisit.
+An **unverified interval** is absent from the accepted evidence set. It may have been physically observed but the evidence delayed, rejected or never sent. A **confirmed missed interval** requires independent truth or a sufficiently strong negative observation. The onboard agent reports the unverified complement; it does not claim to know all captures still queued outside the agent. It waits a configured finite period at B for eligible metadata, then commits the terminal snapshot. The external application decides whether to revisit.
 
 ## Explicit failure and uncertainty
 
-Command rejection, motor failure, low battery and zero recovery budget produced FAILED outcomes in their respective v8 conditions. The agent attempts a hold on failure where supported, while retaining physical-navigation uncertainty until bounded stopped evidence is established. A hold ACK is not a physical stop certificate. Cancellation is a distinct terminal result when simulator hold is confirmed; an unconfirmed cancel remains physically unknown. Disconnected listeners must query the durable attempt status after reconnect.
+Command rejection, motor failure, low battery and zero recovery budget produced FAILED outcomes in their respective digital conditions. The agent attempts a hold on failure where supported, while retaining physical-navigation uncertainty until bounded stopped evidence is established. A hold ACK is not a physical stop certificate. Cancellation is a distinct terminal result when simulator hold is confirmed; an unconfirmed cancel remains physically unknown. Disconnected listeners must query the durable attempt status after reconnect.
 
 # 14 / Sensitivity, ablations and limits {#sensitivity}
 
@@ -371,7 +371,7 @@ The camera's accepted footprint contracts as declared hard localization or altit
 
 ## Ablation actually measured
 
-The v8 B2 comparator shares the production verifier and trigger but uses a full restart to A for a qualified mid-edge departure. The N07–N09 paired distance and time differences isolate this *target-selection* change under the selected simulator. No no-repair monitor or position-only arrival baseline was implemented in the frozen v8 campaign. The dissertation therefore makes no numerical claim against those untested alternatives. A return point selected from current evidence is a bounded local heuristic, not a globally optimal path.
+The B2 comparator shares the production verifier and trigger but uses a full restart to A for a qualified mid-edge departure. The N07–N09 paired distance and time differences isolate this *target-selection* change under the selected simulator. No no-repair monitor or position-only arrival baseline was implemented in the frozen campaign. The dissertation therefore makes no numerical claim against those untested alternatives. A return point selected from current evidence is a bounded local heuristic, not a globally optimal path.
 
 ## Operational envelope
 
@@ -381,9 +381,9 @@ The agent is validated for straight metric edges, a flat rectangular nadir strip
 
 ## Tested reusable boundary
 
-The integration suite exercises direct `Client` and routed `SwarmClient` entry paths through the same agent API. The v8 production SDK also exposes `StartEdgeResults` for a terminal-only callback and `GetEdgeStatus` for on-demand polling; tests verify exact attempt identity, status consistency, duplicate suppression within a live subscription, journal-backed reconciliation and distinct cancellation.
+The integration suite exercises direct `Client` and routed `SwarmClient` entry paths through the same agent API. The production SDK also exposes `StartEdgeResults` for a terminal-only callback and `GetEdgeStatus` for on-demand polling; tests verify exact attempt identity, status consistency, duplicate suppression within a live subscription, journal-backed reconciliation and distinct cancellation.
 
-A separately frozen v8 reuse campaign ran **100 agent-backed attempts** across N00, N01, N04, N07 and N11: ten matched seeds per case and one VECR execution through each client path. Independent geometric validation passed all 100 attempts, 4,054 delivered captures and 20 physical re-entry dwells. The 50 pairs had **zero differences** across ten audited terminal, distance, time, coverage, recovery and unresolved-distance fields. N00, N01, N04 and N07 ended `ARRIVED` in both paths (10/10 each); N11 ended `FAILED` in both paths (10/10). This establishes parity of these two transport paths for the tested cases, not two independent graph applications or fleet-wide portability. The initial sandboxed run failed all 100 attempts because local loopback bind was denied; that unsuccessful infrastructure record is retained under `results/vecr/v8/reuse/` and excluded from the qualified parity calculation.
+A separately frozen reuse campaign ran **100 agent-backed attempts** across N00, N01, N04, N07 and N11: ten matched seeds per case and one VECR execution through each client path. Independent geometric validation passed all 100 attempts, 4,054 delivered captures and 20 physical re-entry dwells. The 50 pairs had **zero differences** across ten audited terminal, distance, time, coverage, recovery and unresolved-distance fields. N00, N01, N04 and N07 ended `ARRIVED` in both paths (10/10 each); N11 ended `FAILED` in both paths (10/10). This establishes parity of these two transport paths for the tested cases, not two independent graph applications or fleet-wide portability. The initial sandboxed run failed all 100 attempts because local loopback bind was denied; that unsuccessful infrastructure record is retained with the raw research artifacts and excluded from the qualified parity calculation.
 
 The external caller can use rotor-router, another graph traversal policy or an operator-driven mission without changing the VECR verifier. SwarmKit implements no rotor-router or gossip algorithm and contains no fleet-level reassignment experiment. The reusable result is a local execution interface and tested client transport boundary, not measured global mission optimality.
 
@@ -391,7 +391,7 @@ The external caller can use rotor-router, another graph traversal policy or an o
 
 ## Status of revised-policy qualification
 
-**No revised-policy ArduPilot SITL flight is included in the current v8 statistics.** Historical flights used a different endpoint policy and synthetic sensing. Their records were removed from the current checkout and cannot validate the v8 terminal behavior or real image quality.
+**No revised-policy ArduPilot SITL flight is included in the current statistics.** Historical flights used a different endpoint policy and synthetic sensing. Their records were removed from the current checkout and cannot validate the current terminal behavior or real image quality.
 
 ## Next qualification protocol
 
@@ -439,7 +439,7 @@ Existing ideas of interval unions, local backtracking, runtime monitoring, and e
 
 ## What must not be claimed
 
-Do not claim a new rotor-router theorem, globally optimal return point, automatic multi-UAV gap reassignment, guaranteed full coverage, proven physical-flight safety, or measured superiority of the *revised* policy based on v7 endpoint-repair data. The correct contribution is a specific local runtime method and verifiable interface, validated digitally under stated assumptions; revised-policy SITL and field qualification remain open.
+Do not claim a new rotor-router theorem, globally optimal return point, automatic multi-UAV gap reassignment, guaranteed full coverage, proven physical-flight safety, or measured superiority of the *revised* policy based on retired endpoint-repair data. The correct contribution is a specific local runtime method and verifiable interface, validated digitally under stated assumptions; revised-policy SITL and field qualification remain open.
 
 ## Literature lineage
 
@@ -449,7 +449,7 @@ The earlier graph-theoretic research includes [Euler-tour and unicycle work](htt
 
 ## What is VECR's scientific novelty?
 
-The contribution is an implemented, algorithm-independent **runtime conformance contract** for one assigned directed UAV edge: exact attempt identity, conservative interval evidence, qualified sustained-deviation detection, finite physical local re-entry, and terminal reporting that separates arrival from coverage. Interval union, local backtracking and rotor-router mathematics are not claimed as inventions here. The v8 campaign measures the behavior of this composition under explicit simulator assumptions.
+The contribution is an implemented, algorithm-independent **runtime conformance contract** for one assigned directed UAV edge: exact attempt identity, conservative interval evidence, qualified sustained-deviation detection, finite physical local re-entry, and terminal reporting that separates arrival from coverage. Interval union, local backtracking and rotor-router mathematics are not claimed as inventions here. The campaign measures the behavior of this composition under explicit simulator assumptions.
 
 ## Does VECR guarantee complete survey coverage?
 
@@ -457,36 +457,36 @@ No. It conditionally accepts a strip only when qualified capture intervals cover
 
 ## Why is a camera ACK insufficient?
 
-A camera command can succeed while the image is blurred, blocked, misaligned or never physically acquired. VECR validates declared calibrated quality and geometry evidence; it does not inspect real image pixels. Dishonest-sensor negative controls in v8 falsely fulfilled in all 120 injected attempts, showing the assumption boundary.
+A camera command can succeed while the image is blurred, blocked, misaligned or never physically acquired. VECR validates declared calibrated quality and geometry evidence; it does not inspect real image pixels. Dishonest-sensor negative controls falsely fulfilled in all 120 injected attempts, showing the assumption boundary.
 
 ## Why is post-arrival repair excluded?
 
 After B, the next action depends on graph state, other vehicles, energy and mission priorities. VECR reports the local physical facts and relinquishes the edge; the external planner decides whether a new edge or revisit is justified. This keeps rotor-router a possible external client rather than a hidden dependency.
 
-## What do the v8 statistics support?
+## What do the digital statistics support?
 
 The complete agent-backed geometric campaign supports accurate accounting and bounded in-flight correction under its synthetic sensing model. On N07–N09, VECR used a shorter target than B2 and saved measured flight distance among matched, jointly successful runs. The statistics do not establish population equivalence, real-camera soundness, field safety or superiority over unimplemented baselines.
 
 ## Was ArduPilot SITL run for this revision?
 
-No. The v8 digital claims and SITL claims are kept separate. Historical flights ran a retired endpoint policy with synthetic sensing and were removed from the current checkout. New SITL numbers remain TBD pending a run of the revised binary and protocol.
+No. The digital claims and SITL claims are kept separate. Historical flights ran a retired endpoint policy with synthetic sensing and were removed from the current checkout. New SITL numbers remain TBD pending a run of the revised binary and protocol.
 
 # 20 / Reproducibility and audit trail {#reproducibility}
 
-## Active v8 artifacts
+## Active research artifacts
 
-- `results/vecr/v8/primary/manifest.json` — complete assignments, source and executable hashes, protocol version, configuration and host.
+- [Campaign manifest](assets/evidence/v8/manifest.json) — complete assignments, source and executable hashes, protocol version, configuration and host.
 - `per_attempt.csv` and `trials/` — all 1,320 outcomes plus compressed trajectory, capture, event, acquisition and measurement traces.
 - `analysis/condition_summary.csv`, `paired_comparisons.csv`, `RESULTS.md` and figures — deterministic summaries from the raw results.
 - `scripts/vecr/validate_digital.py` — independent geometry, arrival, distance, re-entry and post-arrival-command checks.
 - `source/dissertation.md` — this manuscript, rendered directly from frozen research data by `tools/build_site.py`.
-- `assets/experiment-data.js` — selected v8 raw replay rows copied from the frozen traces, not hand-animated outcomes.
+- `assets/experiment-data.js` — selected raw replay rows copied from the frozen traces, not hand-animated outcomes.
 - `assets/animations.js` — conceptual illustrations of state transitions; not recorded flight trajectories.
 
 The final SHA-256 manifests cover the experiment output and portable website. A reader can rerun the executable campaign into a fresh directory using `docs/vecr/SIMULATION_PROTOCOL.md`, then run the validator and analysis. Floating point last digits and host timing can differ across platforms, so the committed raw files and executable hashes remain the definitive record for the reported numbers.
 
-The offline reader bundles [v8 results](assets/evidence/v8/RESULTS.md), [the condition table](assets/evidence/v8/condition_summary.csv), [paired contrasts](assets/evidence/v8/paired_comparisons.csv), [the campaign manifest](assets/evidence/v8/manifest.json), [the reuse audit](assets/evidence/v8/REUSE_RESULTS.md), [the revalidation report](assets/evidence/v8/EXPERIMENT_REVALIDATION.md), [claim traceability](assets/evidence/v8/TRACEABILITY.md), [the final gate report](assets/evidence/v8/FINAL_CHANGE_REPORT.md), [the method brief](assets/evidence/v8/METHOD.md), [the planned v8 SITL protocol](assets/evidence/v8/SITL_PROTOCOL.md), and [the literature boundary](assets/evidence/v8/LITERATURE.md). The full raw trials and the 100-attempt reuse campaign live in the repository, not inside the portable website.
+The offline reader bundles [digital results](assets/evidence/v8/RESULTS.md), [the condition table](assets/evidence/v8/condition_summary.csv), [paired contrasts](assets/evidence/v8/paired_comparisons.csv), [the campaign manifest](assets/evidence/v8/manifest.json), [the reuse audit](assets/evidence/v8/REUSE_RESULTS.md), [the revalidation report](assets/evidence/v8/EXPERIMENT_REVALIDATION.md), [claim traceability](assets/evidence/v8/TRACEABILITY.md), [the final gate report](assets/evidence/v8/FINAL_CHANGE_REPORT.md), [the method brief](assets/evidence/v8/METHOD.md), [the planned SITL protocol](assets/evidence/v8/SITL_PROTOCOL.md), and [the literature boundary](assets/evidence/v8/LITERATURE.md). The full raw trials and the 100-attempt reuse campaign live in the repository, not inside the portable website.
 
 ## Historical and future evidence
 
-Retired digital and SITL datasets are excluded from the current checkout and the active v8 tables; their pre-cleanup state remains in Git history. Real-camera calibration, revised-policy ArduPilot SITL, physical obstacle avoidance and multi-UAV planner integration remain open. The dissertation's **digital simulator validation is complete**; physical-flight and revised-policy SITL claims are not made. SITL measured values: **TBD**.
+Retired digital and SITL datasets are excluded from the current checkout and the active tables; their pre-cleanup state remains in Git history. Real-camera calibration, revised-policy ArduPilot SITL, physical obstacle avoidance and multi-UAV planner integration remain open. The dissertation's **digital simulator validation is complete**; physical-flight and revised-policy SITL claims are not made. SITL measured values: **TBD**.
