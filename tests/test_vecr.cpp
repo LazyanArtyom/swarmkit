@@ -312,7 +312,7 @@ TEST_CASE("Camera footprints beyond an endpoint are not moved onto the route",
     }
 }
 
-TEST_CASE("VECR late survey cannot fulfill from an old arrival", "[vecr]") {
+TEST_CASE("VECR late survey cannot change a terminal arrival", "[vecr]") {
     EdgeExecutionSupervisor supervisor(Request());
     static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
     static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
@@ -338,18 +338,12 @@ TEST_CASE("VECR stale position after dropout cannot restore arrival", "[vecr]") 
     CHECK(late.phase != Phase::kArrived);
 }
 
-TEST_CASE("VECR does not credit a polyline traversal from endpoint samples", "[vecr]") {
+TEST_CASE("VECR rejects a polyline that its straight-edge verifier cannot certify", "[vecr][route]") {
     auto request = Request(Obligation::kTraversal);
     request.route.points = {{0, 0}, {50, 50}, {100, 0}};
-    request.maximum_speed_mps = 500;
     EdgeExecutionSupervisor supervisor(request);
-    REQUIRE(supervisor.Valid());
-    static_cast<void>(supervisor.ObservePosition(Position(0, 1000)));
-    static_cast<void>(supervisor.ObservePosition(Position(100, 2000, 0, true)));
-    const auto state = supervisor.ObservePosition(Position(100, 2300, 0, true));
-    CHECK(state.at_b_verified);
-    CHECK_FALSE(state.traversal_verified);
-    CHECK(state.phase == Phase::kArrived);
+    CHECK_FALSE(supervisor.Valid());
+    CHECK(supervisor.Snapshot().phase == Phase::kFailed);
 }
 
 TEST_CASE("VECR combined obligation requires both bounded traversal and survey", "[vecr]") {
@@ -403,7 +397,7 @@ TEST_CASE("VECR declines recovery from unbounded navigation position", "[vecr]")
 }
 
 TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another repair",
-          "[vecr][v5]") {
+          "[vecr][recovery]") {
     auto request = Request();
     request.sustained_deviation_samples = 3;
     EdgeExecutionSupervisor supervisor(request);
@@ -431,7 +425,7 @@ TEST_CASE("Recovery ACK cannot complete physical re-entry or overlap another rep
 }
 
 TEST_CASE("Deviation hysteresis and unknown bounds cannot manufacture consecutive departures",
-          "[vecr][v5]") {
+          "[vecr][deviation]") {
     auto request = Request();
     EdgeExecutionSupervisor supervisor(request);
     static_cast<void>(supervisor.ObservePosition(Position(50, 1000, 4.1)));
@@ -449,7 +443,7 @@ TEST_CASE("Deviation hysteresis and unknown bounds cannot manufacture consecutiv
 }
 
 TEST_CASE("Midflight re-entry never targets the unseen future tail and cooldown follows completion",
-          "[vecr][v5]") {
+          "[vecr][recovery]") {
     auto request = Request();
     request.sustained_deviation_samples = 1;
     EdgeExecutionSupervisor supervisor(request);

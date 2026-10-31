@@ -209,7 +209,7 @@ TEST_CASE("Simulator and MAVLink stop waits for in-flight callbacks",
 }
 
 TEST_CASE("MAVLink goto reapplies speed after GUIDED position initialization",
-          "[agent][backend][mavlink][v6]") {
+          "[agent][backend][mavlink][speed]") {
     bool fallback = false, refuse_after = false;
     SECTION("accepted reposition resets speed") {}
     SECTION("unsupported reposition falls back to a position setpoint") {

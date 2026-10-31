@@ -5,8 +5,8 @@
 
 #include "vecr_sensor_models.h"
 
-TEST_CASE("V5 independent full-strip truth preserves subcell holes and rotated footprints",
-          "[vecr][v5]") {
+TEST_CASE("Independent full-strip truth preserves subcell holes and rotated footprints",
+          "[vecr][sensor-truth]") {
     swarmkit::testsupport::sensing::ExactStripOracle oracle(20);
     oracle.Add(std::pair{0.0, 10.01});
     oracle.Add(std::pair{10.02, 20.0});
@@ -18,8 +18,8 @@ TEST_CASE("V5 independent full-strip truth preserves subcell holes and rotated f
     CHECK_FALSE(oracle.Footprint(10, 5, 2, 7, 0));
 }
 
-TEST_CASE("V5 bounded estimated camera intervals are contained in independent actual footprints",
-          "[vecr][v5]") {
+TEST_CASE("Bounded camera intervals are contained in independent actual footprints",
+          "[vecr][sensor-truth]") {
     using namespace swarmkit;
     std::mt19937_64 random(20261024);
     std::uniform_real_distribution<double> uniform(0, 1);

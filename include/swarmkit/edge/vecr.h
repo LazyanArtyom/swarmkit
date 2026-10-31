@@ -72,7 +72,7 @@ struct EdgeRequest {
     std::string edge_id;
     std::string attempt_id;
     std::string drone_id;
-    Route route;
+    Route route;  // Exactly two endpoints for this straight-edge supervisor.
     Obligation obligation{Obligation::kSurvey};
     double corridor_half_width_m{};
     double arrival_radius_m{};

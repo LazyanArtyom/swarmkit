@@ -224,7 +224,8 @@ EdgeExecutionSupervisor::EdgeExecutionSupervisor(EdgeRequest request)
 bool EdgeExecutionSupervisor::Valid() const {
     return !request_.mission_id.empty() && request_.mission_revision > 0 &&
            !request_.edge_id.empty() && !request_.attempt_id.empty() &&
-           !request_.drone_id.empty() && length_m_ > 0.0 && request_.maximum_capture_age_ms >= 0 &&
+           !request_.drone_id.empty() && request_.route.points.size() == 2 && length_m_ > 0.0 &&
+           request_.maximum_capture_age_ms >= 0 &&
            request_.maximum_capture_age_ms <= 10000 && request_.endpoint_evidence_wait_ms >= 0 &&
            request_.endpoint_evidence_wait_ms <= request_.maximum_capture_age_ms &&
            std::isfinite(request_.corridor_half_width_m) && request_.corridor_half_width_m > 0.0 &&

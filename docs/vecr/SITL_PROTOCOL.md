@@ -9,10 +9,11 @@ recoverable from Git history and are not evidence for this protocol.
 
 Freeze a new source revision, v8-capable SITL runner, ArduPilot revision, binary
 hashes, parameters, assignments and SHA-256 manifest before executing flights.
-Do not reuse the retired `run_sitl.py` protocol or its output directory without
-auditing and updating it for the current edge API, terminal phases and no-return
-behavior at B. Assign a new versioned results directory. Keep every assigned
-flight and unsuccessful pilot; never replace an inconvenient result.
+The retired v7 SITL runner and trial executable are absent from the current
+checkout. Implement and audit a new harness for the current edge API, terminal
+phases and no-return behavior at B. Assign a new versioned results directory.
+Keep every assigned flight and unsuccessful pilot; never replace an
+inconvenient result.
 
 Run the complete SwarmKit agent and MAVLink backend with a real ArduPilot Copter
 SITL process. Record raw MAVLink, backend command requests and ACKs, agent

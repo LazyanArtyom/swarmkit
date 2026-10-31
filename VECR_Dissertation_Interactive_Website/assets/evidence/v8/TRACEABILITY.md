@@ -4,6 +4,7 @@ The active dissertation is `VECR_Dissertation_Interactive_Website/source/dissert
 
 | Dissertation claim | Runtime or SDK source | Verification and evidence |
 |---|---|---|
+| Current VECR accepts straight two-point edges only | `src/agent/edge_execution_runtime.cpp` (`Convert`); `src/core/vecr.cpp` (`Valid`) | `tests/test_vecr.cpp` rejects a polyline at the supervisor boundary; agent request conversion enforces the same limit |
 | One qualified in-flight recovery target `q=min(progress, first required gap)`; B2 restarts at A only for research | `src/core/vecr.cpp` (`ConsiderRecovery`); compile-time research target, no public policy selector | `tests/test_vecr_agent_trial.cpp`; N07–N09 primary traces and paired comparisons |
 | No automatic gap return after qualified B arrival | `src/core/vecr.cpp` (`ConsiderEndpointFinalization`); `src/agent/edge_execution_runtime.cpp` | Endpoint-gap integration regressions; independent validator asserts no accepted GOTO after first reconstructed B arrival; N03/N04/N06/N10/N15–N18/N21 |
 | Physical stopped arrival differs from survey completion | `src/core/vecr.cpp` (`ObservePosition`, `ConsiderEndpointFinalization`); `include/swarmkit/edge/vecr.h`; protobuf edge status | Unit and integration tests; v8 `per_attempt.csv` separates `reported_arrived`, `reported_complete`, `truth_complete` |

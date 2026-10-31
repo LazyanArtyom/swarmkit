@@ -2388,22 +2388,22 @@ TEST_CASE("VECR arrival executes through SDK agent and physical SimBackend truth
     request.altitude_m = 10;
     request.commanded_speed_mps = 2;
     REQUIRE(client.ExecuteEdge(request).ok);
-    bool fulfilled = false;
-    for (int tick = 0; tick < 160 && !fulfilled; ++tick) {
+    bool arrived = false;
+    for (int tick = 0; tick < 160 && !arrived; ++tick) {
         clock_ns->fetch_add(100'000'000LL);
         REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
         std::this_thread::sleep_for(std::chrono::milliseconds{2});
         const auto observed = client.GetEdgeStatus("drone-1", "sim-arrival-1");
-        fulfilled = observed.status && observed.status->status.phase == edge::Phase::kArrived;
+        arrived = observed.status && observed.status->status.phase == edge::Phase::kArrived;
     }
-    CHECK(fulfilled);
+    CHECK(arrived);
     const auto final_truth = control->Truth("drone-1");
     REQUIRE(final_truth);
     CHECK(std::abs(final_truth->east_m - 20.0) < 0.5);
     CHECK(std::abs(final_truth->up_m - 10.0) < 0.5);
 }
 
-TEST_CASE("VECR never publishes fulfilled after terminal journal fsync failure",
+TEST_CASE("VECR never publishes ARRIVED after terminal journal fsync failure",
           "[client][integration][vecr][journal][sim-backend]") {
     agent::SimBackendConfig sim_config;
     sim_config.clock_mode = agent::SimulationClockMode::kManual;
@@ -2779,10 +2779,10 @@ TEST_CASE("VECR agent-backed camera gap terminates at B without local repair",
         }
         double physical_distance_m = 0.0;
         double prior_east_m = 0.0;
-        bool fulfilled = false;
+        bool arrived = false;
         bool saw_recovery = false;
         bool failure_injected = false;
-        for (int tick = 0; tick < 550 && !fulfilled; ++tick) {
+        for (int tick = 0; tick < 550 && !arrived; ++tick) {
             clock_ns->fetch_add(100'000'000LL);
             REQUIRE(control->Advance("drone-1", std::chrono::milliseconds{100}).IsOk());
             std::this_thread::sleep_for(std::chrono::milliseconds{2});
@@ -2830,7 +2830,7 @@ TEST_CASE("VECR agent-backed camera gap terminates at B without local repair",
                 }
             }
             const auto current = client.GetEdgeStatus("drone-1", "sim-gap-1");
-            fulfilled = current.status && current.status->status.phase == edge::Phase::kArrived;
+            arrived = current.status && current.status->status.phase == edge::Phase::kArrived;
             if (trace && current.status) {
                 trace << tick << ',' << truth->simulation_time_ms << ',' << truth->east_m << ','
                       << truth->north_m << ',' << truth->up_m << ',' << physical_distance_m << ','
@@ -2848,11 +2848,11 @@ TEST_CASE("VECR agent-backed camera gap terminates at B without local repair",
         REQUIRE(final.status);
         if (inject_failure) {
             CHECK(failure_injected);
-            CHECK_FALSE(fulfilled);
+            CHECK_FALSE(arrived);
             CHECK(final.status->status.phase == edge::Phase::kFailed);
             CHECK(physical_distance_m > 19.5);
         } else {
-            CHECK(fulfilled);
+            CHECK(arrived);
             CHECK_FALSE(std::ranges::all_of(truth_covered, [](bool cell) { return cell; }));
             CHECK_FALSE(final.status->status.survey_verified);
             CHECK(final.status->status.survey_missing.size() >= 1);
@@ -3172,11 +3172,11 @@ TEST_CASE("Client reports backend command failure and telemetry counters",
 }  // namespace swarmkit::client
 
 namespace swarmkit::client {
-TEST_CASE("V6 agent validates delayed capture against bounded acquisition history",
-          "[client][integration][vecr][v6]") {
+TEST_CASE("Agent validates delayed capture against bounded acquisition history",
+          "[client][integration][vecr][capture-history]") {
     const auto cert = testsupport::MakeDevMtlsPaths();
     agent::AgentConfig cfg;
-    cfg.agent_id = "v6-history-test";
+    cfg.agent_id = "capture-history-test";
     cfg.bind_addr = "127.0.0.1:0";
     cfg.security.root_ca_cert_path = cert.root_ca_cert_path;
     cfg.security.cert_chain_path = cert.server_cert_chain_path;
